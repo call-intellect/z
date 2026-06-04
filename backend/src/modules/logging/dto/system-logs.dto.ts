@@ -10,6 +10,7 @@ import {
   SystemLogCategory,
   SystemLogContour,
   SystemLogLevel,
+  SystemLogPipeline,
 } from '@prisma/client';
 import { z } from 'zod';
 
@@ -34,6 +35,8 @@ export const SystemLogQuerySchema = z.object({
   levelAtLeast: z.nativeEnum(SystemLogLevel).optional(),
   category: z.nativeEnum(SystemLogCategory).optional(),
   contour: z.nativeEnum(SystemLogContour).optional(),
+  pipeline: z.nativeEnum(SystemLogPipeline).optional(),
+  traceId: z.string().trim().min(1).max(MAX_FREE_STR).optional(),
   module: z.string().trim().min(1).max(MAX_FREE_STR).optional(),
   userId: z.string().trim().min(1).max(64).optional(),
   orgId: z.string().trim().min(1).max(64).optional(),
@@ -55,6 +58,14 @@ export const AggregatesQuerySchema = z.object({
   dateTo: z.coerce.date().optional(),
 });
 export type AggregatesQueryDto = z.infer<typeof AggregatesQuerySchema>;
+
+// ───────────────────────────── цепочка (chain) ──────────────────────
+/** Все записи одной цепочки по `traceId`, по времени (asc). */
+export const ChainQuerySchema = z.object({
+  traceId: z.string().trim().min(1).max(MAX_FREE_STR),
+  limit: z.coerce.number().int().min(1).max(1000).default(500),
+});
+export type ChainQueryDto = z.infer<typeof ChainQuerySchema>;
 
 // ───────────────────────────── настройки (PATCH) ──────────────────────
 export const UpdateLoggingSettingsSchema = z

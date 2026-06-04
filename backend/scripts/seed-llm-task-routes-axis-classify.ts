@@ -48,7 +48,7 @@ interface TaskRouteSeed {
  */
 const COMMON_CHAIN: TierEntry[] = [
   { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
-  { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+  { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
   { tier: 'tertiary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
 ];
 

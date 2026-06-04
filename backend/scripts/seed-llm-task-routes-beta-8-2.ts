@@ -42,7 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§β-8.2 §9 — извлечение срока/адресата обещания. Дешёвая опц. задача.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
@@ -52,7 +52,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§β-8.2 §9 — разбор ответа сотрудника на followup ("сделано"|"не сделано" + причина + блокер).',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],

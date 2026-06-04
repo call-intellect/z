@@ -22,7 +22,6 @@ import {
   Post,
   Query,
   UseGuards,
-  UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -117,10 +116,10 @@ export class AdminReferralsController {
   @ApiOperation({
     summary: 'Пометить payout как оплаченный (после реального перевода).',
   })
-  @UsePipes(new ZodValidationPipe(AdminMarkPayoutPaidBodySchema))
   async markPaid(
     @Param('id') id: string,
-    @Body() body: AdminMarkPayoutPaidBody,
+    @Body(new ZodValidationPipe(AdminMarkPayoutPaidBodySchema))
+    body: AdminMarkPayoutPaidBody,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const payout = await this.payouts.markPaidByAdmin({
@@ -145,10 +144,10 @@ export class AdminReferralsController {
 
   @Post('payouts/:id/void')
   @ApiOperation({ summary: 'Аннулировать payout.' })
-  @UsePipes(new ZodValidationPipe(AdminVoidPayoutBodySchema))
   async voidPayout(
     @Param('id') id: string,
-    @Body() body: AdminVoidPayoutBody,
+    @Body(new ZodValidationPipe(AdminVoidPayoutBodySchema))
+    body: AdminVoidPayoutBody,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const payout = await this.payouts.voidByAdmin({
@@ -174,9 +173,9 @@ export class AdminReferralsController {
   @ApiOperation({
     summary: 'Ручное закрытие периода (для отладки cron-задачи).',
   })
-  @UsePipes(new ZodValidationPipe(AdminClosePeriodBodySchema))
   async closePeriod(
-    @Body() body: AdminClosePeriodBody,
+    @Body(new ZodValidationPipe(AdminClosePeriodBodySchema))
+    body: AdminClosePeriodBody,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const result = await this.payouts.closePeriod(body.periodMonth);

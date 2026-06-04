@@ -109,6 +109,32 @@ export interface CreatePersonRequest {
   email?: string;
   roleId?: string | null;
   departmentId?: string | null;
+  /** ТЗ «Команда + доступы» Фаза 2 — привязать карточку к участнику без Person. */
+  linkUserId?: string | null;
+}
+
+// ─── Team roster (объединённый список раздела «Команда») ───
+export interface TeamRosterItemApi {
+  personId: string | null;
+  userId: string | null;
+  fullName: string;
+  email: string | null;
+  roleId: string | null;
+  roleName: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  invitationStatus: 'none' | 'pending' | 'accepted' | 'revoked' | 'expired';
+  invitationId: string | null;
+  systemRole:
+    | 'owner'
+    | 'admin'
+    | 'manager'
+    | 'coo'
+    | 'hr_partner'
+    | 'demo_observer'
+    | null;
+  telegramLinked: boolean;
+  hasPersonCard: boolean;
 }
 
 export interface UpdatePersonRequest {
@@ -259,15 +285,32 @@ export const personsDomainApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  // Бэкенд-контракт: { name, email, primaryDepartmentId, roleId } (CreatePersonSchema).
+  // UI-модель использует fullName/departmentId — мапим имена полей здесь.
   create: (orgId: string, body: CreatePersonRequest) =>
-    apiClient.post<{ person: PersonDomainApi }>('/api/v1/persons', body, {
-      headers: orgHeaders(orgId),
-    }),
+    apiClient.post<{ person: PersonDomainApi }>(
+      '/api/v1/persons',
+      {
+        name: body.fullName,
+        email: body.email,
+        primaryDepartmentId: body.departmentId ?? null,
+        roleId: body.roleId ?? null,
+        ...(body.linkUserId ? { linkUserId: body.linkUserId } : {}),
+      },
+      { headers: orgHeaders(orgId) },
+    ),
 
   update: (orgId: string, id: string, body: UpdatePersonRequest) =>
     apiClient.patch<{ person: PersonDomainApi }>(
       `/api/v1/persons/${encodeURIComponent(id)}`,
-      body,
+      {
+        ...(body.fullName !== undefined ? { name: body.fullName } : {}),
+        ...(body.email !== undefined ? { email: body.email } : {}),
+        ...(body.departmentId !== undefined
+          ? { primaryDepartmentId: body.departmentId }
+          : {}),
+        ...(body.roleId !== undefined ? { roleId: body.roleId } : {}),
+      },
       { headers: orgHeaders(orgId) },
     ),
 
@@ -281,6 +324,14 @@ export const personsDomainApi = {
     apiClient.post<{ ok: true }>(
       `/api/v1/orgs/${encodeURIComponent(orgId)}/invitations`,
       { personId },
+      { headers: orgHeaders(orgId) },
+    ),
+};
+
+export const teamRosterApi = {
+  list: (orgId: string) =>
+    apiClient.get<{ roster: TeamRosterItemApi[] }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/team-roster`,
       { headers: orgHeaders(orgId) },
     ),
 };

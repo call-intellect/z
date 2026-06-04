@@ -14,6 +14,11 @@ import {
   type ThemeBranch,
   type ThemeDynamic,
 } from '@/domain/theme';
+import type {
+  GoalProgressStatus,
+  GoalStatus,
+  GoalTreeRenderNode,
+} from '@/domain/goal';
 
 // ─── SignalType (общие лейблы) ──────────────────────────────────────────────
 
@@ -184,6 +189,39 @@ export type DirectorDashboardRequiresActionApi = {
 export type DirectorDashboardRequiresActionDomain =
   DirectorDashboardRequiresActionApi;
 
+// ─── Goals OKR v2 (Фаза 4) — дерево целей + пульс ─────────────────────────────
+
+/** Key Result в составе узла дерева (только то, что нужно для бара прогресса). */
+export type GoalTreeNodeKeyResultApi = {
+  id: string;
+  name: string;
+  progressPercent: number;
+  unit: string | null;
+};
+
+/** Узел дерева целей дашборда (рекурсивный, с детьми и KR). */
+export type GoalTreeNodeApi = {
+  id: string;
+  name: string;
+  status: 'active' | 'paused' | 'achieved' | 'abandoned';
+  progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
+  cachedAlignment: number | null;
+  weight: number;
+  parentGoalId: string | null;
+  keyResults: GoalTreeNodeKeyResultApi[];
+  children: GoalTreeNodeApi[];
+};
+
+/** Пульс целей — счётчики целей по оси движения. */
+export type GoalsPulseApi = {
+  onTrackCount: number;
+  atRiskCount: number;
+  stalledCount: number;
+  achievedCount: number;
+  droppedCount: number;
+  total: number;
+};
+
 // ─── Citations (Pulse Wave 1 §1.4 — Transparent Sourcing) ───────────────────
 
 export type CitationType = 'ib' | 'theme' | 'ent' | 'mtg' | 'goal' | 'dec';
@@ -237,6 +275,17 @@ export type DirectorDashboardApi = {
   /** Action Center B2 — блок «Требует вашего подтверждения» (per-user).
    *  Опц. для backward compatibility со старыми клиентами. */
   requiresAction?: DirectorDashboardRequiresActionApi;
+  /**
+   * Goals OKR v2 (Фаза 4) — корневые active-цели с детьми и KR. Опц. для
+   * backward compatibility со старым прод-backend (там поля нет). UI скрывает
+   * блок «Дерево целей», если undefined/пусто.
+   */
+  goalsTree?: GoalTreeNodeApi[];
+  /**
+   * Goals OKR v2 (Фаза 4) — пульс целей (счётчики по оси движения). Опц. —
+   * UI скрывает виджет «Пульс целей», если undefined или total===0.
+   */
+  goalsPulse?: GoalsPulseApi;
   /**
    * true — у tenant ещё нет реальных данных (0 сигналов и 0 тем за период).
    * В этом случае все массивы заполнены **синтетическим** примером (sample
@@ -300,6 +349,37 @@ export type DirectorDashboardStrategicAlignmentDomain = {
   alertGoals: DirectorDashboardAlertGoalDomain[];
 };
 
+// ─── Goals OKR v2 (Фаза 4) — domain ───────────────────────────────────────────
+
+export type GoalTreeNodeKeyResultDomain = {
+  id: string;
+  name: string;
+  progressPercent: number;
+  unit: string | null;
+};
+
+/** Узел дерева целей (рекурсивный). `status`/`progressStatus` — типизированы. */
+export type GoalTreeNodeDomain = {
+  id: string;
+  name: string;
+  status: GoalStatus;
+  progressStatus: GoalProgressStatus;
+  cachedAlignment: number | null;
+  weight: number;
+  parentGoalId: string | null;
+  keyResults: GoalTreeNodeKeyResultDomain[];
+  children: GoalTreeNodeDomain[];
+};
+
+export type GoalsPulseDomain = {
+  onTrackCount: number;
+  atRiskCount: number;
+  stalledCount: number;
+  achievedCount: number;
+  droppedCount: number;
+  total: number;
+};
+
 export type DirectorDashboardDomain = {
   period: DirectorDashboardPeriod;
   generatedAt: Date;
@@ -318,6 +398,10 @@ export type DirectorDashboardDomain = {
   /** Action Center B2 — сводка pending-подтверждений текущего пользователя.
    *  null если сервер блок не вернул (старый клиент/контракт). */
   requiresAction: DirectorDashboardRequiresActionDomain | null;
+  /** Goals OKR v2 (Фаза 4) — дерево целей. null, если backend поле не вернул. */
+  goalsTree: GoalTreeNodeDomain[] | null;
+  /** Goals OKR v2 (Фаза 4) — пульс целей. null, если backend поле не вернул. */
+  goalsPulse: GoalsPulseDomain | null;
   /**
    * true — у tenant ещё нет реальных данных, сервер вернул sample story.
    * Frontend рисует баннер «образец» (см. `SampleStoryBanner`).
@@ -377,6 +461,77 @@ function openQuestionFromApi(
   };
 }
 
+// ─── Goals OKR v2 (Фаза 4) — санитайзеры enum + маппер узла ───────────────────
+
+const KNOWN_GOAL_STATUSES: ReadonlySet<string> = new Set([
+  'active',
+  'paused',
+  'achieved',
+  'abandoned',
+]);
+
+function parseGoalStatus(raw: string): GoalStatus {
+  return KNOWN_GOAL_STATUSES.has(raw) ? (raw as GoalStatus) : 'active';
+}
+
+const KNOWN_GOAL_PROGRESS_STATUSES: ReadonlySet<string> = new Set([
+  'on_track',
+  'at_risk',
+  'stalled',
+  'achieved',
+  'dropped',
+]);
+
+function parseGoalProgressStatus(raw: string): GoalProgressStatus {
+  return KNOWN_GOAL_PROGRESS_STATUSES.has(raw)
+    ? (raw as GoalProgressStatus)
+    : 'on_track';
+}
+
+export function goalTreeNodeFromApi(api: GoalTreeNodeApi): GoalTreeNodeDomain {
+  return {
+    id: api.id,
+    name: api.name,
+    status: parseGoalStatus(api.status),
+    progressStatus: parseGoalProgressStatus(api.progressStatus),
+    cachedAlignment: api.cachedAlignment,
+    weight: api.weight,
+    parentGoalId: api.parentGoalId,
+    keyResults: Array.isArray(api.keyResults)
+      ? api.keyResults.map((kr) => ({
+          id: kr.id,
+          name: kr.name,
+          progressPercent: kr.progressPercent,
+          unit: kr.unit,
+        }))
+      : [],
+    children: Array.isArray(api.children)
+      ? api.children.map(goalTreeNodeFromApi)
+      : [],
+  };
+}
+
+/**
+ * Адаптирует узел дерева дашборда в обобщённый render-узел `GoalsTreeView`.
+ * Рекурсивно проходит по `children`. KR пробрасываются как есть.
+ */
+export function goalTreeNodeToRenderNode(
+  node: GoalTreeNodeDomain,
+): GoalTreeRenderNode {
+  return {
+    id: node.id,
+    name: node.name,
+    progressStatus: node.progressStatus,
+    keyResults: node.keyResults.map((kr) => ({
+      id: kr.id,
+      name: kr.name,
+      progressPercent: kr.progressPercent,
+      unit: kr.unit,
+    })),
+    children: node.children.map(goalTreeNodeToRenderNode),
+  };
+}
+
 function strategicAlignmentFromApi(
   api: DirectorDashboardStrategicAlignmentApi,
 ): DirectorDashboardStrategicAlignmentDomain {
@@ -422,6 +577,8 @@ export function directorDashboardFromApi(
           },
         }
       : null,
+    goalsTree: api.goalsTree ? api.goalsTree.map(goalTreeNodeFromApi) : null,
+    goalsPulse: api.goalsPulse ?? null,
     isEmpty: api.isEmpty ?? false,
   };
 }

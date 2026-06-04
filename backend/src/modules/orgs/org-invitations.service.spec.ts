@@ -229,6 +229,101 @@ describe('OrgInvitationsService (β-9)', () => {
         }),
       ).rejects.toMatchObject({ status: 403 });
     });
+
+    it('по personId: берёт email/имя из карточки и сохраняет personId', async () => {
+      prisma.person.findUnique.mockResolvedValue({
+        tenantId: 'org-1',
+        deletedAt: null,
+        userId: null,
+        email: 'Petr@Example.com',
+        name: 'Пётр Петров',
+      });
+      prisma.orgInvitation.create.mockResolvedValue({
+        id: 'inv-p',
+        orgId: 'org-1',
+        email: 'petr@example.com',
+        role: 'manager',
+        status: 'pending',
+        invitedBy: 'u-actor',
+        createdAt: new Date('2026-06-03'),
+        expiresAt: new Date('2026-06-17'),
+        acceptedAt: null,
+        org: { name: 'ООО Ромашка' },
+        inviter: { name: 'Иван' },
+      });
+
+      const svc = make();
+      const result = await svc.createInvitation({
+        orgId: 'org-1',
+        actorUserId: 'u-actor',
+        role: 'manager',
+        personId: 'p-1',
+      });
+
+      expect(result.email).toBe('petr@example.com');
+      expect(prisma.orgInvitation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            personId: 'p-1',
+            email: 'petr@example.com',
+          }),
+        }),
+      );
+    });
+
+    it('по personId: отклоняет карточку из чужой Org (400)', async () => {
+      prisma.person.findUnique.mockResolvedValue({
+        tenantId: 'org-2',
+        deletedAt: null,
+        userId: null,
+        email: 'x@y.com',
+        name: 'Чужой',
+      });
+      const svc = make();
+      await expect(
+        svc.createInvitation({
+          orgId: 'org-1',
+          actorUserId: 'u-actor',
+          role: 'manager',
+          personId: 'p-foreign',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(prisma.orgInvitation.create).not.toHaveBeenCalled();
+    });
+
+    it('по personId: отклоняет несуществующую карточку (400)', async () => {
+      prisma.person.findUnique.mockResolvedValue(null);
+      const svc = make();
+      await expect(
+        svc.createInvitation({
+          orgId: 'org-1',
+          actorUserId: 'u-actor',
+          role: 'manager',
+          personId: 'p-missing',
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('по personId: дедуп — повторное приглашение тому же сотруднику → Conflict', async () => {
+      prisma.person.findUnique.mockResolvedValue({
+        tenantId: 'org-1',
+        deletedAt: null,
+        userId: null,
+        email: null,
+        name: 'Линейный без почты',
+      });
+      prisma.orgInvitation.findFirst.mockResolvedValueOnce({ id: 'inv-existing' });
+      const svc = make();
+      await expect(
+        svc.createInvitation({
+          orgId: 'org-1',
+          actorUserId: 'u-actor',
+          role: 'manager',
+          personId: 'p-1',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.orgInvitation.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─────────────────────────── acceptViaMagicLink ─────────────────

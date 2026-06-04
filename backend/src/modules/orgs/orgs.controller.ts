@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
@@ -20,8 +21,14 @@ import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
+import { CapabilitiesService } from './capabilities.service';
+import {
+  UpsertCapabilitySchema,
+  type UpsertCapabilityDto,
+} from './dto/capability-override.dto';
 import { CreateOrgSchema, type CreateOrgDto } from './dto/create-org.dto';
 import { InviteMemberSchema, type InviteMemberDto } from './dto/invite-member.dto';
+import type { TeamRosterItem } from './dto/team-roster.dto';
 import { UpdateMemberSchema, type UpdateMemberDto } from './dto/update-member.dto';
 import { UpdateOrgSchema, type UpdateOrgDto } from './dto/update-org.dto';
 import { OrgInvitationsService } from './org-invitations.service';
@@ -50,6 +57,8 @@ export class OrgsController {
     @Inject(OrgInvitationsService) private readonly invitations: OrgInvitationsService,
     @Inject(TranscriptCleaningService)
     private readonly transcriptCleaning: TranscriptCleaningService,
+    @Inject(CapabilitiesService)
+    private readonly capabilities: CapabilitiesService,
   ) {}
 
   @Post()
@@ -121,6 +130,15 @@ export class OrgsController {
     return { members };
   }
 
+  @Get(':id/team-roster')
+  async teamRoster(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ roster: TeamRosterItem[] }> {
+    const roster = await this.orgs.listTeamRoster(id, user.id);
+    return { roster };
+  }
+
   @Patch(':id/members/:userId')
   @RequireSubscription()
   async updateMember(
@@ -161,6 +179,7 @@ export class OrgsController {
       email: body.email ?? null,
       name: body.name ?? null,
       role: body.role,
+      personId: body.personId ?? null,
     });
     return { invitation };
   }
@@ -225,6 +244,52 @@ export class OrgsController {
       actorUserId: user.id,
     });
     return { ok: true, removed: result.removed };
+  }
+
+  // ──────────────── ТЗ «Команда + доступы» Фаза 5 — capabilities ────────────────
+
+  @Get(':id/members/:userId/capabilities')
+  async listCapabilities(
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const capabilities = await this.capabilities.listForMember(id, user.id, targetUserId);
+    return { capabilities };
+  }
+
+  @Put(':id/members/:userId/capabilities/:capability')
+  @RequireSubscription()
+  async upsertCapability(
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @Param('capability') capability: string,
+    @Body(new ZodValidationPipe(UpsertCapabilitySchema)) body: UpsertCapabilityDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const item = await this.capabilities.upsert(id, user.id, targetUserId, capability, body);
+    return { item };
+  }
+
+  @Delete(':id/members/:userId/capabilities/:capability')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.OK)
+  async removeCapability(
+    @Param('id') id: string,
+    @Param('userId') targetUserId: string,
+    @Param('capability') capability: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    return this.capabilities.remove(id, user.id, targetUserId, capability);
+  }
+
+  @Get(':id/effective-access')
+  async effectiveAccess(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const overrides = await this.capabilities.getEffectiveOverrides(user.id, id);
+    return { overrides };
   }
 }
 

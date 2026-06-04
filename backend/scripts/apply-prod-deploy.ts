@@ -66,6 +66,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-settings.ts' },
   { phase: 'seed-base', script: 'scripts/seed-admin-settings-billing.ts', hint: '6 ключей billing.* для tier_standard' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
 
@@ -98,6 +99,9 @@ const STEPS: Step[] = [
     // Action Center A1 «лестница доверия» (2026-06-02) — curation-verify
     // (debate-curation-verify[-critic|-supporter|-neutral]).
     'curation',
+    // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
+    // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
+    'goals',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -130,6 +134,21 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-prompt-role-profile-build-fase0d.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-chat-v2-to-pro.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts', args: ['--update-existing'], skipBootstrap: true },
+  // 2026-06-03 — унификация дешёвой модели DeepSeek: все LlmTaskRoute с legacy
+  // `deepseek-chat` → `deepseek-v4-flash` (DeepSeek-V4). Идемпотентен (skip
+  // editedByAdmin; повторный прогон = 0 кандидатов). На чистом старте сиды уже
+  // пишут flash → нечего мигрировать → skipBootstrap. Контекст: probe показал,
+  // что DeepSeek не поддерживает response_format=json_schema (см. deepseek.service.ts).
+  {
+    phase: 'patch',
+    script: 'scripts/patch-deepseek-chat-to-flash.ts',
+    args: ['--apply'],
+    hint: 'deepseek-chat → deepseek-v4-flash во всех LlmTaskRoute',
+    skipBootstrap: true,
+  },
+  // 2026-06-03 — восстановить secondary/tertiary fallback для meeting-report-fast
+  // (нормализованный primary затенял legacy 3-провайдерную цепочку → single-provider timeout)
+  { phase: 'patch', script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts', hint: 'fallback openai+ollama для meeting-report-fast', skipBootstrap: true },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси
@@ -225,6 +244,15 @@ const STEPS: Step[] = [
     hint: 'миграция старых «копий ТехноСтрим» → demo_observer наблюдатели',
     skipBootstrap: true, // На чистой БД нечего мигрировать.
   },
+  // 2026-06-03 — фикс egress-фантомов: вебхук participant_joined создавал
+  // Participant'ов для egress-рекордеров (identity не host:/guest:). Чистим
+  // накопленное (Participant + их MeetingParticipantBehavior). Идемпотентен.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-cleanup-egress-phantom-participants.ts',
+    hint: 'удалить фантомных Participant с identity не host:/guest: (egress)',
+    skipBootstrap: true, // На чистой БД фантомов нет.
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
@@ -298,6 +326,17 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-table-entity-sync.ts',
     hint: 'Smart-tables Фаза 2: graph-driven строки в системные autoCreate-таблицы',
+    skipBootstrap: true,
+  },
+  // Goals OKR v2 (2026-06-02) Фаза 0 — после prisma:push legacy-цели получили
+  // recordedAt=now() от @default(now()). Backfill выставляет recordedAt=createdAt
+  // живым версиям (validUntil/supersededById IS NULL). Идемпотентен. На чистом
+  // старте целей нет → skipBootstrap. ТЗ: plans/tz/2026-06-02-goals-okr-v2.md §2.5.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-goal-v2-defaults.ts',
+    hint: 'Goals OKR v2: recordedAt=createdAt для legacy-целей',
+    args: ['--apply'],
     skipBootstrap: true,
   },
 

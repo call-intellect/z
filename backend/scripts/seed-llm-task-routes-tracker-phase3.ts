@@ -42,7 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       'Tracker Phase 3 part B — автозадачи из встреч (capable tier для structured extraction)',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -56,7 +56,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       'Tracker Phase 3 part B — auto-triage Intake (нужна точная classification + confidence)',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',

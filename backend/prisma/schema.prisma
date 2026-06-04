@@ -741,6 +741,44 @@ enum GoalHorizon {
   sprint
 }
 
+// ──────────────────────────── Goals OKR v2 (2026-06-02) ────────────────────────────
+
+/// Goals OKR v2 — источник появления цели.
+///   - manual — owner завёл руками.
+///   - ai     — специалист 3-14-goals добыл из встреч.
+enum GoalSource {
+  manual
+  ai
+}
+
+/// Goals OKR v2 — жизненный цикл предложения (отдельная ось от GoalStatus).
+///   - suggested — AI-кандидат, виден, но визуально отличим.
+///   - active    — официальная цель (ручная → сразу active).
+///   - dismissed — отклонён человеком.
+enum GoalPromotionState {
+  suggested
+  active
+  dismissed
+}
+
+/// Goals OKR v2 — статус движения для пульса (вычисляется авто, правится руками).
+/// Отдельная ось от GoalStatus (жизненный цикл).
+enum GoalProgressStatus {
+  on_track
+  at_risk
+  stalled
+  achieved
+  dropped
+}
+
+/// Goals OKR v2 — откуда тянуть GoalKeyResult.currentValue автоматически.
+enum GoalKrSourceKind {
+  manual
+  meeting_count
+  issue_rollup
+  metric_entity
+}
+
 /// Тип документа в Document-модели (Фаза 0).
 enum DocumentKind {
   pdf
@@ -1000,6 +1038,11 @@ model User {
   cloneAccessGrantsGiven    CloneAccessGrant[] @relation("CloneAccessGrant_grantedBy")
   /// ТЗ 2026-05-26 — обратная relation для soft-revoke (см. CloneAccessGrant.revokedBy).
   cloneAccessGrantsRevoked  CloneAccessGrant[] @relation("CloneAccessGrant_revokedBy")
+
+  // ── ТЗ «Команда + доступы» Фаза 5 — персональные override доступа ──
+  /// Override'ы доступа, выданные/полученные пользователем (дельта поверх роли/тарифа).
+  capabilityOverridesReceived EmployeeCapabilityOverride[] @relation("ECO_grantedTo")
+  capabilityOverridesGranted  EmployeeCapabilityOverride[] @relation("ECO_grantedBy")
 
   // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
   /// Реферальный профиль пользователя (один user → один Referral).
@@ -2284,6 +2327,9 @@ model Org {
   // ── SBA β-8.3 — Daily operations digest (ежедневный отчёт COO) ──
   dailyOperationsDigests DailyOperationsDigest[]
 
+  // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей ──
+  weeklyGoalsPulseDigests WeeklyGoalsPulseDigest[]
+
   // ── SBA α-3 — Layer 2 ontology extension ──
   vendors  Vendor[]
   events   Event[]
@@ -2382,6 +2428,10 @@ model Org {
   /// CLONE_V2_ENABLED — единственный источник правды о доступе к
   /// person/role-клону. Без CLONE_V2_ENABLED не используется (legacy RBAC).
   cloneAccessGrants CloneAccessGrant[]
+
+  // ── ТЗ «Команда + доступы» Фаза 5 — персональные override доступа ──
+  /// Дельты доступа (allow/deny) поверх дефолта роли/тарифа для сотрудников Org.
+  employeeCapabilityOverrides EmployeeCapabilityOverride[] @relation("OrgEmployeeCapabilityOverrides")
 
   // ── ТЗ 2026-05-27 — Billing/Referral/Dadata/Tochka ──
   /// Юр.реквизиты Org. Заполняются InnLookupService (Точка OpenBanking →
@@ -2574,6 +2624,29 @@ model OrgInvitation {
   @@index([email, status])
   @@index([expiresAt])
   @@index([personId])
+}
+
+/// ТЗ «Команда + доступы» Фаза 5 — персональный override доступа сотрудника
+/// поверх дефолта роли/тарифа. effect='allow' открывает, 'deny' закрывает.
+/// Только небиллинговые «что человек видит» оси (память/панели/граф/чат).
+model EmployeeCapabilityOverride {
+  id              String    @id @default(cuid())
+  tenantId        String
+  grantedToUserId String
+  capability      String
+  effect          String
+  expiresAt       DateTime?
+  grantedById     String
+  grantedAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  revokedBy       String?
+
+  org       Org  @relation("OrgEmployeeCapabilityOverrides", fields: [tenantId], references: [id], onDelete: Cascade)
+  grantedTo User @relation("ECO_grantedTo", fields: [grantedToUserId], references: [id], onDelete: Cascade)
+  grantedBy User @relation("ECO_grantedBy", fields: [grantedById], references: [id])
+
+  @@unique([tenantId, grantedToUserId, capability])
+  @@index([tenantId, grantedToUserId])
 }
 
 // ──────────────────────────── llm-prices (Фаза 0 knowledge-core) ────────────────────────────
@@ -3859,10 +3932,36 @@ model Goal {
   /// через `Issue.goalId`. См. plans/tz/2026-05-23-tracker-phase-1-models-api.md.
   linkedIssues Issue[] @relation("IssueGoal")
 
+  /// Goals OKR v2 (2026-06-02) — источник появления цели. 'manual' (owner завёл) | 'ai' (специалист 3-14 добыл).
+  source            GoalSource         @default(manual)
+  /// Жизненный цикл предложения: suggested (AI-кандидат, виден но отличим) | active (официальная) | dismissed (отклонён человеком). Ручная цель → active сразу.
+  promotionState    GoalPromotionState @default(active)
+  /// Статус движения для пульса (вычисляется авто, правится руками). Отдельная ось от status (жизненного цикла).
+  progressStatus    GoalProgressStatus @default(on_track)
+  /// Провенанс: блоки графа, из которых добыта цель. GIN-индекс — в postgres-init.sql. Пусто для ручных.
+  sourceBlockIds    String[]           @default([])
+  /// Уверенность извлечения 0..1 (для AI). NULL для ручных.
+  confidence        Decimal?           @db.Decimal(4, 3)
+  /// Набор имён полей, «прибитых» ручной правкой — AI их не перетирает (M0).
+  manualOverride    Json               @default("{}")
+  /// bitemporal (паттерн Decision/IdeaBlock) — для «передумали через 2 дня».
+  validFrom         DateTime?
+  validUntil        DateTime?
+  recordedAt        DateTime           @default(now())
+  supersededById    String?
+  supersedes        Goal?              @relation("GoalSupersedes", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedeChain    Goal[]             @relation("GoalSupersedes")
+
+  keyResults        GoalKeyResult[]
+  linkedIdeas       Idea[]             @relation("IdeaGoal")
+  linkedCycles      Cycle[]            @relation("CyclePrimaryGoal")
+
   @@index([tenantId, status])
   @@index([tenantId, archivedAt])
   @@index([tenantId, horizon])
   @@index([tenantId, parentGoalId])
+  @@index([tenantId, promotionState])
+  @@index([tenantId, validUntil])
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;
@@ -3918,6 +4017,93 @@ model GoalAlignmentSnapshot {
   @@index([goalId, createdAt])
   @@index([tenantId, createdAt])
   @@index([tenantId, alertPending])
+}
+
+// ──────────────────────────── Goals OKR v2 (2026-06-02) ────────────────────────────
+
+/// Goals OKR v2 — измеримый ключевой результат (Key Result), 0..N на цель.
+/// Текущее значение кэшируется в `currentValue`, история — в GoalKeyResultCheckpoint
+/// (идиома как GoalAlignmentSnapshot / PersonGoalContribution).
+model GoalKeyResult {
+  id            String   @id @default(cuid())
+  tenantId      String
+  goalId        String
+  goal          Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  /// Текст результата («Провести встречи с клиентами»).
+  name          String
+  /// Единица измерения («встреч», «%», «₽»). NULL — без числа (тогда это веха в Goal, не KR).
+  unit          String?
+  startValue    Decimal  @db.Decimal(18, 4)
+  targetValue   Decimal  @db.Decimal(18, 4)
+  /// Текущее значение — обновляется авто из источника или руками.
+  currentValue  Decimal  @default(0) @db.Decimal(18, 4)
+  /// Откуда тянуть currentValue авто.
+  sourceKind    GoalKrSourceKind @default(manual)
+  /// Параметры источника (например {meetingType, since} или {entityId}). JSON.
+  sourceConfig  Json     @default("{}")
+  source        GoalSource @default(manual)
+  manualOverride Json    @default("{}")
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  checkpoints   GoalKeyResultCheckpoint[]
+
+  @@index([tenantId, goalId])
+  @@index([goalId])
+}
+
+/// Goals OKR v2 — неизменяемая история значений KR (для тренда пульса).
+model GoalKeyResultCheckpoint {
+  id           String   @id @default(cuid())
+  tenantId     String
+  keyResultId  String
+  keyResult    GoalKeyResult @relation(fields: [keyResultId], references: [id], onDelete: Cascade)
+  value        Decimal  @db.Decimal(18, 4)
+  /// Кто/что записал: 'auto' (источник) | 'manual'.
+  recordedBy   String   @default("auto")
+  note         String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([keyResultId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+/// Goals OKR v2 (Фаза 4) — еженедельный «пульс целей». Клон DailyOperationsDigest.
+///
+/// `GoalsPulseService.generate` собирает счётчики целей по progressStatus за
+/// прошедшую неделю и одним LLM-вызовом `goals-pulse-summarize` собирает
+/// связный markdown-нарратив (4-6 разделов + shortSummary).
+///
+/// Идемпотентность — `@@unique([tenantId, isoWeek])`. Cron `goals-pulse`
+/// (@Cron('0 6 * * 1') = пн 09:00 МСК) не создаёт второй дайджест за неделю.
+///
+/// `deliveredAt` — отметка доставки ролям owner/coo (NULL — не доставлено
+/// или тумблер `goals.pulse.deliver_to_telegram` выключен).
+model WeeklyGoalsPulseDigest {
+  id             String    @id @default(cuid())
+  tenantId       String
+  /// ISO-неделя YYYY-WXX (МСК), ЗА которую сделан пульс.
+  isoWeek        String    @db.VarChar(10)
+  /// Связный текст пульса от LLM. Markdown. При неудаче LLM — «сухой» вариант.
+  bodyMarkdown   String    @db.Text
+  /// Счётчики по progressStatus + провенанс: { achieved, on_track, at_risk, stalled, dropped, total, newThisWeek }.
+  metricsJson    Json
+  /// Идентификатор маршрута/модели LLM (`prompt-v1+<model>`). NULL при сухом fallback.
+  llmTaskRouteId String?
+  /// Кратко — для Telegram-рассылки и блока на главной.
+  shortSummary   String?   @db.Text
+  /// Доставка прошла. NULL — ещё не доставлено или выключено.
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
+  /// null для боевых. Фильтр в `resetDemoWorkspace`.
+  externalSource String?
+
+  @@unique([tenantId, isoWeek])
+  @@index([tenantId, isoWeek])
+  @@map("weekly_goals_pulse_digests")
 }
 
 // ──────────────────────────── knowledge-core: retention (Фаза 11) ────────────────────────────
@@ -5582,6 +5768,10 @@ model Idea {
   createdAt             DateTime                     @default(now())
   updatedAt             DateTime                     @updatedAt
 
+  /// Goals OKR v2 (2026-06-02) — гипотеза, двигающая цель (развилка 2).
+  goalId String?
+  goal   Goal?  @relation("IdeaGoal", fields: [goalId], references: [id], onDelete: SetNull)
+
   org            Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cluster        IdeaCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
   currentVersion CardVersion? @relation("IdeaCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
@@ -5591,6 +5781,7 @@ model Idea {
   @@index([tenantId, createdByUserId])
   @@index([tenantId, clusterId])
   @@index([currentVersionId])
+  @@index([tenantId, goalId])
   @@map("ideas")
 }
 
@@ -7759,6 +7950,10 @@ model Cycle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Goals OKR v2 (2026-06-02) — «этот спринт продвигает цель X» (развилка 2).
+  primaryGoalId String?
+  primaryGoal   Goal?   @relation("CyclePrimaryGoal", fields: [primaryGoalId], references: [id], onDelete: SetNull)
+
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   issues  Issue[]
 
@@ -7771,6 +7966,7 @@ model Cycle {
   @@index([projectId, startDate])
   @@index([tenantId])
   @@index([tenantId, completedAt])
+  @@index([tenantId, primaryGoalId])
 }
 
 // ──────────────────────────── Sprints (2026-05-27) ────────────────────────────
@@ -9945,11 +10141,33 @@ enum SystemLogContour {
   SYSTEM
 }
 
+/// Процессный контур (pipeline) = крупная цепочка вызовов сквозь модули.
+/// В отличие от `contour` (роль/зона доступа) описывает ПРОЦЕСС, а не субъекта.
+/// Одна цепочка одного действия объединяется общим `traceId` (напр. mtg_<id>).
+/// План: plans/tz/2026-06-03-logging-pipelines-coverage.md.
+enum SystemLogPipeline {
+  MEETING_LIFECYCLE // создание/старт/join/leave/завершение, LiveKit room/токены/webhooks
+  RECORDING // egress, S3-загрузка дорожек, recording webhooks
+  TRANSCRIPTION // ASR: transcribe, transcript-clean, transcript-index, merge
+  AI_ANALYSIS // chapters, analyze, tasks, custom-report, clip, report-fast, analyze-v2, specialists-combined
+  KNOWLEDGE_GRAPH // ingest→block→distill→linker→entity-resolver→theme, specialists 3-*, rollup, profiles
+  NOTIFICATIONS // push, events/reminders, recognition, concierge, dialog, proactive
+  AUTH // login/guest/sessions/tokens, rbac
+  BILLING // billing/payments, entitlements, провайдеры
+  INTEGRATIONS // webhooks-out, tracker, tables, внешние API
+  ONBOARDING // company-foundation, onboarding, role-map
+  ADMIN // admin/platform операции
+  SCHEDULER // cron'ы, retention, фоновые периодические задачи
+  SYSTEM // прочее / bootstrap / не классифицировано
+}
+
 model SystemLog {
   id           String            @id @default(uuid())
   level        SystemLogLevel
   category     SystemLogCategory @default(SYSTEM)
   contour      SystemLogContour  @default(SYSTEM)
+  /// Процессный контур цепочки (nullable — старые логи и неклассифицированные).
+  pipeline     SystemLogPipeline?
   module       String?
   action       String?
   message      String
@@ -9977,11 +10195,13 @@ model SystemLog {
   @@index([level, createdAt])
   @@index([category, createdAt])
   @@index([contour, createdAt])
+  @@index([pipeline, createdAt])
   @@index([module, createdAt])
   @@index([statusCode, createdAt])
   @@index([userId, createdAt])
   @@index([orgId, createdAt])
   @@index([requestId])
+  @@index([traceId, createdAt])
 }
 
 /// Платформенная key-value таблица настроек (singleton-строки по ключу).

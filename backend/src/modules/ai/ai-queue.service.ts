@@ -57,6 +57,17 @@ const CUSTOM_REPORT_JOB_OPTIONS: JobsOptions = {
 };
 
 /**
+ * Опции для recording.faststart — ffmpeg-ремукс большого MP4, тяжёлый по IO.
+ * 2 попытки (как clip.render); failed оставляем для разбора.
+ */
+const RECORDING_FASTSTART_JOB_OPTIONS: JobsOptions = {
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: { age: 86400, count: 200 },
+  removeOnFail: false,
+};
+
+/**
  * HTTP-side диспетчер для AI-pipeline. Воркеры подписаны в отдельном процессе
  * (`workers/main.ts`), здесь же только enqueue.
  *
@@ -85,6 +96,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
         opts = QUALITY_SCORE_JOB_OPTIONS;
       } else if (name === QUEUE_NAMES.CUSTOM_REPORT) {
         opts = CUSTOM_REPORT_JOB_OPTIONS;
+      } else if (name === QUEUE_NAMES.RECORDING_FASTSTART) {
+        opts = RECORDING_FASTSTART_JOB_OPTIONS;
       } else {
         opts = DEFAULT_JOB_OPTIONS;
       }
@@ -166,7 +179,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const q = map.get(QUEUE_NAMES.QUALITY_SCORE);
     if (!q) throw new Error('AiQueueService: ai.quality-score не инициализирован');
-    const jobId = `quality:${meetingId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `quality_${meetingId}`;
     const payload: AiJobData = { meetingId, attempt: 1 };
     await q.add('quality-score', payload, { jobId });
     this.logger.debug(`enqueue ai.quality-score meeting=${meetingId}`);
@@ -184,7 +198,8 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const q = map.get(QUEUE_NAMES.TRANSCRIPT_CLEAN);
     if (!q) throw new Error('AiQueueService: ai.transcript-clean не инициализирован');
-    const jobId = `transcript-clean:${meetingId}`;
+    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
+    const jobId = `transcript-clean_${meetingId}`;
     const payload: AiJobData = { meetingId, attempt: 1 };
     await q.add('transcript-clean', payload, { jobId });
     this.logger.debug(`enqueue ai.transcript-clean meeting=${meetingId}`);
@@ -279,6 +294,26 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     const payload: ClipRenderJobData = { highlightId, attempt };
     await q.add('clip-render', payload, { jobId });
     this.logger.debug(`enqueue clip.render highlight=${highlightId} attempt=${attempt}`);
+  }
+
+  /**
+   * Фаза 3 (recording-reliability) — постановка faststart-постобработки composite.
+   * jobId фиксированный по meetingId (`faststart_<meetingId>`): повторная
+   * постановка в течение жизни job'а в Redis игнорируется (идемпотентность);
+   * сам ремукс тоже идемпотентен (перезалив того же ключа faststart-версией).
+   * BullMQ 5.x: ':' в jobId требует ровно 3 частей — используем '_'.
+   */
+  async enqueueRecordingFaststart(meetingId: string): Promise<void> {
+    const map = this.queues;
+    if (!map) {
+      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
+    }
+    const q = map.get(QUEUE_NAMES.RECORDING_FASTSTART);
+    if (!q) throw new Error('AiQueueService: recording.faststart не инициализирован');
+    const jobId = `faststart_${meetingId}`;
+    const payload: AiJobData = { meetingId, attempt: 1 };
+    await q.add('faststart', payload, { jobId });
+    this.logger.debug(`enqueue recording.faststart meeting=${meetingId}`);
   }
 
   private async enqueue(queue: QueueName, meetingId: string, attempt: number): Promise<void> {

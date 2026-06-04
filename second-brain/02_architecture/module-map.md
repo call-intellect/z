@@ -2002,14 +2002,85 @@ CyclesController расширен: `GET /cycles/:id/dashboard`, `POST /cycles/:i
 
 [[../index|← index]]
 
-## logging (LoggingModule, 2026-06-01)
+## logging (LoggingModule, 2026-06-01; контуры+мост 2026-06-03)
 
 `backend/src/modules/logging/` — централизованное техническое логирование в БД (`@Global`).
-Pipeline: `LogService.write → in-memory буфер → bulk createMany → SystemLog`. Глобальный
-`RequestLoggingInterceptor` (успешные/медленные запросы) + `AllExceptionsFilter` (4xx/5xx, через
-`@Optional() LogService`). Настройки runtime — `PlatformSetting[logging_settings]` + кэш с reload 30с.
-Ретеншен — `LogCleanupService` (`setInterval` 1ч, advisory-lock). REST `/api/v1/platform/logs/*`
-(super_admin). Контекст — `RequestContextService` (AsyncLocalStorage). Подробнее: [[../01_projects/logging]].
+Pipeline: `LogService.write → in-memory буфер → bulk createMany → SystemLog`. **Мост `DbLoggerBridge`**
+(`app.useLogger` в `main.ts`) дублирует все `this.logger.*` по приложению/воркерам в `SystemLog`.
+`AllExceptionsFilter` (4xx/5xx, через `@Optional() LogService`). HTTP-`RequestLoggingInterceptor`
+**отключён** (2026-06-03, REQUEST не пишется). Настройки runtime — `PlatformSetting[logging_settings]` + reload 30с.
+Ретеншен — `LogCleanupService` (advisory-lock). REST `/api/v1/platform/logs/*` (super_admin), вкл. `/chain?traceId=`.
+Процессные контуры: `SystemLog.pipeline` (enum) + `traceId`; проставляются через **`PipelineRunner`**
+(`log-pipeline.ts`) в воркерах и `LivekitEventsHandler`. Контекст — `RequestContextService` (AsyncLocalStorage,
+`runWith`). Подробнее: [[../01_projects/logging]].
+
+[[../index|← index]]
+
+## Goals OKR v2 — Граф целей (2026-06-02)
+
+**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md). Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` + новый специалист Слоя 3 knowledge-core. Координаты воркера/cron'ов — [[../01_projects/workers-queues]], taskType'ы — [[../01_projects/ai-jobs]].
+
+### `backend/src/modules/goals/` (расширение)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `GoalsService` (расширен) | `goals/services/goals.service.ts` | `supersede()` (новая версия + старой `validUntil`), reparent через `PATCH parentGoalId` с `assertNoCycle`/`assertParentExists`, `mergeManualOverride` на ручной правке. |
+| `GoalKeyResultsService` | `goals/services/goal-key-results.service.ts` | CRUD Key Results; при ручном `currentValue` пишет `GoalKeyResultCheckpoint(recordedBy='manual')` в `$transaction`. |
+| `GoalsController` (расширен) | `goals/goals.controller.ts` | KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState). |
+| DTO | `goals/dto/goals.dto.ts` | Zod-схемы Create/Update KeyResult, Supersede, расширенные Create/Update Goal. |
+| RBAC | `rbac/policies/policy.csv` + ResourceType | ресурс `goal_key_result` (owner r/w/d, admin/manager r). |
+
+### Специалист `3-14-goals` — авто-добыча целей (Слой 3 knowledge-core)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `Specialist314GoalsWorker` | `knowledge-core/workers/specialist-3-14-goals.worker.ts` | Consumer `core.specialist-routing`, jobName-фильтр `'3-14-goals'`, concurrency 2. Триггер: блоки с `signalType ∈ {commitment, plan_item}`. |
+| `Specialist314GoalsService` | `knowledge-core/services/specialist-3-14-goals.service.ts` | `extract → KNN-dedup → hierarchy-арбитр → create`. AI-цель `source='ai', promotionState='suggested'`; promote при `confidence≥0.8` / повторе; cap=7 на горизонт; `manualOverride` уважается. |
+| Промпты | `knowledge-core/prompts/goal-extract.prompt.ts`, `goal-hierarchy-link.prompt.ts` | extract (может вернуть `isGoal=false`) + арбитр родителя. Cache-friendly, strict JSON Schema. |
+| `RouterService` (расширен) | `knowledge-core/services/router.service.ts` | `SPECIALIST.GOALS='3-14-goals'`, PRIORITY 3.8, `matchSpecialists` на commitment+plan_item. |
+| LLM seed | `backend/scripts/seed-llm-task-routes-goals.ts` | 3 taskType (`goal-extract`/`goal-hierarchy-link`/`goals-pulse-summarize`) без anthropic, идемпотентен. |
+
+### Авто-прогресс KR + пульс (cron'ы)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `GoalKrProgressService` + `GoalKrProgressCron` | `goals/cron/goal-kr-progress.cron.ts` (+ сервис) | `@Cron('0 5 * * *')` (ежедн. 05:00 UTC). По `sourceKind` (meeting_count/issue_rollup/metric_entity) пересчитывает `currentValue`, пишет checkpoint при изменении, пересчитывает `progressStatus` по тренду 14д. Метрика `goal_kr_autoprogress_total{source_kind,status}`. |
+| `GoalsPulseService` + `GoalsPulseCron` | `goals/cron/goals-pulse.cron.ts` (+ сервис) | `@Cron('0 6 * * 1')` (пн 06:00 UTC = 09:00 МСК). Агрегат счётчиков по `progressStatus` + LLM `goals-pulse-summarize`; идемпотентность по `(tenantId, isoWeek)` в `WeeklyGoalsPulseDigest`; доставка owner/coo через `ConversationalService.sendNotification(eventType='goals.pulse')`. Тумблеры AdminSetting `goals.pulse.{enabled,deliver_to_telegram}`. Метрики `goals_pulse_{generated,failed,delivered}_total`. Хелпер `common/utils/iso-week.ts`. |
+
+### Мост к гипотезам (Фаза 5)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `IdeasService.linkGoal` | `ideas/...` | `POST /ideas/:id/goal` — привязка гипотезы к цели. |
+| `CyclesService.update` (расширен) | `tracker/...` | `primaryGoalId` в `UpdateCycleSchema` + `CycleResponseDto`. |
+| `GoalsCheckpointProbeHandler` | `knowledge-core/...` (зарегистрирован в `knowledge-core.module`) | `@OnEvent('idea.status_changed')`: при `shipped` + `idea.goalId` → `ProbeService.suggest(reason='goal.kr_checkpoint_suggested')`, НЕ авто-запись KR. `ProbeService` через `@Optional`. |
+
+### Дашборд + Frontend
+
+- `DirectorDashboardDto.goalsTree?` / `goalsPulse?` (наполняются `fetchGoalsTree`/`fetchGoalsPulse` в `getDirectorView`).
+- Frontend: `GoalsPulseWidget`, `GoalsTreeView`, переключатель «Список/Дерево» на `/goals`, `GoalPickerDialog`; виджет+дерево на дашборде. Мапперы `progressStatusChipClasses`/`progressStatusTone`/`buildTree`, `krProgressBarColor`.
+
+[[../index|← index]]
+
+## Команда + персональные доступы сотрудников (Фазы 0–5, 2026-06-04)
+
+**Источник:** [`plans/tz/2026-06-03-team-section-and-employee-access.md`](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs` / `persons` / `users` (backend) + `structure` / `settings` (frontend). Управление участниками и приглашениями переехало из Настроек в раздел «Команда». Эндпоинты — [[../01_projects/api-layer]], страницы — [[../01_projects/frontend-pages]], модель — [[data-model]] §EmployeeCapabilityOverride.
+
+### `backend/src/modules/orgs/` (расширение)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `OrgsService.listTeamRoster` | `orgs/orgs.service.ts` | **`GET /api/v1/orgs/:id/team-roster`** — объединённый ростер: все `Person` ⊕ участники (`Membership`) без карточки. Поля `personId/userId/fullName/email/roleId/roleName/departmentId/departmentName/invitationStatus/systemRole/telegramLinked/hasPersonCard/invitationId`. Self-contained (без cross-module DI — во избежание Nest-цикла). |
+| `CapabilitiesService` | `orgs/services/capabilities.service.ts` (новый) | CRUD персональных override доступа + расчёт эффективного доступа. Override — дельта `allow`/`deny` поверх дефолта роли/тарифа (тариф не регрессит). |
+| `OrgsController` (расширен) | `orgs/orgs.controller.ts` | **`GET/PUT/DELETE /api/v1/orgs/:id/members/:userId/capabilities[/:capability]`** + **`GET /api/v1/orgs/:id/effective-access`** (owner/admin). Капабилити-подмножество `memory:regulations`/`memory:entities`/`feature:graph`/`panel:operations`. |
+
+### `backend/src/modules/persons/` (расширение)
+
+- `POST /api/v1/persons` принимает `linkUserId` — привязка создаваемой карточки сотрудника к существующему участнику (`Membership.userId`).
+
+### Приглашение по `personId` (Фаза 0)
+
+- `InviteMemberSchema.personId` + `createInvitation` резолвит `Person`, дедуп pending по `personId`, сохраняет `personId` в `OrgInvitation` (поле уже было в схеме, см. [[data-model]] §Фаза 0).
 
 [[../index|← index]]
 

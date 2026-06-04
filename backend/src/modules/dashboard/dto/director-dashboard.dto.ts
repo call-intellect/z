@@ -150,6 +150,52 @@ export interface DirectorDashboardRequiresActionDto {
   };
 }
 
+/**
+ * Goals OKR v2 Фаза 4 — узел дерева целей для дашборда.
+ *
+ * Дерево active+живых целей (`promotionState='active'`, `validUntil=null`,
+ * `archivedAt=null`). Корни — цели с `parentGoalId=null` или чей родитель
+ * не входит в набор активных целей. `keyResults[].progressPercent` —
+ * clamp 0..100 от (current-start)/(target-start).
+ */
+export interface DirectorDashboardGoalTreeKrDto {
+  id: string;
+  name: string;
+  /** Прогресс KR в %, 0..100 (clamp). */
+  progressPercent: number;
+  /** Единица измерения KR (для UI). null — без числа. */
+  unit: string | null;
+}
+
+export interface DirectorDashboardGoalTreeNodeDto {
+  id: string;
+  name: string;
+  /** Жизненный цикл (GoalStatus): active|paused|achieved|abandoned. */
+  status: string;
+  /** Ось движения для пульса (GoalProgressStatus). */
+  progressStatus: string;
+  /** Кэш «движения к цели» 0..100. null — ещё не считалось. */
+  cachedAlignment: number | null;
+  /** Вес цели в среднем «Согласованность стратегии». */
+  weight: number;
+  parentGoalId: string | null;
+  keyResults: DirectorDashboardGoalTreeKrDto[];
+  children: DirectorDashboardGoalTreeNodeDto[];
+}
+
+/**
+ * Goals OKR v2 Фаза 4 — счётчики недели по progressStatus для виджета
+ * «Пульс целей» на дашборде.
+ */
+export interface DirectorDashboardGoalsPulseDto {
+  onTrackCount: number;
+  atRiskCount: number;
+  stalledCount: number;
+  achievedCount: number;
+  droppedCount: number;
+  total: number;
+}
+
 export interface DirectorDashboardDto {
   period: 'week' | 'month';
   generatedAt: string;
@@ -173,6 +219,12 @@ export interface DirectorDashboardDto {
   /** Action Center B2: блок «Требует вашего подтверждения» (per-user).
    *  Опциональный — best-effort, не валит дашборд при ошибке сервиса. */
   requiresAction?: DirectorDashboardRequiresActionDto;
+  /** Goals OKR v2 Фаза 4: дерево active-целей с KR-прогрессом и progressStatus.
+   *  Опциональный для backward-compat (как strategicAlignment). */
+  goalsTree?: DirectorDashboardGoalTreeNodeDto[];
+  /** Goals OKR v2 Фаза 4: счётчики недели по progressStatus для виджета «Пульс
+   *  целей». Опциональный для backward-compat. */
+  goalsPulse?: DirectorDashboardGoalsPulseDto;
   /**
    * true — у tenant ещё нет реальных данных (0 сигналов и 0 тем за период).
    * В этом случае все массивы заполнены **синтетическим** примером (sample

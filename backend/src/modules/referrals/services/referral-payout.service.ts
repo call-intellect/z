@@ -153,7 +153,8 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     }
     try {
       await this.payoutQueue.add('invoice-paid', payload, {
-        jobId: `invoice:${payload.invoiceId}`,
+        // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
+        jobId: `invoice_${payload.invoiceId}`,
       });
     } catch (err) {
       this.logger.error(

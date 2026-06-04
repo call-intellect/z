@@ -87,6 +87,8 @@ export interface IdeaListItem {
   firstProposedAt: Date;
   lastDiscussedAt: Date;
   createdByUserId: string | null;
+  /** Goals OKR v2 — цель, которую двигает эта гипотеза (null = не привязана). */
+  goalId: string | null;
 }
 
 export interface IdeaDetail extends IdeaListItem {
@@ -135,6 +137,7 @@ export function mapIdeaListItem(api: IdeaListItemApi): IdeaListItem {
     firstProposedAt: new Date(api.firstProposedAt),
     lastDiscussedAt: new Date(api.lastDiscussedAt),
     createdByUserId: api.createdByUserId,
+    goalId: api.goalId ?? null,
   };
 }
 

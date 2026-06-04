@@ -60,6 +60,7 @@
 | [[specialist-3-5-insights]] | event/cron | `core.specialist-routing` + `0 */6 * * *` | ✅ implemented | 2026-05-29 |
 | [[specialist-3-6-ideas]] | event | `core.specialist-routing` → `3-6-ideas` | ⚠️ partial | 2026-05-29 |
 | [[specialist-gamma-1-skill-clone]] | event/cron | debounce 60s + cron `0 6 * * SUN` | ⚠️ partial | 2026-05-29 |
+| [[goals-auto-lifecycle]] | event/cron | `core.specialist-routing` → `3-14-goals` + cron'ы `0 5 * * *` / `0 6 * * 1` | ⚠️ partial | 2026-06-02 |
 
 ## Группа Е. Трекер
 
@@ -83,10 +84,12 @@
 | Статус | Кол-во |
 |---|---|
 | ✅ implemented | 21 |
-| ⚠️ partial | 6 |
+| ⚠️ partial | 7 |
 | ❌ designed_only | 0 |
 | 🗑 deprecated | 0 |
-| **Всего процессов в реестре** | **27** |
+| **Всего процессов в реестре** | **28** |
+
+> +1 процесс к 2026-06-02: [[goals-auto-lifecycle]] (Goals OKR v2) — ⚠️ partial (cron'ы проверены юнит-тестами, прод-прогон по расписанию).
 
 ⭐ — эталонные процессы Волны 1.
 
@@ -96,7 +99,7 @@
 |---|---|
 | webhook | meeting-end-and-recording, meeting-in-progress, meeting-post-processing, telegram-inbox-ingestion |
 | cron | coo-daily-digest, email-to-task, recording-retention, reframing-cycle, theme-clustering |
-| event | card-rollup-v2, notification-dispatch, probe-question-flow, raw-event-to-graph, referral-program, specialist-3-1..3-6, specialist-gamma-1-skill-clone, tracker-to-knowledge |
+| event | card-rollup-v2, notification-dispatch, probe-question-flow, raw-event-to-graph, referral-program, specialist-3-1..3-6, specialist-gamma-1-skill-clone, goals-auto-lifecycle, tracker-to-knowledge |
 | user_action | billing-cycle-tochka, inapp-free-note-ingestion, issue-lifecycle, meeting-create-and-invite, signup-and-onboarding-wizard |
 
 ---

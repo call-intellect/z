@@ -24,8 +24,11 @@ export interface LlmTool {
  * Формат ответа модели.
  *  - `text` — обычный текст (default).
  *  - `json_object` — модель обязана вернуть валидный JSON; схема не проверяется.
- *  - `json_schema` — strict JSON Schema. Поддерживается DeepSeek V4 и OpenAI
- *    Responses API. Если провайдер не умеет — бросает `LlmFormatNotSupportedError`.
+ *  - `json_schema` — strict JSON Schema. Поддерживается OpenAI Responses API.
+ *    DeepSeek-V4 его НЕ поддерживает (probe 2026-06-03: 400 «This response_format
+ *    type is unavailable now», даже flash) — `deepseek.service.ts` для DeepSeek
+ *    прозрачно конвертирует json_schema в tool-путь (tools + tool_choice='auto').
+ *    Если провайдер не умеет вообще — бросает `LlmFormatNotSupportedError`.
  */
 export type LlmResponseFormat =
   | { type: 'text' }

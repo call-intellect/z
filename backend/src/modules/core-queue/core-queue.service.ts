@@ -10,6 +10,7 @@ import { type JobsOptions, Queue } from 'bullmq';
 
 import { TypedConfigService } from '../../common/config/index';
 import { RedisService } from '../../common/redis/redis.service';
+import { RequestContextService } from '../logging/request-context.service';
 
 import {
   type BlockDistillJobData,
@@ -58,7 +59,21 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Optional() @Inject(TypedConfigService) private readonly cfg?: TypedConfigService,
+    @Optional() @Inject(RequestContextService) private readonly ctx?: RequestContextService,
   ) {}
+
+  /**
+   * Авто-стамп traceId из текущего ALS-контекста в payload джоба. Так trace
+   * встречи (mtg_<id>) протекает по всей граф-цепочке: каждый воркер берёт
+   * traceId из payload (`deriveTraceFromJob`) и при дальнейшем enqueue
+   * ре-стампит его. Если контекста/trace нет или traceId уже задан — no-op.
+   */
+  private stamp<T extends object>(payload: T): T {
+    const traceId = this.ctx?.traceId;
+    if (!traceId) return payload;
+    if ((payload as Record<string, unknown>)['traceId']) return payload;
+    return { ...payload, traceId } as T;
+  }
 
   onModuleInit(): void {
     const connection = this.redis.client;
@@ -114,7 +129,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       ? `raw_${rawEventId}_v2_${opts.suffix}`
       : `raw_${rawEventId}`;
     const payload: RawEventJobData = { rawEventId };
-    await q.add('raw-received', payload, { jobId });
+    await q.add('raw-received', this.stamp(payload), { jobId });
     this.logger.debug(`enqueue core.raw-events rawEventId=${rawEventId} jobId=${jobId}`);
   }
 
@@ -138,7 +153,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
         : this.cfg?.knowledgeCore.distillDebounceMs ?? 30_000;
     const jobId = `block_distill_${blockId}`;
     const payload: BlockDistillJobData = { blockId };
-    await q.add('block-distill', payload, { jobId, delay });
+    await q.add('block-distill', this.stamp(payload), { jobId, delay });
     this.logger.debug(
       `enqueue core.block-distill blockId=${blockId} delay=${delay}ms`,
     );
@@ -153,7 +168,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const q = this.requireQueue(CORE_QUEUE_NAMES.BLOCK_LINKER);
     const jobId = `block_linker_${blockId}`;
     const payload: BlockLinkerJobData = { blockId };
-    await q.add('block-linker', payload, { jobId });
+    await q.add('block-linker', this.stamp(payload), { jobId });
     this.logger.debug(`enqueue core.block-linker blockId=${blockId}`);
   }
 
@@ -166,7 +181,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const q = this.requireQueue(CORE_QUEUE_NAMES.ENTITY_RESOLVER);
     const jobId = `entity_resolver_${entityId}`;
     const payload: EntityResolverJobData = { entityId };
-    await q.add('entity-resolver', payload, { jobId });
+    await q.add('entity-resolver', this.stamp(payload), { jobId });
     this.logger.debug(`enqueue core.entity-resolver entityId=${entityId}`);
   }
 
@@ -189,7 +204,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
         : this.cfg?.knowledgeCore.cardRollupV2DebounceMs ?? 60_000;
     const jobId = `card_rollup_v2_${cardId}`;
     const payload: CardRollupV2JobData = { cardId, reason: opts?.reason };
-    await q.add('card-rollup-v2', payload, { jobId, delay });
+    await q.add('card-rollup-v2', this.stamp(payload), { jobId, delay });
     this.logger.debug(
       `enqueue core.card-rollup-v2 cardId=${cardId} delay=${delay}ms reason=${opts?.reason ?? 'n/a'}`,
     );
@@ -215,7 +230,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
         : this.cfg?.knowledgeCore.meetingAnalyzeV2DebounceMs ?? 120_000;
     const jobId = `meeting_analyze_v2_${meetingId}`;
     const payload: MeetingAnalyzeV2JobData = { meetingId };
-    await q.add('meeting-analyze-v2', payload, { jobId, delay });
+    await q.add('meeting-analyze-v2', this.stamp(payload), { jobId, delay });
     this.logger.debug(
       `enqueue core.meeting-analyze-v2 meetingId=${meetingId} delay=${delay}ms`,
     );
@@ -251,7 +266,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     if (opts?.delayMs !== undefined && opts.delayMs > 0) {
       jobOpts.delay = opts.delayMs;
     }
-    await q.add('meeting-report-fast', payload, jobOpts);
+    await q.add('meeting-report-fast', this.stamp(payload), jobOpts);
     this.logger.debug(
       `enqueue core.meeting-report-fast meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
     );
@@ -279,7 +294,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     if (opts?.delayMs !== undefined && opts.delayMs > 0) {
       jobOpts.delay = opts.delayMs;
     }
-    await q.add('specialists-combined', payload, jobOpts);
+    await q.add('specialists-combined', this.stamp(payload), jobOpts);
     this.logger.debug(
       `enqueue core.specialists-combined meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
     );
@@ -308,7 +323,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       ...(args.manual ? { manual: true } : {}),
       ...(args.windowDays !== undefined ? { windowDays: args.windowDays } : {}),
     };
-    await q.add('strategic-alignment', payload, { jobId });
+    await q.add('strategic-alignment', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.strategic-alignment goalId=${args.goalId} jobId=${jobId} manual=${args.manual ? 'true' : 'false'}`,
     );
@@ -341,7 +356,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       triggerReason: args.triggerReason,
       ...(args.triggeredByUserId ? { triggeredByUserId: args.triggeredByUserId } : {}),
     };
-    await q.add('role-profile-build', payload, { jobId });
+    await q.add('role-profile-build', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.role-profile roleId=${args.roleId} jobId=${jobId} trigger=${args.triggerReason}`,
     );
@@ -383,7 +398,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       tenantId: args.tenantId,
       documentId: args.documentId,
     };
-    await q.add('document-uploaded', payload, { jobId });
+    await q.add('document-uploaded', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.document-uploaded documentId=${args.documentId} tenantId=${args.tenantId}`,
     );
@@ -409,7 +424,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       uploaderPersonId: args.uploaderPersonId,
       content: args.content,
     };
-    await q.add('dump-created', payload, { jobId });
+    await q.add('dump-created', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.dump-created documentId=${args.documentId} tenantId=${args.tenantId}`,
     );
@@ -439,7 +454,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       signalType: args.signalType,
       specialistName: args.specialistName,
     };
-    await q.add(args.specialistName, payload, { jobId });
+    await q.add(args.specialistName, this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.specialist-routing specialist=${args.specialistName} blockId=${args.blockId} signalType=${args.signalType} jobId=${jobId}`,
     );
@@ -478,7 +493,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     if (args.delayMs !== undefined && args.delayMs > 0) {
       opts.delay = args.delayMs;
     }
-    await q.add(args.specialistName, payload, opts);
+    await q.add(args.specialistName, this.stamp(payload), opts);
     this.logger.debug(
       `enqueue core.specialist-routing (custom jobId) specialist=${args.specialistName} blockId=${args.blockId} jobId=${args.jobId} delay=${args.delayMs ?? 0}ms`,
     );
@@ -504,7 +519,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       tenantId: args.tenantId,
       ...(args.reason ? { reason: args.reason } : {}),
     };
-    await q.add('3-13-sprint-helper', payload, { jobId });
+    await q.add('3-13-sprint-helper', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue sprint-helper cycleId=${args.cycleId} reason=${args.reason ?? '—'} jobId=${jobId}`,
     );
@@ -537,7 +552,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       tenantId: args.tenantId,
       ...(args.reason ? { reason: args.reason } : {}),
     };
-    await q.add('rebuild-knowledge-profile', payload, { jobId, delay });
+    await q.add('rebuild-knowledge-profile', this.stamp(payload), { jobId, delay });
     this.logger.debug(
       `enqueue core.knowledge-clone-rebuild personId=${args.personId} delay=${delay}ms reason=${args.reason ?? 'n/a'}`,
     );
@@ -561,7 +576,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     if (args.delayMs !== undefined && args.delayMs > 0) {
       opts.delay = args.delayMs;
     }
-    await q.add('probe-event', payload, opts);
+    await q.add('probe-event', this.stamp(payload), opts);
     this.logger.debug(
       `enqueue core.probe-events probeEventId=${args.probeEventId} delay=${args.delayMs ?? 0}ms`,
     );
@@ -580,7 +595,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const bucket = Math.floor(Date.now() / 60_000);
     const jobId = `idea_cluster_${args.tenantId}_${bucket}`;
     const payload: IdeaClustererJobData = { tenantId: args.tenantId };
-    await q.add('idea-clusterer', payload, { jobId });
+    await q.add('idea-clusterer', this.stamp(payload), { jobId });
     return { jobId };
   }
 
@@ -608,7 +623,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
       tenantId: args.tenantId,
       ...(args.reason ? { reason: args.reason } : {}),
     };
-    await q.add('rebuild-skill-profile', payload, { jobId, delay });
+    await q.add('rebuild-skill-profile', this.stamp(payload), { jobId, delay });
     this.logger.debug(
       `enqueue core.skill-profile-rebuild profileId=${args.profileId} delay=${delay}ms reason=${args.reason ?? 'n/a'}`,
     );
@@ -658,7 +673,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
         jobId = `recognition_weekly_${args.toUserId}_${ctxKey}`;
         break;
     }
-    await q.add('recognition-formulate', args, { jobId });
+    await q.add('recognition-formulate', this.stamp(args), { jobId });
     this.logger.debug(
       `enqueue core.recognition-formulate type=${args.type} toUserId=${args.toUserId} jobId=${jobId}`,
     );
@@ -687,7 +702,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     }
     const hashHex = hash.toString(16).padStart(8, '0').slice(0, 12);
     const jobId = `push_${data.userId}_${hashHex}_${bucket}`;
-    await q.add('push-send', data, { jobId });
+    await q.add('push-send', this.stamp(data), { jobId });
     this.logger.debug(
       `enqueue core.push-send userId=${data.userId} jobId=${jobId}`,
     );
@@ -706,7 +721,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     const q = this.requireQueue(CORE_QUEUE_NAMES.EVENT_REMINDERS);
     const jobId = `event_reminder_${args.reminderId}`;
     const payload: EventReminderJobData = { reminderId: args.reminderId };
-    await q.add('event-reminder', payload, { jobId });
+    await q.add('event-reminder', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.event-reminders reminderId=${args.reminderId} jobId=${jobId}`,
     );

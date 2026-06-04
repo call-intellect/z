@@ -44,7 +44,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§2.2 short analytical summary + γ-3 sub-TZ §9',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',

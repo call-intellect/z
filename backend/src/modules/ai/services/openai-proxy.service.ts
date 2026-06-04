@@ -9,6 +9,7 @@ import type {
   LlmToolCall,
 } from './llm.types';
 import { LlmError } from './llm.types';
+import { toOpenAiStrictSchema } from './strict-json-schema.util';
 
 /**
  * OpenAI Responses API через `proxy.agent-lia.ru`.
@@ -85,7 +86,10 @@ export class OpenAiProxyService {
             type: 'json_schema',
             name: fmt.name,
             strict: fmt.strict,
-            schema: fmt.schema,
+            // OpenAI strict требует additionalProperties:false + required со
+            // всеми ключами на каждом объекте. Наши схемы (Zod optional/nullable
+            // + free-form metadata) этого не дают — нормализуем перед отправкой.
+            schema: fmt.strict ? toOpenAiStrictSchema(fmt.schema) : fmt.schema,
           },
         };
       }

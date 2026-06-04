@@ -2,8 +2,10 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
 /**
@@ -19,6 +21,9 @@ export class NotifyWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotifyWorker.name);
   private worker: Worker<AiJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -27,7 +32,10 @@ export class NotifyWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.NOTIFY,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.meeting(SystemLogPipeline.NOTIFICATIONS, 'ai.notify', job.data.meetingId, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

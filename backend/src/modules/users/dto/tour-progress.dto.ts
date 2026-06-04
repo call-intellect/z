@@ -18,7 +18,13 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 /** Идентификаторы туров, поддерживаемых системой. Закрытый список. */
-export const TourIdSchema = z.enum(['welcome', 'project', 'meeting']);
+export const TourIdSchema = z.enum([
+  'welcome',
+  'project',
+  'meeting',
+  'overview',
+  'demo',
+]);
 export type TourId = z.infer<typeof TourIdSchema>;
 
 /**
@@ -52,6 +58,8 @@ export const TourProgressResponseSchema = z.object({
   welcome: TourEntrySchema.optional(),
   project: TourEntrySchema.optional(),
   meeting: TourEntrySchema.optional(),
+  overview: TourEntrySchema.optional(),
+  demo: TourEntrySchema.optional(),
 });
 
 export type TourProgressResponse = z.infer<typeof TourProgressResponseSchema>;

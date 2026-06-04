@@ -5,6 +5,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { S3Service } from '../../recordings/s3.service';
 import { AiQueueService } from '../ai-queue.service';
 
+import type { DialogTurn } from './prompts/common';
+
 /**
  * HTTP-side сервис для фазы D (sub-TZ D §8).
  *
@@ -29,20 +31,25 @@ export class TranscriptCleaningService {
   ) {}
 
   /**
-   * Presigned URL на merged-json транскрипта (cleaned=false / default) или
-   * cleaned-json (cleaned=true). Только для хоста встречи (Meeting.ownerId).
+   * Транскрипт встречи для UI — массив реплик (`turns`). Только для хоста
+   * встречи (Meeting.ownerId).
    *
-   * Если `cleaned=true` и `cleaningStatus !== 'ready'` — `404` (NotFound) с
-   * полем `reason: 'pending'|'not_started'|'failed'`. Это даёт UI'ю явный
-   * сигнал, что нужно либо ждать, либо нажать «Очистить».
+   *   - `cleaned=false` (default) — оригинал из БД-колонки `Transcript.turns`
+   *     (источник правды; не зависит от S3).
+   *   - `cleaned=true` — очищенный транскрипт из `cleaned.json` (S3). Если
+   *     `cleaningStatus !== 'ready'` — `404` (NotFound) с полем
+   *     `reason: 'pending'|'not_started'|'failed'`, чтобы UI понимал: ждать
+   *     или нажать «Очистить».
+   *
+   * Формат `turns` (`DialogTurn`) совпадает с фронтовым `TranscriptTurn`
+   * (`{ speaker, text, startSec, endSec }`) — маппинг 1:1.
    */
   async getTranscript(args: {
     meetingId: string;
     userId: string;
     cleaned: boolean;
   }): Promise<{
-    url: string;
-    expiresAt: string;
+    turns: DialogTurn[];
     durationSeconds: number | null;
     cleaned: boolean;
   }> {
@@ -55,11 +62,10 @@ export class TranscriptCleaningService {
       throw new ForbiddenException('not_meeting_host');
     }
     const t = meeting.transcript;
-    if (!t || !t.mergedS3Url) {
+    if (!t || t.turns === null) {
       throw new NotFoundException({ reason: 'transcript_not_ready' });
     }
 
-    let key: string;
     if (args.cleaned) {
       const status = t.cleaningStatus ?? 'not_started';
       if (status !== 'ready' || !t.cleanedS3Url) {
@@ -67,17 +73,18 @@ export class TranscriptCleaningService {
           reason: status === 'ready' ? 'not_started' : status,
         });
       }
-      key = t.cleanedS3Url;
-    } else {
-      key = t.mergedS3Url;
+      const cleanedDoc = await this.s3.getJson<{ turns?: DialogTurn[] }>(t.cleanedS3Url);
+      return {
+        turns: cleanedDoc?.turns ?? [],
+        durationSeconds: t.totalDurationSeconds ?? null,
+        cleaned: true,
+      };
     }
 
-    const presigned = await this.s3.presignGet(key);
     return {
-      url: presigned.url,
-      expiresAt: presigned.expiresAt.toISOString(),
+      turns: (t.turns as unknown as DialogTurn[]) ?? [],
       durationSeconds: t.totalDurationSeconds ?? null,
-      cleaned: args.cleaned,
+      cleaned: false,
     };
   }
 

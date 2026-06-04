@@ -191,15 +191,41 @@ export class PersonsService {
     if (args.body.roleId) {
       await this.assertRoleExists(args.tenantId, args.body.roleId);
     }
+    // ТЗ «Команда + доступы» Фаза 2 — привязка к существующему участнику.
+    if (args.body.linkUserId) {
+      const membership = await this.prisma.membership.findUnique({
+        where: {
+          orgId_userId: { orgId: args.tenantId, userId: args.body.linkUserId },
+        },
+        select: { userId: true },
+      });
+      if (!membership) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'member_not_found', message: 'Участник не найден в этой компании' },
+        });
+      }
+      const existing = await this.prisma.person.findFirst({
+        where: { tenantId: args.tenantId, userId: args.body.linkUserId, deletedAt: null },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ConflictException({
+          ok: false,
+          error: { code: 'person_already_linked', message: 'У этого участника уже есть карточка сотрудника' },
+        });
+      }
+    }
     const now = new Date();
     try {
       const personId = await this.prisma.$transaction(async (tx) => {
         const person = await tx.person.create({
           data: {
             tenantId: args.tenantId,
-            userId: null,
+            userId: args.body.linkUserId ?? null,
             name: args.body.name,
-            email: args.body.email,
+            // Колонка non-null; при отсутствии email сохраняем '' (как quickCreate).
+            email: args.body.email ?? '',
             primaryDepartmentId: args.body.primaryDepartmentId ?? null,
           },
         });

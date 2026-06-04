@@ -1,0 +1,28 @@
+{
+  "fixtureId": "01-meetings-100-quarter",
+  "blockName": "План на квартал",
+  "signalType": "commitment",
+  "criticalQuestion": "Какая цель на квартал?",
+  "trustedAnswer": "Нужно 100 встреч с потенциальными клиентами за квартал, сейчас около 20.",
+  "tags": [
+    "продажи",
+    "квартал"
+  ],
+  "evidenceQuotes": [
+    "Сергей: к концу квартала нам нужно 100 встреч с потенциальными клиентами, сейчас около 20."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "встреч",
+      "100"
+    ],
+    "expectedHorizon": "quarterly",
+    "hasMeasurable": true,
+    "forbiddenWords": [
+      "сделать фичу",
+      "провести встречу"
+    ]
+  },
+  "category": "valid"
+}

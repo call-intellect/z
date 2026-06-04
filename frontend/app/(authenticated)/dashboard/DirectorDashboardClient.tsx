@@ -42,6 +42,7 @@ import {
   SIGNAL_COUNTERS_BUCKET_ORDER,
   directorDashboardFromApi,
   entityTypeLabel,
+  goalTreeNodeToRenderNode,
   signalTypeLabel,
   type DirectorDashboardDomain,
   type DirectorDashboardEntityDomain,
@@ -74,6 +75,8 @@ import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
+import { GoalsTreeView } from '../goals/GoalsTreeView';
+import { GoalsPulseWidget } from './widgets/GoalsPulseWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
 import { QualityScoreWidget } from './widgets/QualityScoreWidget';
@@ -711,8 +714,22 @@ function GoalsTab({
           data={data?.strategicAlignment}
           loading={loading}
         />
+        <GoalsPulseWidget data={data?.goalsPulse} loading={loading} />
         <QualityScoreWidget />
       </div>
+      {data?.goalsTree && data.goalsTree.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-border-subtle/60 bg-bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Target size={16} className="text-accent" />
+            <h3 className="text-base font-medium text-fg-primary">
+              Дерево целей
+            </h3>
+          </div>
+          <GoalsTreeView
+            nodes={data.goalsTree.map(goalTreeNodeToRenderNode)}
+          />
+        </div>
+      )}
       <div className="flex flex-wrap gap-4">
         <TabBottomLink href="/goals" label="Открыть /goals →" />
         <TabBottomLink href="/meetings" label="Открыть /meetings →" />

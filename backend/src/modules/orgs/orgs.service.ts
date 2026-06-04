@@ -21,6 +21,8 @@ import { SubscriptionService } from '../billing/services/subscription.service';
 import { RbacService } from '../rbac/rbac.service';
 import { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
 
+import type { TeamRosterItem } from './dto/team-roster.dto';
+
 /**
  * Бизнес-сервис Org / Membership.
  *
@@ -182,6 +184,118 @@ export class OrgsService {
       joinedAt: m.joinedAt.toISOString(),
       invitedBy: m.invitedBy,
     }));
+  }
+
+  /**
+   * ТЗ «Команда + доступы» Фаза 2 — объединённый ростер: все Person Org ⊕
+   * участники без связанной карточки (Person.userId). Видит любой участник
+   * Org (действия гейтятся ролью на уровне отдельных эндпоинтов). Логика
+   * текущей должности зеркалит persons.service (appointment → personRole).
+   */
+  async listTeamRoster(orgId: string, userId: string): Promise<TeamRosterItem[]> {
+    const ctx = await this.rbac.loadContext(userId, orgId);
+    if (!ctx) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'no_membership', message: 'Нет доступа к этой компании' },
+      });
+    }
+
+    const [persons, memberships] = await Promise.all([
+      this.prisma.person.findMany({
+        where: { tenantId: orgId, deletedAt: null },
+        orderBy: [{ name: 'asc' }],
+        include: {
+          primaryDepartment: { select: { id: true, name: true } },
+          personRoles: {
+            where: { validTo: null },
+            include: { role: { select: { id: true, name: true } } },
+            orderBy: { validFrom: 'desc' },
+            take: 1,
+          },
+          appointments: {
+            where: { validTo: null, status: { not: 'former' } },
+            include: { role: { select: { id: true, name: true } } },
+            orderBy: { validFrom: 'desc' },
+            take: 1,
+          },
+          invitations: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { id: true, status: true },
+          },
+        },
+      }),
+      this.prisma.membership.findMany({
+        where: { orgId },
+        include: { user: { select: { id: true, email: true, name: true } } },
+        orderBy: { joinedAt: 'asc' },
+      }),
+    ]);
+
+    const membershipByUserId = new Map(memberships.map((m) => [m.userId, m]));
+
+    const userIds = [
+      ...new Set([
+        ...persons.flatMap((p) => (p.userId ? [p.userId] : [])),
+        ...memberships.map((m) => m.userId),
+      ]),
+    ];
+    const tgBindings = userIds.length
+      ? await this.prisma.channelBinding.findMany({
+          where: { userId: { in: userIds }, channel: { kind: 'telegram_bot' } },
+          select: { userId: true },
+        })
+      : [];
+    const tgLinked = new Set(tgBindings.map((b) => b.userId));
+
+    const rows: TeamRosterItem[] = [];
+    const coveredUserIds = new Set<string>();
+
+    for (const p of persons) {
+      const currentRole =
+        p.appointments?.[0]?.role ?? p.personRoles[0]?.role ?? null;
+      if (p.userId) coveredUserIds.add(p.userId);
+      const membership = p.userId
+        ? membershipByUserId.get(p.userId) ?? null
+        : null;
+      rows.push({
+        personId: p.id,
+        userId: p.userId,
+        fullName: p.name,
+        email: p.email || null,
+        roleId: currentRole?.id ?? null,
+        roleName: currentRole?.name ?? null,
+        departmentId: p.primaryDepartmentId,
+        departmentName: p.primaryDepartment?.name ?? null,
+        invitationStatus: p.invitations[0]?.status ?? 'none',
+        invitationId: p.invitations[0]?.id ?? null,
+        systemRole: membership?.role ?? null,
+        telegramLinked: p.userId ? tgLinked.has(p.userId) : false,
+        hasPersonCard: true,
+      });
+    }
+
+    for (const m of memberships) {
+      if (coveredUserIds.has(m.userId)) continue;
+      rows.push({
+        personId: null,
+        userId: m.userId,
+        fullName: m.user.name,
+        email: m.user.email,
+        roleId: null,
+        roleName: null,
+        departmentId: null,
+        departmentName: null,
+        invitationStatus: 'accepted',
+        invitationId: null,
+        systemRole: m.role,
+        telegramLinked: tgLinked.has(m.userId),
+        hasPersonCard: false,
+      });
+    }
+
+    return rows;
   }
 
   /** Сменить роль участника. Только owner/admin. */

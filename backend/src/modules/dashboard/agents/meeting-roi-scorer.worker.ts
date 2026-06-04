@@ -8,8 +8,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
   DASHBOARD_QUEUE_NAMES,
   type MeetingRoiJobData,
@@ -55,6 +57,9 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
   static readonly WEIGHT_COMMITMENTS = 5;
   static readonly WEIGHT_TASKS = 3;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -63,7 +68,10 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<MeetingRoiJobData>(
       DASHBOARD_QUEUE_NAMES.MEETING_ROI,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.AI_ANALYSIS, 'dashboard.meeting-roi', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 4,

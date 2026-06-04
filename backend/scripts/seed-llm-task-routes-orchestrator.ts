@@ -42,7 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§δ-1 — план шагов: primary gpt-4o (важно качество reasoning), fallback deepseek + ollama.',
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-4o' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
@@ -51,7 +51,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§δ-1 — массовые subagent-вызовы: primary deepseek (дёшево), fallback openai gpt-4o-mini + ollama.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'secondary',
         providerName: 'openai-via-proxy',
@@ -66,7 +66,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§δ-1 — финальный синтез: primary gpt-4o, fallback deepseek + ollama.',
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-4o' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
@@ -76,7 +76,7 @@ const SEEDS: TaskRouteSeed[] = [
       '§δ-1 — верификация synthesis: primary ollama qwen3.5:9b (быстро, локально, дёшево).',
     chain: [
       { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
-      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
         tier: 'tertiary',
         providerName: 'openai-via-proxy',

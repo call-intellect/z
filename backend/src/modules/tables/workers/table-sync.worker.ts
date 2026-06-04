@@ -8,6 +8,7 @@ import {
 import { type Job, Worker } from 'bullmq';
 
 import { RedisService } from '../../../common/redis/redis.service';
+import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { TABLES_QUEUE_NAMES, type TableSyncJobData } from '../queues';
 import { TableSyncService } from '../services/table-sync.service';
 
@@ -28,6 +29,9 @@ export class TableSyncWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableSyncWorker.name);
   private worker: Worker<TableSyncJobData> | null = null;
 
+  @Inject(PipelineRunner)
+  private readonly pipe!: PipelineRunner;
+
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(TableSyncService) private readonly sync: TableSyncService,
@@ -36,7 +40,10 @@ export class TableSyncWorker implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.worker = new Worker<TableSyncJobData>(
       TABLES_QUEUE_NAMES.SYNC,
-      async (job) => this.process(job),
+      async (job) =>
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'tables.sync', job, () =>
+          this.process(job),
+        ),
       {
         connection: this.redis.client,
         concurrency: 3,

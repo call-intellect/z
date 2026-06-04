@@ -40,10 +40,17 @@ export class TenantMiddleware implements NestMiddleware {
     }
 
     // 2. :orgId URL param. На стадии middleware Nest ещё не выполнил
-    //    route-matching, поэтому req.params обычно пуст. Парсим вручную
-    //    короткие сегменты вида /api/v1/orgs/:orgId/...
-    //    Поддерживаем строго: /api/v1/orgs/<uuid>/...
-    const orgIdFromUrl = this.parseOrgIdFromUrl(req.url ?? '');
+    //    route-matching, поэтому req.params пуст. Парсим вручную сегмент
+    //    вида /api/v1/orgs/:orgId/...
+    //    ВАЖНО: берём `req.originalUrl`, а НЕ `req.url`. Middleware через
+    //    `forRoutes('api/v1/*')` Express монтирует на под-роутер, и `req.url`
+    //    на этой стадии обрезан до `/` (baseUrl = полный путь). `originalUrl`
+    //    стабильно содержит весь путь `/api/v1/orgs/...`. Без этого
+    //    path-резолвинг tenant молча не работал → 403 tenant_required на
+    //    /orgs/:id/* (создание приглашений и т.п.).
+    const orgIdFromUrl = this.parseOrgIdFromUrl(
+      req.originalUrl ?? req.url ?? '',
+    );
     if (orgIdFromUrl) return orgIdFromUrl;
 
     // 3. body.tenantId / body.orgId. На стадии middleware body уже распарсен

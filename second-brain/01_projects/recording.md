@@ -73,6 +73,39 @@ LiveKit предлагает несколько типов Egress:
 
 > ⚠ Свежие версии Egress (~Feb 2026) могут давать потрескивания на отдельных дорожках — см. [[../02_architecture/code-pitfalls]] п.1.
 
+## Надёжность записи (v2, 2026-06-03)
+
+ТЗ `plans/tz/2026-06-03-meeting-recording-reliability.md`. Поверх PR #17.
+
+**Per-track дорожки — гибрид push+pull (Фаза 1, P0).** Реактивного `track_published`
+недостаточно: треки терялись на гонке старта записи, reconnect-republish и потере
+webhook (LiveKit не гарантирует доставку). Добавлены:
+- **догон на старте записи** — `RecordingsService.reconcileTrackEgress` из `start()`:
+  pull `livekit.listParticipants` → для `kind=STANDARD` + `TrackType.AUDIO` догоняем `ensureTrackEgress`;
+- **периодическая сверка-cron** `recording-track-reconcile` (`*/1`, kill-switch
+  `RECORDING_TRACK_RECONCILE_ENABLED`, дефолт ON) — проходит по `Recording.status ∈
+  {requested,recording}`, добирает недостающее. Гарантия: пока участник в комнате
+  с AUDIO-треком, дорожка появится не позже следующего тика;
+- **идемпотентность**: in-process `Set`-lock `meetingId:identity` (прод — один
+  процесс) + DB-дедуп `findFirst(recordingId,livekitIdentity)`;
+- **метрика** `recording_track_egress_failed_total` — алерт «дорожки теряются».
+
+**Участники — фильтр по `ParticipantKind` (Фаза 2, P1).** `Participant` создаётся
+только для `kind=STANDARD`; egress-рекордеры (`kind=EGRESS`), AGENT/SIP/INGRESS — no-op.
+Семантика от LiveKit надёжнее строкового префикса PR #17. Fallback на префикс
+`host:`/`guest:`, когда `kind` отсутствует в payload (proto3 опускает дефолт STANDARD).
+
+**Видео — faststart (Фаза 3, P1, флаг ON).** Egress пишет MP4 с moov-atom в конце
+→ браузер тянет весь файл до первого кадра. `FaststartWorker` (`recording.faststart`)
+делает `ffmpeg -c copy -movflags +faststart` и перезаливает по тому же ключу. Флаг
+`RECORDING_FASTSTART_ENABLED` (дефолт ON, kill-switch) + порог
+`RECORDING_FASTSTART_MIN_BYTES` (50 МиБ — мелкий composite не ремуксим). Операция
+идемпотентна и безопасна (`-c copy`, перезалив после `exit 0`). У `EncodedFileOutput`
+нативного faststart нет (Context7). Для длинных встреч (1–2 ч) штатный путь — HLS
+`SegmentedFileOutput` (Фаза 4, P2). `ffmpeg` теперь в Docker-образе (попутно чинит clip.render).
+
+См. [[workers-queues]] (cron + очередь), [[ai-jobs]] (faststart-воркер).
+
 ## Архитектурное правило
 
 LiveKit Egress держим **отдельно** от LiveKit SFU. Запись съедает CPU; на одной ноде роняет качество звонков.

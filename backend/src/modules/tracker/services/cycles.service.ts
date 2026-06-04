@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -122,6 +123,19 @@ export class CyclesService {
     _userId: string,
   ): Promise<CycleResponseDto> {
     await this.requireCycle(id, tenantId);
+    // Goals OKR v2 (Фаза 5) — валидируем цель того же tenant'а перед привязкой.
+    if (dto.primaryGoalId !== undefined && dto.primaryGoalId !== null) {
+      const goal = await this.prisma.goal.findFirst({
+        where: { id: dto.primaryGoalId, tenantId },
+        select: { id: true },
+      });
+      if (!goal) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'goal_not_found', message: 'Цель не найдена' },
+        });
+      }
+    }
     const updated = await this.prisma.cycle.update({
       where: { id },
       data: {
@@ -131,6 +145,9 @@ export class CyclesService {
         ...(dto.ownedById !== undefined && { ownedById: dto.ownedById }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.timezone !== undefined && { timezone: dto.timezone }),
+        ...(dto.primaryGoalId !== undefined && {
+          primaryGoalId: dto.primaryGoalId,
+        }),
       },
     });
     return this.toResponse(updated);
@@ -325,6 +342,7 @@ export class CyclesService {
       progressSnapshot: (c.progressSnapshot as Prisma.JsonValue | null) ?? null,
       version: c.version,
       timezone: c.timezone,
+      primaryGoalId: c.primaryGoalId,
       completedAt: c.completedAt?.toISOString() ?? null,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),

@@ -42,7 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§β-8 §5 — primary deepseek-chat (баланс цена/качество). Confidence < 0.6 → curatorReview.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
@@ -52,7 +52,7 @@ const SEEDS: TaskRouteSeed[] = [
     playbookSection:
       '§β-8 §11 — короткий narrative (1-3 предложения) поверх агрегата дашборда. Не критично к точности.',
     chain: [
-      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-chat' },
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],

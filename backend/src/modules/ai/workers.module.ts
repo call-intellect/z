@@ -35,6 +35,7 @@ import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profi
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
+import { Specialist314GoalsWorker } from '../knowledge-core/workers/specialist-3-14-goals.worker';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
 import { Specialist33DecisionsWorker } from '../knowledge-core/workers/specialist-3-3-decisions.worker';
 import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/specialist-3-4-project-customer.worker';
@@ -50,6 +51,7 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
+import { FaststartWorker } from '../recordings/workers/faststart.worker';
 import { TablesModule } from '../tables/tables.module';
 import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
@@ -140,6 +142,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     TranscriptCleanWorker,
     // Фаза E — дополнительные («custom») AI-отчёты по выбранному шаблону.
     CustomReportWorker,
+    // ТЗ 2026-06-03 meeting-recording-reliability, Фаза 3 — faststart-постобработка
+    // composite MP4 (ffmpeg -movflags +faststart). Consumer `recording.faststart`,
+    // producer — webhook egress_ended(composite) при RECORDING_FASTSTART_ENABLED.
+    FaststartWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,
@@ -199,6 +205,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // KNN-дедуп Idea, LLM extract, weight/supporters, EventEmitter
     // 'idea.created'.
     Specialist36IdeasWorker,
+    // Goals OKR v2 (2026-06-02, Фаза 2) — consumer `core.specialist-routing`
+    // jobName='3-14-goals'. Авто-добыча целей из блоков commitment/plan_item:
+    // LLM goal-extract → KNN-дедуп → goal-hierarchy-link → Goal(source='ai').
+    Specialist314GoalsWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
     // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,

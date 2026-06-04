@@ -55,6 +55,8 @@ export const RESOURCE_TYPES = [
   'entity',
   'theme',
   'goal',
+  // Goals OKR v2 (2026-06-02) — измеримые ключевые результаты целей.
+  'goal_key_result',
   'source',
   // Фаза 11: «персона» как отдельный ресурс RBAC
   'person',

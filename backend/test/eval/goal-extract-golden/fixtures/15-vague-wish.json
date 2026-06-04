@@ -1,0 +1,18 @@
+{
+  "fixtureId": "15-vague-wish",
+  "blockName": "Пожелание",
+  "signalType": "plan_item",
+  "criticalQuestion": "Что хотелось бы?",
+  "trustedAnswer": "Хорошо бы когда-нибудь стать лучше во всём и быть продуктивнее.",
+  "tags": [
+    "пожелание"
+  ],
+  "evidenceQuotes": [
+    "Кто-то: хорошо бы когда-нибудь стать продуктивнее во всём."
+  ],
+  "expected": {
+    "isGoal": false,
+    "reason": "абстрактное пожелание без измеримого outcome"
+  },
+  "category": "reject"
+}

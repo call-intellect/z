@@ -1,0 +1,25 @@
+{
+  "fixtureId": "08-churn-down-quarter",
+  "blockName": "Отток",
+  "signalType": "plan_item",
+  "criticalQuestion": "Цель по оттоку?",
+  "trustedAnswer": "Снизить отток клиентов с 8% до 4% за квартал.",
+  "tags": [
+    "метрики",
+    "churn"
+  ],
+  "evidenceQuotes": [
+    "COO: за квартал снизить отток с 8% до 4%."
+  ],
+  "expected": {
+    "isGoal": true,
+    "statementKeywords": [
+      "отток",
+      "churn",
+      "4"
+    ],
+    "expectedHorizon": "quarterly",
+    "hasMeasurable": true
+  },
+  "category": "valid"
+}

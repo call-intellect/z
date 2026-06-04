@@ -84,6 +84,92 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 👥 2026-06-04 — Команда + персональные доступы сотрудников (Фазы 0–5)
+
+План: [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs`/`persons`/`users` (backend) + `structure`/`settings` (frontend).
+
+**Что выкатывается:**
+- Раздел «Команда» (`/structure`) — объединённый ростер `GET /api/v1/orgs/:id/team-roster`, управление участниками/приглашениями (переехало из `/settings/organization`), карточка сотрудника `/structure/persons/[id]` (Профиль/Доступы).
+- Новая таблица `EmployeeCapabilityOverride` (персональные override доступа `allow`/`deny` поверх дефолта роли/тарифа) + `CapabilitiesService` (модуль `orgs`).
+- Эндпоинты (owner/admin): `GET/PUT/DELETE /api/v1/orgs/:id/members/:userId/capabilities[/:capability]` + `GET /api/v1/orgs/:id/effective-access`. `POST /persons` принимает `linkUserId`; приглашение — по `personId`.
+
+- **Шаг 4 — Prisma** — **обязательно** (Фаза 5: новая таблица `EmployeeCapabilityOverride` — безопасное добавление таблицы, без потери данных, **не** migrate): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер.
+- **Шаг 1 — ENV** — новых ENV нет.
+- **Seed/Patch/Backfill/Migrate** — нет. Агрегатор `apply-prod-deploy.ts` STEPS — без изменений (новых скриптов нет).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `CapabilitiesService` + team-roster + `POST /persons` linkUserId; frontend: раздел «Команда», карточка сотрудника, диалоги `src/ui/components/team/`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - ростер: `curl -i -H 'Cookie:<owner_session>' -H 'X-Org-Id:<orgId>' https://prod.host/api/v1/orgs/<orgId>/team-roster` → 200, список Person ⊕ участники без карточки.
+  - capabilities: `GET .../orgs/<orgId>/members/<userId>/capabilities` → 200; `PUT .../capabilities/feature:graph` body `{ "effect": "deny" }` → 200; `GET .../orgs/<orgId>/effective-access` → 200 (эффективный доступ с учётом override); `DELETE .../capabilities/feature:graph` → 200 (вернулся дефолт роли/тарифа).
+  - UI: в Sidebar пункт «Команда» (группа «Каждый день»), вкладка «Сотрудники» открывается первой; `/structure/persons/[id]` → вкладка «Доступы» переключает override; `/settings/organization` показывает только «Информацию».
+
+---
+
+### 🎥 2026-06-03 — Надёжность записи v2: per-track дорожки (reconcile) + фильтр участников по kind + faststart видео
+
+План: [plans/tz/2026-06-03-meeting-recording-reliability.md](../../plans/tz/2026-06-03-meeting-recording-reliability.md). Поверх PR #17. **Схема БД НЕ меняется, скриптов нет.**
+
+**Что выкатывается:**
+- Фаза 1 (P0) — надёжные per-track аудиодорожки: догон на старте записи + cron `recording-track-reconcile` (`*/1`) + in-process lock идемпотентности + метрика `recording_track_egress_failed_total`.
+- Фаза 2 (P1) — `participant_joined` фильтрует по `ParticipantKind` (создаёт только `STANDARD`; egress/agent/sip — no-op), fallback на префикс `host:`/`guest:` если kind отсутствует.
+- Фаза 3 (P1) — `FaststartWorker` (очередь `recording.faststart`): `ffmpeg -movflags +faststart` для composite, **за флагом, дефолт OFF**.
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 1 — ENV** — **3 новых опциональных** (есть код-дефолты, можно не выставлять):
+  - `RECORDING_TRACK_RECONCILE_ENABLED` — kill-switch сверки дорожек. **Дефолт `true`** (P0-фикс активен сразу). `false` — только если сверка создаёт проблемы.
+  - `RECORDING_FASTSTART_ENABLED` — **дефолт `true`** (faststart включён сразу; операция идемпотентна и безопасна — `-c copy`, перезалив после `exit 0`). Kill-switch: `false`.
+  - `RECORDING_FASTSTART_MIN_BYTES` — **дефолт `52428800` (50 МиБ)**. Composite меньше порога не ремуксится (мелкий файл и так играет сразу). Поднять/опустить по вкусу.
+- **Шаг 11 — Docker rebuild** — **обязателен с пересборкой образа** (правки backend + **новый бинарь `ffmpeg` в Dockerfile**): `docker compose up -d --build backend`. ⚠ Образ должен пересобраться (не только рестарт) — иначе `recording.faststart` и `clip.render` упадут с `ENOENT ffmpeg`. Проверка: `docker compose exec backend ffmpeg -version` → версия печатается.
+- **Шаг 12 — Smoke**:
+  - cron сверки зарегистрирован: `docker compose logs backend | grep -E 'RecordingTrackReconcileCron|recording-track-reconcile'`.
+  - очередь faststart инициализирована: `docker compose logs backend | grep -E 'FaststartWorker запущен|recording.faststart'`.
+  - **дорожки (главное):** провести тест-встречу 3 говоривших + умышленный reconnect одного → в результате встречи 3 полные аудиодорожки (не 2), транскрипт со всеми тремя.
+  - участники: в отчёте «Участники» только реальные люди (без egress-фантомов), даже под записью.
+  - **faststart (работает сразу, проверка эффекта):** после записи встречи (>50 МБ composite) в логах `docker compose logs backend | grep 'faststart: composite переупакован'` → есть запись; видео на странице результата стартует за пару секунд, без «вечной крутилки». Опц. убедиться `ffprobe -v trace https://<presigned> 2>&1 | grep -E 'moov|mdat'` → `moov` ПЕРЕД `mdat`. Если нужно выключить — `RECORDING_FASTSTART_ENABLED=false`.
+
+---
+
+### 🧹 2026-06-03 — Фикс egress-фантомов + Content-Type видео + списание MeetingsBalance
+
+Багфикс по итогам тестовой конференции (без изменения схемы БД).
+
+**Что выкатывается:**
+- `webhooks/livekit-events.handler.ts` — `participant_joined` игнорирует identity не `host:`/`guest:` (egress-рекордеры больше не плодят фантомных гостей «Participant»).
+- `recordings/s3.service.ts` + `recordings.service.ts` — presign композита форсит `ResponseContentType=video/mp4` + `inline` (S3 отдавал mp4 как `octet-stream`, видео не игралось в плеере).
+- `meetings-balance/meetings-balance.service.ts` — `consume` переведён с битого `$executeRaw UPDATE meetings_balance` (таблица не существовала — `relation does not exist`, баланс не списывался) на типизированный `prisma.meetingsBalance.updateMany`. **Без миграции схемы.**
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 1 — ENV** — новых ENV нет.
+- **Шаг 6 — Patch** — 1 новый, идемпотентный, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`): `scripts/patch-cleanup-egress-phantom-participants.ts` — удаляет уже накопленных фантомных Participant'ов (identity не `host:`/`guest:`) + их `MeetingParticipantBehavior`. Прогон: сначала `--dry-run`, затем без флага, либо через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (правки backend): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - провести тест-встречу хост+гость → в отчёте «Участники» ровно 2 строки, `participantsCount=2` в behavior-metrics (без «Participant»-фантомов).
+  - на странице результата видео проигрывается в плеере; запрос к `composite.mp4` в Network отдаёт `Content-Type: video/mp4`.
+  - создание встречи залогиненным юзером с балансом списывает 1 встречу: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.meetingsBalance.findMany({take:3,orderBy:{updatedAt:'desc'}}).then(r=>{console.log(r);return p.\$disconnect();});"` — `totalConsumed` растёт, ошибки `relation \"meetings_balance\" does not exist` пропали из логов.
+
+---
+
+### 🪵 2026-06-03 — Логирование: процессные контуры (pipeline) + сквозной traceId + мост Nest Logger → БД
+
+План: [plans/tz/2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md). Модуль `backend/src/modules/logging`.
+
+**Что выкатывается:**
+- Новый enum `SystemLogPipeline` + поле `SystemLog.pipeline?` + 2 индекса (`[pipeline, createdAt]`, `[traceId, createdAt]`).
+- Мост `DbLoggerBridge` (`app.useLogger` в `main.ts`): все `this.logger.*` по бэкенду/воркерам дублируются в `SystemLog`.
+- HTTP-логирование (REQUEST) **отключено** — `RequestLoggingInterceptor` снят из `LoggingModule` (ошибки запросов пишет `AllExceptionsFilter`).
+- Инструментованы 48 воркеров + livekit-вебхуки (`pipeline`/`traceId`); админка — фильтр контура, вид «Цепочка» (`GET /platform/logs/chain?traceId=`), русские лейблы enum'ов.
+- **Live-стрим по WebSocket** `LogStreamGateway` (Socket.IO namespace `/ws/platform-logs`, только super_admin) — заменяет поллинг в `/admin/logs` (тумблер «● Live»). Схему БД не меняет.
+
+- **Шаг 4 — Prisma** — **обязательно** (аддитивно, без data-loss: nullable-поле `pipeline` + новый enum + 2 индекса): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер.
+- **Шаг 1 — ENV** — новых ENV нет (все `LOG_DB_*` уже существуют и опциональны). После выката HTTP-логи перестанут писаться — это ожидаемо (D3).
+- **Шаг 11 — Docker rebuild** — обязателен (правки `main.ts` + воркеров + фронт `/admin/logs`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - мост работает: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.systemLog.count({where:{pipeline:{not:null}}}).then(n=>{console.log('logs with pipeline:',n);return p.\$disconnect();});"` — после прохода встречи > 0.
+  - вид «Цепочка»: `/admin/logs` (super_admin) → у записи встречи кликнуть `traceId` (`mtg_<id>`) → Drawer «Цепочка» показывает webhook → транскрипцию → AI → KC одной лентой.
+  - REQUEST-логов больше нет: фильтр «Категория = REQUEST» за свежий период пуст.
+  - WS live: на `/admin/logs` включить «● Live» → индикатор зелёный (`connected`), новые логи появляются сверху без обновления страницы. За nginx убедиться, что `/ws/platform-logs` проксируется с `Upgrade`/`Connection` заголовками (как для существующих `/ws/*`).
+
+---
+
 ### 🪜 2026-06-03 — Action Center Часть A: Лестница доверия (пер-типовые пороги + AI-судья + autotune)
 
 План: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть A). Модуль `backend/src/modules/curation`.
@@ -101,6 +187,28 @@ docker compose run --rm --no-deps backend \
   - новый cron зарегистрирован: `docker compose logs backend | grep -E 'CurationAutotuneCron'`.
   - новые LLM taskType: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.llmTaskRoute.count({where:{taskType:{startsWith:'debate-curation-verify-'}}}).then(n=>{console.log('curation-verify routes:',n);return p.\$disconnect();});"`.
 - **Заметка (долг):** опц. будущий backfill `CardVersion.trustTier` (existing → `auto` при `createdByUserId IS NULL`) — пока отложен, дефолт `human` безопасен.
+### 🎯 2026-06-02 — Goals OKR v2 (Граф целей): специалист 3-14 + авто-прогресс + пульс + дерево
+
+**Контекст.** Достройка модуля `goals` до «графа целей» (Цель → измеримые Key Results): авто-добыча из встреч (специалист `3-14-goals`), авто-прогресс KR (cron), еженедельный пульс (cron + доставка), дерево + мост к гипотезам. Принцип M0 — ручной контроль первичен, авто не перетирает `manualOverride`-поля. Изменения схемы **аддитивны** (только новые модели/поля/enum/FK). ТЗ — `plans/tz/2026-06-02-goals-okr-v2.md`.
+
+- **Шаг 1 — ENV/AdminSetting** — **новых ENV нет.** Два тумблера через `AdminSetting` (не ENV, memory `feedback_admin_settings_not_env_or_code`), засеиваются сидером (Шаг 7): `goals.pulse.enabled` (default **true**) и `goals.pulse.deliver_to_telegram` (default **false**). Менять в админке настроек под super_admin.
+- **Шаг 4 — Prisma** — **обязательно** (аддитивно, опасных изменений нет): `docker compose exec backend bun run prisma:push`.
+  Новые модели `GoalKeyResult` / `GoalKeyResultCheckpoint` / `WeeklyGoalsPulseDigest`; поля в `Goal` (source/promotionState/progressStatus/sourceBlockIds/confidence/manualOverride/validFrom/validUntil/recordedAt/supersededById + relations); FK `Idea.goalId` / `Cycle.primaryGoalId`; 4 новых enum'а (`GoalSource`/`GoalPromotionState`/`GoalProgressStatus`/`GoalKrSourceKind`). Существующие `GoalStatus`/`GoalHorizon` НЕ менялись.
+  Примечание: на dev `prisma:push` потребовал `--accept-data-loss` из-за уже-смерженного Smart-tables (`Table[tenantId, systemKey]`), **НЕ из-за goals** (goals полностью additive). На проде оценить необходимость флага отдельно — если в наличии только goals-изменения, `--accept-data-loss` не нужен.
+- **Шаг 5 — postgres-init.sql — GIN-индекс** — новый: `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")` (поиск целей по блокам-источникам). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`).
+- **Шаг 7 — Seed** — два сидера (оба идемпотентны, **оба уже в агрегаторе** `apply-prod-deploy.ts` STEPS):
+  - `scripts/seed-llm-task-routes-goals.ts` — LLM-маршруты `goal-extract` (capable: DeepSeek V4 Pro→gpt-5.4-mini→qwen3.5:9b), `goal-hierarchy-link` (cheap: DeepSeek V4 Flash→…), `goals-pulse-summarize` (как operations-daily-digest). Без `anthropic`.
+  - `scripts/seed-admin-setting-goals-pulse.ts` — тумблеры `goals.pulse.enabled=true` / `goals.pulse.deliver_to_telegram=false`.
+  - Одной командой: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill** — `scripts/backfill-goal-v2-defaults.ts` — legacy-целям проставляет `recordedAt=createdAt` + дефолты `source='manual'`/`promotionState='active'`/`progressStatus='on_track'` (идемпотентно). В агрегаторе STEPS (`phase: backfill`). Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый специалист/воркер + 2 cron'а + сервисы goals + frontend дерево/пульс/диалоги): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - **Новый consumer** `3-14-goals` на очереди `core.specialist-routing` — виден в `/admin/platform/workers`. На тестовом блоке-обещании («провести 100 встреч за квартал») создаётся `suggested`-цель горизонта quarterly с провенансом; повтор не плодит дубль (KNN-dedup).
+  - **Cron'ы** `goal-kr-progress` (05:00 UTC, ежедн.) и `goals-pulse` (пн 06:00 UTC = 09:00 МСК) — видны в `/admin/crons`. Ручной прогон `goal-kr-progress` → KR с `sourceKind='meeting_count'` показывает текущее число встреч + пишет checkpoint; ручной KR (`manual`) не перетирается.
+  - **eventType `goals.pulse`** присутствует в `EVENT_TYPE_CHANNEL_POLICY` (при включённом `deliver_to_telegram` пульс уходит owner/coo).
+  - **Метрики**: `curl -s localhost:3000/metrics | grep -E 'goal_kr_autoprogress_total|goals_pulse_(generated|failed|delivered)_total'`.
+  - **Новые REST** (Swagger `/api/docs`): `/goals/:id/key-results*`, `/goals/:id/supersede`, `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `/ideas/:id/goal`, `PATCH /cycles/:id` (primaryGoalId). Дашборд `GET /dashboard/director` отдаёт `goalsTree`/`goalsPulse`.
+  - **UI**: `/goals` — переключатель «Список / Дерево», секция «Ключевые результаты» с прогресс-барами; на дашборде CEO — виджет «Пульс целей» + дерево.
 
 ---
 
@@ -1693,6 +1801,13 @@ docker compose exec backend bun run scripts/patch-prompt-role-profile-build-fase
 docker compose exec backend bun run scripts/patch-chat-v2-to-pro.ts
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --dry-run
 docker compose exec backend bun run scripts/patch-mass-migrate-to-deepseek-pro.ts --update-existing
+
+# 6.12 — Восстановить fallback-цепочку meeting-report-fast (2026-06-03)
+# Нормализованный primary (deepseek-v4-pro) затенял legacy 3-провайдерную
+# цепочку → single-provider timeout без fallback. Дописывает secondary
+# (openai-via-proxy/gpt-5.4-mini) + tertiary (ollama/qwen3.5:9b). Идемпотентен.
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts --dry-run
+docker compose exec backend bun run scripts/patch-ensure-meeting-report-fast-fallback.ts
 
 # 6.10 — Первичная миграция грантов CloneAccessGrant (2026-05-26, коммит 87fef5d)
 # ОБЯЗАТЕЛЬНО ДО переключения CLONE_V2_ENABLED=true (см. Шаг 1).

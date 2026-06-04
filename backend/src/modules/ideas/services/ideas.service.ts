@@ -8,6 +8,7 @@ import {
 import { type Idea, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { AuditLogService } from '../../audit/audit-log.service';
 import { Specialist36Service } from '../../knowledge-core/services/specialist-3-6-ideas.service';
 import {
   type ChangeIdeaStatusBody,
@@ -30,6 +31,7 @@ export class IdeasService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist36Service)
     private readonly specialist36: Specialist36Service,
+    @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
   async list(args: {
@@ -132,6 +134,52 @@ export class IdeasService {
       changedByUserId: args.userId,
     });
     return { ok: true, status: updated.status };
+  }
+
+  /**
+   * Goals OKR v2 (Фаза 5, мост к гипотезам) — привязать/отвязать идею к цели.
+   * `goalId = null` — отвязать. Специалист целей не создаёт идеи; здесь
+   * только ручная связь «эта гипотеза двигает цель X».
+   */
+  async linkGoal(args: {
+    tenantId: string;
+    ideaId: string;
+    goalId: string | null;
+    userId: string;
+  }): Promise<{ ok: true; goalId: string | null }> {
+    const idea = await this.prisma.idea.findFirst({
+      where: { id: args.ideaId, tenantId: args.tenantId },
+      select: { id: true },
+    });
+    if (!idea) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'idea_not_found', message: 'Идея не найдена' },
+      });
+    }
+    if (args.goalId !== null) {
+      const goal = await this.prisma.goal.findFirst({
+        where: { id: args.goalId, tenantId: args.tenantId },
+        select: { id: true },
+      });
+      if (!goal) {
+        throw new BadRequestException({
+          ok: false,
+          error: { code: 'goal_not_found', message: 'Цель не найдена' },
+        });
+      }
+    }
+    await this.prisma.idea.update({
+      where: { id: idea.id },
+      data: { goalId: args.goalId },
+    });
+    void this.audit.log({
+      userId: args.userId,
+      action: 'idea.goal_linked',
+      resourceId: idea.id,
+      metadata: { ideaId: idea.id, goalId: args.goalId },
+    });
+    return { ok: true, goalId: args.goalId };
   }
 
   async support(args: {

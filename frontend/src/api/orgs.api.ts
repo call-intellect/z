@@ -96,6 +96,12 @@ export type UpdateMemberRequest = {
   role: 'owner' | 'admin' | 'manager';
 };
 
+export interface CapabilityItemApi {
+  capability: string;
+  effect: 'allow' | 'deny' | null;
+  expiresAt: string | null;
+}
+
 export const orgsApi = {
   create: (body: CreateOrgRequest) =>
     apiClient.post<{ org: { id: string; name: string; slug: string } }>(
@@ -175,4 +181,30 @@ export const orgsApi = {
       orgId: string;
       membership: { role: 'owner' | 'admin' | 'manager'; joinedAt: string };
     }>(`/api/v1/orgs/invitations/${encodeURIComponent(token)}/accept`),
+
+  listMemberCapabilities: (orgId: string, userId: string) =>
+    apiClient.get<{ capabilities: CapabilityItemApi[] }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}/capabilities`,
+    ),
+
+  upsertMemberCapability: (
+    orgId: string,
+    userId: string,
+    capability: string,
+    body: { effect: 'allow' | 'deny'; expiresAt?: string | null },
+  ) =>
+    apiClient.put<{ item: CapabilityItemApi }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}/capabilities/${encodeURIComponent(capability)}`,
+      body,
+    ),
+
+  removeMemberCapability: (orgId: string, userId: string, capability: string) =>
+    apiClient.del<{ ok: true }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}/capabilities/${encodeURIComponent(capability)}`,
+    ),
+
+  effectiveAccess: (orgId: string) =>
+    apiClient.get<{ overrides: Record<string, 'allow' | 'deny'> }>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/effective-access`,
+    ),
 };

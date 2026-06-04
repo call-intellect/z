@@ -21,7 +21,6 @@ import {
   Post,
   Query,
   UseGuards,
-  UsePipes,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -111,9 +110,9 @@ export class BillingController {
       'Возвращает paymentUrl страницы Точки.',
   })
   @ApiOkResponse({ type: PaymentStartResultDto })
-  @UsePipes(new ZodValidationPipe(StartCardPaymentBodySchema))
   async payCard(
-    @Body() body: StartCardPaymentBody,
+    @Body(new ZodValidationPipe(StartCardPaymentBodySchema))
+    body: StartCardPaymentBody,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<PaymentStartResultBody> {
     const t = this.requireTenant(tenantId);
@@ -131,9 +130,9 @@ export class BillingController {
       'Выставить безналичный счёт через Tochka. Требует заполненных реквизитов Org.',
   })
   @ApiOkResponse({ type: PaymentStartResultDto })
-  @UsePipes(new ZodValidationPipe(StartBankInvoicePaymentBodySchema))
   async payBankInvoice(
-    @Body() body: StartBankInvoicePaymentBody,
+    @Body(new ZodValidationPipe(StartBankInvoicePaymentBodySchema))
+    body: StartBankInvoicePaymentBody,
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<PaymentStartResultBody> {
     const t = this.requireTenant(tenantId);
@@ -151,8 +150,9 @@ export class BillingController {
     summary: 'Расчёт цены подписки за период/seats (без сохранения).',
   })
   @ApiOkResponse({ type: QuotaResponseDto })
-  @UsePipes(new ZodValidationPipe(QuotaQuerySchema))
-  async getQuote(@Query() query: QuotaQueryBody): Promise<QuotaResponseBody> {
+  async getQuote(
+    @Query(new ZodValidationPipe(QuotaQuerySchema)) query: QuotaQueryBody,
+  ): Promise<QuotaResponseBody> {
     const [pricing, meetingsGrant] = await Promise.all([
       this.seats.calculatePricing(query.billingPeriod, query.seatsExtra),
       this.seats.calculateMeetingsGrant(query.seatsExtra),

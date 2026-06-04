@@ -24,6 +24,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private recordingsBytesTotal!: Counter<string>;
   private recordingsDeletedTotal!: Counter<'reason'>;
   private recordingsFailedTotal!: Counter<'reason'>;
+  private recordingTrackEgressFailedTotal!: Counter<'reason'>;
 
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
@@ -376,6 +377,25 @@ export class BusinessMetricsService implements OnModuleInit {
   // SBA β-3 — гистограмма длин supersede-цепочек Decision (для аналитики
   // «как часто решения переписываются»).
   private decisionSupersedeChainLength!: Histogram<never>;
+
+  // ── Goals OKR v2 Фаза 3 (2026-06-02) — авто-прогресс KR ──────────────
+  // `goal_kr_autoprogress_total{source_kind,status}` — каждая попытка
+  // авто-пересчёта currentValue одного GoalKeyResult cron'ом.
+  //   source_kind ∈ manual | meeting_count | issue_rollup | metric_entity;
+  //   status ∈ ok (значение изменилось, checkpoint записан) |
+  //            unchanged (значение не изменилось — no-op) |
+  //            skipped (manual / manualOverride / нет конфигурации) |
+  //            error (исключение при расчёте).
+  private goalKrAutoprogressTotal!: Counter<'source_kind' | 'status'>;
+
+  // ── Goals OKR v2 Фаза 4 (2026-06-02) — еженедельный пульс целей ──────
+  //   goals_pulse_generated_total{tenant_top} — успешно собранный пульс;
+  //   goals_pulse_failed_total{tenant_top,reason} — провал (reason ∈
+  //     llm_failed|notify_failed|exception);
+  //   goals_pulse_delivered_total{tenant_top,channel} — доставка пульса.
+  private goalsPulseGeneratedTotal!: Counter<'tenant_top'>;
+  private goalsPulseFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  private goalsPulseDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
 
   // ── Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges ──────────────
   // `temporal_edges_invalidated_total{relationType}` — каждый раз когда
@@ -929,6 +949,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsFailedTotal = this.getOrCreateCounter({
       name: 'recordings_failed_total',
       help: 'Сколько Egress-задач упало (по причине: timeout/s3-error/livekit-error/...).',
+      labelNames: ['reason'] as const,
+    });
+
+    this.recordingTrackEgressFailedTotal = this.getOrCreateCounter({
+      name: 'recording_track_egress_failed_total',
+      help: 'Сколько стартов per-track audio egress упало (дорожка не собралась). Алерт при росте = потеря дорожек/деградация транскрипта.',
       labelNames: ['reason'] as const,
     });
 
@@ -1863,6 +1889,30 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-3 — длина supersede-цепочек Decision (chain length = сколько раз решение переписывалось). 0 — изначальное, 1 — заменено один раз, и т.д.',
       labelNames: [] as const,
       buckets: [0, 1, 2, 3, 5, 8, 13, 21],
+    });
+
+    // Goals OKR v2 Фаза 3 (2026-06-02) — авто-прогресс KR.
+    this.goalKrAutoprogressTotal = this.getOrCreateCounter({
+      name: 'goal_kr_autoprogress_total',
+      help: 'Goals OKR v2 Фаза 3 — попытки авто-пересчёта GoalKeyResult.currentValue cron\'ом (source_kind × status). status: ok|unchanged|skipped|error.',
+      labelNames: ['source_kind', 'status'] as const,
+    });
+
+    // Goals OKR v2 Фаза 4 (2026-06-02) — еженедельный пульс целей.
+    this.goalsPulseGeneratedTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_generated_total',
+      help: 'Goals OKR v2 Фаза 4 — успешно сгенерированный еженедельный пульс целей.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.goalsPulseFailedTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_failed_total',
+      help: 'Goals OKR v2 Фаза 4 — провал пульса целей (reason ∈ llm_failed|notify_failed|exception).',
+      labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.goalsPulseDeliveredTotal = this.getOrCreateCounter({
+      name: 'goals_pulse_delivered_total',
+      help: 'Goals OKR v2 Фаза 4 — счётчик удачных доставок пульса целей (channel ∈ conversational).',
+      labelNames: ['tenant_top', 'channel'] as const,
     });
 
     // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
@@ -3222,6 +3272,15 @@ export class BusinessMetricsService implements OnModuleInit {
     this.recordingsFailedTotal.inc({ reason });
   }
 
+  /**
+   * Провал старта per-track audio egress (дорожка спикера не собралась).
+   * ТЗ 2026-06-03 meeting-recording-reliability §117 — мониторинг egress-ёмкости:
+   * рост этой метрики = дорожки теряются (даже с reconcile-бэкстопом), нужен алерт.
+   */
+  incTrackEgressStartFailed(args: { reason: string }): void {
+    this.recordingTrackEgressFailedTotal.inc({ reason: args.reason });
+  }
+
   /** Алиас под имя из ТЗ Фазы 4 (`incRecordingsFailed({reason})`). */
   incRecordingsFailed(args: { reason: string }): void {
     this.recordingsFailedTotal.inc({ reason: args.reason });
@@ -3364,6 +3423,41 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incLivekitWebhookEvent(type: string): void {
     this.livekitWebhookEventsTotal.inc({ type });
+  }
+
+  /**
+   * Goals OKR v2 Фаза 3 — попытка авто-пересчёта currentValue одного KR.
+   *   status='ok'        — значение изменилось, checkpoint записан;
+   *   status='unchanged' — значение не изменилось (no-op);
+   *   status='skipped'   — manual / manualOverride / нет конфигурации источника;
+   *   status='error'     — исключение при расчёте.
+   */
+  incGoalKrAutoprogress(
+    sourceKind: string,
+    status: 'ok' | 'skipped' | 'unchanged' | 'error',
+  ): void {
+    this.goalKrAutoprogressTotal.inc({ source_kind: sourceKind, status });
+  }
+
+  /** Counter `goals_pulse_generated_total{tenant_top}`. */
+  incGoalsPulseGenerated(args: { tenantTop: string }): void {
+    this.goalsPulseGeneratedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `goals_pulse_failed_total{tenant_top, reason}`. */
+  incGoalsPulseFailed(args: { tenantTop: string; reason: string }): void {
+    this.goalsPulseFailedTotal.inc({
+      tenant_top: args.tenantTop,
+      reason: args.reason,
+    });
+  }
+
+  /** Counter `goals_pulse_delivered_total{tenant_top, channel}`. */
+  incGoalsPulseDelivered(args: { tenantTop: string; channel: string }): void {
+    this.goalsPulseDeliveredTotal.inc({
+      tenant_top: args.tenantTop,
+      channel: args.channel,
+    });
   }
 
   /**

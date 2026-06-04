@@ -396,7 +396,9 @@ describe('AdminTelegramBotService', () => {
         targetUrl: string;
       };
       expect(upsertArg.token).toBe('111111111:token-123');
-      expect(upsertArg.name).toBe('kora_bot');
+      // username ещё неизвестен на момент регистрации (getMe идёт ПОСЛЕ) →
+      // провизорное имя.
+      expect(upsertArg.name).toBe('Kora Bot');
       // Секрет — в пути targetWebhookUrl (32 hex после `/s/`).
       expect(upsertArg.targetUrl).toMatch(
         /^https:\/\/app\.example\.org\/api\/v1\/webhooks\/telegram-bot\/s\/[a-f0-9]{32}$/,

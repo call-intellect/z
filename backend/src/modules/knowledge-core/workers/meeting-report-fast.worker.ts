@@ -44,11 +44,13 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type { DialogTurn } from '../../ai/services/prompts/common';
 import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   buildMeetingReportFastPrompt,
   MEETING_REPORT_FAST_MAX_TOKENS,
@@ -65,6 +67,7 @@ import {
   type MeetingReportFastJobData,
 } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
 /** Максимум ретраев перед поднятием exception (как в meeting-analyze-v2). */
 const MAX_LLM_RETRIES = 2;
@@ -81,6 +84,14 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
+    // пост-фактум резолв `assigneeUserId` из `assigneeRaw` по списку участников
+    // встречи (БЕЗ правки LLM-промпта). Паттерн скопирован из
+    // `meeting-analyze-v2.worker.ts`.
+    @Inject(ParticipantContextService)
+    private readonly participantContext: ParticipantContextService,
+    @Inject(TaskAssigneeResolverService)
+    private readonly assigneeResolver: TaskAssigneeResolverService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -288,6 +299,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     // ── 3. Запись результатов ──
     const failures: string[] = [];
 
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
+    // список участников встречи для жёсткого резолва `assigneeUserId` в
+    // извлечённых задачах (после Ф0.2 включает и приглашённых сотрудников).
+    const participants = await this.participantContext.loadForMeeting(meetingId);
+
     // 3a. Chapters (пересоздаём только fast-главы; legacy/v2 не трогаем).
     try {
       await this.writeChapters({
@@ -308,6 +324,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         tenantId,
         ownerId: meeting.ownerId,
         tasks: parsed.tasks,
+        participants,
       });
     } catch (err) {
       failures.push(
@@ -436,8 +453,22 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     tenantId: string;
     ownerId: string;
     tasks: MeetingReportFastTask[];
+    participants: readonly AiParticipantContext[];
   }): Promise<void> {
     if (args.tasks.length === 0) return;
+
+    // ТЗ 2026-06-04, Фаза 4 — пост-фактум резолв `assigneeUserId` из
+    // `assigneeRaw` по участникам встречи. LLM `assigneeUserId` не отдаёт
+    // (промпт не трогаем), поэтому стартуем с `assigneeUserId: null`. На выходе
+    // массив того же порядка: validated userId (либо null) + ambiguous-флаг.
+    const resolved = this.assigneeResolver.resolve(
+      args.tasks.map((t) => ({
+        assigneeRaw: t.assigneeRaw ?? null,
+        assigneeUserId: null,
+      })),
+      args.participants,
+      args.tenantId,
+    );
 
     // Существующие задачи встречи — отбираем titles, чтобы не плодить дубли.
     const existing = await this.prisma.task.findMany({
@@ -450,7 +481,9 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
 
     let created = 0;
     let skipped = 0;
-    for (const task of args.tasks) {
+    for (let idx = 0; idx < args.tasks.length; idx++) {
+      const task = args.tasks[idx]!;
+      const r = resolved[idx];
       const normalized = task.title.trim();
       if (normalized.length === 0) continue;
       if (existingTitles.has(normalized.toLowerCase())) {
@@ -467,7 +500,8 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
             title: normalized,
             description: null,
             status: 'open',
-            assigneeRaw: task.assigneeRaw ?? null,
+            assigneeRaw: r?.assigneeRaw ?? task.assigneeRaw ?? null,
+            assigneeUserId: r?.assigneeUserId ?? null,
             dueDate: parseDueDateIso(task.dueDateIso ?? null),
             sourceQuote: task.sourceQuote ?? null,
             confidence,

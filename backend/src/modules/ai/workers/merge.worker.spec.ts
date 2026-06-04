@@ -235,3 +235,43 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
     expect(m.enqueueAnalyze).toHaveBeenCalledWith(meetingId);
   });
 });
+
+describe('MergeWorker.onJobFailed (Фаза 11: развязка записи от AI-статуса)', () => {
+  it('финальный сбой merge → встреча уходит в `ai_failed`, НЕ в `failed`', async () => {
+    const meetingId = 'm-fail-1';
+    const m = buildBaseMocks({ meetingId });
+    const cfg = buildCfg({ meetingReportFastEnabled: false });
+    const coreQueue = { enqueueMeetingReportFast: vi.fn() } as unknown as CoreQueueService;
+
+    const worker = new MergeWorker(
+      m.redis,
+      m.prisma,
+      m.queue,
+      m.meetings,
+      m.metrics,
+      cfg,
+      m.s3,
+      coreQueue,
+    );
+
+    await (
+      worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
+    ).onJobFailed(
+      { data: { meetingId }, attemptsMade: 5, opts: { attempts: 5 } },
+      new Error('merge boom'),
+    );
+
+    const transitionStatus = m.meetings.transitionStatus as ReturnType<typeof vi.fn>;
+    expect(transitionStatus).toHaveBeenCalledWith(
+      meetingId,
+      'ai_failed',
+      expect.objectContaining({ failureReason: 'merge: merge boom' }),
+    );
+    expect(transitionStatus).not.toHaveBeenCalledWith(
+      meetingId,
+      'failed',
+      expect.anything(),
+    );
+    expect(m.metrics.incMeetingFailed).toHaveBeenCalledWith('merge');
+  });
+});

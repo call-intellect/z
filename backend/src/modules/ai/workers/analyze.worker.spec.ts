@@ -41,6 +41,7 @@ function buildWorker(args: BuildArgs): {
   llmComplete: ReturnType<typeof vi.fn>;
   incPromptInjectionAttempt: ReturnType<typeof vi.fn>;
   incIngestFailed: ReturnType<typeof vi.fn>;
+  incMeetingFailed: ReturnType<typeof vi.fn>;
   meetingUpdate: ReturnType<typeof vi.fn>;
   ingestMeeting: ReturnType<typeof vi.fn>;
 } {
@@ -146,9 +147,10 @@ function buildWorker(args: BuildArgs): {
   } as unknown as AiQueueService;
   const incPromptInjectionAttempt = vi.fn();
   const incIngestFailed = vi.fn();
+  const incMeetingFailed = vi.fn();
   const metrics = {
     observeAiPipelineDuration: vi.fn(),
-    incMeetingFailed: vi.fn(),
+    incMeetingFailed,
     incPromptInjectionAttempt,
     incIngestFailed,
   } as unknown as BusinessMetricsService;
@@ -189,6 +191,7 @@ function buildWorker(args: BuildArgs): {
     llmComplete: args.llmComplete,
     incPromptInjectionAttempt,
     incIngestFailed,
+    incMeetingFailed,
     meetingUpdate,
     ingestMeeting,
   };
@@ -479,6 +482,30 @@ describe('AnalyzeWorker.process', () => {
         .find((u) => u?.data?.['failureReason'] !== undefined);
       expect(failureUpdate).toBeUndefined();
       expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+    });
+  });
+
+  describe('onJobFailed (Фаза 11: развязка записи от AI-статуса)', () => {
+    it('финальный сбой analyze → встреча уходит в `ai_failed`, НЕ в `failed` (запись остаётся смотрибельной)', async () => {
+      const { worker, transitionStatus, incMeetingFailed } = buildWorker({
+        type: 'sales',
+        llmComplete: vi.fn(),
+      });
+
+      await (
+        worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
+      ).onJobFailed(
+        { data: { meetingId: 'm-1' }, attemptsMade: 5, opts: { attempts: 5 } },
+        new Error('analyze boom'),
+      );
+
+      expect(transitionStatus).toHaveBeenCalledWith(
+        'm-1',
+        'ai_failed',
+        expect.objectContaining({ failureReason: 'analyze: analyze boom' }),
+      );
+      expect(transitionStatus).not.toHaveBeenCalledWith('m-1', 'failed', expect.anything());
+      expect(incMeetingFailed).toHaveBeenCalledWith('analyze');
     });
   });
 });

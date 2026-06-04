@@ -420,6 +420,65 @@ describe('TranscribeWorker.process', () => {
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
     expect(deps.enqueueMerge).toHaveBeenCalledWith('m-1');
   });
+
+  it('нет audio-треков → встреча уходит в терминальный `failed` (Фаза 11: показывать нечего)', async () => {
+    const { worker, deps } = makeWorker({ tracks: [] });
+    await run(worker);
+
+    expect(deps.meetings.transitionStatus).toHaveBeenCalledWith(
+      'm-1',
+      'failed',
+      expect.objectContaining({ failureReason: 'transcribe: no_audio_tracks' }),
+    );
+    // Не уводим в ai_failed — записи/дорожек нет, смотреть нечего.
+    expect(deps.meetings.transitionStatus).not.toHaveBeenCalledWith(
+      'm-1',
+      'ai_failed',
+      expect.anything(),
+    );
+    expect(deps.metrics.incMeetingFailed).toHaveBeenCalledWith('transcribe');
+    // submit/poll не вызываются — короткое замыкание на отсутствии треков.
+    expect(deps.submit).not.toHaveBeenCalled();
+  });
+});
+
+describe('TranscribeWorker.onJobFailed (Фаза 11: развязка записи от AI-статуса)', () => {
+  function failJob(): unknown {
+    return { data: { meetingId: 'm-1' }, attemptsMade: 5, opts: { attempts: 5 } };
+  }
+
+  it('финальный сбой AI-ветки → встреча уходит в `ai_failed`, НЕ в `failed` (запись остаётся смотрибельной)', async () => {
+    const { worker, deps } = makeWorker({ tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })] });
+
+    await (
+      worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
+    ).onJobFailed(failJob(), new Error('Vox poll timeout'));
+
+    expect(deps.meetings.transitionStatus).toHaveBeenCalledWith(
+      'm-1',
+      'ai_failed',
+      expect.objectContaining({ failureReason: 'transcribe: Vox poll timeout' }),
+    );
+    expect(deps.meetings.transitionStatus).not.toHaveBeenCalledWith(
+      'm-1',
+      'failed',
+      expect.anything(),
+    );
+    expect(deps.metrics.incMeetingFailed).toHaveBeenCalledWith('transcribe');
+  });
+
+  it('до исчерпания ретраев (attemptsMade < attempts) → не трогает статус', async () => {
+    const { worker, deps } = makeWorker({ tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })] });
+
+    await (
+      worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
+    ).onJobFailed(
+      { data: { meetingId: 'm-1' }, attemptsMade: 2, opts: { attempts: 5 } },
+      new Error('transient'),
+    );
+
+    expect(deps.meetings.transitionStatus).not.toHaveBeenCalled();
+  });
 });
 
 describe('LivekitEventsHandler.parseEgressStartedAt (E: ns→Date)', () => {

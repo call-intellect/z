@@ -75,6 +75,11 @@ enum MeetingStatus {
   ai_processing
   ai_ready
   failed
+  /// Фаза 11 (развязка записи от AI-статуса): сбой ТОЛЬКО AI-ветки
+  /// (transcribe/merge/analyze) после исчерпания ретраев. В отличие от
+  /// терминального `failed`, при `ai_failed` запись встречи (Recording.status=ready,
+  /// mainVideoUrl) остаётся смотрибельной — встреча не схлопывается целиком.
+  ai_failed
 }
 
 enum AiStepStatus {

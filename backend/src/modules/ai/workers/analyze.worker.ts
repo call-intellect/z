@@ -895,7 +895,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 5)) return;
     const meetingId = job.data.meetingId;
     try {
-      await this.meetings.transitionStatus(meetingId, 'failed', {
+      // Фаза 11 (развязка записи от AI-статуса): сбой AI-ветки после исчерпания
+      // ретраев НЕ схлопывает встречу в терминальный `failed` — запись (если есть)
+      // должна остаться смотрибельной. `ai_failed` сохраняет видео доступным.
+      await this.meetings.transitionStatus(meetingId, 'ai_failed', {
         failureReason: `analyze: ${err.message}`,
         reason: 'ai:analyze:final_failure',
       });

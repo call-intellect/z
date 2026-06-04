@@ -191,7 +191,7 @@
 
 ---
 
-## Ф7 — мост ingestMeeting: видимый провал + reingest-fallback `[ ]`
+## Ф7 — мост ingestMeeting: видимый провал + reingest-fallback `[x]`
 
 **Корень (баг #1/#8, pipelineMap «МОСТ встреча→второй мозг», high):** `ingestMeeting` — ЕДИНСТВЕННЫЙ вход результата встречи в knowledge-core, вызывается только из `analyze.worker.ts:378` (после ai_ready) и обёрнут в `.catch((err)=>{ logger.warn(...); return null; })` (`:378-388`). Т.к. catch возвращает resolved-`null`, `Promise.allSettled` на индексе 'ingest' НИКОГДА не попадает в `rejected` (`:389-391`) → `meeting.failureReason` не пишется (`:392-415`), статус остаётся `ai_ready` (`:318`). Оператор видит «зелёную» встречу, хотя RawEvent не создан. Все режимы провала реальны (throw до `.catch`): `meeting_no_merged_transcript` (`meeting.adapter.ts:87-95`), `meeting_without_tenant` (`:79-86`), `source_inactive` (`ingest.service.ts:101-106`), `QuotaExceededError` (`ingest.service.ts:163-164`, HTTP 429). Комментарий `analyze.worker.ts:384-386` «consumer в core.raw-events ещё не подписан» неверен — `BlockIngestWorker` создаёт живой Worker в `onModuleInit` (`block-ingest.worker.ts:126-146`).
 

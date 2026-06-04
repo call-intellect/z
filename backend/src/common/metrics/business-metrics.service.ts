@@ -381,6 +381,13 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'validation_error' / 'idempotent_skip' (P2002 гонка concurrency — норма) /
   // 'other'. Раньше любой провал глушился warn'ом без метрики.
   private kcTypedEntityFailedTotal!: Counter<'type' | 'reason'>;
+  // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
+  // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
+  // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
+  // создавался, в граф ничего не уходило. reason: 'source_inactive' /
+  // 'no_merged_transcript' / 'without_tenant' / 'quota_exceeded' / 'other'.
+  // Только reason в label (низкая кардинальность); tenantId/meetingId — в лог.
+  private meetingIngestFailedTotal!: Counter<'reason'>;
   // SBA β-3 — evolving-конфликты (отдельный counter рядом с
   // core_specialist_conflict_events_total). Не сливаем в один counter, чтобы
   // не ломать обратную совместимость существующих label'ов.
@@ -1900,6 +1907,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_typed_entity_failed_total',
       help: 'Ф5 МТЗ — провалы записи типизированной сущности группы Б в block-ingest (type × reason). type: process/regulation/policy/tool/metric/decision. reason: age_unavailable (системный отказ графа) / validation_error / idempotent_skip (P2002 гонка — норма) / other. age_unavailable блокирует пометку RawEvent ingested → failed+ретрай.',
       labelNames: ['type', 'reason'] as const,
+    });
+    // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
+    this.meetingIngestFailedTotal = this.getOrCreateCounter({
+      name: 'meeting_ingest_failed_total',
+      help: 'Ф7 МТЗ — провалы моста встреча→knowledge-core (analyze.worker → MeetingIngestAdapter.ingestMeeting). reason: source_inactive / no_merged_transcript / without_tenant / quota_exceeded / other. Раньше провал глушился в resolved-null (встреча выглядела «зелёной», RawEvent не создавался). Теперь reject виден через failureReason + ретрай-cron meeting-reingest.',
+      labelNames: ['reason'] as const,
     });
     // SBA β-3 — evolving-конфликты (отдельный counter).
     this.coreSpecialistConflictEvolvingTotal = this.getOrCreateCounter({
@@ -4678,6 +4691,17 @@ export class BusinessMetricsService implements OnModuleInit {
       type: args.type,
       reason: args.reason,
     });
+  }
+
+  /**
+   * Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провал моста
+   * `ingestMeeting` (analyze.worker → MeetingIngestAdapter). reason ∈
+   * source_inactive | no_merged_transcript | without_tenant | quota_exceeded |
+   * other. Только reason в label (низкая кардинальность); tenantId/meetingId —
+   * в лог, не в метку.
+   */
+  incIngestFailed(args: { reason: string }): void {
+    this.meetingIngestFailedTotal.inc({ reason: args.reason });
   }
 
   /** Прирост токенов, потраченных специалистом на LLM-вызов. */

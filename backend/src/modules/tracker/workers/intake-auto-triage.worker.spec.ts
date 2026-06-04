@@ -164,7 +164,12 @@ describe('IntakeAutoTriageWorker', () => {
   });
 
   it('confidence ≥ 0.92 + source=meeting + assignee → auto-create Issue + status=accepted', async () => {
-    const { worker, prisma, issues, metrics } = mkWorker();
+    // Ф5.1: для meeting-источника исполнитель резолвится upstream по identity
+    // участников встречи (meeting-extract-actions), а не substring по тенанту.
+    // Поэтому identity-корректный userId приходит уже в intake.suggestedAssigneeId.
+    const { worker, prisma, issues, metrics } = mkWorker({
+      intake: { suggestedAssigneeId: 'user-ivanov' },
+    });
     await worker.process(
       jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }),
     );
@@ -194,6 +199,8 @@ describe('IntakeAutoTriageWorker', () => {
 
   it('confidence < 0.92 → не создаёт Issue, обновляет только suggested*', async () => {
     const { worker, prisma, issues, metrics } = mkWorker({
+      // Ф5.1: meeting-источник несёт identity-резолвнутый assignee upstream.
+      intake: { suggestedAssigneeId: 'user-ivanov' },
       llmText: JSON.stringify({
         suggestedProjectIdentifier: 'DEV',
         suggestedAssigneeHint: 'Иванов Сергей',

@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ParticipantContextService } from '../../ai/services/participant-context.service';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
+import type {
+  ResolvedTaskAssignee,
+  TaskAssigneeResolverService,
+} from '../../knowledge-core/services/task-assignee-resolver.service';
 
 import type { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { MeetingExtractActionsService } from './meeting-extract-actions.service';
@@ -22,10 +28,19 @@ function mkService(opts?: {
   llmText?: string;
   llmReject?: boolean;
   existingIntake?: boolean;
+  /** Участники встречи, которых вернёт participantContext.loadForMeeting. */
+  participants?: AiParticipantContext[];
+  /**
+   * Детерминированный возврат assigneeResolver.resolve — массив того же
+   * порядка, что и входные задачи. Если не задан — все null (нет матча).
+   */
+  resolveResult?: ResolvedTaskAssignee[];
 }): {
   service: MeetingExtractActionsService;
   prisma: MockPrisma;
   llm: { call: ReturnType<typeof vi.fn> };
+  participantContext: { loadForMeeting: ReturnType<typeof vi.fn> };
+  assigneeResolver: { resolve: ReturnType<typeof vi.fn> };
   metrics: {
     incAiMeetingActionsExtracted: ReturnType<typeof vi.fn>;
   };
@@ -67,25 +82,11 @@ function mkService(opts?: {
       findMany: vi.fn().mockResolvedValue([{ name: 'Запуск v2' }]),
     },
     person: {
-      findMany: vi
-        .fn()
-        .mockImplementation(({ where }: { where: { name?: unknown } }) => {
-          // resolveAssigneeId — фильтр по name.contains
-          if (where.name) {
-            return Promise.resolve([
-              {
-                id: 'p-iv',
-                userId: 'user-ivanov',
-                name: 'Иванов Сергей',
-              },
-            ]);
-          }
-          // loadOrgContext — общий список
-          return Promise.resolve([
-            { name: 'Иванов Сергей' },
-            { name: 'Петров Олег' },
-          ]);
-        }),
+      // loadOrgContext — общий список сотрудников для промпта.
+      findMany: vi.fn().mockResolvedValue([
+        { name: 'Иванов Сергей' },
+        { name: 'Петров Олег' },
+      ]),
     },
     intakeIssue: {
       findFirst: vi
@@ -130,6 +131,29 @@ function mkService(opts?: {
         }),
   };
 
+  const participantContext = {
+    loadForMeeting: vi
+      .fn()
+      .mockResolvedValue(opts?.participants ?? []),
+  };
+
+  // Резолвер детерминирован: возвращает заданный массив, иначе для каждой
+  // входной задачи — null (нет матча среди участников). Сохраняем
+  // assigneeRaw из входа, чтобы форма совпадала с реальным сервисом.
+  const assigneeResolver = {
+    resolve: vi.fn(
+      (
+        raw: Array<{ assigneeRaw: string | null; assigneeUserId: string | null }>,
+      ): ResolvedTaskAssignee[] =>
+        opts?.resolveResult ??
+        raw.map((r) => ({
+          assigneeRaw: r.assigneeRaw,
+          assigneeUserId: null,
+          ambiguous: false,
+        })),
+    ),
+  };
+
   const metrics = {
     incAiMeetingActionsExtracted: vi.fn(),
   };
@@ -138,10 +162,33 @@ function mkService(opts?: {
   const service = new MeetingExtractActionsService(
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
+    participantContext as unknown as ParticipantContextService,
+    assigneeResolver as unknown as TaskAssigneeResolverService,
     metrics as unknown as BusinessMetricsService,
     queue as unknown as IntakeAutoTriageQueueService,
   );
-  return { service, prisma, llm, metrics, queue };
+  return {
+    service,
+    prisma,
+    llm,
+    participantContext,
+    assigneeResolver,
+    metrics,
+    queue,
+  };
+}
+
+/** Хелпер: участник встречи с identity. */
+function participant(
+  over: Partial<AiParticipantContext> & { displayName: string },
+): AiParticipantContext {
+  return {
+    livekitIdentity: over.livekitIdentity ?? `host:${over.userId ?? 'x'}`,
+    displayName: over.displayName,
+    userId: over.userId ?? null,
+    fullName: over.fullName ?? null,
+    role: over.role ?? 'host',
+  };
 }
 
 describe('MeetingExtractActionsService', () => {
@@ -150,7 +197,15 @@ describe('MeetingExtractActionsService', () => {
   });
 
   it('извлекает задачу из встречи и создаёт IntakeIssue с suggested* + enqueue auto-triage', async () => {
-    const { service, prisma, llm, metrics, queue } = mkService();
+    const { service, prisma, llm, metrics, queue } = mkService({
+      // Резолвер находит Иванова среди участников встречи.
+      resolveResult: [
+        { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
+      ],
+      participants: [
+        participant({ displayName: 'Иванов Сергей', userId: 'user-ivanov' }),
+      ],
+    });
     const created = await service.extract({
       tenantId: 'org-1',
       meetingId: 'm-1',
@@ -262,5 +317,121 @@ describe('MeetingExtractActionsService', () => {
     };
     // confidence хранится как Prisma.Decimal — у него есть .toString()
     expect(String(createArg.data.confidence)).toBe('1');
+  });
+
+  // ───────────────────── Acceptance 5.1 (identity-резолвер) ────────────────
+
+  it('Acceptance 5.1 (a): hint="Настя" + участник Настя c userId → suggestedAssigneeId=userId по identity', async () => {
+    const nastya = participant({
+      displayName: 'Настя',
+      userId: 'u-nastya',
+      role: 'host',
+    });
+    const { service, prisma, participantContext, assigneeResolver } = mkService({
+      participants: [nastya],
+      // Резолвер матчит "Настя" среди участников встречи → userId.
+      resolveResult: [
+        { assigneeRaw: 'Настя', assigneeUserId: 'u-nastya', ambiguous: false },
+      ],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Подготовить Х',
+            assignee: 'Настя',
+            dueDate: null,
+            suggestedAssigneeHint: 'Настя',
+            confidence: 0.9,
+            sourceQuote: 'Настя, подготовь Х',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    // Резолв шёл против УЧАСТНИКОВ встречи, а не Person по всему тенанту.
+    expect(participantContext.loadForMeeting).toHaveBeenCalledWith('m-1');
+    expect(assigneeResolver.resolve).toHaveBeenCalledWith(
+      [{ assigneeRaw: 'Настя', assigneeUserId: null }],
+      [nastya],
+      'org-1',
+    );
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBe('u-nastya');
+  });
+
+  it('Acceptance 5.1 (b): тёзка НЕ из встречи с тем же именем НЕ выбирается (resolver → null)', async () => {
+    // Участник встречи — Олег (userId=u-oleg), а в речи звучит "Настя".
+    // Резолвер не находит "Настя" среди участников → null. Тёзка Настя из
+    // другого отдела (есть в Person по всему тенанту) НЕ выбирается.
+    const oleg = participant({ displayName: 'Олег', userId: 'u-oleg' });
+    const { service, prisma, assigneeResolver } = mkService({
+      participants: [oleg],
+      resolveResult: [
+        { assigneeRaw: 'Настя', assigneeUserId: null, ambiguous: false },
+      ],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Подготовить Х',
+            assignee: 'Настя',
+            dueDate: null,
+            suggestedAssigneeHint: 'Настя',
+            confidence: 0.9,
+            sourceQuote: 'Настя, подготовь Х',
+          },
+        ],
+      }),
+    });
+
+    await service.extract({ tenantId: 'org-1', meetingId: 'm-1' });
+
+    expect(assigneeResolver.resolve).toHaveBeenCalledWith(
+      [{ assigneeRaw: 'Настя', assigneeUserId: null }],
+      [oleg],
+      'org-1',
+    );
+    // person.findMany по name НЕ вызывается (substring-резолв удалён).
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
+  });
+
+  it('Acceptance 5.1 (c): hint без совпадения → suggestedAssigneeId=null, IntakeIssue всё равно создаётся', async () => {
+    const { service, prisma, metrics } = mkService({
+      // Без участников и без матча — резолвер вернёт null (дефолтный мок).
+      participants: [],
+      llmText: JSON.stringify({
+        tasks: [
+          {
+            title: 'Никому конкретно',
+            assignee: 'маркетинг',
+            dueDate: null,
+            suggestedAssigneeHint: 'маркетинг',
+            confidence: 0.8,
+            sourceQuote: 'Маркетинг, посмотрите',
+          },
+        ],
+      }),
+    });
+
+    const created = await service.extract({
+      tenantId: 'org-1',
+      meetingId: 'm-1',
+    });
+
+    expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
+    const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {
+      data: { suggestedAssigneeId: string | null; extractedTitle: string };
+    };
+    expect(createArg.data.suggestedAssigneeId).toBeNull();
+    expect(createArg.data.extractedTitle).toBe('Никому конкретно');
+    expect(created).toHaveLength(1);
+    expect(metrics.incAiMeetingActionsExtracted).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'created', by: 1 }),
+    );
   });
 });

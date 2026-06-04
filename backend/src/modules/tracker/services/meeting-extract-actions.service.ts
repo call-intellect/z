@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type {
   DialogTurn,
   RoomChatMessage,
@@ -23,6 +24,7 @@ import {
   TASKS_TOOL_NAME,
 } from '../../ai/services/prompts/tasks';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
+import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 
@@ -54,6 +56,15 @@ export class MeetingExtractActionsService implements OnModuleInit {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.1 —
+    // резолв исполнителя по IDENTITY УЧАСТНИКОВ встречи (а не substring по
+    // Person.name по всему тенанту). Оба сервиса — из @Global модулей
+    // (AiModule / KnowledgeCoreModule), паттерн скопирован из
+    // `meeting-report-fast.worker.ts`.
+    @Inject(ParticipantContextService)
+    private readonly participantContext: ParticipantContextService,
+    @Inject(TaskAssigneeResolverService)
+    private readonly assigneeResolver: TaskAssigneeResolverService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -110,6 +121,11 @@ export class MeetingExtractActionsService implements OnModuleInit {
 
     // 2. Контекст организации (проекты, цели, известные сотрудники).
     const ctx = await this.loadOrgContext(tenantId, meeting.startedAt);
+
+    // 2b. Участники встречи (с identity — после Ф0.2 включает приглашённых
+    // сотрудников). Используются для жёсткого резолва исполнителя задачи:
+    // матч имени/userId ТОЛЬКО среди тех, кто реально был на встрече.
+    const participants = await this.participantContext.loadForMeeting(meetingId);
 
     // 3. Промпт + LLM.
     const prompt = buildMeetingExtractActionsPrompt(
@@ -251,10 +267,21 @@ export class MeetingExtractActionsService implements OnModuleInit {
         continue;
       }
 
-      const suggestedAssigneeId = await this.resolveAssigneeId(
-        tenantId,
-        t.suggestedAssigneeHint ?? t.assignee,
-      );
+      // Ф5.1 — резолв исполнителя по identity участников встречи через общий
+      // TaskAssigneeResolverService (тот же сервис, что в meeting-report-fast).
+      // LLM `assigneeUserId` не отдаёт → стартуем с null; матч только по
+      // assigneeRaw среди участников. Тёзка не из встречи / гость → null.
+      const suggestedAssigneeId =
+        this.assigneeResolver.resolve(
+          [
+            {
+              assigneeRaw: t.suggestedAssigneeHint ?? t.assignee ?? null,
+              assigneeUserId: null,
+            },
+          ],
+          participants,
+          tenantId,
+        )[0]?.assigneeUserId ?? null;
       const suggestedProjectId = await this.resolveProjectIdByMeeting(
         tenantId,
         meeting.title,
@@ -351,45 +378,6 @@ export class MeetingExtractActionsService implements OnModuleInit {
     h.update(' ');
     h.update(key);
     return `mea_${h.digest('hex').slice(0, 24)}`;
-  }
-
-  /**
-   * Маппинг assigneeHint → User.id через Person.
-   *
-   * Текущая логика: ищем Person в org по case-insensitive substring (часть
-   * ФИО, например "Иванов" совпадёт с "Иванов Сергей"). На multiple match
-   * — null (нужен человеческий триаж). На no match — null.
-   *
-   * vNext: подключить полноценный AssigneeResolverService (когда появится).
-   */
-  private async resolveAssigneeId(
-    tenantId: string,
-    hint: string | null | undefined,
-  ): Promise<string | null> {
-    const trimmed = (hint ?? '').trim();
-    if (trimmed.length < 2) return null;
-    // Лёгкий поиск — берём первое слово (фамилию или имя) и ищем по name LIKE.
-    const firstToken = trimmed.split(/\s+/)[0] ?? '';
-    if (firstToken.length < 2) return null;
-    const candidates = await this.prisma.person.findMany({
-      where: {
-        tenantId,
-        deletedAt: null,
-        name: { contains: firstToken, mode: 'insensitive' },
-      },
-      take: 5,
-      select: { id: true, userId: true, name: true },
-    });
-    if (candidates.length === 0) return null;
-    // Если ровно один match — возвращаем userId (suggestedAssigneeId — это
-    // User.id, потому что Issue.assigneeUserIds[] = User.id).
-    const single =
-      candidates.length === 1
-        ? candidates[0]
-        : candidates.find(
-            (c) => c.name.toLowerCase() === trimmed.toLowerCase(),
-          ) ?? null;
-    return single?.userId ?? null;
   }
 
   /**

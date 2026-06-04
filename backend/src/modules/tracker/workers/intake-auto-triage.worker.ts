@@ -261,11 +261,22 @@ export class IntakeAutoTriageWorker
       parsed.suggestedProjectIdentifier,
       intake.suggestedProjectId,
     );
-    const suggestedAssigneeId = resolveAssigneeUserId(
-      people,
-      parsed.suggestedAssigneeHint ?? null,
-      intake.suggestedAssigneeId,
-    );
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.1 — для
+    // intake из встречи (`source='meeting'`) исполнитель уже резолвнут
+    // upstream по IDENTITY участников встречи (см.
+    // `meeting-extract-actions.service.ts`), а значит `intake.suggestedAssigneeId`
+    // identity-корректен. НЕ перезатираем его substring-резолвом по ВСЕМУ
+    // тенанту (дубль-баг: тёзка из другого отдела). Substring-логика
+    // (`resolveAssigneeUserId`) остаётся только для не-meeting источников
+    // (telegram/in_app), где участников встречи нет.
+    const suggestedAssigneeId =
+      intake.source === 'meeting'
+        ? intake.suggestedAssigneeId
+        : resolveAssigneeUserId(
+            people,
+            parsed.suggestedAssigneeHint ?? null,
+            intake.suggestedAssigneeId,
+          );
     const suggestedGoalId = resolveGoalId(
       goals,
       parsed.suggestedGoalName ?? null,

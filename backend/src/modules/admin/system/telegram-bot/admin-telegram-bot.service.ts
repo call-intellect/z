@@ -199,23 +199,33 @@ export class AdminTelegramBotService {
 
   async updateToken(args: { token: string }): Promise<TelegramBotSettingsResponseDto> {
     const trimmed = args.token.trim();
-    // Дополнительно валидируем доступность токена через getMe — это и
-    // удобство админу, и защита от опечатки. Если Telegram отверг — даём
-    // понятное сообщение и не пишем токен.
-    try {
-      await this.tgApi.getMe({ token: trimmed });
-    } catch (err) {
-      throw new BadRequestException({
-        ok: false,
-        error: {
-          code: 'telegram_token_invalid',
-          message: `Telegram отверг токен: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
-        },
-      });
+    const useProxy = this.cfg.telegramProxy.enabled;
+
+    // Валидация токена.
+    //   - direct-режим: `getMe` напрямую через api.telegram.org (Telegram
+    //     достижим) — удобство админу и защита от опечатки.
+    //   - proxy-режим: `getMe` ДО регистрации НЕВОЗМОЖЕН — прокси
+    //     `telegram.crossmark.ru` проксирует Bot API только для УЖЕ
+    //     зарегистрированных ботов (защита от open-relay, иначе 403
+    //     «Токен бота не зарегистрирован в этом прокси»). Поэтому токен
+    //     валидируется самой регистрацией ниже (прокси дёрнет `setWebhook`
+    //     у Telegram; невалидный токен → `webhookError` → ошибка), а
+    //     `getMe` для username делаем ПОСЛЕ регистрации (best-effort).
+    if (!useProxy) {
+      try {
+        await this.tgApi.getMe({ token: trimmed });
+      } catch (err) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'telegram_token_invalid',
+            message: `Telegram отверг токен: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          },
+        });
+      }
     }
 
     const tokenEnc = this.crypto.encrypt(trimmed);
-    const botUsername = await this.fetchBotUsernameSafe(trimmed);
 
     // Auto-register в прокси (2026-05-26): убирает необходимость двойного
     // клика «Установить токен → Перенастроить webhook» и patch-скрипта на
@@ -225,12 +235,18 @@ export class AdminTelegramBotService {
     let proxyPatch: Record<string, unknown> = {};
     let webhookSecretToPersist: string | undefined;
     let autoRegisterOutcome: 'skipped' | 'ok' | 'failed' = 'skipped';
+    let botUsername: string | null = null;
 
-    if (this.cfg.telegramProxy.enabled) {
+    if (useProxy) {
       const reg = await this.autoRegisterInProxy({ token: trimmed });
       autoRegisterOutcome = reg.outcome;
       proxyPatch = reg.patch;
       webhookSecretToPersist = reg.webhookSecretToPersist;
+      // Бот зарегистрирован → прокси теперь проксирует Bot API → getMe
+      // для username работает (best-effort, не валит сохранение токена).
+      botUsername = await this.fetchBotUsernameSafe(trimmed);
+    } else {
+      botUsername = await this.fetchBotUsernameSafe(trimmed);
     }
 
     const channel = await this.upsertGlobalChannel((existingConfig) => ({
@@ -280,6 +296,9 @@ export class AdminTelegramBotService {
     const existingSecretEnc = existing
       ? this.readConfig(existing).webhookSecretEnc
       : '';
+    // Имя для карточки бота в прокси — известный username, иначе провизорное
+    // (getMe ещё недоступен через прокси до регистрации).
+    const name = (existing ? this.readConfig(existing).botUsername : undefined) ?? 'Kora Bot';
     let secret = '';
     if (existingSecretEnc) {
       secret = this.tryDecrypt(existingSecretEnc);
@@ -290,11 +309,15 @@ export class AdminTelegramBotService {
       webhookSecretToPersist = this.crypto.encrypt(secret);
     }
 
-    const targetUrl = this.computeWebhookUrl();
+    // Прокси не отдаёт свой webhook-secret через REST, поэтому мы кладём
+    // СВОЙ секрет в путь targetWebhookUrl. Прокси POST-ит апдейты ровно на
+    // этот URL — секрет в пути и есть наша аутентификация (см.
+    // TelegramWebhooksController, роут `/s/:secret`).
+    const targetUrl = this.computeWebhookTargetUrl(secret);
     try {
       const info = await this.proxyAdmin.upsertBot({
+        name,
         token: args.token,
-        secretToken: secret,
         targetUrl,
       });
       return {
@@ -304,7 +327,7 @@ export class AdminTelegramBotService {
           proxyBotId: info.id,
           proxyRegisteredAt: new Date().toISOString(),
           proxyLastSyncError: null,
-          webhookUrl: targetUrl,
+          webhookUrl: this.computeWebhookUrl(),
         },
       };
     } catch (err) {
@@ -381,11 +404,14 @@ export class AdminTelegramBotService {
     let proxyLastSyncError: string | null = null;
 
     if (useProxy) {
+      // В proxy-режиме секрет передаётся в пути targetWebhookUrl (прокси
+      // не принимает secret_token и не отдаёт свой через REST).
+      const botUsername = config.botUsername;
       try {
         const info = await this.proxyAdmin.upsertBot({
+          name: botUsername ?? 'Kora Bot',
           token,
-          secretToken: newSecret,
-          targetUrl: webhookUrl,
+          targetUrl: `${webhookUrl}/s/${newSecret}`,
         });
         proxyBotId = info.id;
         proxyRegisteredAt = new Date().toISOString();
@@ -767,6 +793,16 @@ export class AdminTelegramBotService {
   private computeWebhookUrl(): string {
     const base = this.cfg.publicHostUrl.replace(/\/+$/, '');
     return `${base}/api/v1/webhooks/telegram-bot`;
+  }
+
+  /**
+   * URL приёма webhook'ов с секретом в пути — то, что мы регистрируем в
+   * прокси как `targetWebhookUrl`. Прокси POST-ит апдейты ровно сюда;
+   * секрет в пути — наша аутентификация (`TelegramWebhooksController`
+   * роут `/s/:secret`). См. также `feedback conversational_channels_principles`.
+   */
+  private computeWebhookTargetUrl(secret: string): string {
+    return `${this.computeWebhookUrl()}/s/${secret}`;
   }
 
   private generateWebhookSecret(): string {

@@ -114,8 +114,8 @@ function makeMockServices(): {
 
   const upsertBot = vi.fn(
     async (_args: {
+      name: string;
       token: string;
-      secretToken: string;
       targetUrl: string;
     }): Promise<TelegramProxyBotInfo> => ({ id: 'proxy-bot-1' }),
   );
@@ -391,14 +391,17 @@ describe('AdminTelegramBotService', () => {
 
       expect(m.proxySpies.upsertBot).toHaveBeenCalledOnce();
       const upsertArg = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
+        name: string;
         token: string;
-        secretToken: string;
         targetUrl: string;
       };
       expect(upsertArg.token).toBe('111111111:token-123');
-      expect(upsertArg.secretToken).toMatch(/^[a-f0-9]{32}$/);
-      expect(upsertArg.targetUrl).toBe(
-        'https://app.example.org/api/v1/webhooks/telegram-bot',
+      // username ещё неизвестен на момент регистрации (getMe идёт ПОСЛЕ) →
+      // провизорное имя.
+      expect(upsertArg.name).toBe('Kora Bot');
+      // Секрет — в пути targetWebhookUrl (32 hex после `/s/`).
+      expect(upsertArg.targetUrl).toMatch(
+        /^https:\/\/app\.example\.org\/api\/v1\/webhooks\/telegram-bot\/s\/[a-f0-9]{32}$/,
       );
       // Записанный config содержит token + webhookSecret (encrypted) + proxyBotId.
       expect(savedConfig).not.toBeNull();
@@ -434,10 +437,13 @@ describe('AdminTelegramBotService', () => {
       await svc.updateToken({ token: '222222222:new-token' });
 
       const upsertArg = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
-        secretToken: string;
+        targetUrl: string;
       };
       // existing-secret-42 расшифрован cryptoSpies.decrypt из gcm:v1:enc(existing-secret-42)
-      expect(upsertArg.secretToken).toBe('existing-secret-42');
+      // и попадает в путь targetWebhookUrl.
+      expect(upsertArg.targetUrl).toBe(
+        'https://app.example.org/api/v1/webhooks/telegram-bot/s/existing-secret-42',
+      );
       // webhookSecret в config переиспользован (тот же зашифрованный blob), не пере-encrypt'нут.
       expect(updatedConfig).not.toBeNull();
       const cfg = updatedConfig as unknown as Record<string, unknown>;
@@ -519,13 +525,15 @@ describe('AdminTelegramBotService', () => {
 
       expect(m.proxySpies.upsertBot).toHaveBeenCalledOnce();
       const call = m.proxySpies.upsertBot.mock.calls[0]?.[0] as {
+        name: string;
         token: string;
-        secretToken: string;
         targetUrl: string;
       };
       expect(call.token).toBe('token-plain-1234');
-      expect(call.targetUrl).toBe('https://app.example.org/api/v1/webhooks/telegram-bot');
-      expect(call.secretToken).toMatch(/^[a-f0-9]{32}$/);
+      // Секрет — в пути targetWebhookUrl (32 hex после `/s/`).
+      expect(call.targetUrl).toMatch(
+        /^https:\/\/app\.example\.org\/api\/v1\/webhooks\/telegram-bot\/s\/[a-f0-9]{32}$/,
+      );
       // legacy setWebhook не вызывается.
       expect(m.tgSpies.setWebhook).not.toHaveBeenCalled();
       // в config сохранены proxyBotId / proxyRegisteredAt.

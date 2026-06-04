@@ -41,12 +41,18 @@ import type { TelegramUpdate } from './telegram.types';
  *     канал (если есть). Если глобального канала нет — пробует per-tenant
  *     `Channel` (старое поведение).
  *
- * Авторизация:
- *   - Telegram отправляет `X-Telegram-Bot-Api-Secret-Token` (если webhook
- *     зарегистрирован с `secret_token` в `setWebhook`). Сверяем timing-safe
- *     с `Channel.config.webhookSecret`.
- *   - На любой неуспех возвращаем 200 (Telegram спамит retry'ями на non-2xx)
- *     — кроме отсутствия канала / невалидного secret'а.
+ * Авторизация (две модели — обе сверяют `Channel.config.webhookSecret`
+ * timing-safe):
+ *   - **proxy-режим** (`telegram.crossmark.ru`): прокси POST-ит апдейты на
+ *     `POST /api/v1/webhooks/telegram-bot/s/:secret` — секрет в пути.
+ *     Прокси НЕ отдаёт свой webhook-secret через REST, поэтому мы кладём
+ *     СВОЙ секрет в путь `targetWebhookUrl` при регистрации бота.
+ *   - **direct-режим** (`TELEGRAM_PROXY_ENABLED=false`, dev/rollback):
+ *     Telegram шлёт `X-Telegram-Bot-Api-Secret-Token` на базовый
+ *     `POST /api/v1/webhooks/telegram-bot` — сверяем заголовок.
+ *   - На любой неуспех парсинга/диспетча возвращаем 200 (Telegram/прокси
+ *     спамят retry'ями на non-2xx) — кроме отсутствия канала / невалидного
+ *     secret'а (403/404).
  *
  * `@ApiExcludeController` — это служебный endpoint, не публикуется в Swagger
  * (тот же паттерн, что у `TelegramWebhookController` из ingest/).
@@ -152,7 +158,45 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     return this.processUpdate({
       channel,
       body,
-      secretHeader,
+      providedSecret: secretHeader,
+      tenantId: undefined,
+    });
+  }
+
+  /**
+   * proxy-режим — прокси `telegram.crossmark.ru` POST-ит апдейты сюда,
+   * секрет передаётся в пути (`/s/:secret`). Сверяем `:secret` с
+   * `Channel.config.webhookSecret`. Резолвит глобальный канал.
+   *
+   * Двусегментный путь (`s/:secret`) не конфликтует с односегментным
+   * legacy `:tenantId` — NestJS матчит по числу сегментов.
+   */
+  @Post('s/:secret')
+  @HttpCode(HttpStatus.OK)
+  async receiveViaProxy(
+    @Param('secret') secret: string,
+    @Body() body: TelegramUpdate,
+  ): Promise<{ ok: true }> {
+    const channel = await this.findGlobalChannel();
+    if (!channel || channel.status !== 'active') {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'global_channel_not_configured',
+          message:
+            'Глобальный Telegram-канал ещё не настроен или выключен главным администратором.',
+        },
+      });
+    }
+
+    this.metrics.incTelegramBotGlobalWebhookReceived({
+      type: body?.edited_message ? 'edited_message' : body?.message ? 'message' : 'unknown',
+    });
+
+    return this.processUpdate({
+      channel,
+      body,
+      providedSecret: secret,
       tenantId: undefined,
     });
   }
@@ -187,7 +231,7 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
       return this.processUpdate({
         channel: globalChannel,
         body,
-        secretHeader,
+        providedSecret: secretHeader,
         // Игнорируем `:tenantId` из URL — резолвим из Membership отправителя.
         tenantId: undefined,
       });
@@ -209,7 +253,7 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     return this.processUpdate({
       channel,
       body,
-      secretHeader,
+      providedSecret: secretHeader,
       tenantId,
     });
   }
@@ -234,7 +278,8 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
   private async processUpdate(args: {
     channel: Channel;
     body: TelegramUpdate;
-    secretHeader: string | undefined;
+    /** Секрет из заголовка (direct) либо из пути `/s/:secret` (proxy). */
+    providedSecret: string | undefined;
     tenantId: string | undefined;
   }): Promise<{ ok: true }> {
     // 1. Verify secret.
@@ -255,13 +300,13 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
       });
     }
     if (
-      !args.secretHeader ||
+      !args.providedSecret ||
       !expectedSecret ||
-      !constantTimeStringEqual(args.secretHeader, expectedSecret)
+      !constantTimeStringEqual(args.providedSecret, expectedSecret)
     ) {
       this.logger.warn(
-        { channelId: args.channel.id, hasHeader: Boolean(args.secretHeader) },
-        'telegram webhook: invalid secret header',
+        { channelId: args.channel.id, hasSecret: Boolean(args.providedSecret) },
+        'telegram webhook: invalid webhook secret',
       );
       throw new ForbiddenException({
         ok: false,

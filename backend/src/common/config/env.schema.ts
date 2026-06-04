@@ -901,13 +901,12 @@ const TelegramBotChannelSchema = z.object({
  *     `api.telegram.org`).
  *   - TELEGRAM_PROXY_FILE_BASE — базовый URL для `/file/bot<token>/<path>`
  *     (обычно совпадает с `apiBase`).
- *   - TELEGRAM_PROXY_ADMIN_EMAIL / TELEGRAM_PROXY_ADMIN_PASSWORD —
- *     креды учётки в прокси, через которые регистрируется бот и
- *     ротируется `webhookSecret`. Не required: если proxy выключен —
- *     не используются. Если включён и пусты — `TelegramProxyAdminClient`
- *     бросит ошибку при первом обращении.
- *   - TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC — за сколько секунд до `exp`
- *     обновлять JWT.
+ *   - TELEGRAM_PROXY_TOKEN — статический Bearer-токен админ-API
+ *     прокси (создаётся в веб-админке прокси `POST /api/tokens`), через
+ *     который регистрируется бот. Не required: если proxy выключен —
+ *     не используется. Если включён и пуст — `TelegramProxyAdminClient`
+ *     бросит ошибку при первом обращении. Пришёл на смену
+ *     email/password + `/auth/login` (2026-06-04).
  *   - TELEGRAM_PROXY_REQUEST_TIMEOUT_MS — timeout каждого вызова к прокси
  *     (admin API + outbound Bot API). 0 → без timeout.
  *   - TELEGRAM_PROXY_HEALTH_INTERVAL_SEC — интервал health-check'а
@@ -917,9 +916,7 @@ const TelegramProxySchema = z.object({
   TELEGRAM_PROXY_ENABLED: zBool(true),
   TELEGRAM_PROXY_API_BASE: z.string().url().default('https://telegram.crossmark.ru'),
   TELEGRAM_PROXY_FILE_BASE: z.string().url().default('https://telegram.crossmark.ru'),
-  TELEGRAM_PROXY_ADMIN_EMAIL: z.string().email().optional(),
-  TELEGRAM_PROXY_ADMIN_PASSWORD: z.string().min(1).optional(),
-  TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC: z.coerce.number().int().nonnegative().default(60),
+  TELEGRAM_PROXY_TOKEN: z.string().min(1).optional(),
   TELEGRAM_PROXY_REQUEST_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(15_000),
   TELEGRAM_PROXY_HEALTH_INTERVAL_SEC: z.coerce.number().int().nonnegative().default(30),
   // audit С28 (2026-05-29): hard-timeout для proxyAdmin.ping() в крон-tick.

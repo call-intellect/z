@@ -11,6 +11,8 @@
  *   - POST /api/v1/decisions/:id/supersede    (admin/owner)
  *   - POST /api/v1/decisions/:id/status       (admin/owner)
  *   - POST /api/v1/decisions/:id/outcomes     (admin/owner)
+ *   - POST /api/v1/decisions/:id/dispute      («это неверно» — любой участник)
+ *   - POST /api/v1/decisions/:id/correct      («исправить» — owner/admin применяют сразу)
  *
  * Защита: `CookieAuthGuard + TenantGuard`, RBAC `decision:read|write`.
  */
@@ -154,6 +156,24 @@ export const decisionsApi = {
   setOutcomes: (id: string, body: { actualOutcomes: string }) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/decisions/${encodeURIComponent(id)}/outcomes`,
+      body,
+    ),
+
+  dispute: (id: string, body: { reason?: string }) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/decisions/${encodeURIComponent(id)}/dispute`,
+      body,
+    ),
+
+  correct: (
+    id: string,
+    body: {
+      correctedPayload: { statement?: string; rationale?: string };
+      reason?: string;
+    },
+  ) =>
+    apiClient.post<{ ok: true; applied: boolean }>(
+      `/api/v1/decisions/${encodeURIComponent(id)}/correct`,
       body,
     ),
 };

@@ -8,6 +8,8 @@
  *   - GET  /api/v1/regulations/:id/history?kind=
  *   - POST /api/v1/regulations/:id/supersede   (admin/owner)
  *   - POST /api/v1/regulations/:id/confirm     (admin/owner)
+ *   - POST /api/v1/regulations/:id/dispute     («это неверно» — любой участник)
+ *   - POST /api/v1/regulations/:id/correct     («исправить» — owner/admin применяют сразу)
  *
  * Защита: `CookieAuthGuard + TenantGuard`, RBAC `regulation:read|write` /
  * `process:read|write` / `policy:read|write`.
@@ -126,6 +128,30 @@ export const regulationsApi = {
   confirm: (id: string, body: { kind: RegulationKindApi }) =>
     apiClient.post<{ ok: true; lastConfirmedAt: string }>(
       `/api/v1/regulations/${encodeURIComponent(id)}/confirm`,
+      body,
+    ),
+
+  dispute: (id: string, body: { kind: RegulationKindApi; reason?: string }) =>
+    apiClient.post<{ ok: true }>(
+      `/api/v1/regulations/${encodeURIComponent(id)}/dispute`,
+      body,
+    ),
+
+  correct: (
+    id: string,
+    body: {
+      kind: RegulationKindApi;
+      correctedPayload: {
+        name?: string;
+        contentMd?: string;
+        statement?: string;
+        description?: string;
+      };
+      reason?: string;
+    },
+  ) =>
+    apiClient.post<{ ok: true; applied: boolean }>(
+      `/api/v1/regulations/${encodeURIComponent(id)}/correct`,
       body,
     ),
 };

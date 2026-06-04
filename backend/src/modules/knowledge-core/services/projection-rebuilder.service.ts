@@ -138,6 +138,32 @@ export class ProjectionRebuilderService {
     const startedAt = event.emittedAt ?? Date.now();
     const debounceMs = this.cfg.projectionRebuild.debounceMs;
 
+    /**
+     * Best-effort обёртка одного подзапроса проекции. Reject ОДНОГО
+     * `findMany` не должен ронять `Promise.all` всех 10 проекций (иначе
+     * один битый where обнуляет весь recovery-путь — см. Ф4 МТЗ №1).
+     * При ошибке логируем warn и возвращаем пустой массив — остальные
+     * 9 проекций пересобираются как обычно.
+     */
+    const settle = async <T>(
+      label: string,
+      p: Promise<T[]>,
+    ): Promise<T[]> => {
+      try {
+        return await p;
+      } catch (err) {
+        this.logger.warn(
+          {
+            label,
+            blockId: event.blockId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'projection-rebuilder: подзапрос проекции упал — пропуск',
+        );
+        return [];
+      }
+    };
+
     try {
       // 2. Найти все зависимые проекции (parallel batch).
       const [
@@ -152,76 +178,109 @@ export class ProjectionRebuilderService {
         processTemplates,
         experiments,
       ] = await Promise.all([
-        this.prisma.decision.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.insight.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.idea.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.card.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.regulation.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.process.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.policy.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.skillTrait.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.processTemplate.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
-        this.prisma.experiment.findMany({
-          where: {
-            tenantId: event.tenantId,
-            sourceBlockIds: { has: event.blockId },
-          },
-          select: { id: true },
-        }),
+        settle(
+          'decision',
+          this.prisma.decision.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'insight',
+          this.prisma.insight.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'idea',
+          this.prisma.idea.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'card',
+          this.prisma.card.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'regulation',
+          this.prisma.regulation.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'process',
+          this.prisma.process.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'policy',
+          this.prisma.policy.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'skill_trait',
+          // SkillTrait НЕ имеет колонки tenantId — тенант на родителе
+          // SkillProfile (фильтр через relation `profile`). Канонический
+          // паттерн: skill-trait-categories.service.ts / onboarding.service.ts.
+          this.prisma.skillTrait.findMany({
+            where: {
+              profile: { tenantId: event.tenantId },
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'process_template',
+          this.prisma.processTemplate.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
+        settle(
+          'experiment',
+          this.prisma.experiment.findMany({
+            where: {
+              tenantId: event.tenantId,
+              sourceBlockIds: { has: event.blockId },
+            },
+            select: { id: true },
+          }),
+        ),
       ]);
 
       // 3. Enqueue rebuild по каждой найденной проекции.

@@ -234,4 +234,61 @@ describe('ProjectionRebuilderService', () => {
     // Card-метрика инкрементирована дважды.
     expect(mocks.metrics.incKcProjectionRebuild).toHaveBeenCalledWith({ type: 'card' });
   });
+
+  it('Ф4 регресс-гард: skillTrait.findMany фильтрует через profile.tenantId, БЕЗ верхнеуровневого tenantId', async () => {
+    // SkillTrait не имеет колонки tenantId — фильтр должен идти через
+    // relation `profile`, иначе Prisma бросает PrismaClientValidationError.
+    await svc.onIdeaBlockUpdated({
+      tenantId: 'tenant-1',
+      blockId: 'block-1',
+      changeKind: 'updated',
+    });
+
+    expect(mocks.fns.skillTraitFindMany).toHaveBeenCalledTimes(1);
+    expect(mocks.fns.skillTraitFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          profile: { tenantId: 'tenant-1' },
+          sourceBlockIds: { has: 'block-1' },
+        }),
+      }),
+    );
+
+    // Регресс-гард на сам баг: НЕТ верхнеуровневого tenantId во where
+    // (SkillTrait такой колонки не имеет → Prisma бросила бы ValidationError).
+    expect(mocks.fns.skillTraitFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.not.objectContaining({ tenantId: expect.anything() }),
+      }),
+    );
+  });
+
+  it('Устойчивость класса: reject одного подзапроса (insight) не валит остальные — Decision всё равно enqueue\'ится', async () => {
+    // insight.findMany падает (имитация PrismaClientValidationError),
+    // но decision.findMany успешен → его проекция должна доехать до enqueue.
+    mocks.fns.decisionFindMany.mockResolvedValueOnce([{ id: 'dec-1' }] as never);
+    mocks.fns.insightFindMany.mockRejectedValueOnce(
+      new Error('PrismaClientValidationError: insight broke'),
+    );
+
+    // Не должно бросить наружу.
+    await expect(
+      svc.onIdeaBlockUpdated({
+        tenantId: 'tenant-1',
+        blockId: 'block-1',
+        changeKind: 'updated',
+      }),
+    ).resolves.toBeUndefined();
+
+    // Decision-проекция всё равно поставлена в очередь, несмотря на падение insight.
+    expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledTimes(1);
+    expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: 'projection-rebuild_decision_dec-1',
+        specialistName: '3-3-decisions',
+      }),
+    );
+    // Lag-метрика всё равно наблюдалась — обработка события дошла до конца.
+    expect(mocks.metrics.observeKcProjectionRebuildLagMs).toHaveBeenCalledTimes(1);
+  });
 });

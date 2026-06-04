@@ -119,7 +119,7 @@
 
 ---
 
-## Ф4 — projection-rebuilder: невалидный `skillTrait.tenantId` `[ ]`
+## Ф4 — projection-rebuilder: невалидный `skillTrait.tenantId` `[x]`
 
 **Корень (баг #16/#20/#24/#28/#37, finding `projection-tenantid`, high):** `projection-rebuilder.service.ts:204-210` фильтрует `prisma.skillTrait.findMany({ where: { tenantId: event.tenantId, sourceBlockIds: { has } } })`, но у модели `SkillTrait` (`schema.prisma:7087-7137`) **нет** колонки `tenantId` — только `profileId` (FK на `SkillProfile`), `categoryId`, `conceptId`; тенант на родителе `SkillProfile.tenantId` (`schema.prisma:7058`). Prisma бросает `PrismaClientValidationError`. Запрос — в общем `Promise.all` на 10 проекций (`projection-rebuilder.service.ts:154`); reject одного реджектит **весь** `Promise.all` → внешний catch (`projection-rebuilder.service.ts:282-290`) глушит warn'ом → НИ ОДНА из 10 проекций (decision/insight/idea/card/regulation/process/policy/skill_trait/processTemplate/experiment) не пересобирается. Падение детерминированное на КАЖДОМ `idea_block.updated`.
 

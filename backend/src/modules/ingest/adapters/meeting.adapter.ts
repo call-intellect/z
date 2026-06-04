@@ -23,6 +23,8 @@ interface MergedTranscript {
     text: string;
     startSec: number;
     endSec: number;
+    speakerParticipantId?: string | null;
+    speakerLivekitIdentity?: string | null;
   }>;
   roomChat?: Array<{
     /** ISO либо number — формат разный в исторических merged.json. */

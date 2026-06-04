@@ -94,6 +94,58 @@ describe('ParticipantContextService.loadForMeeting', () => {
     });
   });
 
+  // Ф0.2 acceptance: зарегистрированный приглашённый (role='guest',
+  // isRegisteredUser=true) теперь отдаёт userId/fullName, а не null.
+  it('зарегистрированный гость (isRegisteredUser=true, userId=u1) → userId=u1, fullName из User', async () => {
+    const svc = makeService({
+      participants: [
+        {
+          id: 'p-1',
+          livekitIdentity: 'invitee:p-1',
+          name: 'Настя',
+          role: 'guest',
+          isRegisteredUser: true,
+          userId: 'u1',
+        },
+      ],
+      users: [{ id: 'u1', name: 'Анастасия Иванова' }],
+    });
+    const result = await svc.loadForMeeting('m-1');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      livekitIdentity: 'invitee:p-1',
+      displayName: 'Настя',
+      userId: 'u1',
+      fullName: 'Анастасия Иванова',
+      role: 'guest',
+    });
+  });
+
+  // Ф0.2 регресс: анонимный гость остаётся без userId.
+  it('регресс: анонимный гость (isRegisteredUser=false, userId=null) → userId=null', async () => {
+    const svc = makeService({
+      participants: [
+        {
+          id: 'p-2',
+          livekitIdentity: 'guest:anon',
+          name: 'Иван',
+          role: 'guest',
+          isRegisteredUser: false,
+          userId: null,
+        },
+      ],
+      users: [],
+    });
+    const result = await svc.loadForMeeting('m-1');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      displayName: 'Иван',
+      userId: null,
+      fullName: null,
+      role: 'guest',
+    });
+  });
+
   it('два host с одинаковым display name — оба возвращаются с разными userId', async () => {
     const svc = makeService({
       participants: [

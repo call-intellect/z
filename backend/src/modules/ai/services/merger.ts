@@ -20,6 +20,10 @@ export interface PerTrackWords {
   trackStartedAt: Date;
   /** Базовая точка относительно которой считаем секунды. */
   baseStartedAt: Date;
+  /** Identity спикера: id Participant'а (если резолвлен). Пробрасывается в turn. */
+  participantId?: string | null;
+  /** Identity спикера: livekitIdentity дорожки. Пробрасывается в turn. */
+  livekitIdentity?: string | null;
 }
 
 /**
@@ -31,6 +35,8 @@ interface AbsoluteWord {
   word: string;
   absStartSec: number;
   absEndSec: number;
+  participantId?: string | null;
+  livekitIdentity?: string | null;
 }
 
 const DEFAULT_TURN_GAP_SEC = 1.5;
@@ -68,6 +74,8 @@ export function mergeWordTimestamps(
         word: w.word,
         absStartSec: absStartMs / 1000,
         absEndSec: absEndMs / 1000,
+        participantId: track.participantId ?? null,
+        livekitIdentity: track.livekitIdentity ?? null,
       });
     }
   }
@@ -82,6 +90,11 @@ export function mergeWordTimestamps(
   let currentText: string[] = [];
   let currentStart = 0;
   let currentEnd = 0;
+  // Identity текущего turn'а — берётся из первого слова turn'а (когда
+  // открывается новый turn). Группировка по-прежнему по speaker (имени);
+  // эти поля только пробрасывают identity дорожки в DialogTurn.
+  let currentParticipantId: string | null = null;
+  let currentLivekitIdentity: string | null = null;
 
   const flush = (): void => {
     if (currentSpeaker !== null && currentText.length > 0) {
@@ -90,12 +103,16 @@ export function mergeWordTimestamps(
         text: currentText.join(' ').trim(),
         startSec: currentStart,
         endSec: currentEnd,
+        speakerParticipantId: currentParticipantId,
+        speakerLivekitIdentity: currentLivekitIdentity,
       });
     }
     currentSpeaker = null;
     currentText = [];
     currentStart = 0;
     currentEnd = 0;
+    currentParticipantId = null;
+    currentLivekitIdentity = null;
   };
 
   for (const w of allWords) {
@@ -111,6 +128,8 @@ export function mergeWordTimestamps(
     if (currentSpeaker === null) {
       currentSpeaker = w.speaker;
       currentStart = w.absStartSec;
+      currentParticipantId = w.participantId ?? null;
+      currentLivekitIdentity = w.livekitIdentity ?? null;
     }
     currentText.push(w.word);
     currentEnd = w.absEndSec;

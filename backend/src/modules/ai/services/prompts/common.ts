@@ -10,6 +10,10 @@ export interface DialogTurn {
   text: string;
   startSec: number;
   endSec: number;
+  /** Identity спикера: id Participant'а (если резолвлен). Проброс из дорожки. */
+  speakerParticipantId?: string | null;
+  /** Identity спикера: livekitIdentity дорожки. Проброс из дорожки. */
+  speakerLivekitIdentity?: string | null;
 }
 
 /**

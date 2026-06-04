@@ -23,9 +23,11 @@ export class ParticipantContextService {
   /**
    * Возвращает список участников встречи в формате для AI-промпта.
    *
-   *   - Host'ы (`role='host'`, `isRegisteredUser=true`) — с полным
-   *     контекстом (userId, fullName из User).
-   *   - Гости — userId=null, fullName=null.
+   *   - Любой зарегистрированный участник (`isRegisteredUser=true`,
+   *     есть `userId`) — с полным контекстом (userId, fullName из User),
+   *     независимо от `role` (host ИЛИ приглашённый сотрудник-гость).
+   *   - Анонимные гости (`isRegisteredUser=false`) — userId=null.
+   *     fullName подтягивается из User для всех, у кого есть userId.
    *   - Soft-deleted/duplicate участников НЕ фильтруем здесь — на уровне
    *     `Participant` в БД дублей нет (есть `@@unique([meetingId,
    *     livekitIdentity])`).
@@ -41,9 +43,9 @@ export class ParticipantContextService {
     });
     if (participants.length === 0) return [];
 
-    // Подгружаем User'ов для host'ов одним запросом, чтобы достать `name`
-    // (fullName). `Participant.name` — display name, введённый в форме,
-    // может отличаться от User.name.
+    // Подгружаем User'ов для всех участников с userId одним запросом,
+    // чтобы достать `name` (fullName). `Participant.name` — display name,
+    // введённый в форме, может отличаться от User.name.
     const userIds = participants
       .map((p) => p.userId)
       .filter((u): u is string => typeof u === 'string' && u.length > 0);
@@ -61,7 +63,7 @@ export class ParticipantContextService {
       return {
         livekitIdentity: p.livekitIdentity,
         displayName: p.name,
-        userId: isHost && p.userId ? p.userId : null,
+        userId: p.isRegisteredUser && p.userId ? p.userId : null,
         fullName: user?.name ?? null,
         role: isHost ? 'host' : 'guest',
       };

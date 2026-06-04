@@ -95,6 +95,12 @@ enum ParticipantRole {
   guest
 }
 
+enum ParticipantInvitationStatus {
+  none
+  invited
+  joined
+}
+
 enum RecordingStatus {
   not_started
   requested
@@ -1029,6 +1035,7 @@ model User {
 
   ownedEvents         Event[]            @relation("EventOwner")
   eventParticipations EventParticipant[] @relation("EventParticipantUser")
+  participantsAsUser  Participant[]      @relation("ParticipantUser")
 
   // ── User Feedback with AI Clustering (2026-05-25) ──
   /// Сообщения обратной связи пользователя через канал «Ваши предложения».
@@ -1218,6 +1225,12 @@ model Participant {
   role             ParticipantRole
   isRegisteredUser Boolean         @default(false)
   userId           String?
+  user             User?           @relation("ParticipantUser", fields: [userId], references: [id], onDelete: SetNull)
+  personId         String?
+  person           Person?         @relation("ParticipantPerson", fields: [personId], references: [id], onDelete: SetNull)
+  invitationStatus ParticipantInvitationStatus @default(none)
+  inviteToken      String?         @unique
+  invitedAt        DateTime?
   deviceCount      Int             @default(1)
   joinedAt         DateTime?
   leftAt           DateTime?
@@ -4413,6 +4426,7 @@ model Person {
   headOfDepartments     Department[]       @relation("DepartmentHead")
   /// Calendar MVP (2026-05-25) — участие как Person (external контакт).
   eventParticipations   EventParticipant[] @relation("EventParticipantPerson")
+  participantsAsPerson  Participant[]      @relation("ParticipantPerson")
   /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический
   /// индекс категорий профиля знаний (для запросов «кто разбирается в X»).
   knowledgeCategoryEmbeddings PersonKnowledgeCategoryEmbedding[]

@@ -75,6 +75,7 @@ export class ParticipantsService {
     userId: string | null;
     guestName: string | null;
     existingGuestCookie: string | null;
+    inviteToken: string | null;
   }): Promise<JoinResult> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: input.meetingId },
@@ -82,8 +83,35 @@ export class ParticipantsService {
     if (!meeting) throw new MeetingNotFoundError(input.meetingId);
     this.assertJoinable(meeting);
 
+    // 0. Персональная ссылка-приглашение: если пришёл `inviteToken` — заходим как
+    //    pre-seeded Participant (НЕ создаём нового `guest:<nanoid>`).
+    //    Чужой / неизвестный токен — не падаем, проваливаемся в обычную логику.
+    if (input.inviteToken) {
+      const invited = await this.prisma.participant.findUnique({
+        where: { inviteToken: input.inviteToken },
+      });
+      if (invited && invited.meetingId === meeting.id) {
+        return this.joinAsInvited(meeting, invited);
+      }
+    }
+
     if (input.userId && meeting.ownerId === input.userId) {
       return this.joinAsHost(meeting, input.userId);
+    }
+
+    // 2. Залогинен, не владелец, и есть pre-seeded Participant по `userId` в этой
+    //    встрече (приглашён заранее) — переиспользуем его, не плодим guest.
+    if (input.userId) {
+      const preSeeded = await this.prisma.participant.findFirst({
+        where: {
+          meetingId: meeting.id,
+          userId: input.userId,
+          invitationStatus: 'invited',
+        },
+      });
+      if (preSeeded) {
+        return this.joinAsInvited(meeting, preSeeded);
+      }
     }
 
     return this.joinAsGuest(
@@ -91,6 +119,41 @@ export class ParticipantsService {
       input.guestName,
       input.existingGuestCookie,
     );
+  }
+
+  // ───────────────────────── invited (pre-seeded) ────────────────────────
+
+  /**
+   * Вход приглашённого по персональной ссылке / pre-seed по `userId`.
+   * Используем УЖЕ существующий `Participant` и его детерминированный
+   * `livekitIdentity` — без новой guest-cookie.
+   */
+  private async joinAsInvited(
+    meeting: Meeting,
+    participant: { id: string; livekitIdentity: string; name: string; role: 'host' | 'guest' },
+  ): Promise<JoinResult> {
+    await this.livekit.ensureRoom({ id: meeting.id });
+    const token = await this.livekit.generateGuestToken(
+      { id: meeting.id, endedAt: meeting.endedAt },
+      participant.livekitIdentity,
+      participant.name,
+    );
+
+    await this.prisma.participant.update({
+      where: { id: participant.id },
+      data: { invitationStatus: 'joined', joinedAt: new Date() },
+    });
+
+    return {
+      participantId: participant.id,
+      role: participant.role,
+      livekitIdentity: participant.livekitIdentity,
+      livekit: {
+        url: this.cfg.livekit.apiUrl,
+        token,
+        identity: participant.livekitIdentity,
+      },
+    };
   }
 
   // ────────────────────────── host ───────────────────────────────────────

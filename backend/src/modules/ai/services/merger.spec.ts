@@ -119,6 +119,77 @@ describe('mergeWordTimestamps', () => {
     expect(turns[1]?.startSec).toBe(10); // 10 секунд offset
   });
 
+  it('identity дорожки (participantId/livekitIdentity) пробрасывается в turn', () => {
+    const base = new Date('2026-05-08T10:00:00.000Z');
+    const tracks: PerTrackWords[] = [
+      {
+        speakerName: 'Алиса',
+        trackStartedAt: base,
+        baseStartedAt: base,
+        participantId: 'p1',
+        livekitIdentity: 'lk1',
+        words: [
+          { word: 'Привет', startMs: 0, endMs: 500 },
+          { word: 'команда', startMs: 600, endMs: 1100 },
+        ],
+      },
+    ];
+    const turns = mergeWordTimestamps(tracks);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.speakerParticipantId).toBe('p1');
+    expect(turns[0]?.speakerLivekitIdentity).toBe('lk1');
+  });
+
+  it('identity берётся из первого слова turn-а по каждому speaker (два трека)', () => {
+    const base = new Date('2026-05-08T10:00:00.000Z');
+    const tracks: PerTrackWords[] = [
+      {
+        speakerName: 'Алиса',
+        trackStartedAt: base,
+        baseStartedAt: base,
+        participantId: 'p1',
+        livekitIdentity: 'lk1',
+        words: [{ word: 'Как', startMs: 0, endMs: 300 }],
+      },
+      {
+        speakerName: 'Боб',
+        trackStartedAt: base,
+        baseStartedAt: base,
+        participantId: 'p2',
+        livekitIdentity: 'lk2',
+        words: [{ word: 'Хорошо', startMs: 800, endMs: 1200 }],
+      },
+    ];
+    const turns = mergeWordTimestamps(tracks);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toMatchObject({
+      speaker: 'Алиса',
+      speakerParticipantId: 'p1',
+      speakerLivekitIdentity: 'lk1',
+    });
+    expect(turns[1]).toMatchObject({
+      speaker: 'Боб',
+      speakerParticipantId: 'p2',
+      speakerLivekitIdentity: 'lk2',
+    });
+  });
+
+  it('без identity (поля не заданы) → null в turn', () => {
+    const base = new Date('2026-05-08T10:00:00.000Z');
+    const tracks: PerTrackWords[] = [
+      {
+        speakerName: 'Алиса',
+        trackStartedAt: base,
+        baseStartedAt: base,
+        words: [{ word: 'Привет', startMs: 0, endMs: 500 }],
+      },
+    ];
+    const turns = mergeWordTimestamps(tracks);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.speakerParticipantId).toBeNull();
+    expect(turns[0]?.speakerLivekitIdentity).toBeNull();
+  });
+
   it('countWords и maxEndSec корректны', () => {
     const turns = [
       { speaker: 'A', text: 'один два три', startSec: 0, endSec: 5 },

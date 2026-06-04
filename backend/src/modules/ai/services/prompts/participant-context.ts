@@ -29,8 +29,9 @@ export interface AiParticipantContext {
    */
   displayName: string;
   /**
-   * Заполнено только для зарегистрированных сотрудников (`role='host'` +
-   * `isRegisteredUser=true`). Для гостей — null.
+   * Заполнено для любого зарегистрированного участника
+   * (`isRegisteredUser=true`), независимо от `role` — host ИЛИ
+   * приглашённый сотрудник-гость. Для анонимных гостей — null.
    */
   userId: string | null;
   /**

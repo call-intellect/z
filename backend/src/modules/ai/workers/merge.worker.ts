@@ -148,6 +148,8 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
         words: effectiveWords,
         trackStartedAt: track.trackStartedAt,
         baseStartedAt: track.baseStartedAt,
+        participantId: track.participantId,
+        livekitIdentity: track.livekitIdentity,
       };
     });
 

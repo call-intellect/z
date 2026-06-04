@@ -68,6 +68,7 @@ export class ParticipantsController {
       userId: user?.id ?? null,
       guestName: body.guest_name ?? null,
       existingGuestCookie: existingCookie,
+      inviteToken: body.invite_token ?? null,
     });
 
     // Если сервис подписал новую guest-cookie — выставляем её.

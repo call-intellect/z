@@ -6,6 +6,7 @@ date: 2026-06-04
 owner: Сергей (владелец продукта)
 relates_to:
   - plans/analysis/2026-06-04-meetings-invite-identity-and-clones-graph-audit.md
+  - plans/tz/2026-06-04-razblokirovka-konveyera.md
   - plans/archive/2026-05-25-hard-participant-identification.md
   - second-brain/01_projects/skill-and-clone.md
   - second-brain/01_projects/telegram-user-flows.md
@@ -23,7 +24,7 @@ relates_to:
 ## Вне scope / отложено владельцем
 - **Автоингест корпоративных групповых чатов** («система сама с чатов забирает») — отдельный трек, внешние блокеры (прокси per-source webhook, резолв внешнего автора, ФЗ-41). Здесь работаем только с источниками, где identity автора уже известна на входе.
 - **Голосовой отпечаток / speaker embedding** (несколько голосов на одной дорожке) — vNext-страховка; сейчас «чей голос = чья дорожка».
-- **Объединение двух путей задач** (knowledge-core `Task` ↔ tracker `Issue` в один) — за рамками; Фаза 4 чинит только активный `Task`-путь. Единый `AssigneeResolver` для `IntakeIssue` — vNext (в коде уже стоит TODO в `meeting-extract-actions`).
+- ~~Объединение двух путей задач~~ — **включено как Фаза 5** (по запросу владельца 2026-06-04). См. Фазу 5 ниже.
 - **2-way OAuth календаря, перенос `EventParticipant`→`Meeting.Participant`** — не трогаем (календарный путь живёт отдельно).
 
 ---
@@ -64,6 +65,7 @@ relates_to:
 | Р3 | Приоритет: **Фаза 0 → (Фаза 1 ∥ Фаза 2) → (Фаза 3 ∥ Фаза 4)** | Фаза 0 — корень всего; клоны (Ф1) — «самое важное» по словам владельца; приглашение (Ф2) — дёшево и видимо; доставка/задачи следом | 2026-06-04 |
 | Р4 | Автоингест корпоративных чатов — **вне scope** | Внешние блокеры (прокси, ФЗ-41, резолв внешнего автора); сначала оживить клонов на готовых источниках | 2026-06-04 |
 | Р5 | Фаза 4: резолв assignee — **пост-фактум из `assigneeRaw`** через готовый `TaskAssigneeResolverService`, БЕЗ добавления `assigneeUserId` в LLM-схему fast-промпта | Сохраняет prompt-cache fast-воркера (как в Р2); резолвер уже умеет матчить по имени к participants | 2026-06-04 |
+| Р6 | Фаза 5: единственная видимая задача из встречи = **tracker `Issue`**; внутренний `Task` сводится к служебному/legacy | Проект уже выбрал это направление: `TasksController` `@deprecated` → `/api/v1/issues`, есть `migrate-task-to-issue.ts` (Task→Issue, проект «Из встреч»). `Issue` несёт жизненный цикл (доска/состояния/назначения/overdue/webhooks) + `linkedMeetingIds`/`externalSource='meeting'`; `Task` — плоская запись | 2026-06-04 |
 
 ## Доказательство выбора (кратко)
 Полная состязательная таблица — в анализе §5–6. Ключевое сведение проходов A (минимальная правка под текущий код) vs B (LLM-разметка автора / отдельная invite-модель):
@@ -95,6 +97,28 @@ relates_to:
 
 ---
 
+## Зависимости и пересечения с МТЗ «Разблокировка конвейера» (параллельная сессия)
+
+Параллельно на ветке `feature/pipeline-unblock` реализуется [`plans/tz/2026-06-04-razblokirovka-konveyera.md`](2026-06-04-razblokirovka-konveyera.md) — оно чинит, что **сам конвейер встреча→граф→специалисты вообще работает** (Ф1 транскрибация, Ф2 specialist-routing, Ф3 draft→canonical, Ф4 projection-rebuilder, Ф5 AGE/граф, Ф6 пороги, Ф7 мост ingestMeeting, Ф8 dataClassAudit, Ф9 владелец без Person, Ф10 free_note, Ф11 развязка записи от AI-статуса). Статус 2026-06-04: **Ф1–Ф4, Ф6, Ф10 закоммичены; Ф5/Ф7/Ф8/Ф9/Ф11 в работе.**
+
+**Это ТЗ и МТЗ — две половины одной проблемы клонов:**
+- МТЗ чинит **ТРУБУ** — без их Ф2/Ф3 reasoning-блок не доезжает до Specialist 3-7 даже при наличии `subject`.
+- Это ТЗ чинит **ПОДПИСЬ** «чьё рассуждение» — без нашей Ф1 `router.hasEmployeeSubject` всегда `false`, и 3-7 не получает блок даже при рабочей трубе.
+- **Клоны оживают только при ОБОИХ.** Наша Ф1 (`role:'subject'`) + их Ф2/Ф3 (доставка + canonical-диспатч) дополняют друг друга; ни одно не достаточно само по себе.
+
+**Порядок:** это ТЗ стартует ПОСЛЕ закрытия МТЗ Ф1–Ф4 и Ф7 (труба жива — иначе наша атрибуция пишет `subject` в блоки, которых нет / которые не доезжают). Допустимо параллелить наши Ф0/Ф2 (identity-фундамент, приглашение) — они от трубы не зависят.
+
+**Переиспользование (НЕ дублировать):**
+- **МТЗ Ф9 даёт `PersonsService.ensurePersonForUser(tenantId, userId)`** (User→Person + Person владельца в `createForOwner` + backfill `backfill-owner-person.ts`). Наша Ф1.1 (`ensurePersonEntity`: Person→Entity) — **верхнее звено той же цепи**: полная привязка `User → Person (Ф9) → Entity (наша Ф1.1) → role:'subject' (наша Ф1.2)`. Если Ф9 закрыт — Ф1.1 ВЫЗЫВАЕТ `ensurePersonForUser`, затем `ensurePersonEntity`; НЕ строить параллельное создание Person.
+- **МТЗ Ф10 (free_note)** уже даёт чистый `Segment.text` без JSON-обёртки — наша Ф1.2 (атрибуция текстовых каналов по `payload.userId`) строится поверх, не трогая сборку сегмента.
+- **МТЗ Ф7** делает мост `ingestMeeting` видимым + reingest — предусловие, чтобы встречи доезжали до `block-ingest`, где наша Ф1.2 ставит `subject`.
+
+**Координация общего git-дерева:**
+- Обе правят `schema.prisma` (их Ф1 `TranscriptTrack @@unique`, Ф8 `dataClassAudit` в Insight/Decision; наша Ф0 — `Participant`) и `persons.service.ts` (их `ensurePersonForUser`, наш `ensurePersonEntity`). **Перед стартом — `git pull`/rebase; наши правки ДОБАВЛЯТЬ, не перезатирая их `@@unique`/`ensurePersonForUser`.**
+- Их Ф11 (развязка записи от AI-статуса) и наша Ф0 — обе в meeting-модуле; сверить, что join/recording-логика не конфликтует.
+
+---
+
 # Фазы
 
 ## Граф зависимостей
@@ -103,9 +127,10 @@ relates_to:
  ├─→ Ф1 (атрибуция subject — meeting-часть зависит от Ф0; text-часть независима)
  ├─→ Ф2 (приглашение из списка — pre-seed + единый join зависят от Ф0)
  │     └─→ Ф3 (доставка — нужны приглашённые из Ф2 + персональная ссылка из Ф0)
- └─→ Ф4 (голос→задача — снятие обнуления userId из Ф0; базовая host-часть независима)
+ └─→ Ф4 (голос→задача: assigneeUserId в активном Task-воркере; зависит от Ф0.2)
+       └─→ Ф5 (единый путь голос→задача в трекере с identity; переиспует резолвер Ф4)
 ```
-**Волны для оркестратора:** Волна 1 = Ф0. Волна 2 = Ф1 ∥ Ф2. Волна 3 = Ф3 ∥ Ф4.
+**Волны для оркестратора:** Волна 1 = Ф0. Волна 2 = Ф1 ∥ Ф2. Волна 3 = Ф3 ∥ Ф4 → Ф5 (после Ф4).
 
 ---
 
@@ -215,7 +240,7 @@ return {
 ### 1.1 — Усилить `Person.entityId` (двойная точка отказа)
 Файл `backend/src/modules/knowledge-core/services/entity-resolution.service.ts`.
 1. `linkPersonEntity` (символ `async linkPersonEntity(args: {`, ~765-804) — баг: `findFirst Entity{type:person}` **без фильтра по имени**. Исправить: фильтровать кандидатов по `canonicalName` на стороне БД (или findMany + match по `normalizeName`), как сделано в `linkEntityPerson`.
-2. **Проактивное создание person-Entity при инвайте сотрудника.** В `persons.service.ts` (метод создания Person, символ `prisma.person.create` в транзакции) — после создания Person для `relationship='employee'` вызвать `entityResolution.ensurePersonEntity(personId)` (новый тонкий метод: `findOrCreateEntity{type:'person', name}` + проставить `Person.entityId`). Это снимает зависимость «ждать упоминания имени в блоке».
+2. **Проактивное создание person-Entity при инвайте сотрудника.** В `persons.service.ts` (метод создания Person, символ `prisma.person.create` в транзакции) — после создания Person для `relationship='employee'` вызвать `entityResolution.ensurePersonEntity(personId)` (новый тонкий метод: `findOrCreateEntity{type:'person', name}` + проставить `Person.entityId`). Это снимает зависимость «ждать упоминания имени в блоке». **Цепочка с МТЗ Ф9:** полная привязка = `User → Person` (МТЗ `ensurePersonForUser`) → `Person → Entity` (этот метод). Если МТЗ Ф9 закрыт — вызывать `ensurePersonForUser` ПЕРЕД `ensurePersonEntity` и НЕ дублировать создание Person (см. раздел «Зависимости и пересечения с МТЗ»).
 **Acceptance 1.1:**
 - Мини-e2e: создать 2 Person с разными именами + 2 Entity{person}; `linkPersonEntity` линкует КАЖДОГО к своему (не к первому попавшемуся).
 - Мини-e2e: создать employee-Person → `Person.entityId != null` сразу (без блоков).
@@ -365,6 +390,43 @@ return {
 
 ---
 
+## Фаза 5 — Единый путь «голос → задача в трекере» с identity-привязкой
+**Цель:** из встречи рождается ОДНА видимая задача — в трекере (`Issue`), привязанная к исполнителю **по identity участников встречи** (а не по тексту-имени по всему тенанту). Внутренний `Task` сводится к служебному/legacy (решение Р6).
+
+**REALITY-CHECK (картография 2026-06-04):** одна встреча сейчас порождает ДВА несвязанных артефакта без общего дедупа: (а) `Task` (`meeting-report-fast.worker` → таб «Задачи» карточки встречи `MeetingResultPageReal` + страница `/tasks`); (б) `Issue` (`analyze.worker` шаг 14 → `meeting-extract-actions` → `IntakeIssue` → `intake-auto-triage` ≥0.92 → `Issue` в проекте «Из встреч»). Связи `Task↔Issue` в схеме НЕТ (ни `issueId`, ни `taskId`). Tracker-путь резолвит исполнителя **substring `Person.name` по всему тенанту** (`meeting-extract-actions.service.ts:356-393` + дубль `intake-auto-triage.worker.ts:534-556`), участников встречи не грузит; докблок: «vNext: подключить полноценный AssigneeResolverService». `TasksController` уже `@deprecated`; существует `backend/scripts/migrate-task-to-issue.ts`. `Issue` хранит исполнителей через M:M `IssueAssignee` (не скаляр).
+
+### 5.1 — Identity-резолвер в tracker-пути (must; закрывает TODO в коде, низкий риск)
+- `backend/src/modules/tracker/services/meeting-extract-actions.service.ts` (символ `async extract(args:`, ~74-78): расширить вход/догрузить участников `participantContext.loadForMeeting(meetingId)` (после Ф0 — с identity и для приглашённых). Заменить `resolveAssigneeId` (substring по всему тенанту, ~356-393) на резолв через **общий `TaskAssigneeResolverService.resolve(...)`** (тот же сервис, что в Ф4) — матч имени/`userId` ТОЛЬКО среди участников встречи.
+- `backend/src/modules/tracker/workers/intake-auto-triage.worker.ts` (символ `function resolveAssigneeUserId`, ~534-556): использовать уже резолвнутый `suggestedAssigneeId` либо тот же резолвер против участников; убрать дубль substring-логики.
+- Эффект: «Настя, подготовь Х» → `IntakeIssue.suggestedAssigneeId = userId Насти` по identity; тёзки/гости-не-сотрудники → null (без ложного назначения), как в резолвере.
+**Acceptance 5.1:**
+- `grep -n "loadForMeeting\|TaskAssigneeResolver" backend/src/modules/tracker/services/meeting-extract-actions.service.ts` → резолв через участников встречи (substring-only убран или оставлен лишь как явный fallback).
+- Мини-e2e: транскрипт «Настя, …», участник Настя c `userId` → `suggestedAssigneeId = userId Насти`, а не первый Person по substring; участник не из встречи с тем же именем НЕ выбирается.
+- `bun run typecheck`/`build`/затронутые `vitest` зелёные.
+**Закрывает:** R12.
+
+### 5.2 — Единая видимая задача (дедуп + репойнт потребителей на `Issue`)
+Источник правды для action-items встречи = **`Issue`**. 
+- Прекратить создавать ПОЛЬЗОВАТЕЛЬСКУЮ `Task` для action-items встречи: gate `writeTasks` в `meeting-report-fast.worker` за AdminSetting `meetingTasksToTrackerOnly` (поэтапная раскатка; code-fallback оставляет текущее поведение до включения). (Резюме отчёта-саммари не трогаем — речь только про action-items.)
+- **Репойнт 6 потребителей `Task` → `Issue` по `linkedMeetingId`** (иначе деградируют молча — список из картографии):
+  1. таб «Задачи» карточки встречи — `frontend/src/hooks/use-meeting-tasks.ts` + `MeetingResultPageReal.tsx` → читать Issue по `linkedMeetingId` (вместо `/meetings/:id/tasks`);
+  2. экспорт markdown/zip — `exports.worker.ts:139`, `bulk-zip.generator.ts:84`;
+  3. AI-чат контекст — `chat.service.ts:104`;
+  4. полнотекстовый поиск — `search.service.ts:248`;
+  5. **Public API** `GET /meetings/:id/tasks` — `public-api/meetings.public.controller.ts:100` (СОХРАНИТЬ форму ответа — отдавать из Issue, не ломать внешний контракт);
+  6. admin — `meetings-admin.controller.ts:293`.
+- Происхождение: `Issue.linkedMeetingIds` + `externalSource='meeting'` уже есть — доп. поле не нужно.
+**Acceptance 5.2:**
+- Из одной встречи — ОДИН видимый артефакт (Issue): при `meetingTasksToTrackerOnly=true` meeting-`Task` (action-items) не создаётся; таб встречи читает Issue.
+- 6 потребителей репойнтнуты; `GET /meetings/:id/tasks` сохраняет форму ответа (контракт-тест).
+- `bun run typecheck`/`build`/`test` зелёные.
+**Закрывает:** R12.
+
+**⚠️ Blast radius / порядок:** 5.2 — самая широкая правка ТЗ (6 потребителей + публичный API-контракт). **5.1 поставляет identity-ценность независимо** и обязательна; **5.2 — консолидация, отдельной под-волной** с тщательным репойнтом и контракт-тестом Public API.
+**Связь с Фазой 4:** Ф4 — недорогой interim-фикс «правильный исполнитель в текущей видимой `Task`» (пока 5.2 не репойнтнул карточку на Issue), и её резолвер переиспользуется в 5.1. После 5.2 заполнение `Task.assigneeUserId` для встреч становится необязательным (Task — служебный). Если 5.2 делается сразу — Ф4 можно свернуть до «общий резолвер вынесен в shared-сервис для 5.1».
+
+---
+
 ## Требования (трассировка)
 - **R1** Приглашённый сотрудник создаётся как identity-привязанный `Participant` (`userId`/`personId`/статус/токен). — Ф0.1, Ф0.4, Ф2.1, Ф3.1
 - **R2** AI-контекст отдаёт `userId` всем зарегистрированным участникам, не только host. — Ф0.2
@@ -377,6 +439,7 @@ return {
 - **R9** Атрибуция управляется AdminSetting kill-switch. — Ф1.2
 - **R10** Форма создания встречи позволяет выбрать сотрудников из списка (имя+почта). — Ф2.1–2.2
 - **R11** Приглашение доставляется по email и/или Telegram. — Ф3.2–3.3
+- **R12** Из встречи рождается одна видимая задача — `Issue` в трекере, привязанная к исполнителю по identity участников. — Ф5.1–5.2
 
 ---
 

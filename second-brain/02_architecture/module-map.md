@@ -2061,3 +2061,25 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 - Frontend: `GoalsPulseWidget`, `GoalsTreeView`, переключатель «Список/Дерево» на `/goals`, `GoalPickerDialog`; виджет+дерево на дашборде. Мапперы `progressStatusChipClasses`/`progressStatusTone`/`buildTree`, `krProgressBarColor`.
 
 [[../index|← index]]
+
+## Команда + персональные доступы сотрудников (Фазы 0–5, 2026-06-04)
+
+**Источник:** [`plans/tz/2026-06-03-team-section-and-employee-access.md`](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs` / `persons` / `users` (backend) + `structure` / `settings` (frontend). Управление участниками и приглашениями переехало из Настроек в раздел «Команда». Эндпоинты — [[../01_projects/api-layer]], страницы — [[../01_projects/frontend-pages]], модель — [[data-model]] §EmployeeCapabilityOverride.
+
+### `backend/src/modules/orgs/` (расширение)
+
+| Компонент | Файл | Назначение |
+|---|---|---|
+| `OrgsService.listTeamRoster` | `orgs/orgs.service.ts` | **`GET /api/v1/orgs/:id/team-roster`** — объединённый ростер: все `Person` ⊕ участники (`Membership`) без карточки. Поля `personId/userId/fullName/email/roleId/roleName/departmentId/departmentName/invitationStatus/systemRole/telegramLinked/hasPersonCard/invitationId`. Self-contained (без cross-module DI — во избежание Nest-цикла). |
+| `CapabilitiesService` | `orgs/services/capabilities.service.ts` (новый) | CRUD персональных override доступа + расчёт эффективного доступа. Override — дельта `allow`/`deny` поверх дефолта роли/тарифа (тариф не регрессит). |
+| `OrgsController` (расширен) | `orgs/orgs.controller.ts` | **`GET/PUT/DELETE /api/v1/orgs/:id/members/:userId/capabilities[/:capability]`** + **`GET /api/v1/orgs/:id/effective-access`** (owner/admin). Капабилити-подмножество `memory:regulations`/`memory:entities`/`feature:graph`/`panel:operations`. |
+
+### `backend/src/modules/persons/` (расширение)
+
+- `POST /api/v1/persons` принимает `linkUserId` — привязка создаваемой карточки сотрудника к существующему участнику (`Membership.userId`).
+
+### Приглашение по `personId` (Фаза 0)
+
+- `InviteMemberSchema.personId` + `createInvitation` резолвит `Person`, дедуп pending по `personId`, сохраняет `personId` в `OrgInvitation` (поле уже было в схеме, см. [[data-model]] §Фаза 0).
+
+[[../index|← index]]

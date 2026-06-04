@@ -102,7 +102,7 @@ OrgInvitation {
 
 ## Frontend
 
-- `/settings/organization` — управление Org (`OrganizationClient.tsx`): информация (owner-only), участники с inline-сменой роли и удалением, форма приглашения + список pending.
+- `/settings/organization` — только вкладка «Информация» (owner-only) с 2026-06-04. **Управление участниками и приглашениями переехало в раздел «Команда» (`/structure`)** — ростер `GET /orgs/:id/team-roster`, inline-смена роли / удаление / приглашение / перевыпуск / отзыв, карточка сотрудника `/structure/persons/[id]` (включая персональные override доступа). См. [[frontend-pages]] §«Команда».
 - `/invitations/[token]` — кнопка «Принять приглашение» → редирект на `/dashboard`.
 - Middleware: `/invitations` в `PROTECTED_PREFIXES` — неавторизованный редиректится на `/login?next=…` и после логина возвращается.
 - API-слой: `frontend/src/api/orgs.api.ts` — единый orgsApi с типизированными DTO.

@@ -14,11 +14,11 @@ import { PersonsTab } from './PersonsTab';
 
 type TabKey = 'departments' | 'roles' | 'persons';
 
-const TAB_KEYS: TabKey[] = ['departments', 'roles', 'persons'];
+const TAB_KEYS: TabKey[] = ['persons', 'departments', 'roles'];
 
 function readTab(sp: URLSearchParams | null): TabKey {
   const t = sp?.get('tab');
-  return t && (TAB_KEYS as string[]).includes(t) ? (t as TabKey) : 'departments';
+  return t && (TAB_KEYS as string[]).includes(t) ? (t as TabKey) : 'persons';
 }
 
 export function StructureClient() {
@@ -53,15 +53,19 @@ export function StructureClient() {
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-          Структура
+          Команда
         </h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Отделы, должности и сотрудники компании. {canEdit ? '' : 'Просмотр.'}
+          Сотрудники, отделы и должности компании. {canEdit ? '' : 'Просмотр.'}
         </p>
       </header>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
+          <TabsTrigger value="persons">
+            <Users size={14} />
+            <span>Сотрудники</span>
+          </TabsTrigger>
           <TabsTrigger value="departments">
             <Building2 size={14} />
             <span>Отделы</span>
@@ -69,10 +73,6 @@ export function StructureClient() {
           <TabsTrigger value="roles">
             <IdCard size={14} />
             <span>Должности</span>
-          </TabsTrigger>
-          <TabsTrigger value="persons">
-            <Users size={14} />
-            <span>Сотрудники</span>
           </TabsTrigger>
         </TabsList>
 

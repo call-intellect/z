@@ -1,29 +1,19 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist31Service } from '../services/specialist-3-1-regulations.service';
 
 /**
- * SBA α-7 — Specialist 3.1 (Regulations) — consumer `core.specialist-routing`
+ * SBA α-7 — Specialist 3.1 (Regulations) — handler `core.specialist-routing`
  * с jobName='3-1-regulations'.
  *
- * Запускается, когда `RouterService.dispatch` диспатчит блок (`signalType=
- * 'regulation'` или `'process_step'`) этому специалисту. Воркер фильтрует
- * jobs других специалистов по `job.name`.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
+ * (`signalType='regulation'` или `'process_step'`), которые `RouterService.dispatch`
+ * диспатчит этому специалисту. Маршрутизацию по jobName делает диспетчер.
  *
  * Логика:
  *   1. Загрузить block + evidence + entities.
@@ -39,68 +29,25 @@ import { Specialist31Service } from '../services/specialist-3-1-regulations.serv
  * Метрики:
  *   - `core_specialist_pipeline_duration_seconds{type='regulation'}` —
  *     длительность полного цикла специалиста.
- *
- * Concurrency=2 — баланс между параллелизмом и LLM rate-limit'ами.
  */
 @Injectable()
-export class Specialist31RegulationsWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class Specialist31RegulationsWorker {
   private readonly logger = new Logger(Specialist31RegulationsWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
   /**
-   * Имя специалиста (jobName-фильтр). Должно совпадать со значением
-   * `RouterService.SPECIALIST.REGULATIONS`.
+   * Имя специалиста (ключ маршрутизации диспетчера). Должно совпадать со
+   * значением `RouterService.SPECIALIST.REGULATIONS`.
    */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.REGULATIONS;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist31Service) private readonly svc: Specialist31Service,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-1: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist31RegulationsWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist31RegulationsWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    // jobName-фильтр: пропускаем jobs других специалистов.
-    if (job.name !== Specialist31RegulationsWorker.SPECIALIST_NAME) {
-      return;
-    }
-
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
 
@@ -117,6 +64,10 @@ export class Specialist31RegulationsWorker
           { blockId },
           'specialist-3-1: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -124,6 +75,10 @@ export class Specialist31RegulationsWorker
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-1: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -131,6 +86,10 @@ export class Specialist31RegulationsWorker
           { blockId, status: block.status },
           'specialist-3-1: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
 
@@ -144,6 +103,10 @@ export class Specialist31RegulationsWorker
           { blockId, signalType: block.signalType },
           'specialist-3-1: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

@@ -193,3 +193,30 @@ Concierge (γ-2) подключён к 4 dialog-layer taskType'ам при `CONC
 Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dialog-multi-query-clone`, Фаза 7 §9), **Concierge (с ТЗ 2026-05-27)**.
 
 [[../index|← index]]
+
+## Разблокировка конвейера встреча→граф→задачи (МТЗ №1, 2026-06-04)
+
+**Источник:** [`plans/tz/2026-06-04-razblokirovka-konveyera.md`](../../plans/tz/2026-06-04-razblokirovka-konveyera.md). Ветка `feature/pipeline-unblock`. Здесь — изменения AI-пайплайна; схема — [[../02_architecture/data-model]], топология воркеров — [[workers-queues]] и [[../02_architecture/module-map]] §«Разблокировка конвейера».
+
+### Транскрибация: параллель + per-track идемпотентность (Фаза 1, коммит `d5077155`)
+
+- **Параллельная транскрибация дорожек.** `transcribe.worker` гоняет per-track ASR (Vox) пулом из 4 через `Promise.allSettled` — раньше дорожки шли последовательно (медленно и хрупко). Один упавший трек не валит остальные.
+- **Per-track идемпотентность.** `AudioTrack.voxTaskId` помнит таск ASR на дорожку; `TranscriptTrack` пишется через `upsert` по `@@unique([transcriptId, livekitIdentity])`. Повторный прогон/догон одного участника не плодит дубли.
+- **`startedAt` из реального LiveKit.** Берётся из `extractEgressInfo.startedAt` (фактическое время старта egress), а не из «когда взяли в обработку».
+- **ENV** (читаются через `TypedConfigService`): `VOX_POLL_INTERVAL_MS`, `VOX_POLL_MAX_ATTEMPTS` — параметры опроса статуса Vox-таска.
+
+### Диспатч специалистов — на canonical (Фаза 3, коммит `ac75aca8`)
+
+Маршрутизация в специалистов слоя 3 (`routerService.dispatch`) перенесена из `block-ingest.worker` (по draft-блокам) в `block-distill.worker` `markCanonical`/`mergeInto` (по **canonical**-блокам). Специалисты извлекают сущности из выверенных блоков, а не из черновиков. Skip-метрика `core_specialist_skipped_total{specialist, reason}` во всех 14 handler'ах. Сама маршрутизация теперь через один `SpecialistRoutingDispatcherWorker` (Фаза 2) — см. [[workers-queues]].
+
+### Мост ingest + reingest (Фаза 7, коммит `5277caa5`)
+
+`analyze.worker` больше не глотает провал `ingestMeeting` молчаливым `return null`: при провале пишется `failureReason` + метрика `meeting_ingest_failed_total{reason}`, статус встречи остаётся `ai_ready` (отчёт пользователю готов). Добавлен fallback-cron `meeting-reingest` (`*/15`) — встречи с `transcript.turns` без `RawEvent` → идемпотентный `ingestMeeting`.
+
+### Новые метрики
+
+- `core_specialist_skipped_total{specialist, reason}` — отказ специалиста (видимость вместо silent-skip).
+- `meeting_ingest_failed_total{reason}` — провал моста встреча→граф.
+- `kc_typed_entity_failed_total{type, reason}` — провал типизированной записи в граф AGE (классификация ошибок, см. [[../02_architecture/age-deployment-decision]]).
+
+[[../index|← index]]

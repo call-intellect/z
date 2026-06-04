@@ -95,6 +95,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAiVerifierEnabled', z.boolean()],
   ['knowledge.curationAutotuneEnabled', z.boolean()],
 
+  // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
+  ['graph.ageEnabled', z.boolean()],
+
   // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],

@@ -5,28 +5,26 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { type Job } from 'bullmq';
 
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ProcessExtractionService } from '../../processes/services/process-extraction.service';
 import { ProcessTemplateProbeService } from '../../processes/services/process-template-probe.service';
 
 /**
- * SBA α-7 wave 2 — ProcessDetectorWorker.
+ * SBA α-7 wave 2 — ProcessDetectorWorker (handler `core.specialist-routing`,
+ * jobName='3-1-process-detector').
  *
- * Consumer `core.specialist-routing` с jobName='3-1-process-detector'.
- * RouterService.matchSpecialists для signalType ∈ {process_step,
- * methodology_step} диспатчит сюда параллельно с Specialist31Regulations
- * (текстовое описание регламента — там; structured pipeline — здесь).
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
+ * signalType ∈ {process_step, methodology_step}. Маршрутизацию по jobName
+ * делает диспетчер. Структурный pipeline извлечения ProcessTemplate — здесь
+ * (текстовое описание регламента — в Specialist31Regulations).
  *
  * Дебаунс — батч-окно §5 sub-TZ:
  *   - Каждый job push'ит blockId в Redis-list `processdetector:batch:<tenantId>`.
@@ -34,7 +32,8 @@ import { ProcessTemplateProbeService } from '../../processes/services/process-te
  *     `processdetector:since:<tenantId>` (SET NX EX = batchTimeoutSeconds).
  *   - Если list достиг `batchSize` — flush сейчас.
  *   - Иначе таймер (worker сам опрашивает раз в 30s) flush'ит все tenants,
- *     у которых истёк timeout.
+ *     у которых истёк timeout. Таймер живёт в onModuleInit (Worker'а у класса
+ *     больше нет — единственный Worker очереди в `SpecialistRoutingDispatcherWorker`).
  *
  * Идемпотентность: jobId = `3-1-process-detector_<blockId>` (см.
  * `CoreQueueService.enqueueSpecialistRouting`). Повторный enqueue одного и
@@ -47,7 +46,6 @@ import { ProcessTemplateProbeService } from '../../processes/services/process-te
 @Injectable()
 export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProcessDetectorWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   static readonly SPECIALIST_NAME = '3-1-process-detector';
@@ -71,29 +69,8 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) =>
-        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'kc.process-detector', job, () =>
-          this.process(job),
-        ),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        '3-1-process-detector: job failed (повтор по политике BullMQ)',
-      );
-    });
-    // Каждые 30s проверяем все батчи на timeout.
+    // Каждые 30s проверяем все батчи на timeout. Worker очереди живёт
+    // централизованно в SpecialistRoutingDispatcherWorker.
     this.timer = setInterval(() => {
       void this.flushExpiredBatches().catch((err) => {
         this.logger.debug(
@@ -105,38 +82,60 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     if (this.timer && typeof this.timer.unref === 'function') {
       this.timer.unref();
     }
-    this.logger.log(
-      `ProcessDetectorWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${ProcessDetectorWorker.SPECIALIST_NAME})`,
-    );
   }
 
-  async onModuleDestroy(): Promise<void> {
+  onModuleDestroy(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-    }
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
     }
   }
 
   // ─────────────────────────── consumer ─────────────────────────────
 
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
+    await this.pipe.job(
+      SystemLogPipeline.KNOWLEDGE_GRAPH,
+      'kc.process-detector',
+      job,
+      () => this.process(job),
+    );
+  }
+
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== ProcessDetectorWorker.SPECIALIST_NAME) {
-      return;
-    }
     const { blockId, tenantId, signalType } = job.data;
     if (!ProcessDetectorWorker.RELEVANT_SIGNALS.has(signalType)) {
-      return; // RouterService может прислать что-то ещё — фильтруем.
+      // RouterService может прислать что-то ещё — фильтруем.
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
+      return;
     }
     // Проверим, что block ещё существует и canonical — иначе skip.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: blockId },
       select: { id: true, tenantId: true, status: true, signalType: true },
     });
-    if (!block || block.tenantId !== tenantId || block.status !== 'canonical') {
+    if (!block) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'block_not_found',
+      });
+      return;
+    }
+    if (block.tenantId !== tenantId) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'tenant_mismatch',
+      });
+      return;
+    }
+    if (block.status !== 'canonical') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'not_canonical',
+      });
       return;
     }
 
@@ -280,7 +279,8 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
-    void this.metrics; // метрики уже инкрементятся внутри extraction.
+    // Метрики extractBatch инкрементятся внутри ProcessExtractionService;
+    // skip-метрика — в process() выше.
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

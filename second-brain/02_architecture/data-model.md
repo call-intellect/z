@@ -1358,3 +1358,43 @@ model EmployeeCapabilityOverride {
 без потери данных) — деплой-шаг. Скриптов/seed нет.
 
 [[../index|← index]]
+
+## Разблокировка конвейера встреча→граф→задачи (МТЗ №1, 2026-06-04)
+
+**Источник:** [`plans/tz/2026-06-04-razblokirovka-konveyera.md`](../../plans/tz/2026-06-04-razblokirovka-konveyera.md). Ветка `feature/pipeline-unblock`, 11 фаз. Здесь — только схемные дельты; пайплайн и воркеры — [[module-map]], [[../01_projects/workers-queues]], [[../01_projects/ai-jobs]]. Всё через `prisma db push` (не migrate).
+
+### `AudioTrack.voxTaskId` (Фаза 1, коммит `d5077155`)
+
+```prisma
+voxTaskId  String?   // id задачи транскрибации в Vox (ASR) — для per-track идемпотентности
+```
+
+Каждая аудиодорожка участника помнит, какой Vox-таск её транскрибировал. Позволяет догнать/перезапустить транскрибацию конкретной дорожки, не задевая остальные (повторный прогон находит уже отправленный таск вместо дубля). См. параллельную транскрибацию дорожек в [[../01_projects/ai-jobs]].
+
+### `TranscriptTrack @@unique([transcriptId, livekitIdentity])` (Фаза 1, коммит `d5077155`)
+
+Уникальный ключ на пару «транскрипт × участник (по `livekitIdentity`)`. Дорожки теперь пишутся через `upsert` (а не `create`) — повторный прогон транскрибации одного участника обновляет существующую запись, не плодит дубли. Это нижний слой per-track идемпотентности (вместе с `AudioTrack.voxTaskId`).
+
+### `Insight.dataClassAudit` / `Decision.dataClassAudit` (Фаза 8, коммит `22446248`)
+
+```prisma
+dataClassAudit  Json?   // снимок аудита класса данных (для dataclass-audit-snapshot cron)
+```
+
+Поле добавлено в обе модели (раньше его не было — `tsc` молча пропускал лишний ключ в Prisma-`create`, см. [[code-pitfalls]]). Без поля cron `dataclass-audit-snapshot` падал; теперь снимок аудита класса данных кладётся сюда, а сам cron обёрнут в `to_regclass`-гард (не падает на свежей БД без таблицы).
+
+### `MeetingStatus += ai_failed` (Фаза 11, коммиты `de46e1a9` backend + `daff5f50` frontend)
+
+```prisma
+enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
+```
+
+Отдельный статус «запись есть, AI-отчёт не сформировался» — раньше провал транскрибации/merge/analyze ронял встречу в общий `failed`, и фронт прятал плеер с записью. Теперь:
+
+- `onJobFailed` у `transcribe`/`merge`/`analyze` переводит встречу в **`ai_failed`** (не `failed`); исключение — `no_audio_tracks` остаётся `failed` (записи нет, показывать нечего).
+- FSM `meeting-fsm.ts` разрешает переход в `ai_failed`.
+- Фронт показывает плеер по `hasRecording`, статус `ai_failed` замаплен в `meetingStatusView`, выводит баннер «AI-отчёт не сформирован»; публичный shell больше не прячет запись.
+
+Влияние на FSM-блок выше (§«Статусы встречи»): ветка `ai_processing` теперь ветвится на `ai_ready | ai_failed`, общий `failed` — только для отсутствия записи/аудио.
+
+[[../index|← index]]

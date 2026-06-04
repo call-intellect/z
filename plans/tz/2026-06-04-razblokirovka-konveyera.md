@@ -73,7 +73,7 @@
 
 ---
 
-## Ф2 — specialist-routing: 14 воркеров на одной очереди `[ ]`
+## Ф2 — specialist-routing: 14 воркеров на одной очереди `[x]`
 
 **Корень (баг #14, critical):** на очереди `core.specialist-routing` создаётся **14 конкурирующих** `new Worker(CORE_QUEUE_NAMES.SPECIALIST_ROUTING, ...)` (`specialist-3-14-goals.worker.ts:60-67`, `specialist-3-1-regulations.worker.ts:67-74`, `process-detector.worker.ts:74-84`, `experiment-detector.worker.ts:68-69`, `sprint-helper.worker.ts:44-45`, +role-map-builder/personal-relation-builder/helpfulness). `enqueueSpecialistRouting` делает `q.add(args.specialistName, payload, {jobId})` (`core-queue.service.ts:443-462`) — jobName=specialistName используется как (несуществующий) ключ маршрутизации. По модели BullMQ **один job → один воркер** (конкурирующие consumer'ы): job достаётся случайному воркеру, а каждый воркер делает `if (job.name !== SPECIALIST_NAME) return;` (`specialist-3-14-goals.worker.ts:91-95`) — **silent return без throw** → job помечается completed → ретрая нет (`queues.ts:192-197` attempts=5/removeOnFail не помогают, т.к. return, а не throw). Итог: ~13/14 блоков попадают «чужому» воркеру и молча теряются. Комментарий `queues.ts:87-94` «Multi-consumer: каждый специалист подписывается на свой jobName» фиксирует ошибочную (нереализуемую в BullMQ) посылку.
 
@@ -96,29 +96,30 @@
 
 ---
 
-## Ф3 — специалисты Слоя 3: диспатч на `draft`, обработка `canonical` `[ ]`
+## Ф3 — специалисты Слоя 3: диспатч на `draft`, обработка `canonical` `[x]`
 
 **Корень (баг #15 + #23, critical):** `block-ingest.worker.ts:750` создаёт IdeaBlock со `status='draft'`, затем `block-ingest.worker.ts:559-573` сразу вызывает `router.dispatch` на этом draft-блоке. `enqueueSpecialistRouting` (`core-queue.service.ts:443-461`) добавляет job **БЕЗ delay**, тогда как `enqueueBlockDistill` (`core-queue.service.ts:145-156`) — с `delay=distillDebounceMs` (`env.schema.ts:495` default 30000мс). То есть специалист стартует ~сразу, а канонизация (`block-distill.worker.ts:164-206` `markCanonical`) только через ~30с. Специалисты делают `if (block.status !== 'canonical') return` (`specialist-3-14-goals.worker.ts:116-122`, `specialist-3-3-decisions.worker.ts:131-137`) — **без throw** → job completed, ретрая нет. `markCanonical`/`mergeInto` (`block-distill.worker.ts:164-206`, ~307-328) **не вызывают** `router.dispatch` (re-dispatch отсутствует). `ProjectionRebuilderService` (`projection-rebuilder.service.ts:183-258`) ищет проекции по `sourceBlockIds has blockId` — пересобирает только **существующие**, новую первую проекцию не создаёт. Combined-путь (`specialists-combined.worker.ts`) под `SPECIALISTS_COMBINED_ENABLED` + `KNOWLEDGE_CORE_V2_AGENTS_ENABLED` (оба default false) — OFF в проде, живёт только сломанный per-block путь.
 
 **Правки:**
-- [ ] Перенести диспатч специалистов на переход в `canonical`: убрать `this.router.dispatch` из `block-ingest.worker.ts:559-573` и вызывать `router.dispatch` внутри `markCanonical` (`block-distill.worker.ts:164`, best-effort `.catch`) и внутри `mergeInto` для `canonicalId` (~`block-distill.worker.ts:307`). Тогда специалист всегда видит `status='canonical'`.
-- [ ] `AxisClassifier` (`block-ingest.worker.ts:575-589`) оставить на draft — он идемпотентен по `@@unique(tenantId,blockId,axis,label)`.
-- [ ] НЕ давать специалистам обрабатывать `draft` (иначе дубли проекций после merge).
-- [ ] **Наблюдаемость (баг #18):** ветки skip (jobName-mismatch уже throw из Ф2; не-canonical; signalType вне области) — не помечать молча success без сигнала. Метрика `observeCoreSpecialistPipelineDuration` сейчас в `finally` на ВСЕХ путях (`specialist-3-14-goals.worker.ts:137-142`) — skip неотличим от success; ввести skip-reason метрику/лог.
+- [x] Перенести диспатч специалистов на переход в `canonical`: убрал `this.router.dispatch` из `block-ingest.worker.ts` (RouterService больше не инжектится в ingest) и вызываю `router.dispatch` внутри `markCanonical` (best-effort `.catch`) и внутри `mergeInto` для `canonicalId` (signalType захвачен из `canonical` внутри транзакции → `canonicalSignalType`). RouterService инжектирован в block-distill (доступен из @Global KnowledgeCoreModule). Специалист всегда видит `status='canonical'`.
+- [x] `AxisClassifier` оставлен на draft в block-ingest — идемпотентен по `@@unique(tenantId,blockId,axis,label)`; цикл сохранён только под classify.
+- [x] НЕ даём специалистам обрабатывать `draft` — диспатч теперь только на canonical; внутренний guard `status!=='canonical'` оставлен как защита.
+- [x] **Наблюдаемость (баг #18):** добавлен Counter `core_specialist_skipped_total{specialist,reason}` + метод `incCoreSpecialistSkipped` в `BusinessMetricsService`. Инкрементится на КАЖДОЙ skip-ветке во всех 14 handler'ах (reason: block_not_found / tenant_mismatch / not_canonical / signal_out_of_scope). duration-метрика в `finally` остаётся, skip теперь отличим от success.
 
 > Альтернатива меньшего радиуса: добавить опциональный `delayMs` в `enqueueSpecialistRouting` и диспатчить с `delay>=distillDebounceMs`. Хрупко (distill может задержаться из-за LLM judgeMerge) — предпочтителен перенос на canonical-переход.
 
 **Критерий приёмки Ф3:**
-- `grep -n "router.dispatch" block-ingest.worker.ts` → диспатча из ingest нет; `grep -n "router.dispatch\|dispatch(" block-distill.worker.ts` → диспатч есть в `markCanonical` и `mergeInto`.
-- Интеграционный тест: ingest блока → ждём canonical → ассерт, что specialist-3-x создал Goal/Decision (первая проекция из живого потока).
-- Тест: дубль проекции после merge не создаётся.
-- `bun run typecheck` · `bun run test:integration` зелёные.
+- [x] `grep -n "router.dispatch" block-ingest.worker.ts` → пусто (диспатча из ingest нет); `grep -n "router.dispatch\|this.router" block-distill.worker.ts` → есть в `markCanonical` и `mergeInto`.
+- [x] Unit-тест `block-distill.worker.spec.ts`: markCanonical → `router.dispatch({id:block.id, signalType:block.signalType})`; mergeInto → `router.dispatch({id:canonicalId, signalType:канонического})`; dispatch best-effort (бросает → markCanonical/mergeInto не падают). Все зелёные.
+- [x] `block-ingest.worker.spec.ts`: конструктор обновлён (RouterService убран, 13 аргументов) — подтверждает, что ingest больше не зависит от router.
+- [~] Интеграционный тест против реального Postgres «первая проекция рождается / дубль после merge не создаётся» — НЕ прогнан (Docker недоступен в среде). Логика покрыта unit-тестами; требует прод/CI-прогона.
+- [x] `bun run typecheck` · `bun run lint` (0 errors) · `bun run build` зелёные; затронутые vitest-specs (5 файлов, 17 тестов + 30 файлов / 185 тестов по модулям) зелёные.
 
 **Разблокирует:** рождение первой проекции (Goal/Decision/Insight/Idea/задачи) из живого потока встреч. Зависит от Ф2 (доставка до специалиста). **prisma db push:** нет. **ENV:** нет. **prod-deploy-log:** Шаг 12 (smoke).
 
 ---
 
-## Ф4 — projection-rebuilder: невалидный `skillTrait.tenantId` `[ ]`
+## Ф4 — projection-rebuilder: невалидный `skillTrait.tenantId` `[x]`
 
 **Корень (баг #16/#20/#24/#28/#37, finding `projection-tenantid`, high):** `projection-rebuilder.service.ts:204-210` фильтрует `prisma.skillTrait.findMany({ where: { tenantId: event.tenantId, sourceBlockIds: { has } } })`, но у модели `SkillTrait` (`schema.prisma:7087-7137`) **нет** колонки `tenantId` — только `profileId` (FK на `SkillProfile`), `categoryId`, `conceptId`; тенант на родителе `SkillProfile.tenantId` (`schema.prisma:7058`). Prisma бросает `PrismaClientValidationError`. Запрос — в общем `Promise.all` на 10 проекций (`projection-rebuilder.service.ts:154`); reject одного реджектит **весь** `Promise.all` → внешний catch (`projection-rebuilder.service.ts:282-290`) глушит warn'ом → НИ ОДНА из 10 проекций (decision/insight/idea/card/regulation/process/policy/skill_trait/processTemplate/experiment) не пересобирается. Падение детерминированное на КАЖДОМ `idea_block.updated`.
 
@@ -136,7 +137,7 @@
 
 ---
 
-## Ф5 — AGE/граф: search_path + развязка транзакции + видимость отказа `[ ]`
+## Ф5 — AGE/граф: search_path + развязка транзакции + видимость отказа `[x]`
 
 **Корень (finding `cypher-age`, баги #10/#11/#12/#13/#21/#31/#32, high→critical):** графовая запись AGE идёт через **неквалифицированный** `cypher('z_graph', ...)` (`graph.service.ts:551`, `:573`, `:580`; `Z_GRAPH='z_graph'` в `cypher-builder.ts:60`) в рантайм-пуле, у которого **нет `ag_catalog` в `search_path`**. `LOAD 'age'` / `SET search_path=ag_catalog` есть ТОЛЬКО в `postgres-init.sql:16-18`, прогоняемом отдельным короткоживущим `pg.Client` (`apply-postgres-init.ts:32-39`), который закрывается — настройки session-local. Рантайм-пул Prisma (`prisma.service.ts:43` `new PrismaPg({ connectionString: cfg.db.url })`) НИКОГДА не делает `LOAD age`/`SET search_path`; `DATABASE_URL` не содержит `options=-c search_path`. Дефолтный `search_path` = `"$user",public` → `cypher()` не резолвится → Postgres `42883 function cypher does not exist` **даже при установленном AGE** (поправка после pull). Двойная запись усугубляет: `upsertEntity` (`graph.service.ts:497-516`) и `upsertDecision` (`:911-945`) держат Postgres-INSERT и `runCypherMergeNode` в **ОДНОЙ** `prisma.$transaction` → падение `cypher()` откатывает и бизнес-строку (Process/Regulation/Policy/Tool/Metric/Decision). В worker всё проглатывается: `block-ingest.worker.ts:304-306/338-340/.../524-526 → warnTypedFail (:1081-1090)` только `logger.warn`, RawEvent безусловно `processingStatus='ingested'` (`:529-536`) — тихая потеря.
 
@@ -165,7 +166,7 @@
 
 ---
 
-## Ф6 — пороги графа на малом тенанте + мёртвые крутилки `[ ]`
+## Ф6 — пороги графа на малом тенанте + мёртвые крутилки `[x]`
 
 **Корень (баги #17/#22/#33/#34/#35/#36, finding `block-linker-threshold`, high):**
 - **block-linker:** `block-linker.worker.ts:122-133` skip при `canonicalCount < minBlocks`; `minBlocks=this.cfg.knowledgeCore.linkerMinBlocks` (`:123`), резолвится синхронным `this.get('LINKER_MIN_BLOCKS')` (`typed-config.service.ts:71-73,729`) = статичный ENV. `env.schema.ts:515` default **50**, `.env` нет → эффективный порог 50. AdminSetting `knowledge.linkerMinBlocks` зарегистрирован (`admin-setting-schema-registry.ts:61`) и засеян **3** (`seed-admin-settings.ts:228`), но воркер его НЕ читает через `getDynamic`/`resolveSync` — **крутилка мёртвая**, и дефолты рассинхронизированы (ENV 50 vs seed 3).
@@ -190,7 +191,7 @@
 
 ---
 
-## Ф7 — мост ingestMeeting: видимый провал + reingest-fallback `[ ]`
+## Ф7 — мост ingestMeeting: видимый провал + reingest-fallback `[x]`
 
 **Корень (баг #1/#8, pipelineMap «МОСТ встреча→второй мозг», high):** `ingestMeeting` — ЕДИНСТВЕННЫЙ вход результата встречи в knowledge-core, вызывается только из `analyze.worker.ts:378` (после ai_ready) и обёрнут в `.catch((err)=>{ logger.warn(...); return null; })` (`:378-388`). Т.к. catch возвращает resolved-`null`, `Promise.allSettled` на индексе 'ingest' НИКОГДА не попадает в `rejected` (`:389-391`) → `meeting.failureReason` не пишется (`:392-415`), статус остаётся `ai_ready` (`:318`). Оператор видит «зелёную» встречу, хотя RawEvent не создан. Все режимы провала реальны (throw до `.catch`): `meeting_no_merged_transcript` (`meeting.adapter.ts:87-95`), `meeting_without_tenant` (`:79-86`), `source_inactive` (`ingest.service.ts:101-106`), `QuotaExceededError` (`ingest.service.ts:163-164`, HTTP 429). Комментарий `analyze.worker.ts:384-386` «consumer в core.raw-events ещё не подписан» неверен — `BlockIngestWorker` создаёт живой Worker в `onModuleInit` (`block-ingest.worker.ts:126-146`).
 
@@ -210,7 +211,7 @@
 
 ---
 
-## Ф8 — код ↔ схема: `dataClassAudit` + машинный гард класса `[ ]`
+## Ф8 — код ↔ схема: `dataClassAudit` + машинный гард класса `[x]`
 
 **Корень (баги #29/#30, finding `schema-drift`, medium):** поле `dataClassAudit Json?` есть в схеме только у 6 моделей — `AiUsageLog` (`schema.prisma:1398`), `Card` (2121), `ConflictItem` (3420), `ProbeEvent` (5778), `SkillProfile` (7068), `ExecutablePersona` (7386). У `Insight` (model:5544, `@@map("insights")`:5622) и `Decision` (5428, `@@map("decisions")`:5533) поля НЕТ. При этом `specialist-3-5-insights.service.ts:806` делает `insight.create({...,dataClassAudit})`, `specialist-3-3-decisions.service.ts:837` — `decision.create({...,dataClassAudit})`, а `dataclass-audit-snapshot.cron.ts:113-126` raw-SQL читает `FROM insights ... dataClassAudit` / `FROM decisions` → Postgres `42703 column "dataClassAudit" does not exist`. **tsc СТРУКТУРНО слеп** к лишнему `dataClassAudit` в `create({data:...})` (generic `Subset<T,Args>`) — typecheck проходит, рантайм падает. Доп.: cron PROJECTIONS (`dataclass-audit-snapshot.cron.ts:27-41`) перечисляет 13 kind'ов, у 7 нет колонки → `count({where:{dataClassAudit:{not:null}}})` бросает ValidationError, метрика молча skip (`:83-97`).
 
@@ -234,7 +235,7 @@
 
 ---
 
-## Ф9 — владелец без Person: ensurePersonForUser + backfill `[ ]`
+## Ф9 — владелец без Person: ensurePersonForUser + backfill `[x]`
 
 **Корень (баг #7/#26, finding `room-messages-person`, high; учтена поправка после pull):** `Person.userId` линкуется ТОЛЬКО при accept приглашения с `personId` (`org-invitations.service.ts:742-757`). `Person.create` везде ставит `userId:null` (`persons.service.ts:197-200`, `:619-622`). `OrgsService.createForOwner` (`orgs.service.ts:74-117`) создаёт Org + Membership(owner, без personId) + Source + Subscription, но **Person владельца не создаёт**. Следствия: `CommitmentsService.resolveSelfPerson` (`commitments.service.ts:44-62`) бросает `ForbiddenException code='no_person'`, а `MyPromisesController.list` (`my-promises.controller.ts:58-63`) вызывает его безусловно → `GET /me/promises` отдаёт hard-403; `DumpService` уходит в legacy-ветку (`dump.service.ts:80-83 person==null → :114-147`) — без Document и без provenance (`block-ingest.worker.ts:1064-1067,1110` `derived_from` к Document не строится). **Поправка после pull:** merge добавил РУЧНУЮ привязку через раздел «Команда» (`persons.service.ts` `linkUserId`), но `createForOwner`/commitments/dump **не изменены** — автолинковки нет.
 
@@ -257,7 +258,7 @@
 
 ---
 
-## Ф10 — free_note: SegmentBuilder распознаёт `kind='free_note'` `[ ]`
+## Ф10 — free_note: SegmentBuilder распознаёт `kind='free_note'` `[x]`
 
 **Корень (баг #4, medium):** payload free_note = `{ kind:'free_note', userId, text, metadata }` (`conversational-ingest.adapter.ts:49-54`) — полей `fullText`/`transcript` нет. `SegmentBuilderService`: `tryAsMeeting` требует `transcript.turns` (`segment-builder.service.ts:89-94`) → null; `tryGetFullText` читает СТРОГО `payload.fullText` (`:81-85`) → null; падает в `buildFallback` (`:78,159-173`), который делает `JSON.stringify(payload)` и кладёт всю обёртку `kind/userId/metadata` в `Segment.text`. Дальше `buildBlockIngestPrompt` (`block-ingest.prompt.ts:542-552`) подставляет `s.text` дословно в LLM → извлечение деградирует на JSON-шуме. Канал «записи мыслей» работает хуже, чем должен.
 

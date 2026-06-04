@@ -90,6 +90,8 @@ const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
   ai_processing: 'AI-обработка',
   ai_ready: 'Готово',
   failed: 'Ошибка',
+  // Запись в порядке, упала только AI-ветка (транскрибация/отчёт).
+  ai_failed: 'Отчёт не готов',
 };
 
 type Group = 'today' | 'week' | 'earlier';
@@ -450,6 +452,8 @@ function MeetingRowCard({
     item.status === 'transcription_processing' ||
     item.status === 'ai_processing';
   const isFailed = item.status === 'failed';
+  // Запись есть, но AI-отчёт не сформирован — мягкий «warning», не «danger».
+  const isAiFailed = item.status === 'ai_failed';
 
   return (
     <div
@@ -491,6 +495,12 @@ function MeetingRowCard({
           <span
             aria-label="Ошибка"
             className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-danger"
+          />
+        )}
+        {isAiFailed && (
+          <span
+            aria-label="AI-отчёт не готов"
+            className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
           />
         )}
       </div>

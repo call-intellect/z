@@ -62,6 +62,29 @@ SELECT name FROM ag_catalog.ag_graph WHERE name = 'z_graph';
 
 Должно вернуть `age`/`vector` и одну строку с `z_graph`.
 
+## Разблокировка графа AGE (МТЗ №1 Фаза 5, 2026-06-04, коммит `ee0bb910`)
+
+**Источник:** [`plans/tz/2026-06-04-razblokirovka-konveyera.md`](../../plans/tz/2026-06-04-razblokirovka-konveyera.md). AGE на проде «не виделся» — типизированная запись в граф падала или висела внутри транзакций. Что сделано в `backend/src/common/graph/graph.service.ts` + `prisma.service.ts` + `postgres-init.sql`:
+
+- **`search_path` для `ag_catalog`.** AGE требует `ag_catalog` в `search_path`, иначе Cypher-функции не резолвятся. Прибито двумя слоями: `ALTER ROLE ... SET search_path` в `postgres-init.sql` (постоянно для роли) **и** per-connection `options` в `PrismaPg` (на случай новой роли/пула). Это и была причина «AGE не виден».
+- **Cypher развязан из транзакций.** Раньше `cypher(...)` вызывался внутри Prisma-транзакции — длинные графовые операции держали транзакцию и роняли запись. Теперь в `upsertEntity` / `upsertDecision` / `addEdge` / `removeNode` / `removeEdge` Cypher выполняется **post-commit best-effort** (после коммита основной транзакции Postgres).
+- **Классификация ошибок + метрика `kc_typed_entity_failed_total{type, reason}`.** Видно, что именно ломается (а не общий silent-skip).
+- **`age_unavailable` НЕ помечает RawEvent как ingested.** Если граф недоступен, `block-ingest.worker` делает `throw` (job уходит в ретрай BullMQ) — событие не теряется, дождётся восстановления AGE.
+- **Kill-switch `graph.ageEnabled`** (`AdminSetting`, default `true`) — крутилка super_admin, можно отключить графовую запись без передеплоя (см. [[../01_projects/admin-settings]]). Getter `graph.ageEnabled` в `TypedConfigService`, ENV-дефолт в `env.schema.ts`.
+
+## Пороги графа = живые крутилки AdminSetting (МТЗ №1 Фаза 6, 2026-06-04, коммит `eb7462ef`)
+
+Геттер `knowledgeCore` в `TypedConfigService` переведён на `resolveSync` для порогов графа — теперь это **живые крутилки** super_admin (`AdminSetting`), а не статические ENV: `linkMinConfidence`, `linkerMinBlocks`, `entityGraphMinComentions`, `themeClusteringMinBlocks`, `themeClusterMinSize`. ENV-дефолты понижены под малый тенант (граф не строился, т.к. пороги были рассчитаны на крупную компанию):
+
+| Порог | Было (ENV) | Стало (дефолт) |
+|---|---|---|
+| `LINKER_MIN_BLOCKS` | 50 | 3 |
+| `THEME_CLUSTERING_MIN_BLOCKS` | 100 | 10 |
+| `ENTITY_GRAPH_MIN_COMENTIONS` | 3 | 2 |
+| `LINK_MIN_CONFIDENCE` | 0.75 | 0.5 |
+
+> ⚠ **`v2AgentsEnabled` НАМЕРЕННО оставлен на ENV (не переведён в `resolveSync`).** Это не «крутилка», а мастер-флаг прод-выкатки v2-агентов — перевод в AdminSetting флипнул бы прод-флаг при первом же резолве дефолта. Урок зафиксирован в рефлексии 2026-06-04.
+
 ## Что дальше
 
 - 0a.1 — Prisma модели + миграция EntityLink на полиморфизм.

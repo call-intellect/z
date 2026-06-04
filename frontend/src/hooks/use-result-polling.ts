@@ -16,6 +16,7 @@ export type ResultStage =
   | 'transcription_ready'
   | 'ai_ready'
   | 'failed'
+  | 'ai_failed'
   | 'other';
 
 function toStage(status: MeetingStatus): ResultStage {
@@ -27,6 +28,7 @@ function toStage(status: MeetingStatus): ResultStage {
     case 'transcription_ready':
     case 'ai_ready':
     case 'failed':
+    case 'ai_failed':
       return status;
     default:
       return 'other';
@@ -34,14 +36,23 @@ function toStage(status: MeetingStatus): ResultStage {
 }
 
 /**
- * Result fetch с polling'ом. Polling прекращается, когда статус — `ai_ready`
- * или `failed`.
+ * Терминальные «провальные» статусы. `failed` — полный провал, `ai_failed` —
+ * упала только AI-ветка (запись в порядке). Оба останавливают polling.
+ */
+export function isTerminalFailureStage(stage: ResultStage): stage is 'failed' | 'ai_failed' {
+  return stage === 'failed' || stage === 'ai_failed';
+}
+
+/**
+ * Result fetch с polling'ом. Polling прекращается, когда статус — `ai_ready`,
+ * `failed` или `ai_failed` (все терминальные).
  *
  * Состояния:
  *  - `loading`     — первичная загрузка.
  *  - `error`       — ошибка fetch'а (например 401/403).
- *  - `progress`    — встреча обрабатывается (не `ai_ready` и не `failed`).
- *  - `failed`      — встреча в `failed`.
+ *  - `progress`    — встреча обрабатывается (не терминальный статус).
+ *  - `failed`      — встреча в `failed` (полный провал) или `ai_failed`
+ *                    (упала только AI-ветка, запись готова) — см. `stage`.
  *  - `ready`       — `ai_ready` и AiResult присутствует.
  */
 export type UseResultResult =
@@ -56,7 +67,7 @@ export type UseResultResult =
     }
   | {
       state: 'failed';
-      stage: 'failed';
+      stage: 'failed' | 'ai_failed';
       data: ResultApiResponse;
       error: string | null;
       mutate: () => void;
@@ -77,7 +88,9 @@ export function useResultPolling(meetingId: string | null): UseResultResult {
       refreshInterval: (latest) => {
         if (!latest) return POLL_MS;
         if (latest.aiReady) return 0;
-        if (latest.meeting.status === 'failed') return 0;
+        // Оба терминальных провала останавливают polling: полный `failed`
+        // и `ai_failed` (упала только AI-ветка, запись готова).
+        if (isTerminalFailureStage(toStage(latest.meeting.status))) return 0;
         return POLL_MS;
       },
       revalidateOnFocus: false,
@@ -101,10 +114,10 @@ export function useResultPolling(meetingId: string | null): UseResultResult {
     return { state: 'loading', data: null, error: null, mutate: refresh };
   }
   const stage = toStage(data.meeting.status);
-  if (stage === 'failed') {
+  if (isTerminalFailureStage(stage)) {
     return {
       state: 'failed',
-      stage: 'failed',
+      stage,
       data,
       error: data.meeting.failureReason ?? null,
       mutate: refresh,

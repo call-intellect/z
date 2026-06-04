@@ -1,80 +1,36 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist36Service } from '../services/specialist-3-6-ideas.service';
 
 /**
- * SBA β-5 — Specialist 3.6 (Ideas Collector) worker.
+ * SBA β-5 — Specialist 3.6 (Ideas Collector) handler.
  *
- * Consumer `core.specialist-routing` jobName='3-6-ideas'. Делегирует в
+ * Handler `core.specialist-routing` jobName='3-6-ideas'. Вызывается из
+ * `SpecialistRoutingDispatcherWorker.dispatch`; делегирует в
  * `Specialist36Service.processBlock`.
  *
  * Идемпотентность через jobId `3-6-ideas_<blockId>` + KNN-кластеризацию
  * existing Idea в сервисе.
  */
 @Injectable()
-export class Specialist36IdeasWorker implements OnModuleInit, OnModuleDestroy {
+export class Specialist36IdeasWorker {
   private readonly logger = new Logger(Specialist36IdeasWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.IDEAS;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist36Service) private readonly svc: Specialist36Service,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-6: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist36IdeasWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist36IdeasWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== Specialist36IdeasWorker.SPECIALIST_NAME) return;
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
     try {
@@ -82,11 +38,35 @@ export class Specialist36IdeasWorker implements OnModuleInit, OnModuleDestroy {
         where: { id: blockId },
         select: { id: true, tenantId: true, status: true, signalType: true },
       });
-      if (!block) return;
-      if (block.tenantId !== tenantId) return;
-      if (block.status !== 'canonical') return;
+      if (!block) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
+        return;
+      }
+      if (block.tenantId !== tenantId) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
+        return;
+      }
+      if (block.status !== 'canonical') {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
+        return;
+      }
       const allowed = new Set(['idea', 'feature_request']);
-      if (!allowed.has(block.signalType)) return;
+      if (!allowed.has(block.signalType)) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
+        return;
+      }
       await this.svc.processBlock({ tenantId, blockId });
       this.logger.log(
         { blockId, signalType: block.signalType },

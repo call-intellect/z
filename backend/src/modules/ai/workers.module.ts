@@ -42,6 +42,7 @@ import { Specialist34ProjectCustomerWorker } from '../knowledge-core/workers/spe
 import { Specialist35InsightsWorker } from '../knowledge-core/workers/specialist-3-5-insights.worker';
 import { Specialist36IdeasWorker } from '../knowledge-core/workers/specialist-3-6-ideas.worker';
 import { Specialist37SkillWorker } from '../knowledge-core/workers/specialist-3-7-skill.worker';
+import { SpecialistRoutingDispatcherWorker } from '../knowledge-core/workers/specialist-routing-dispatcher.worker';
 import { SpecialistsCombinedWorker } from '../knowledge-core/workers/specialists-combined.worker';
 import { SprintHelperCron } from '../knowledge-core/workers/sprint-helper.cron';
 import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.worker';
@@ -52,6 +53,9 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
 import { FaststartWorker } from '../recordings/workers/faststart.worker';
+// Ф2 МТЗ — RoleMapBuilderWorker (handler) живёт в RoleMapModule; импортируем
+// модуль, чтобы SpecialistRoutingDispatcherWorker мог инжектить handler.
+import { RoleMapModule } from '../role-map/role-map.module';
 import { TablesModule } from '../tables/tables.module';
 import { TableEnrichWorker } from '../tables/workers/table-enrich.worker';
 import { TableSyncWorker } from '../tables/workers/table-sync.worker';
@@ -111,6 +115,11 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // Smart-tables Фаза 2 — TableSyncWorker инжектит TableSyncService из
     // TablesModule (live entitySync воркер). Воркер крутится in-process.
     TablesModule,
+    // Ф2 МТЗ — RoleMapBuilderWorker (handler специалиста '3-8-role-map-builder')
+    // живёт в RoleMapModule. Импортируем, чтобы SpecialistRoutingDispatcherWorker
+    // мог инжектить его через DI. Specialist38HelpfulnessWorker экспортируется из
+    // @Global Specialist38HelpfulnessModule — отдельный import не нужен.
+    RoleMapModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
@@ -245,6 +254,14 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // старыми специалистами 3-1..3-9. Producer — `MeetingAnalyzeV2Cron` при
     // включённом флаге.
     SpecialistsCombinedWorker,
+    // Ф2 МТЗ «разблокировка конвейера» — ЕДИНЫЙ Worker очереди
+    // `core.specialist-routing`. Делегирует job по `job.name` в нужный
+    // специалист-handler (Map<jobName, handler>). Раньше на этой очереди
+    // поднималось 14 конкурирующих Worker'ов → ~13/14 блоков молча терялись.
+    // Хендлеры из других модулей: Specialist38HelpfulnessWorker (@Global
+    // Specialist38HelpfulnessModule), RoleMapBuilderWorker (RoleMapModule, см.
+    // imports). Остальные 12 — провайдеры этого модуля.
+    SpecialistRoutingDispatcherWorker,
     StrategicAlignmentWorker,
     StrategicAlignmentCron,
 

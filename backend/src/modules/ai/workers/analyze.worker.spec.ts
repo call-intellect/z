@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import type { AiResult, MeetingType } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +25,12 @@ interface BuildArgs {
    * legacy-rollback поведения.
    */
   promptInjectionGuardEnabled?: boolean;
+  /**
+   * Ф7 МТЗ — кастомный impl для `MeetingIngestAdapter.ingestMeeting`. По
+   * умолчанию noop, возвращающий null (как раньше). Передай функцию, которая
+   * бросает, чтобы проверить видимый провал моста (failureReason + метрика).
+   */
+  ingestMeetingImpl?: (meetingId: string) => Promise<unknown>;
 }
 
 function buildWorker(args: BuildArgs): {
@@ -33,12 +40,17 @@ function buildWorker(args: BuildArgs): {
   transitionStatus: ReturnType<typeof vi.fn>;
   llmComplete: ReturnType<typeof vi.fn>;
   incPromptInjectionAttempt: ReturnType<typeof vi.fn>;
+  incIngestFailed: ReturnType<typeof vi.fn>;
+  incMeetingFailed: ReturnType<typeof vi.fn>;
+  meetingUpdate: ReturnType<typeof vi.fn>;
+  ingestMeeting: ReturnType<typeof vi.fn>;
 } {
   const meetingId = 'm-1';
   const meetingFindUnique = vi.fn(async () => ({
     id: meetingId,
     type: args.type,
     title: 'Sample',
+    tenantId: 'org-1',
     customPrompt: args.customPrompt ?? null,
     status: 'transcription_ready',
     transcript: {
@@ -50,6 +62,9 @@ function buildWorker(args: BuildArgs): {
     },
     aiResult: null,
   }));
+  // Ф7 МТЗ — post-analyze блок дёргает prisma.meeting.update (chaptersStatus
+  // + failureReason). Возвращаем минимальный stub; перехватываем аргументы.
+  const meetingUpdate = vi.fn(async () => ({ id: meetingId }));
 
   const aiResultFindUnique = vi.fn(async () => null);
   const aiResultCreate = vi.fn(
@@ -102,7 +117,7 @@ function buildWorker(args: BuildArgs): {
   );
 
   const prisma = {
-    meeting: { findUnique: meetingFindUnique },
+    meeting: { findUnique: meetingFindUnique, update: meetingUpdate },
     aiResult: {
       findUnique: aiResultFindUnique,
       create: aiResultCreate,
@@ -117,12 +132,27 @@ function buildWorker(args: BuildArgs): {
   const usage = { record: vi.fn() } as unknown as AiUsageLogService;
   const enqueueNotify = vi.fn(async () => undefined);
   const enqueueQualityScore = vi.fn(async () => undefined);
-  const queue = { enqueueNotify, enqueueQualityScore } as unknown as AiQueueService;
+  // Ф7 МТЗ — post-analyze allSettled ставит chapters/tasks/embeddings.
+  // Мокаем resolved, чтобы они НЕ попадали в `failed` и единственным rejected
+  // элементом мог стать ingest.
+  const enqueueChapters = vi.fn(async () => undefined);
+  const enqueueTasksExtract = vi.fn(async () => undefined);
+  const enqueueTranscriptIndex = vi.fn(async () => undefined);
+  const queue = {
+    enqueueNotify,
+    enqueueQualityScore,
+    enqueueChapters,
+    enqueueTasksExtract,
+    enqueueTranscriptIndex,
+  } as unknown as AiQueueService;
   const incPromptInjectionAttempt = vi.fn();
+  const incIngestFailed = vi.fn();
+  const incMeetingFailed = vi.fn();
   const metrics = {
     observeAiPipelineDuration: vi.fn(),
-    incMeetingFailed: vi.fn(),
+    incMeetingFailed,
     incPromptInjectionAttempt,
+    incIngestFailed,
   } as unknown as BusinessMetricsService;
   const cfg = {
     ai: {},
@@ -132,8 +162,11 @@ function buildWorker(args: BuildArgs): {
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
   // knowledge-core (Фаза 1): meeting-adapter — мокаем noop, возвращающий null,
-  // чтобы тест не пытался ходить в S3/БД ради ingest-payload.
-  const ingestMeeting = vi.fn(async () => null);
+  // чтобы тест не пытался ходить в S3/БД ради ingest-payload. Ф7 МТЗ — можно
+  // подменить impl на бросающий, чтобы проверить видимый провал моста.
+  const ingestMeeting = vi.fn(
+    args.ingestMeetingImpl ?? (async () => null),
+  );
   const meetingIngest = {
     ingestMeeting,
   } as unknown as MeetingIngestAdapter;
@@ -157,6 +190,10 @@ function buildWorker(args: BuildArgs): {
     transitionStatus,
     llmComplete: args.llmComplete,
     incPromptInjectionAttempt,
+    incIngestFailed,
+    incMeetingFailed,
+    meetingUpdate,
+    ingestMeeting,
   };
 }
 
@@ -365,6 +402,110 @@ describe('AnalyzeWorker.process', () => {
 
       // Метрику не инкрементировали (sanitize не запускался).
       expect(incPromptInjectionAttempt).not.toHaveBeenCalled();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — видимый провал моста
+  // ingestMeeting. Раньше .catch глушил провал в resolved-null → встреча
+  // выглядела «зелёной», RawEvent не создавался. Теперь reject ingest
+  // попадает в ветку `failed` → meeting.failureReason + метрика; общий
+  // status НЕ меняется (остаётся ai_ready — саммари доступно).
+  // ──────────────────────────────────────────────────────────────────────
+  describe('Ф7 — видимый провал ingestMeeting', () => {
+    it('ingestMeeting бросает source_inactive → failureReason содержит "ingest=", incIngestFailed(reason=source_inactive), status НЕ failed', async () => {
+      const llmComplete = vi.fn();
+      // type=custdev (без follow-up/tasks) + customPrompt → только 2 LLM-call'а:
+      // summary + custom. runStructuredReport (со schema-валидацией) минуется.
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт'));
+
+      const { worker, incIngestFailed, meetingUpdate, transitionStatus, ingestMeeting } =
+        buildWorker({
+          type: 'custdev',
+          customPrompt: 'Сделай краткий отчёт',
+          llmComplete,
+          ingestMeetingImpl: async () => {
+            // Реальная форма провала IngestService (Source отключён).
+            throw new BadRequestException({
+              ok: false,
+              error: { code: 'source_inactive', message: 'Source отключён' },
+            });
+          },
+        });
+
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      // ingestMeeting реально вызывался.
+      expect(ingestMeeting).toHaveBeenCalledWith('m-1');
+
+      // Метрика: reason классифицирован из error.code.
+      expect(incIngestFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'source_inactive' }),
+      );
+
+      // Записан failureReason с маркером 'ingest='. Ищем именно тот update,
+      // где есть failureReason (первый update ставит chaptersStatus/queued).
+      const failureUpdate = meetingUpdate.mock.calls
+        .map((c) => c[0] as { data?: Record<string, unknown> } | undefined)
+        .find((u) => typeof u?.data?.['failureReason'] === 'string');
+      expect(failureUpdate).toBeDefined();
+      expect(failureUpdate!.data!['failureReason']).toContain('ingest=');
+
+      // Общий status: дошёл до ai_ready и НЕ переведён в failed.
+      expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+      const transitionTargets = transitionStatus.mock.calls.map((c) => c[1] as string);
+      expect(transitionTargets).not.toContain('failed');
+    });
+
+    it('ingestMeeting успешен (chapters/tasks/embeddings тоже) → failureReason НЕ пишется, incIngestFailed НЕ вызван', async () => {
+      const llmComplete = vi.fn();
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт'));
+
+      const { worker, incIngestFailed, meetingUpdate, transitionStatus } = buildWorker({
+        type: 'custdev',
+        customPrompt: 'Сделай краткий отчёт',
+        llmComplete,
+        // default ingestMeetingImpl → resolved null (успех).
+      });
+
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      expect(incIngestFailed).not.toHaveBeenCalled();
+      const failureUpdate = meetingUpdate.mock.calls
+        .map((c) => c[0] as { data?: Record<string, unknown> } | undefined)
+        .find((u) => u?.data?.['failureReason'] !== undefined);
+      expect(failureUpdate).toBeUndefined();
+      expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+    });
+  });
+
+  describe('onJobFailed (Фаза 11: развязка записи от AI-статуса)', () => {
+    it('финальный сбой analyze → встреча уходит в `ai_failed`, НЕ в `failed` (запись остаётся смотрибельной)', async () => {
+      const { worker, transitionStatus, incMeetingFailed } = buildWorker({
+        type: 'sales',
+        llmComplete: vi.fn(),
+      });
+
+      await (
+        worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
+      ).onJobFailed(
+        { data: { meetingId: 'm-1' }, attemptsMade: 5, opts: { attempts: 5 } },
+        new Error('analyze boom'),
+      );
+
+      expect(transitionStatus).toHaveBeenCalledWith(
+        'm-1',
+        'ai_failed',
+        expect.objectContaining({ failureReason: 'analyze: analyze boom' }),
+      );
+      expect(transitionStatus).not.toHaveBeenCalledWith('m-1', 'failed', expect.anything());
+      expect(incMeetingFailed).toHaveBeenCalledWith('analyze');
     });
   });
 });

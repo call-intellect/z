@@ -59,6 +59,10 @@ import { RoleMapCompletenessCron } from './workers/role-map-completeness.cron';
     DecisionPolicyService,
     InteractionService,
     RoleMapBuilderService,
+    // Ф2 МТЗ — экспорт handler'а, чтобы единый SpecialistRoutingDispatcherWorker
+    // (в WorkersModule) мог инжектить его через DI. WorkersModule импортирует
+    // RoleMapModule (модуль не @Global).
+    RoleMapBuilderWorker,
   ],
 })
 export class RoleMapModule {}

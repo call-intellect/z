@@ -21,6 +21,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -68,6 +69,7 @@ import type { RoomMessageDomain } from '@/domain/room-message';
 import { aiResultFromApi, pickPrimarySummary } from '@/domain/ai-result';
 import { pickPrimaryChapters } from '@/domain/chapter';
 import type { MeetingDomain } from '@/domain/meeting';
+import { meetingStatusView } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
 import { pickPrimaryTasks } from '@/domain/task';
@@ -251,6 +253,16 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
             void mutateMeeting();
             void mutateResult();
           }}
+        />
+
+        {/*
+         * Развязка записи от AI-статуса: если AI-ветка упала (`ai_failed`) или
+         * встреча в `failed`, но запись готова — показываем НЕнавязчивый баннер
+         * и НЕ прячем плеер ниже.
+         */}
+        <AiFailedBanner
+          status={meeting.status}
+          hasRecording={isRecordingReady}
         />
 
         <MeetingPlayer
@@ -644,6 +656,44 @@ function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
     <div className="flex items-center gap-3 rounded-md border border-accent-border bg-accent-muted px-4 py-2.5 text-sm text-accent">
       <Loader2 size={14} className="animate-spin" />
       AI обрабатывает встречу. Эта страница обновится сама — можно подождать.
+    </div>
+  );
+}
+
+/**
+ * Баннер «AI-отчёт не сформирован». Показывается, когда AI-ветка упала, но
+ * запись доступна — чтобы не прятать готовое видео и при этом честно сообщить
+ * о сбое отчёта.
+ *
+ *  - `ai_failed`        — упала ТОЛЬКО AI-ветка, запись в порядке.
+ *  - `failed` + запись  — та же болезнь: показываем баннер, но НЕ прячем плеер.
+ *
+ * При `failed` без записи баннер не нужен (там нечего показывать — этим занят
+ * отдельный экран ошибки).
+ */
+function AiFailedBanner({
+  status,
+  hasRecording,
+}: {
+  status: MeetingDomain['status'];
+  hasRecording: boolean;
+}) {
+  const view = meetingStatusView(status);
+  const shouldShow = view.isAiFailed || (view.isFailed && hasRecording);
+  if (!shouldShow) return null;
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-md border border-chip-warning-bg bg-chip-warning-bg px-4 py-2.5 text-sm text-chip-warning-fg"
+    >
+      <AlertTriangle size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+      <div>
+        <div className="font-medium">AI-отчёт не сформирован</div>
+        <div className="mt-0.5 opacity-90">
+          Запись встречи готова и доступна ниже. Автоматический отчёт собрать не
+          удалось — можно запустить регенерацию вручную.
+        </div>
+      </div>
     </div>
   );
 }

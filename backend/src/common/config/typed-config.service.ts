@@ -727,20 +727,49 @@ export class TypedConfigService {
       searchCosineWeight: this.get('SEARCH_COSINE_WEIGHT'),
       searchBm25Weight: this.get('SEARCH_BM25_WEIGHT'),
       // Фаза 3: связи и граф.
-      linkMinConfidence: this.get('LINK_MIN_CONFIDENCE'),
-      linkerMinBlocks: this.get('LINKER_MIN_BLOCKS'),
+      // Пороги графа — admin-editable (resolveSync: cacheMap → ENV → default).
+      // Дефолты выровнены под малый тенант и со seed-admin-settings.ts.
+      // См. plans/tz/2026-06-04-razblokirovka-konveyera.md §Фаза 6.
+      linkMinConfidence: this.resolveSync<number>(
+        'knowledge.linkMinConfidence',
+        'LINK_MIN_CONFIDENCE',
+        0.5,
+      ),
+      linkerMinBlocks: this.resolveSync<number>(
+        'knowledge.linkerMinBlocks',
+        'LINKER_MIN_BLOCKS',
+        3,
+      ),
       linkKnnTopK: this.get('LINK_KNN_TOP_K'),
       reframingCron: this.get('REFRAMING_CRON'),
       blockDynamicScoreDecayDays: this.get('BLOCK_DYNAMIC_SCORE_DECAY_DAYS'),
       entityGraphBuilderCron: this.get('ENTITY_GRAPH_BUILDER_CRON'),
-      entityGraphMinComentions: this.get('ENTITY_GRAPH_MIN_COMENTIONS'),
+      entityGraphMinComentions: this.resolveSync<number>(
+        'knowledge.entityGraphMinComentions',
+        'ENTITY_GRAPH_MIN_COMENTIONS',
+        2,
+      ),
       // Фаза 4: Theme + card-rollup-v2.
       themeClustererCron: this.get('THEME_CLUSTERER_CRON'),
-      themeClusteringMinBlocks: this.get('THEME_CLUSTERING_MIN_BLOCKS'),
-      themeClusterMinSize: this.get('THEME_CLUSTER_MIN_SIZE'),
+      themeClusteringMinBlocks: this.resolveSync<number>(
+        'knowledge.themeClusteringMinBlocks',
+        'THEME_CLUSTERING_MIN_BLOCKS',
+        10,
+      ),
+      themeClusterMinSize: this.resolveSync<number>(
+        'knowledge.themeClusterMinSize',
+        'THEME_CLUSTER_MIN_SIZE',
+        3,
+      ),
       themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
       cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
       // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
+      // НАМЕРЕННО через this.get(ENV), НЕ resolveSync: seed выставляет
+      // knowledge.v2AgentsEnabled=true, а ENV-дефолт=false; перевод на
+      // resolveSync читал бы AdminSetting первым и ВКЛЮЧИЛ бы v2-агентов на
+      // засеянном проде (текущее поведение — OFF). Это master-флаг фичи, а не
+      // крутилка-порог малого тенанта — включать v2 должно быть отдельным
+      // осознанным решением, не побочкой Фазы 6. См. §Фаза 6 МТЗ.
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
@@ -756,6 +785,28 @@ export class TypedConfigService {
       // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
       // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
       biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
+    } as const;
+  }
+
+  // ─────────────────────────── граф Apache AGE ────────────────────
+  /**
+   * МТЗ «разблокировка конвейера» Ф5 — настройки записи в граф Apache AGE.
+   *
+   *   - `ageEnabled` — kill-switch записи в `z_graph` через `cypher()`.
+   *     При `false` все Cypher-вызовы GraphService — no-op (Postgres-часть
+   *     работает как источник правды). Дефолт TRUE — граф критичен; switch
+   *     для аварийного отключения при недоступности AGE на проде.
+   *
+   * Admin-editable (`resolveSync`: cacheMap → ENV → default). Дефолт TRUE,
+   * seed TRUE, ENV TRUE — без флипа текущего поведения.
+   */
+  get graph() {
+    return {
+      ageEnabled: this.resolveSync<boolean>(
+        'graph.ageEnabled',
+        'GRAPH_AGE_ENABLED',
+        true,
+      ),
     } as const;
   }
 

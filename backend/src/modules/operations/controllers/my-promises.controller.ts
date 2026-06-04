@@ -57,15 +57,39 @@ export class MyPromisesController {
   ): Promise<{ items: CommitmentDto[] }> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
-    const person = await this.svc.resolveSelfPerson({
-      tenantId: tenantId!,
-      userId: uid,
-    });
+    // Ф9 (no_person): отсутствие Person ≠ запрет на просмотр кабинета —
+    // отдаём пустой список (200) вместо hard-403. `mark()` оставляем строгим
+    // (для записи нужен реальный subject).
+    let person: { id: string };
+    try {
+      person = await this.svc.resolveSelfPerson({
+        tenantId: tenantId!,
+        userId: uid,
+      });
+    } catch (err) {
+      if (
+        err instanceof ForbiddenException &&
+        this.isNoPersonError(err)
+      ) {
+        return { items: [] };
+      }
+      throw err;
+    }
     return this.svc.listMine({
       tenantId: tenantId!,
       selfPersonId: person.id,
       query: q,
     });
+  }
+
+  /** Различает ForbiddenException c кодом `no_person` (Ф9 graceful). */
+  private isNoPersonError(err: ForbiddenException): boolean {
+    const response = err.getResponse();
+    return (
+      typeof response === 'object' &&
+      response !== null &&
+      (response as { error?: { code?: string } }).error?.code === 'no_person'
+    );
   }
 
   @Post(':blockId/mark')

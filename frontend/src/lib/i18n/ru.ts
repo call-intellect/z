@@ -87,6 +87,7 @@ export const ru = {
     ai_processing: 'Готовим отчёт',
     ai_ready: 'Отчёт готов',
     failed: 'Ошибка',
+    ai_failed: 'Запись готова · отчёт не удался',
   },
   auth: {
     login: 'Войти',

@@ -1,44 +1,33 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist314GoalsService } from '../services/specialist-3-14-goals.service';
 
 /**
- * Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals) — consumer
+ * Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals) — handler
  * `core.specialist-routing` с jobName='3-14-goals'.
  *
- * Запускается, когда `RouterService.dispatch` диспатчит блок
- * (`signalType ∈ { 'commitment', 'plan_item' }`) этому специалисту. Воркер
- * фильтрует jobs других специалистов по `job.name`.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда на очередь
+ * `core.specialist-routing` приходит job с jobName='3-14-goals' (диспатч из
+ * `RouterService.dispatch` для блоков `signalType ∈ { 'commitment', 'plan_item' }`).
+ * Маршрутизацию по jobName делает диспетчер — этому handler'у достаются только
+ * «свои» jobs.
  *
  * Логика делегируется в `Specialist314GoalsService.processBlock`
  * (extract → KNN → hierarchy-арбитр → create Goal + опц. KR).
  *
  * Метрики:
  *   - `core_specialist_pipeline_duration_seconds{type='goal'}`.
- *
- * Concurrency=2 — баланс параллелизма и LLM rate-limit'ов (как 3.1/3.3).
  */
 @Injectable()
-export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
+export class Specialist314GoalsWorker {
   private readonly logger = new Logger(Specialist314GoalsWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
-  /** Имя специалиста (jobName-фильтр). Совпадает с RouterService.SPECIALIST.GOALS. */
+  /** Имя специалиста (ключ маршрутизации диспетчера). Совпадает с RouterService.SPECIALIST.GOALS. */
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.GOALS;
 
   /** signalType'ы, которые обрабатывает этот специалист. */
@@ -48,7 +37,6 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
   ]);
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist314GoalsService)
     private readonly svc: Specialist314GoalsService,
@@ -56,44 +44,7 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-14: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist314GoalsWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist314GoalsWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    // jobName-фильтр: пропускаем jobs других специалистов.
-    if (job.name !== Specialist314GoalsWorker.SPECIALIST_NAME) {
-      return;
-    }
-
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
 
@@ -104,6 +55,10 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
       });
       if (!block) {
         this.logger.debug({ blockId }, 'specialist-3-14: блок не найден — skip');
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -111,6 +66,10 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-14: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -118,6 +77,10 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, status: block.status },
           'specialist-3-14: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (!Specialist314GoalsWorker.ALLOWED_SIGNAL_TYPES.has(block.signalType)) {
@@ -125,6 +88,10 @@ export class Specialist314GoalsWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, signalType: block.signalType },
           'specialist-3-14: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

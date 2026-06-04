@@ -1,29 +1,20 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist37Service } from '../services/specialist-3-7-skill.service';
 
 /**
- * SBA γ-1 — Specialist 3.7 (SkillProfile) router-consumer.
+ * SBA γ-1 — Specialist 3.7 (SkillProfile) handler.
  *
- * Consumer очереди `core.specialist-routing` с jobName='3-7-skill'.
- * Запускается, когда RouterService.dispatch диспатчит блок (signalType=
- * 'reasoning' с employee-subject) этому специалисту.
+ * Handler очереди `core.specialist-routing` с jobName='3-7-skill'.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда
+ * RouterService.dispatch диспатчит блок (signalType='reasoning' с
+ * employee-subject) этому специалисту.
  *
  * Логика:
  *   1. Получить block (фильтр по signalType ∈ reasoning/rationale/decision_basis,
@@ -37,14 +28,12 @@ import { Specialist37Service } from '../services/specialist-3-7-skill.service';
  * SkillProfileRebuildWorker (через Specialist37Service.rebuildProfile).
  */
 @Injectable()
-export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
+export class Specialist37SkillWorker {
   private readonly logger = new Logger(Specialist37SkillWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.SKILL;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(Specialist37Service)
@@ -53,42 +42,7 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-7: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist37SkillWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist37SkillWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== Specialist37SkillWorker.SPECIALIST_NAME) {
-      return;
-    }
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId } = job.data;
     try {
@@ -103,6 +57,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
       });
       if (!block) {
         this.logger.debug({ blockId }, 'specialist-3-7: блок не найден — skip');
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -110,6 +68,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-7: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -117,6 +79,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, status: block.status },
           'specialist-3-7: блок не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (
@@ -128,6 +94,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, signalType: block.signalType },
           'specialist-3-7: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -146,6 +116,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
           { blockId },
           'specialist-3-7: subject-Person отсутствует — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -164,6 +138,10 @@ export class Specialist37SkillWorker implements OnModuleInit, OnModuleDestroy {
           { blockId, entityIds },
           'specialist-3-7: subject не employee — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

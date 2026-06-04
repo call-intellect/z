@@ -7,7 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { type IdeaBlock, Prisma } from '@prisma/client';
+import { type IdeaBlock, Prisma, type SignalType } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 
@@ -24,6 +24,7 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { BlockMergeService } from '../services/block-merge.service';
 import { FactSupersedeService } from '../services/fact-supersede.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
+import { RouterService } from '../services/router.service';
 
 /**
  * Block-distill worker (`core.block-distill` consumer).
@@ -60,6 +61,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BlockMergeService) private readonly merger: BlockMergeService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
+    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов перенесён сюда
+    // из block-ingest. Специалисты обрабатывают только `canonical`, поэтому
+    // dispatch вызывается на переходе draft→canonical (markCanonical /
+    // mergeInto), а не на свежесозданном draft-блоке.
+    @Inject(RouterService) private readonly router: RouterService,
     // KC-Temporal W1.2 — Optional, потому что воркер также крутится в
     // окружениях, где KnowledgeCoreModule пока не подключён (e2e/test).
     @Optional()
@@ -174,6 +180,27 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     });
     this.logger.log({ blockId: block.id }, 'block-distill: canonical');
 
+    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов на переходе в
+    // canonical (раньше шёл из block-ingest на draft-блоке, где специалисты
+    // молча скипали). Best-effort: dispatch внутри уже не throw'ит, но
+    // оборачиваем в .catch на случай падения enqueue/Redis, чтобы не ронять
+    // markCanonical (статус блока уже зафиксирован).
+    await this.router
+      .dispatch({
+        id: block.id,
+        tenantId: block.tenantId,
+        signalType: block.signalType,
+      })
+      .catch((err) => {
+        this.logger.warn(
+          {
+            blockId: block.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'block-distill: router.dispatch(canonical) упал — проекции отложены',
+        );
+      });
+
     // KC-Temporal W3.5 — best-effort emit для ProjectionRebuilderService.
     // Если EventEmitter2 не задан (тестовое окружение) — просто пропускаем.
     this.emitIdeaBlockUpdated({
@@ -220,6 +247,11 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Ф3 МТЗ «разблокировка конвейера» — захватываем signalType канонического
+    // блока ВНУТРИ транзакции, чтобы после коммита диспатчить специалистов по
+    // правильному типу (мердж мог уточнить сигнал; берём актуальный canonical).
+    let canonicalSignalType: SignalType | null = null;
+
     await this.prisma.$transaction(async (tx) => {
       const canonical = await tx.ideaBlock.findUnique({
         where: { id: canonicalId },
@@ -229,6 +261,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           `block-distill: canonical ${canonicalId} не найден — abort merge`,
         );
       }
+      canonicalSignalType = canonical.signalType;
       if (canonical.status !== 'canonical') {
         // Канонический блок мог быть сам merged_into между KNN и сейчас.
         // Безопаснее всего — fallback в canonical: цепочки merge не
@@ -319,6 +352,28 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',
     );
+
+    // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов на canonicalId
+    // (живой блок, вобравший evidence/tags merged-блока). signalType берём из
+    // canonical, захваченного внутри транзакции. Best-effort: не роняем
+    // mergeInto, статус уже зафиксирован.
+    if (canonicalSignalType !== null) {
+      await this.router
+        .dispatch({
+          id: canonicalId,
+          tenantId: block.tenantId,
+          signalType: canonicalSignalType,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            {
+              canonicalId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-distill: router.dispatch(merged canonical) упал — проекции отложены',
+          );
+        });
+    }
 
     // KC-Temporal W3.5 — emit'им по canonicalId (это «живой» блок,
     // через который пересобираются Decision/Insight/...; merged-блок

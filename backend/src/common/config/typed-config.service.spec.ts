@@ -266,3 +266,44 @@ describe('Фаза 5 — crossmark/webhook/share/emailFetch/idle/quotas', () => 
     expect(cfg.quotas.maxMeetingDurationHours).toBe(12);
   });
 });
+
+describe('Фаза 6 — пороги графа knowledge-core живые (resolveSync, не this.get)', () => {
+  it('linkerMinBlocks — крутилка ЖИВАЯ: applySync override побеждает ENV-дефолт', () => {
+    // ENV задаёт «старое большое» значение; крутилка должна его перебить.
+    const cfg = buildService({ LINKER_MIN_BLOCKS: 50 });
+    expect(cfg.knowledgeCore.linkerMinBlocks).toBe(50); // ENV fallback
+    cfg.applySync('knowledge.linkerMinBlocks', 3);
+    // Если бы геттер читал через this.get('LINKER_MIN_BLOCKS'), вернулось бы 50.
+    expect(cfg.knowledgeCore.linkerMinBlocks).toBe(3);
+  });
+
+  it('linkerMinBlocks — code-default 3, когда нет ни cache, ни ENV', () => {
+    const cfg = buildService();
+    expect(cfg.knowledgeCore.linkerMinBlocks).toBe(3);
+  });
+
+  it('linkMinConfidence — крутилка ЖИВАЯ: hydrateSync override побеждает ENV-дефолт', () => {
+    const cfg = buildService({ LINK_MIN_CONFIDENCE: 0.75 });
+    expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.75); // ENV fallback
+    cfg.hydrateSync([['knowledge.linkMinConfidence', 0.5]]);
+    expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.5);
+  });
+
+  it('entityGraphMinComentions / themeClusteringMinBlocks / themeClusterMinSize — code-defaults под малый тенант', () => {
+    const cfg = buildService();
+    expect(cfg.knowledgeCore.entityGraphMinComentions).toBe(2);
+    expect(cfg.knowledgeCore.themeClusteringMinBlocks).toBe(10);
+    expect(cfg.knowledgeCore.themeClusterMinSize).toBe(3);
+  });
+
+  it('v2AgentsEnabled — master-флаг через ENV, НЕ admin-крутилка: applySync его НЕ меняет', () => {
+    // Намеренно: v2AgentsEnabled читается через this.get(ENV), а не resolveSync.
+    // seed выставляет knowledge.v2AgentsEnabled=true, ENV-дефолт=false; если бы
+    // getter читал AdminSetting первым — v2-агенты включились бы на засеянном
+    // проде (текущее поведение OFF). Включение v2 — отдельное осознанное решение.
+    const cfg = buildService({ KNOWLEDGE_CORE_V2_AGENTS_ENABLED: false });
+    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false); // ENV
+    cfg.applySync('knowledge.v2AgentsEnabled', true);
+    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false); // applySync НЕ перебивает ENV
+  });
+});

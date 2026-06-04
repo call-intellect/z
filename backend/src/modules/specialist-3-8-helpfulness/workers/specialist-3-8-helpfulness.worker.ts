@@ -1,25 +1,16 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
-import { type Job, Worker } from 'bullmq';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { type Job } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
 /**
- * SBA Wave 2 — Specialist 3.8 (Helpfulness Agent) worker.
+ * SBA Wave 2 — Specialist 3.8 (Helpfulness Agent) handler.
  *
- * Consumer `core.specialist-routing` jobName='3-8-helpfulness'. Делегирует в
+ * Handler `core.specialist-routing` jobName='3-8-helpfulness'. Вызывается из
+ * `SpecialistRoutingDispatcherWorker.dispatch`; делегирует в
  * `Specialist38HelpfulnessService.processBlock`.
  *
  * Триггер: RouterService должен начать диспатчить блоки с signalType
@@ -36,13 +27,10 @@ import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpf
  * RouterService.dispatch).
  */
 @Injectable()
-export class Specialist38HelpfulnessWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class Specialist38HelpfulnessWorker {
   private readonly logger = new Logger(Specialist38HelpfulnessWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
-  /** jobName-фильтр консумера. */
+  /** Имя специалиста (ключ маршрутизации диспетчера). */
   static readonly SPECIALIST_NAME = '3-8-helpfulness';
 
   /**
@@ -68,7 +56,6 @@ export class Specialist38HelpfulnessWorker
   ]);
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist38HelpfulnessService)
     private readonly svc: Specialist38HelpfulnessService,
@@ -76,40 +63,7 @@ export class Specialist38HelpfulnessWorker
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) => this.process(job),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
-    );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'specialist-3-8: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `Specialist38HelpfulnessWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${Specialist38HelpfulnessWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-  }
-
-  private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== Specialist38HelpfulnessWorker.SPECIALIST_NAME) return;
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const start = Date.now();
     const { blockId, tenantId, signalType } = job.data;
 
@@ -122,6 +76,10 @@ export class Specialist38HelpfulnessWorker
         { blockId, signalType },
         'specialist-3-8: signalType вне области специалиста — skip',
       );
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
       return;
     }
 
@@ -140,6 +98,10 @@ export class Specialist38HelpfulnessWorker
           { blockId },
           'specialist-3-8: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -147,6 +109,10 @@ export class Specialist38HelpfulnessWorker
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-8: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -154,6 +120,10 @@ export class Specialist38HelpfulnessWorker
           { blockId, status: block.status },
           'specialist-3-8: блок не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (
@@ -162,6 +132,10 @@ export class Specialist38HelpfulnessWorker
         )
       ) {
         // DB-уточнение, если в payload signalType отсутствовал.
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

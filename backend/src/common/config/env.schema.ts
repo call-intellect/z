@@ -506,15 +506,17 @@ const KnowledgeCoreSchema = z.object({
   // ── Фаза 3: связи и граф ──
   /**
    * Минимальный confidence LLM-арбитра, при котором связь блок↔блок или
-   * сущность↔сущность пишется в БД. Ниже — выбрасывается. 0.75 — компромисс
-   * между шумом (LLM любит выдумывать) и пропуском настоящих связей.
+   * сущность↔сущность пишется в БД. Ниже — выбрасывается. 0.5 — компромисс
+   * между шумом (LLM любит выдумывать) и пропуском настоящих связей; выровнено
+   * под малый тенант и со seed-admin-settings.ts (крутилка admin-editable).
    */
-  LINK_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.75),
+  LINK_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.5),
   /**
    * Порог количества канонических блоков в Org, ниже которого block-linker
-   * пропускает запуск (нечего связывать). 50 — базовая критическая масса.
+   * пропускает запуск (нечего связывать). 3 — критическая масса для малого
+   * тенанта (выровнено со seed-admin-settings.ts; крутилка admin-editable).
    */
-  LINKER_MIN_BLOCKS: z.coerce.number().int().positive().default(50),
+  LINKER_MIN_BLOCKS: z.coerce.number().int().positive().default(3),
   /**
    * Сколько KNN-кандидатов на типизированную связь предъявить LLM-арбитру
    * за один проход block-linker. Каждый кандидат — отдельный LLM-вызов
@@ -540,9 +542,21 @@ const KnowledgeCoreSchema = z.object({
   ENTITY_GRAPH_BUILDER_CRON: z.string().min(1).default('0 * * * *'),
   /**
    * Минимум совместных упоминаний пары сущностей в одних блоках, ниже
-   * которого entity-graph-builder её игнорирует. 3 — порог «не случайность».
+   * которого entity-graph-builder её игнорирует. 2 — порог «не случайность»
+   * под малый тенант (выровнено со seed-admin-settings.ts; admin-editable).
    */
-  ENTITY_GRAPH_MIN_COMENTIONS: z.coerce.number().int().positive().default(3),
+  ENTITY_GRAPH_MIN_COMENTIONS: z.coerce.number().int().positive().default(2),
+  /**
+   * МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE.
+   * При `true` (default) GraphService пишет узлы/рёбра в `z_graph` через
+   * `cypher()` (best-effort, post-commit). При `false` все Cypher-вызовы —
+   * no-op, а Postgres-часть (EntityLink / Process / Decision / …) продолжает
+   * работать как источник правды. Дефолт TRUE — граф критичен; switch нужен
+   * для аварийного отключения, если AGE недоступен на проде (рестарт кластера,
+   * проблема с shared_preload_libraries). Лучше крутить через AdminSetting
+   * `graph.ageEnabled` (admin-editable), ENV — fallback.
+   */
+  GRAPH_AGE_ENABLED: zBool(true),
 
   // ── Фаза 4: Theme + clusterer + card-rollup-v2 ──
   /**
@@ -553,10 +567,10 @@ const KnowledgeCoreSchema = z.object({
   THEME_CLUSTERER_CRON: z.string().min(1).default('15 * * * *'),
   /**
    * Минимум canonical-блоков без темы в Org, ниже которого theme-clusterer
-   * пропускает Org (нечего кластеризовать). 100 — критическая масса для
-   * стабильных тем.
+   * пропускает Org (нечего кластеризовать). 10 — критическая масса для малого
+   * тенанта (выровнено со seed-admin-settings.ts; крутилка admin-editable).
    */
-  THEME_CLUSTERING_MIN_BLOCKS: z.coerce.number().int().positive().default(100),
+  THEME_CLUSTERING_MIN_BLOCKS: z.coerce.number().int().positive().default(10),
   /**
    * Минимальный размер устойчивого кластера (в блоках). Меньше — кластер
    * выбрасывается как шум. 3 — компромисс «не случайность, но и не строго».

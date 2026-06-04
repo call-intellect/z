@@ -75,6 +75,15 @@ export class SegmentBuilderService {
         },
       ];
     }
+    // Фаза 10 (2026-06-04 razblokirovka-konveyera): payload свободной заметки
+    // `{ kind:'free_note', userId, text, metadata }` (см. ConversationalIngestAdapter)
+    // не имеет ни transcript.turns, ни fullText — без этой ветки он падал в
+    // buildFallback и весь JSON-объект (kind/userId/metadata) попадал в текст
+    // сегмента как шум. Берём только чистый `text`.
+    const freeNote = this.tryGetFreeNoteText(payload);
+    if (freeNote) {
+      return [{ startMs: 0, endMs: 0, speakers: [], text: freeNote }];
+    }
     return this.buildFallback(payload);
   }
 
@@ -82,6 +91,13 @@ export class SegmentBuilderService {
     if (typeof payload !== 'object' || payload === null) return null;
     const v = (payload as { fullText?: unknown }).fullText;
     return typeof v === 'string' && v.trim().length > 0 ? v : null;
+  }
+
+  private tryGetFreeNoteText(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as { kind?: unknown; text?: unknown };
+    if (p.kind !== 'free_note') return null;
+    return typeof p.text === 'string' && p.text.trim().length > 0 ? p.text : null;
   }
 
   // ─────────────────────────── meeting ─────────────────────────────────────

@@ -553,7 +553,10 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
     }
     const meetingId = job.data.meetingId;
     try {
-      await this.meetings.transitionStatus(meetingId, 'failed', {
+      // Фаза 11 (развязка записи от AI-статуса): сбой AI-ветки после исчерпания
+      // ретраев НЕ схлопывает встречу в терминальный `failed` — запись (если есть)
+      // должна остаться смотрибельной. `ai_failed` сохраняет видео доступным.
+      await this.meetings.transitionStatus(meetingId, 'ai_failed', {
         failureReason: `transcribe: ${err.message}`,
         reason: 'ai:transcribe:final_failure',
       });

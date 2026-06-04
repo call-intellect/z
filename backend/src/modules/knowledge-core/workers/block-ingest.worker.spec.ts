@@ -85,7 +85,8 @@ function buildWorker(cfgEnabled: boolean) {
     {} as any, // gate
     {} as any, // graph
     {} as any, // metrics
-    {} as any, // router
+    // Ф3 МТЗ — RouterService больше НЕ инжектится в BlockIngestWorker
+    // (диспатч специалистов перенесён в block-distill на canonical-переход).
     {} as any, // axisClassifier
     cfg,
   );

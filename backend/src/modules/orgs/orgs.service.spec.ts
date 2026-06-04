@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { SubscriptionService } from '../billing/services/subscription.service';
+import type { PersonsService } from '../persons/services/persons.service';
 import type { RbacService } from '../rbac/rbac.service';
 import type { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
 
@@ -43,6 +44,7 @@ describe('OrgsService.listTeamRoster', () => {
       rbac as unknown as RbacService,
       {} as unknown as SubscriptionService,
       {} as unknown as TablesAutoProvisionService,
+      {} as unknown as PersonsService,
     );
   }
 
@@ -140,6 +142,59 @@ describe('OrgsService.listTeamRoster', () => {
     const svc = make();
     await expect(svc.listTeamRoster('org-1', 'u-stranger')).rejects.toBeInstanceOf(
       ForbiddenException,
+    );
+  });
+});
+
+/**
+ * Ф9 (no_person) — createForOwner создаёт Person владельца и проставляет
+ * Membership.personId в той же транзакции.
+ */
+describe('OrgsService.createForOwner — Person владельца (Ф9)', () => {
+  it('создаёт Person через ensurePersonForUser и проставляет membership.personId', async () => {
+    const client = {
+      org: {
+        create: vi.fn(async () => ({ id: 'org-new', name: 'Кора' })),
+        findUnique: vi.fn(async () => null),
+      },
+      membership: {
+        create: vi.fn(async () => ({})),
+        update: vi.fn(async () => ({})),
+      },
+      source: { create: vi.fn(async () => ({})) },
+    };
+    const persons = {
+      ensurePersonForUser: vi.fn(async () => ({ id: 'person-owner' })),
+    };
+    const subscriptions = { ensureDemo: vi.fn(async () => undefined) };
+    const tablesAutoProvision = { provisionDefaults: vi.fn(async () => undefined) };
+    const rbac = { invalidate: vi.fn(() => undefined) };
+
+    const svc = new OrgsService(
+      client as unknown as PrismaService,
+      rbac as unknown as RbacService,
+      subscriptions as unknown as SubscriptionService,
+      tablesAutoProvision as unknown as TablesAutoProvisionService,
+      persons as unknown as PersonsService,
+    );
+
+    const org = await svc.createForOwner(
+      { name: 'Кора', ownerId: 'u-owner' },
+      client as never,
+    );
+
+    expect(org.id).toBe('org-new');
+    // Person владельца создаётся через ensurePersonForUser с тем же tx-клиентом.
+    expect(persons.ensurePersonForUser).toHaveBeenCalledWith(
+      { tenantId: 'org-new', userId: 'u-owner' },
+      client,
+    );
+    // membership.personId проставлен в том же клиенте.
+    expect(client.membership.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orgId_userId: { orgId: 'org-new', userId: 'u-owner' } },
+        data: { personId: 'person-owner' },
+      }),
     );
   });
 });

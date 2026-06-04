@@ -366,24 +366,36 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
       const enqueueAttempt = job.data.attempt ?? 1;
-      // knowledge-core (Фаза 1): дополнительно вызываем meeting-adapter.
-      // Это прямой await (адаптер сам внутри ingest.service делает enqueue
-      // в core.raw-events), а не enqueue в нашу очередь. Ошибка ingest
-      // не должна валить chapters/tasks/embeddings — оборачиваем в
-      // .catch внутри Promise.allSettled.
+      // knowledge-core: дополнительно вызываем meeting-adapter — ЕДИНСТВЕННЫЙ
+      // вход результата встречи в knowledge-core. Это прямой await (адаптер сам
+      // внутри ingest.service делает enqueue в core.raw-events), а не enqueue в
+      // нашу очередь. consumer `core.raw-events` (BlockIngestWorker) ЖИВОЙ —
+      // ingest критичен для графа: без RawEvent встреча не попадает в knowledge-
+      // core и в граф ничего не уходит. Ф7 МТЗ: провал ingest БОЛЬШЕ не глушим
+      // в resolved-null — на ошибке логируем error, инкрементим метрику
+      // meeting_ingest_failed{reason} и RE-THROW, чтобы allSettled пометил
+      // 'ingest' как rejected → попал в ветку `failed` ниже → записался
+      // meeting.failureReason='post-analyze enqueue: ingest=...'. failureReason
+      // НЕ меняет общий status (остаётся ai_ready — саммари доступно), как уже
+      // сделано для chapters/tasks. Невидимый раньше обрыв теперь виден через
+      // failureReason + метрику; восстановление — ретрай-cron meeting-reingest.
       const settled = await Promise.allSettled([
         this.queue.enqueueChapters(meetingId, enqueueAttempt),
         this.queue.enqueueTasksExtract(meetingId, enqueueAttempt),
         this.queue.enqueueTranscriptIndex(meetingId, enqueueAttempt),
         this.meetingIngest.ingestMeeting(meetingId).catch((err) => {
-          this.logger.warn(
-            { meetingId, err: err instanceof Error ? err.message : String(err) },
-            'analyze: meeting-adapter ingest упал — RawEvent не создан, продолжаем',
+          const reason = classifyIngestFailure(err);
+          this.metrics.incIngestFailed({ reason });
+          this.logger.error(
+            {
+              meetingId,
+              tenantId: meeting.tenantId ?? null,
+              reason,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'analyze: meeting-adapter ingest упал — RawEvent не создан; reject → failureReason + ретрай-cron',
           );
-          // Возвращаем resolved value, чтобы не попасть в `failed` ниже —
-          // ingest на Фазе 1 не критичен для основного pipeline (consumer
-          // в core.raw-events ещё не подписан).
-          return null;
+          throw err;
         }),
       ]);
       const failed = settled
@@ -883,7 +895,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 5)) return;
     const meetingId = job.data.meetingId;
     try {
-      await this.meetings.transitionStatus(meetingId, 'failed', {
+      // Фаза 11 (развязка записи от AI-статуса): сбой AI-ветки после исчерпания
+      // ретраев НЕ схлопывает встречу в терминальный `failed` — запись (если есть)
+      // должна остаться смотрибельной. `ai_failed` сохраняет видео доступным.
+      await this.meetings.transitionStatus(meetingId, 'ai_failed', {
         failureReason: `analyze: ${err.message}`,
         reason: 'ai:analyze:final_failure',
       });
@@ -897,6 +912,69 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
 }
 
 // ─────────────────────────── helpers ───────────────────────────────────────
+
+/**
+ * Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — классификация провала
+ * `ingestMeeting` для метрики `meeting_ingest_failed{reason}`. Все режимы
+ * провала — это `throw` ДО внутреннего idempotent-возврата:
+ *   - `source_inactive`        — IngestService: Source отключён.
+ *   - `no_merged_transcript`   — MeetingIngestAdapter: нет transcript.turns.
+ *   - `without_tenant`         — MeetingIngestAdapter: meeting.tenantId null.
+ *   - `quota_exceeded`         — QuotaService: ingest_bytes_per_month (HTTP 429).
+ *   - `other`                  — всё прочее (meeting_not_found, БД, S3, ...).
+ *
+ * Код достаём из тела NestJS HttpException (`err.response.error.code` /
+ * `err.getResponse()`), QuotaExceededError ловим ещё и по `err.name`. На
+ * крайний случай — substring по message.
+ */
+function classifyIngestFailure(err: unknown): string {
+  const code = extractErrorCode(err);
+  switch (code) {
+    case 'source_inactive':
+      return 'source_inactive';
+    case 'meeting_no_merged_transcript':
+      return 'no_merged_transcript';
+    case 'meeting_without_tenant':
+      return 'without_tenant';
+    case 'quota_exceeded':
+      return 'quota_exceeded';
+    default:
+      break;
+  }
+  if (err instanceof Error && err.name === 'QuotaExceededError') {
+    return 'quota_exceeded';
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('source_inactive') || msg.includes('Source отключён')) return 'source_inactive';
+  if (msg.includes('meeting_no_merged_transcript')) return 'no_merged_transcript';
+  if (msg.includes('meeting_without_tenant')) return 'without_tenant';
+  if (msg.includes('quota_exceeded')) return 'quota_exceeded';
+  return 'other';
+}
+
+/**
+ * Достаёт `error.code` из тела NestJS HttpException. Тело лежит и в приватном
+ * `err.response`, и доступно через `err.getResponse()` — читаем оба, не
+ * полагаясь на интуицию (см. правило «поведение фреймворка — эмпирически»).
+ */
+function extractErrorCode(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const candidates: unknown[] = [];
+  const maybeGet = (err as { getResponse?: () => unknown }).getResponse;
+  if (typeof maybeGet === 'function') {
+    try {
+      candidates.push(maybeGet.call(err));
+    } catch {
+      /* noop */
+    }
+  }
+  candidates.push((err as { response?: unknown }).response);
+  for (const body of candidates) {
+    const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+    if (typeof code === 'string') return code;
+  }
+  return null;
+}
 
 function pickToolInput(out: LlmCompleteOutput | null | undefined, toolName: string): unknown | null {
   if (!out || !out.toolCalls || out.toolCalls.length === 0) return null;

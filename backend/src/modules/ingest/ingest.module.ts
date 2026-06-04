@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { PersonsModule } from '../persons/persons.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
@@ -16,6 +17,7 @@ import {
   RawEventsController,
 } from './ingest.controller';
 import { IngestService } from './ingest.service';
+import { MeetingReingestCron } from './meeting-reingest.cron';
 import { DocumentParserService } from './parsers/document-parser.service';
 
 /**
@@ -36,6 +38,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
  */
 @Global()
 @Module({
+  imports: [PersonsModule],
   controllers: [
     IngestController,
     RawEventsController,
@@ -59,6 +62,10 @@ import { DocumentParserService } from './parsers/document-parser.service';
     // Регистрация именно здесь, чтобы избежать циклической зависимости
     // IngestModule ↔ TrackerModule. EventEmitter2 — глобальный.
     TrackerAdapter,
+    // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — reingest-fallback.
+    // @Cron каждые 15 мин: встречи с готовым транскриптом без RawEvent(meeting)
+    // переигрываются через MeetingIngestAdapter.ingestMeeting (идемпотентно).
+    MeetingReingestCron,
   ],
   exports: [
     IngestService,

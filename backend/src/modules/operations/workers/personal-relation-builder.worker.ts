@@ -1,36 +1,24 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { type EntityLinkType, Prisma } from '@prisma/client';
-import { type Job, Worker } from 'bullmq';
+import { type Job } from 'bullmq';
 
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistRoutingJobData,
-} from '../../core-queue/queues';
+import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../../knowledge-core/services/router.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 /**
- * SBA β-8 — PersonalRelationBuilderWorker.
+ * SBA β-8 — PersonalRelationBuilderWorker (handler `core.specialist-routing`,
+ * jobName='3-12-personal-relation').
  *
- * Consumer очереди `core.specialist-routing`, jobName='3-12-personal-relation'.
- *
- * Запускается, когда `RouterService.dispatch` диспатчит блок с signalType ∈
- * {team_friction, process_friction, manages, collaborates_with} (последние
- * два — гипотетически, в текущей онтологии нет signalType=manages, но мы
- * закладываемся на расширение). Также реагирует на любой блок, явно
- * передавший этого специалиста.
+ * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков с
+ * signalType ∈ {team_friction, process_friction, manages, collaborates_with}
+ * (последние два — гипотетически, в текущей онтологии нет signalType=manages,
+ * но мы закладываемся на расширение). Маршрутизацию по jobName делает диспетчер.
  *
  * Логика:
  *   1. Загрузить block + его entities (IdeaBlockEntity).
@@ -56,11 +44,8 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
  *   - `personal_relation_builder_runs_total{tenant_top, result}`.
  */
 @Injectable()
-export class PersonalRelationBuilderWorker
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PersonalRelationBuilderWorker {
   private readonly logger = new Logger(PersonalRelationBuilderWorker.name);
-  private worker: Worker<SpecialistRoutingJobData> | null = null;
 
   static readonly SPECIALIST_NAME = RouterService.SPECIALIST.PERSONAL_RELATION;
   private static readonly MIN_CONFIDENCE = 0.6;
@@ -69,52 +54,21 @@ export class PersonalRelationBuilderWorker
   private readonly pipe!: PipelineRunner;
 
   constructor(
-    @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  onModuleInit(): void {
-    this.worker = new Worker<SpecialistRoutingJobData>(
-      CORE_QUEUE_NAMES.SPECIALIST_ROUTING,
-      async (job) =>
-        this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'operations.personal-relation', job, () =>
-          this.process(job),
-        ),
-      {
-        connection: this.redis.client,
-        concurrency: 2,
-      },
+  async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
+    await this.pipe.job(
+      SystemLogPipeline.KNOWLEDGE_GRAPH,
+      'operations.personal-relation',
+      job,
+      () => this.process(job),
     );
-    this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        {
-          blockId: job?.data?.blockId,
-          jobName: job?.name,
-          attempt: job?.attemptsMade,
-          err: err?.message,
-        },
-        'personal-relation-builder: job failed (повтор по политике BullMQ)',
-      );
-    });
-    this.logger.log(
-      `PersonalRelationBuilderWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, jobName=${PersonalRelationBuilderWorker.SPECIALIST_NAME})`,
-    );
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
   }
 
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
-    if (job.name !== PersonalRelationBuilderWorker.SPECIALIST_NAME) {
-      return;
-    }
-
     const { blockId, tenantId, signalType } = job.data;
     const tenantTop = resolveOperationsTenantTop(tenantId);
 
@@ -134,6 +88,10 @@ export class PersonalRelationBuilderWorker
           tenantTop,
           result: 'skipped_no_pair',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -141,9 +99,19 @@ export class PersonalRelationBuilderWorker
           tenantTop,
           result: 'error',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
-      if (block.status !== 'canonical') return;
+      if (block.status !== 'canonical') {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
+        return;
+      }
 
       const personEntities = block.entities.filter(
         (be) => be.entity?.type === 'person',
@@ -152,6 +120,10 @@ export class PersonalRelationBuilderWorker
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_no_pair',
+        });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
         });
         return;
       }
@@ -166,6 +138,10 @@ export class PersonalRelationBuilderWorker
           tenantTop,
           result: 'skipped_low_confidence',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -175,6 +151,10 @@ export class PersonalRelationBuilderWorker
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_low_confidence',
+        });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
         });
         return;
       }

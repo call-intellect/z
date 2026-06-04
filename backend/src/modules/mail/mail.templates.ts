@@ -131,6 +131,28 @@ export const INVITE_DIRECTOR_TIMEOUT_TEMPLATE = `Здравствуйте, {{dir
 — Команда Коры
 `;
 
+/**
+ * ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
+ * Plain-text, без HTML. Отправляется из `MeetingsService.createForUser`
+ * приглашённым сотрудникам с каналом доставки `email`. Персональная
+ * ссылка `{{joinUrl}}` несёт `?inv=<inviteToken>` — переход проставляет
+ * identity участника (Фаза 3.1). `{{telegramDeepLink}}` — опционально
+ * (если не передан, Handlebars подставит пустую строку).
+ */
+export const MEETING_INVITE_TEMPLATE = `Здравствуйте!
+
+{{hostName}} приглашает вас на встречу в Коре:
+«{{meetingTitle}}»
+
+Чтобы присоединиться, перейдите по ссылке:
+{{joinUrl}}
+
+По этой ссылке система узнает вас как участника — отдельно
+регистрироваться не нужно.
+
+— Команда Коры
+`;
+
 export const PASSWORD_RESET_TEMPLATE = `Здравствуйте, {{name}}!
 
 Вы (или кто-то от вашего имени) запросили сброс пароля в Коре.

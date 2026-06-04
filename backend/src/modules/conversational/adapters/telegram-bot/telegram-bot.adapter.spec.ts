@@ -865,3 +865,45 @@ describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный ка
     ).toContain('привязан');
   });
 });
+
+describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)', () => {
+  it('рендерит человекочитаемый текст с названием, хостом и ссылкой (не default-ветка)', () => {
+    const { adapter } = makeAdapter();
+    // renderText private — обращаемся через cast (мини-e2e шаблона).
+    const text = (
+      adapter as unknown as {
+        renderText: (n: {
+          eventType: string;
+          payload: Record<string, unknown>;
+        }) => string;
+      }
+    ).renderText({
+      eventType: 'meeting.invite',
+      payload: {
+        joinUrl: 'https://app.kora.test/m/m-1?inv=tok123',
+        meetingTitle: 'Планёрка',
+        hostName: 'Сергей',
+      },
+    });
+    expect(text).toContain('Приглашение на встречу');
+    expect(text).toContain('Сергей');
+    expect(text).toContain('Планёрка');
+    expect(text).toContain('https://app.kora.test/m/m-1?inv=tok123');
+    // НЕ ушло в generic-fallback default-ветки.
+    expect(text).not.toBe('Уведомление: meeting.invite');
+  });
+
+  it('не падает на пустом payload (graceful)', () => {
+    const { adapter } = makeAdapter();
+    const text = (
+      adapter as unknown as {
+        renderText: (n: {
+          eventType: string;
+          payload: Record<string, unknown>;
+        }) => string;
+      }
+    ).renderText({ eventType: 'meeting.invite', payload: {} });
+    expect(typeof text).toBe('string');
+    expect(text.length).toBeGreaterThan(0);
+  });
+});

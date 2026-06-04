@@ -14,6 +14,12 @@ import { MeetingPageShell } from './MeetingPageShell';
 type Props = {
   meetingId: string;
   deepLinkToken: string | null;
+  /**
+   * Персональный токен приглашения (`?inv=`, Ф3.1). Пробрасывается в shell →
+   * `meetingsApi.join({ inviteToken })`, чтобы приглашённый вошёл под своей
+   * identity (а не как новый аноним).
+   */
+  inviteToken?: string | null;
 };
 
 type ExchangeStage = 'pending' | 'done';
@@ -25,7 +31,11 @@ type ExchangeStage = 'pending' | 'done';
  * Если exchange упал с 401 — это значит токен битый/просрочен; рендерим
  * `<MeetingPageShell />` — он покажет либо guest-flow, либо «нет доступа».
  */
-export function ExchangeAndRender({ meetingId, deepLinkToken }: Props) {
+export function ExchangeAndRender({
+  meetingId,
+  deepLinkToken,
+  inviteToken,
+}: Props) {
   const router = useRouter();
   const { refresh } = useAuth();
   const [stage, setStage] = useState<ExchangeStage>(
@@ -74,5 +84,7 @@ export function ExchangeAndRender({ meetingId, deepLinkToken }: Props) {
     );
   }
 
-  return <MeetingPageShell meetingId={meetingId} />;
+  return (
+    <MeetingPageShell meetingId={meetingId} inviteToken={inviteToken ?? null} />
+  );
 }

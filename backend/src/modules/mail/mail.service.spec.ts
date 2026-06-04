@@ -174,6 +174,29 @@ describe('MailService', () => {
       expect(arg.text).toContain('60');
     });
 
+    it('sendMeetingInvite (Фаза 3.2): рендерит шаблон с joinUrl/host/title и шлёт', async () => {
+      const svc = new MailService(makeCfg({ username: 'u', password: 'p' }));
+      svc.onModuleInit();
+
+      const result = await svc.sendMeetingInvite({
+        to: 'nastya@example.com',
+        hostName: 'Сергей',
+        meetingTitle: 'Планёрка по продукту',
+        joinUrl: 'https://app.kora.test/m/m-1?inv=tok123',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockTransporter.sendMail).toHaveBeenCalledTimes(1);
+      const arg = mockTransporter.sendMail.mock.calls[0]?.[0] as {
+        subject: string;
+        text: string;
+      };
+      expect(arg.subject).toBe('Сергей приглашает вас на встречу');
+      expect(arg.text).toContain('Сергей');
+      expect(arg.text).toContain('Планёрка по продукту');
+      expect(arg.text).toContain('https://app.kora.test/m/m-1?inv=tok123');
+    });
+
     it('возвращает ok=false с error при ошибке SMTP', async () => {
       const svc = new MailService(makeCfg({ username: 'u', password: 'p' }));
       svc.onModuleInit();

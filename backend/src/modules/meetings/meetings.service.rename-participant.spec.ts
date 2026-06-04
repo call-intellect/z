@@ -79,6 +79,10 @@ function makeService(args: {
     {} as unknown as TypedConfigService,
     metrics,
     {} as unknown as MeetingsBalanceService,
+    // Фаза 3 (2026-06-04) — MailService + ConversationalService (не вызываются
+    // в renameParticipant, но обязательны в конструкторе).
+    {} as never,
+    {} as never,
   );
 
   return { svc, prisma, repository, metrics, participantFindFirst, participantUpdate };

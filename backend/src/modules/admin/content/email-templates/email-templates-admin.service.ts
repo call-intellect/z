@@ -14,6 +14,7 @@ import {
   INVITE_DIRECTOR_TIMEOUT_TEMPLATE,
   INVITE_GITHUB_STYLE_TEMPLATE,
   INVITE_REMINDER_TEMPLATE,
+  MEETING_INVITE_TEMPLATE,
   PASSWORD_RESET_TEMPLATE,
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from '../../../mail/mail.templates';
@@ -124,6 +125,18 @@ const STATIC_TEMPLATES: ReadonlyArray<StaticTemplate> = [
       employeeEmail: 'email сотрудника (опционально)',
       orgName: 'название компании',
       teamPageUrl: 'ссылка на страницу «Сотрудники»',
+    },
+    category: 'transactional',
+  },
+  {
+    key: 'meeting-invite',
+    subject: '{{hostName}} приглашает вас на встречу',
+    body: MEETING_INVITE_TEMPLATE,
+    variables: {
+      hostName: 'имя пригласившего (хоста встречи)',
+      meetingTitle: 'название встречи',
+      joinUrl: 'персональная ссылка на встречу (с токеном приглашения)',
+      telegramDeepLink: 'deep-link в Telegram-бот (опционально)',
     },
     category: 'transactional',
   },

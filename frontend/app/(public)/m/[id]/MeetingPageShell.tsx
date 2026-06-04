@@ -15,7 +15,15 @@ import { MeetingRoom } from '@/ui/components/meeting-room/MeetingRoom';
 import { t } from '@/lib/i18n';
 import type { MeetingStatus } from '@/domain/enums';
 
-type Props = { meetingId: string };
+type Props = {
+  meetingId: string;
+  /**
+   * Персональный токен приглашения (`?inv=`, Ф3.1). Если задан — пробрасываем
+   * в `meetingsApi.join`, чтобы приглашённый вошёл под своей identity
+   * (pre-seeded `Participant`), а не как новый аноним.
+   */
+  inviteToken?: string | null;
+};
 
 const FINISHED_STATUSES: MeetingStatus[] = [
   'completed',
@@ -36,7 +44,7 @@ type JoinedState = {
   identityToParticipantId: Record<string, string>;
 };
 
-export function MeetingPageShell({ meetingId }: Props) {
+export function MeetingPageShell({ meetingId, inviteToken }: Props) {
   const access = useMeetingAccess(meetingId);
   const [joined, setJoined] = useState<JoinedState | null>(null);
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
@@ -63,7 +71,10 @@ export function MeetingPageShell({ meetingId }: Props) {
 
   const joinAsHostOrGuest = async () => {
     try {
-      const result = await meetingsApi.join(meetingId, {});
+      const result = await meetingsApi.join(
+        meetingId,
+        inviteToken ? { invite_token: inviteToken } : {},
+      );
       // Карту identity→pid строим из /meetings/:id (host-only) — для гостя пустая.
       let identityMap: Record<string, string> = {};
       if (result.role === 'host') {

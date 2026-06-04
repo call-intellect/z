@@ -119,6 +119,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // ['telegram_bot'] и шлёт как system.message (рендер уже поддержан), эта
   // policy — дефолт на случай прямого вызова с eventType 'actions.reminder'.
   'actions.reminder': ['telegram_bot', 'max_bot', 'in_app'],
+  // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
+  // Telegram-бот (мгновенный пинг с персональной ссылкой) приоритетен;
+  // каскад на email_smtp/in_app — если нет verified telegram-binding.
+  'meeting.invite': ['telegram_bot', 'email_smtp', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

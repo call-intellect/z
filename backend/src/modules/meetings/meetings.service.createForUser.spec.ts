@@ -92,17 +92,54 @@ function makeService() {
     consume: vi.fn(),
   } as unknown as MeetingsBalanceService;
 
+  const cfg = {
+    auth: { publicFrontendUrl: 'https://app.kora.test' },
+  } as unknown as TypedConfigService;
+
+  const mail = {
+    sendMeetingInvite: vi.fn(
+      async (_arg: {
+        to: string;
+        hostName: string;
+        meetingTitle: string;
+        joinUrl: string;
+      }) => ({ ok: true }),
+    ),
+  };
+  const conversational = {
+    sendNotification: vi.fn(
+      async (_arg: {
+        tenantId: string;
+        recipientUserId: string;
+        eventType: string;
+        payload: { joinUrl: string; meetingTitle: string; hostName: string };
+        preferredChannelKinds: string[];
+      }) => ({}),
+    ),
+  };
+
   const svc = new MeetingsService(
     prisma,
     repository,
     {} as unknown as UsersService,
     {} as unknown as JwtService,
-    {} as unknown as TypedConfigService,
+    cfg,
     metrics,
     balance,
+    mail as never,
+    conversational as never,
   );
 
-  return { svc, prisma, repository, metrics, tx, participantCreate };
+  return {
+    svc,
+    prisma,
+    repository,
+    metrics,
+    tx,
+    participantCreate,
+    mail,
+    conversational,
+  };
 }
 
 describe('MeetingsService.createForUser — pre-seed приглашённых (Фаза 2.1)', () => {
@@ -161,6 +198,69 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
     expect(data.role).toBe('host');
     expect(data.livekitIdentity).toBe('host:host1');
     expect(data.invitationStatus).toBeUndefined();
+  });
+
+  it('Фаза 3 — доставка: email-инвайт с адресом → MailService.sendMeetingInvite с joinUrl(?inv=)', async () => {
+    const { svc, mail, participantCreate } = makeService();
+
+    await svc.createForUser(
+      {
+        type: 'sync' as never,
+        title: 'Планёрка',
+        invitees: [
+          { userId: 'u1', email: 'nastya@example.com', sendVia: ['email'] },
+        ],
+      },
+      'host1',
+    );
+
+    // Доставка — fire-and-forget (void). Прогоняем микротаски, чтобы
+    // detached-промис успел дойти до mock'а.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const inviteeCall = participantCreate.mock.calls.find(
+      ([arg]) => arg.data.role === 'guest',
+    );
+    const token = inviteeCall![0].data.inviteToken;
+
+    expect(mail.sendMeetingInvite).toHaveBeenCalledTimes(1);
+    const arg = mail.sendMeetingInvite.mock.calls[0]![0];
+    expect(arg.to).toBe('nastya@example.com');
+    expect(arg.hostName).toBe('Хост');
+    expect(arg.meetingTitle).toBe('Планёрка');
+    expect(arg.joinUrl.startsWith('https://app.kora.test/m/')).toBe(true);
+    expect(arg.joinUrl).toContain(`?inv=${token}`);
+  });
+
+  it('Фаза 3 — доставка: telegram-инвайт с userId → sendNotification(eventType:"meeting.invite")', async () => {
+    const { svc, conversational } = makeService();
+
+    await svc.createForUser(
+      {
+        type: 'sync' as never,
+        title: 'Ретро',
+        invitees: [{ userId: 'u2', sendVia: ['telegram'] }],
+      },
+      'host1',
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(conversational.sendNotification).toHaveBeenCalledTimes(1);
+    const arg = conversational.sendNotification.mock.calls[0]![0];
+    expect(arg.eventType).toBe('meeting.invite');
+    expect(arg.recipientUserId).toBe('u2');
+    expect(arg.tenantId).toBe('org1');
+    expect(arg.payload.meetingTitle).toBe('Ретро');
+    expect(arg.payload.hostName).toBe('Хост');
+    expect(arg.payload.joinUrl).toContain('?inv=');
+    expect(arg.preferredChannelKinds).toEqual([
+      'telegram_bot',
+      'email_smtp',
+      'in_app',
+    ]);
   });
 
   it('invitee.userId === host → пропускается (не дублирует хоста)', async () => {

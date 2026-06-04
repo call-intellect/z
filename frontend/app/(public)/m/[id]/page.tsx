@@ -5,7 +5,7 @@ import { ExchangeAndRender } from './ExchangeAndRender';
 type Props = {
   // Next 15+/16: params и searchParams теперь Promise — их нужно await'ить.
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ t?: string | string[] }>;
+  searchParams: Promise<{ t?: string | string[]; inv?: string | string[] }>;
 };
 
 /**
@@ -28,11 +28,15 @@ export default async function MeetingPage({ params, searchParams }: Props) {
   }
   const sp = await searchParams;
   const tokenParam = Array.isArray(sp.t) ? sp.t[0] : sp.t;
+  // `inv` — персональный токен приглашения (Ф3.1). Передаём дальше, чтобы при
+  // join приглашённый вошёл под своей identity, а не как новый аноним.
+  const inviteParam = Array.isArray(sp.inv) ? sp.inv[0] : sp.inv;
 
   return (
     <ExchangeAndRender
       meetingId={id}
       deepLinkToken={tokenParam ?? null}
+      inviteToken={inviteParam ?? null}
     />
   );
 }

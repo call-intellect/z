@@ -14,6 +14,7 @@ import {
   INVITE_GITHUB_STYLE_TEMPLATE,
   INVITE_REMINDER_TEMPLATE,
   INVITE_WITH_CREDENTIALS_TEMPLATE,
+  MEETING_INVITE_TEMPLATE,
   PASSWORD_RESET_TEMPLATE,
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from './mail.templates';
@@ -89,6 +90,13 @@ interface CompiledTemplates {
     magicLinkUrl: string;
     telegramDeepLink: string;
     ttlDays: number;
+  }>;
+  // ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
+  meetingInvite: HandlebarsTemplateDelegate<{
+    hostName: string;
+    meetingTitle: string;
+    joinUrl: string;
+    telegramDeepLink?: string;
   }>;
 }
 
@@ -281,6 +289,36 @@ export class MailService implements OnModuleInit {
   }
 
   /**
+   * ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
+   * Отправляется из `MeetingsService.createForUser` приглашённым с каналом
+   * доставки `email` (в т.ч. внешним адресам без User — `sendNotification`
+   * умеет только зарегистрированных). Тема: «{{hostName}} приглашает вас
+   * на встречу».
+   */
+  async sendMeetingInvite(input: {
+    to: string;
+    hostName: string;
+    meetingTitle: string;
+    joinUrl: string;
+    telegramDeepLink?: string;
+  }): Promise<SendResult> {
+    const text = this.templates.meetingInvite({
+      hostName: input.hostName,
+      meetingTitle: input.meetingTitle,
+      joinUrl: input.joinUrl,
+      ...(input.telegramDeepLink
+        ? { telegramDeepLink: input.telegramDeepLink }
+        : {}),
+    });
+    return this.send({
+      to: input.to,
+      subject: `${input.hostName} приглашает вас на встречу`,
+      text,
+      template: 'meeting-invite',
+    });
+  }
+
+  /**
    * β-9 (2026-05-25) — уведомление директора, что приглашение истекло.
    * Отправляется кроном `org-invitation-reminders` на 14-й день.
    */
@@ -406,6 +444,13 @@ export class MailService implements OnModuleInit {
         telegramDeepLink: string;
         ttlDays: number;
       }>(INVITE_WITH_CREDENTIALS_TEMPLATE, { noEscape: true }),
+      // ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
+      meetingInvite: Handlebars.compile<{
+        hostName: string;
+        meetingTitle: string;
+        joinUrl: string;
+        telegramDeepLink?: string;
+      }>(MEETING_INVITE_TEMPLATE, { noEscape: true }),
     };
   }
 }

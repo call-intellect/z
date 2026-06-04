@@ -22,6 +22,8 @@ import {
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
+import { ConversationalService } from '../conversational/conversational.service';
+import { MailService } from '../mail/mail.service';
 import { MeetingsBalanceService } from '../meetings-balance/meetings-balance.service';
 import { UsersService } from '../users/users.service';
 
@@ -61,6 +63,12 @@ export class MeetingsService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(MeetingsBalanceService)
     private readonly meetingsBalance: MeetingsBalanceService,
+    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — доставка приглашений.
+    // MailService и ConversationalService — @Global, цикла нет (ни Mail, ни
+    // Conversational не зависят от Meetings).
+    @Inject(MailService) private readonly mail: MailService,
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
   ) {}
 
   /**
@@ -221,11 +229,22 @@ export class MeetingsService {
 
     const meetingId = ulid();
     let created!: Meeting;
+    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — собираем приглашённых для
+    // доставки ПОСЛЕ транзакции (доставка — side-effect, не часть БД-транзакции).
+    const pendingInvites: Array<{
+      inviteToken: string;
+      sendVia: ('email' | 'telegram')[];
+      userId: string | null;
+      email: string | null;
+      name: string;
+    }> = [];
+    let hostName = '';
 
     await this.prisma.$transaction(async (tx) => {
       // Подтверждаем что пользователь существует — иначе FK упадёт менее наглядно.
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotAuthorizedError('user_not_found');
+      hostName = user.name;
 
       // Если cardId задан — проверяем владение и не-удалённость.
       let resolvedCardId: string | null = null;
@@ -276,12 +295,16 @@ export class MeetingsService {
         if (invitee.userId && invitee.userId === userId) continue;
 
         let resolvedName: string;
+        // ТЗ 2026-06-04 Фаза 3 — резолвим email для доставки: явный
+        // invitee.email приоритетен, иначе берём из User.
+        let resolvedEmail: string | null = invitee.email ?? null;
         if (invitee.userId) {
           const u = await tx.user.findUnique({
             where: { id: invitee.userId },
-            select: { name: true },
+            select: { name: true, email: true },
           });
           resolvedName = u?.name ?? invitee.email ?? 'Приглашённый';
+          if (!resolvedEmail) resolvedEmail = u?.email ?? null;
         } else if (invitee.personId) {
           const p = await tx.person.findUnique({
             where: { id: invitee.personId },
@@ -307,6 +330,14 @@ export class MeetingsService {
             invitedAt: new Date(),
           },
         });
+
+        pendingInvites.push({
+          inviteToken,
+          sendVia: invitee.sendVia ?? [],
+          userId: invitee.userId ?? null,
+          email: resolvedEmail,
+          name: resolvedName,
+        });
       }
 
       // Денормализация счётчиков карточки. Делается в той же транзакции —
@@ -330,7 +361,100 @@ export class MeetingsService {
       data: { firstMeetingCreatedAt: new Date() },
     });
 
+    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — доставка приглашений
+    // (side-effect, best-effort: сбой доставки не должен валить создание встречи).
+    if (pendingInvites.length > 0) {
+      void this.deliverMeetingInvites({
+        meetingId,
+        tenantId: created.tenantId,
+        hostName,
+        meetingTitle: input.title,
+        invites: pendingInvites,
+      });
+    }
+
     return created;
+  }
+
+  /**
+   * ТЗ 2026-06-04 (meeting-identity) Фаза 3.1–3.3 — доставка приглашений на
+   * встречу по выбранным каналам. Строит персональную join-ссылку
+   * `${publicFrontendUrl}/m/<meetingId>?inv=<inviteToken>` (переход проставляет
+   * identity участника — Фаза 3.1) и отправляет:
+   *   - email (`sendVia` ⊇ 'email' и есть адрес) — через MailService.sendMeetingInvite
+   *     напрямую (в т.ч. внешним адресам без User — sendNotification их не умеет);
+   *   - telegram (`sendVia` ⊇ 'telegram' и есть userId) — через
+   *     ConversationalService.sendNotification(eventType='meeting.invite') с каскадом
+   *     telegram_bot → email_smtp → in_app (встроен в sendNotification).
+   *
+   * Best-effort: каждое приглашение в своём try/catch — сбой одного канала не
+   * срывает остальные и не валит создание встречи.
+   */
+  private async deliverMeetingInvites(args: {
+    meetingId: string;
+    tenantId: string;
+    hostName: string;
+    meetingTitle: string;
+    invites: Array<{
+      inviteToken: string;
+      sendVia: ('email' | 'telegram')[];
+      userId: string | null;
+      email: string | null;
+      name: string;
+    }>;
+  }): Promise<void> {
+    const baseUrl = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
+    for (const invite of args.invites) {
+      const joinUrl = `${baseUrl}/m/${args.meetingId}?inv=${invite.inviteToken}`;
+
+      // Email: явный канал 'email' и есть адрес. Внешние (без userId) — тоже
+      // сюда, т.к. ConversationalService не доставляет незарегистрированным.
+      if (invite.sendVia.includes('email') && invite.email) {
+        try {
+          await this.mail.sendMeetingInvite({
+            to: invite.email,
+            hostName: args.hostName,
+            meetingTitle: args.meetingTitle,
+            joinUrl,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              meetingId: args.meetingId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'deliverMeetingInvites: email-доставка приглашения упала — продолжаю',
+          );
+        }
+      }
+
+      // Telegram: канал 'telegram' и есть userId (зарегистрированный сотрудник).
+      // Каскад на email_smtp/in_app встроен в sendNotification.
+      if (invite.sendVia.includes('telegram') && invite.userId) {
+        try {
+          await this.conversational.sendNotification({
+            tenantId: args.tenantId,
+            recipientUserId: invite.userId,
+            eventType: 'meeting.invite',
+            payload: {
+              joinUrl,
+              meetingTitle: args.meetingTitle,
+              hostName: args.hostName,
+            },
+            preferredChannelKinds: ['telegram_bot', 'email_smtp', 'in_app'],
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              meetingId: args.meetingId,
+              userId: invite.userId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'deliverMeetingInvites: telegram-доставка приглашения упала — продолжаю',
+          );
+        }
+      }
+    }
   }
 
   /**

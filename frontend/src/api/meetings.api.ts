@@ -65,7 +65,16 @@ export type RegenerateSectionApiRequest = {
 
 export type CreateMeetingApiResponse = { id: string; url: string };
 
-export type JoinMeetingApiRequest = { guest_name?: string };
+export type JoinMeetingApiRequest = {
+  guest_name?: string;
+  /**
+   * Персональный токен приглашения (Ф3.1, backend DTO `JoinMeetingSchema`).
+   * Передаётся при входе по ссылке `/m/:id?inv=<inviteToken>` — backend
+   * резолвит pre-seeded `Participant` по токену вместо создания нового
+   * анонимного гостя.
+   */
+  invite_token?: string;
+};
 
 export type JoinMeetingApiResponse = {
   participant_id: string;

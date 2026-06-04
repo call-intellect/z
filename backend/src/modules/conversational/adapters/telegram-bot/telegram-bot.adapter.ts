@@ -1228,6 +1228,19 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           }),
         ).slice(0, 4000);
       }
+      case 'meeting.invite': {
+        // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
+        const title = (payload['meetingTitle'] as string | undefined) ?? '';
+        const host = (payload['hostName'] as string | undefined) ?? '';
+        const joinUrl = (payload['joinUrl'] as string | undefined) ?? '';
+        const head = '<b>Приглашение на встречу</b>';
+        const who = host ? `${escapeHtml(host)} приглашает вас на встречу:` : 'Вас приглашают на встречу:';
+        const body = title ? `\n«${escapeHtml(title)}»` : '';
+        const link = joinUrl
+          ? `\n\nПрисоединиться:\n${escapeHtml(joinUrl)}`
+          : '';
+        return `${head}\n\n${who}${body}${link}`.slice(0, 4000);
+      }
       default: {
         return `Уведомление: ${escapeHtml(notification.eventType)}`;
       }

@@ -322,6 +322,23 @@ const ActionsReminderPayloadSchema = z
   })
   .strict();
 
+/**
+ * ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
+ *
+ * Payload `Notification(eventType='meeting.invite')`. Recipient — userId
+ * приглашённого сотрудника. `joinUrl` — персональная ссылка `/m/:id?inv=…`
+ * (несёт inviteToken, переход проставляет identity). `meetingTitle` —
+ * название встречи, `hostName` — кто пригласил. Каналы — telegram_bot
+ * (приоритет) → email_smtp → in_app (каскад в sendNotification).
+ */
+const MeetingInvitePayloadSchema = z
+  .object({
+    joinUrl: z.string().min(1).max(2_000),
+    meetingTitle: z.string().min(1).max(500),
+    hostName: z.string().min(1).max(200),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -350,6 +367,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['checkin.ack', CheckinAckPayloadSchema],
   // Action Center B3 — повторяющееся напоминание о pending-подтверждениях.
   ['actions.reminder', ActionsReminderPayloadSchema],
+  // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
+  ['meeting.invite', MeetingInvitePayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

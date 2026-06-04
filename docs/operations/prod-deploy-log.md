@@ -60,6 +60,32 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔓 2026-06-04 — Разблокировка конвейера встреча→граф→задачи (МТЗ №1, Ф1–Ф11)
+
+> Ветка `feature/pipeline-unblock`. Контракт: `plans/tz/2026-06-04-razblokirovka-konveyera.md`. Чинит критпуть B1–B7 + развязку видео от AI-статуса.
+
+- **Шаг 4 — Prisma db push** — **обязательно** (4 аддитивных изменения, без data-loss, без `--accept-data-loss`):
+  - `AudioTrack.voxTaskId String?` (Ф1); `TranscriptTrack @@unique([transcriptId, livekitIdentity])` (Ф1); `Insight.dataClassAudit Json?` + `Decision.dataClassAudit Json?` (Ф8); `MeetingStatus += ai_failed` (Ф11).
+  - ⚠ ПЕРЕД push проверить отсутствие дублей под новый unique: `SELECT "transcriptId","livekitIdentity",count(*) FROM "TranscriptTrack" GROUP BY 1,2 HAVING count(*)>1;` (ожидается пусто).
+  - Команда: `docker compose exec backend bun run prisma:push` (через migrate-контейнер автоматически).
+- **Шаг 5 — postgres-init / AGE** — **обязательно** (Ф5): закрепить `ag_catalog` в search_path роли приложения для рантайм-пула. Идемпотентный прогон: `docker compose exec backend bun run apply-postgres-init` (содержит `ALTER ROLE CURRENT_USER SET search_path = ag_catalog, "$user", public;`).
+  - Проверка: `SELECT extname FROM pg_extension WHERE extname='age';` · `SELECT name FROM ag_catalog.ag_graph WHERE name='z_graph';` · smoke под ролью app: `SELECT * FROM cypher('z_graph', $$ RETURN 1 $$) AS (v agtype);`. На managed PG нужен `shared_preload_libraries='age'` + рестарт.
+- **Шаг 1 — ENV** — все **опциональные** (есть код-дефолты):
+  - `VOX_POLL_INTERVAL_MS=5000`, `VOX_POLL_MAX_ATTEMPTS=180` (Ф1 — бюджет опроса Vox 900с, критично для длинных встреч).
+  - `GRAPH_AGE_ENABLED=true` (Ф5 — kill-switch графа; false = только Postgres).
+  - ⚠ ПОНИЖЕНЫ ДЕФОЛТЫ (Ф6): `LINKER_MIN_BLOCKS` 50→3, `THEME_CLUSTERING_MIN_BLOCKS` 100→10, `ENTITY_GRAPH_MIN_COMENTIONS` 3→2, `LINK_MIN_CONFIDENCE` 0.75→0.5. Если эти ENV выставлены в проде руками со старыми значениями — снять/понизить, иначе граф на малом тенанте не строится. Предпочтительно крутить через AdminSetting (`knowledge.*`).
+- **Шаг 7 — Seed admin-settings** — идемпотентно: `graph.ageEnabled`=true (Ф5), пороги `knowledge.*` (Ф6). `docker compose exec backend bun run scripts/seed-admin-settings.ts` (или `apply-prod-deploy.ts --mode update`). Защищает admin-edited значения.
+- **Шаг 8 — Backfill** — **обязательно** (Ф9): Person для владельцев Org без Person. `docker compose exec backend bun run scripts/backfill-owner-person.ts --apply` (зарегистрирован в `apply-prod-deploy.ts` STEPS, phase `backfill`, `skipBootstrap`; без `--apply` — dry-run). Идемпотентно.
+- **Шаг 11 — Docker rebuild** — обязателен (backend + frontend): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - один Worker на очереди specialist-routing (Ф2): `docker compose exec backend grep -rzoP "new Worker\(\s*CORE_QUEUE_NAMES\.SPECIALIST_ROUTING" src | grep -c Worker` → 1 (**multiline** grep — имя очереди на соседней строке).
+  - новый cron (Ф7): `docker compose logs backend | grep -iE "meeting-reingest|MeetingReingestCron"`.
+  - новые метрики на `/metrics`: `core_specialist_skipped_total` (Ф3), `kc_typed_entity_failed_total` (Ф5), `meeting_ingest_failed_total` (Ф7).
+  - **боевой тест на проде** через `diag` (после выката): прогнать новую встречу → `bun run --env-file=.env scripts/diag.ts trace --meeting <id>` — дошла ли до `ai_ready`, есть ли отчёт, наполнился ли граф (раньше падала на Vox-таймауте → `failed`).
+- ⚠ **НЕ проверено в dev** (Docker Desktop не стартовал в сессии разработки): интеграц-тесты против реального Postgres (Ф4/Ф8 «tsc-слепой» класс, Ф9 backfill), боевой харнесс `smoke-pipeline-e2e.ts`, реальный AGE-резолв `cypher()`, рантайм-DI диспетчера 14 хендлеров. Всё покрыто typecheck/lint/build/unit; первый прод-прогон = боевая проверка. Прогнать `bun run test:integration` на CI/проде с поднятым Postgres.
+
+---
+
 ### 🔔 2026-06-03 — Action Center Часть B: центр подтверждений (`/actions` + колокольчик + напоминания)
 
 План: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть B). Модуль `backend/src/modules/pending-actions/`.

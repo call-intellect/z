@@ -272,6 +272,12 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 ⚠ **Privacy `sentiment`:** в `/me/check-ins` маппер `stripSentimentForRole` всегда вызывается с `role=null` — fail-safe двойная защита (RBAC + DTO-фильтр) против утечки настроения сотруднику. Покрыто 9 тестами.
 
+> **`ensurePersonForUser` — у владельца Org теперь есть своя `Person` (МТЗ №1 Фаза 9, 2026-06-04, коммит `7cffb1e3`).** Раньше у владельца не было карточки `Person`, и `/me/promises` (и весь self-сценарий с обещаниями) падал. Теперь:
+> - `PersonsService.ensurePersonForUser` — `findFirst` по `userId` → линковка осиротевшей `Person` из `membership.personId` → создание новой с `User.email`/`name`, `relationship='employee'` (устойчиво к гонке `P2002`).
+> - `OrgsService.createForOwner` создаёт `Person` владельца + `Membership.personId` при создании Org.
+> - `GET /me/promises` теперь **graceful**: при отсутствии `Person` отдаёт `{items:[]}` (а не 500); `POST /me/promises/:blockId/mark` остаётся `403` (нельзя закрывать чужое обещание).
+> - Backfill для существующих владельцев — `backend/scripts/backfill-owner-person.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS).
+
 ## Clones (Skill & Persona, γ-1 + v2)
 
 | Метод | Путь | Назначение | Доступ | Фаза |

@@ -132,6 +132,16 @@ LiveKit чистит атрибуты автоматически при disconne
 - **`backend/src/modules/ai/workers/analyze.worker.ts`** — добавлен
   четвёртый параллельный вызов в `Promise.allSettled` после `ai_ready`:
   `meetingIngest.ingestMeeting(meetingId)` (прямой await через адаптер).
+  **Мост ingest (Фаза 7 МТЗ №1, 2026-06-04, коммит `5277caa5`):** убран
+  молчаливый `return null` в адаптере — провал ingestMeeting теперь пишет
+  `failureReason` + метрику `meeting_ingest_failed_total{reason}`; статус
+  встречи при этом остаётся `ai_ready` (отчёт пользователю уже готов, граф —
+  отдельный путь).
+- **`backend/src/modules/ingest/cron/meeting-reingest.cron.ts`** (новый,
+  Фаза 7 МТЗ №1) — fallback-cron `@Cron('*/15 * * * *')`: находит встречи с
+  `transcript.turns`, у которых нет `RawEvent`, и идемпотентно гоняет
+  `ingestMeeting`. Страховка от потерянных встреч, если основной мост в
+  analyze.worker не отработал. Зарегистрирован в `IngestModule`.
 
 Подробности: [[../01_projects/ingest-and-sources]].
 
@@ -2113,5 +2123,28 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 и фронт (`/actions`, колокольчик, пункт сайдбара «Подтверждения») — см. [[frontend-pages]],
 [[api-layer]]. **Telegram оставлен zero-button (β-1) намеренно** — быстрое подтверждение в приложении,
 не в чате (анти-штамповка).
+
+[[../index|← index]]
+
+## Разблокировка конвейера: диспетчер специалистов + reingest (МТЗ №1, 2026-06-04)
+
+**Источник:** [`plans/tz/2026-06-04-razblokirovka-konveyera.md`](../../plans/tz/2026-06-04-razblokirovka-konveyera.md). Ветка `feature/pipeline-unblock`. Топологическая правка слоя 3 knowledge-core + мост ingest (см. также §«Ingest / core-queue» выше — там обновлён `analyze.worker` и добавлен `meeting-reingest.cron`).
+
+### Один диспетчер вместо 14 конкурирующих Worker'ов (Фаза 2, коммит `39292119`)
+
+**Было:** каждый из 14 специалистов слоя 3 (`3-1-regulations` … `3-14-goals`, `tracker-ingest`) держал собственный BullMQ-`Worker` на общей очереди `core.specialist-routing` и фильтровал по `jobName`. BullMQ отдаёт один job **одному** воркеру — 14 Worker'ов на одной очереди конкурировали за каждый job, и job с «не своим» `jobName` мог достаться чужому воркеру и тихо пропасть. Это была одна из главных причин «граф пустой».
+
+**Стало:** один `SpecialistRoutingDispatcherWorker` (`knowledge-core/workers/specialist-routing-dispatcher.worker.ts`) — единственный consumer очереди `core.specialist-routing`. По `job.name` он синхронно вызывает нужный handler. 14 бывших воркеров превращены в чистые `@Injectable`-handler'ы с методом `handle(job)` (классы воркеров остались по именам, но Worker'а внутри больше нет). Неизвестный `jobName` → `throw` (видимый провал, не silent-skip). Машинный гард «на очереди ровно один Worker».
+
+> Урок (зафиксирован в feedback): **BullMQ — один job → один воркер; нельзя ставить per-jobName consumer на общую очередь.** Маршрутизация по типу job'а делается внутри одного диспетчера, а не разными Worker'ами.
+
+### Диспатч специалистов перенесён на canonical (Фаза 3, коммит `ac75aca8`)
+
+Раньше `routerService.dispatch` дёргался из `block-ingest.worker` по **draft**-блокам (хук, описанный в §«Knowledge-core модули» выше — теперь устарел). Перенесён в `block-distill.worker` — в `markCanonical` / `mergeInto`, т.е. на **canonical**-блоки. Специалисты работают по выверенным блокам, а не по сырым черновикам. Во все 14 handler'ах добавлена skip-метрика `core_specialist_skipped_total{specialist, reason}` (видимость отказов вместо тихого выхода).
+
+### Сопутствующее
+
+- **`projection-rebuilder` (Фаза 4, коммит `e4b6d6f6`)** — `skillTrait.findMany` теперь через `profile.tenantId` (у `SkillTrait` своего `tenantId` нет) + каждый из 10 подзапросов проекции обёрнут в settle-обёртку: один битый подзапрос больше не роняет остальные проекции.
+- **`SegmentBuilder` (Фаза 10, коммит `78e6cbff`)** — распознаёт `kind='free_note'`: берёт чистый `text` вместо JSON.stringify-обёртки (раньше free-note из Telegram попадал в граф как сериализованный JSON).
 
 [[../index|← index]]

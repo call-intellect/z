@@ -238,6 +238,15 @@ export class OperationsDailyDigestCron {
     let sent = 0;
     for (const m of memberships) {
       try {
+        // Action Center B3 — персональный блок «Ждёт подтверждения»
+        // (best-effort, не валит доставку дайджеста).
+        const pendingLine = await this.digestService.buildPendingActionsLine({
+          tenantId: args.tenantId,
+          userId: m.userId,
+        });
+        const bodyWithPending = pendingLine
+          ? `${safeBody}${pendingLine}`
+          : safeBody;
         await this.conversational.sendNotification({
           tenantId: args.tenantId,
           recipientUserId: m.userId,
@@ -246,7 +255,7 @@ export class OperationsDailyDigestCron {
             digestId: args.digestId,
             dateLocal: args.dateLocal,
             title,
-            body: safeBody,
+            body: bodyWithPending,
             actionUrl,
           },
           dataClass: 'internal',

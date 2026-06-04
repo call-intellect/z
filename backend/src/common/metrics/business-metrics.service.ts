@@ -323,6 +323,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private telegramDigestSentTotal!: Counter<'tenant_top' | 'result'>;
   // Reply-classify result: status_command | comment | new_task | unknown.
   private telegramReplyClassifiedTotal!: Counter<'tenant_top' | 'kind'>;
+  // Action Center B3 — повторяющееся Telegram-напоминание о pending-подтверждениях.
+  // result ∈ sent | empty | dedup | error.
+  private pendingReminderSentTotal!: Counter<'tenant_top' | 'result'>;
 
   // ── core router (SBA α-3) ─────────────────────────────────────────
   private coreRouterDispatchedTotal!: Counter<'specialist' | 'signal_type'>;
@@ -336,6 +339,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationAutoCanonicalTotal!: Counter<'resource_type'>;
   private curationConflictsTotal!: Counter<'relation_type' | 'resolution'>;
   private curationStaleDetectedTotal!: Counter<'resource_type'>;
+  // ── Action Center B5 «оживление expiresAt» (2026-06-02) ──
+  private curationItemExpiredTotal!: Counter<'resource_type'>;
+  private curationItemAgeSeconds!: Histogram<'level'>;
   // ── Action Center A1 «лестница доверия» (2026-06-02) ──
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
@@ -1715,6 +1721,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Tracker Phase 4 РФ — утренний дайджест задач, отправленный в Telegram. result: sent | empty | dedup_skip | error.',
       labelNames: ['tenant_top', 'result'] as const,
     });
+    this.pendingReminderSentTotal = this.getOrCreateCounter({
+      name: 'pending_reminder_sent_total',
+      help: 'Action Center B3 — повторяющееся Telegram-напоминание о pending-подтверждениях. result: sent | empty | dedup | error.',
+      labelNames: ['tenant_top', 'result'] as const,
+    });
     this.telegramReplyClassifiedTotal = this.getOrCreateCounter({
       name: 'telegram_reply_classified_total',
       help: 'Tracker Phase 4 РФ — reply на bot-уведомление классифицирован. kind: status_command | comment | new_task | unknown.',
@@ -1770,6 +1781,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'curation_stale_detected_total',
       help: 'SBA α-4 — CardStaleDetectorCron: сколько карточек помечено кандидатами на stale (resource_type).',
       labelNames: ['resource_type'] as const,
+    });
+    // ── Action Center B5 «оживление expiresAt» (2026-06-02) ──
+    this.curationItemExpiredTotal = this.getOrCreateCounter({
+      name: 'curation_item_expired_total',
+      help: 'Action Center B5 — CurationItemLifecycleCron: pending CurationItem закрыт по истечении expiresAt (resource_type).',
+      labelNames: ['resource_type'] as const,
+    });
+    this.curationItemAgeSeconds = this.getOrCreateHistogram({
+      name: 'curation_item_age_seconds',
+      help: 'Action Center B5 — возраст CurationItem от createdAt до истечения (секунды, по level).',
+      labelNames: ['level'] as const,
+      buckets: [3600, 14_400, 86_400, 259_200, 604_800, 1_209_600, 2_592_000],
     });
     // ── Action Center A1 «лестница доверия» (2026-06-02) ──
     this.curationProvisionalTotal = this.getOrCreateCounter({
@@ -4398,6 +4421,20 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /**
+   * Action Center B3 — повторяющееся Telegram-напоминание о
+   * pending-подтверждениях. result: sent | empty | dedup | error.
+   */
+  incPendingReminderSent(args: {
+    tenantTop: string;
+    result: 'sent' | 'empty' | 'dedup' | 'error';
+  }): void {
+    this.pendingReminderSentTotal.inc({
+      tenant_top: args.tenantTop,
+      result: args.result,
+    });
+  }
+
   /** Telegram-бот: reply классифицирован LLM. */
   incTelegramReplyClassified(args: {
     tenantTop: string;
@@ -4499,6 +4536,18 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Карточка-кандидат на stale (probe владельцу). */
   incCurationStale(args: { resourceType: string }): void {
     this.curationStaleDetectedTotal.inc({ resource_type: args.resourceType });
+  }
+
+  // ─────────── Action Center B5 «оживление expiresAt» (2026-06-02) ───────────
+
+  /** Pending CurationItem закрыт по истечении expiresAt. */
+  incCurationItemExpired(args: { resourceType: string }): void {
+    this.curationItemExpiredTotal.inc({ resource_type: args.resourceType });
+  }
+
+  /** Возраст CurationItem от createdAt до истечения (секунды, по level). */
+  observeCurationItemAge(args: { level: string; seconds: number }): void {
+    this.curationItemAgeSeconds.observe({ level: args.level }, args.seconds);
   }
 
   /** A2 — сработал kill-switch (провизорный путь для типа отключён). */

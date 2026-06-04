@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 import type {
   DailyDigestMetricsDto,
   DailyDigestSourcesDto,
@@ -53,6 +54,8 @@ export class DailyDigestService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(PendingActionsService)
+    private readonly pendingActions: PendingActionsService,
   ) {}
 
   /**
@@ -255,6 +258,38 @@ export class DailyDigestService {
       },
       data: { deliveredAt: new Date() },
     });
+  }
+
+  /**
+   * Action Center B3 — блок «Ждёт подтверждения» для конкретного получателя
+   * дайджеста. Возвращает готовую markdown-строку (с переводом строки в начале)
+   * или `null`, если у получателя нет pending-элементов.
+   *
+   * Best-effort: при любой ошибке `PendingActionsService` возвращает `null` —
+   * не должен валить доставку дайджеста.
+   */
+  async buildPendingActionsLine(args: {
+    tenantId: string;
+    userId: string;
+  }): Promise<string | null> {
+    try {
+      const count = await this.pendingActions.getCount({
+        tenantId: args.tenantId,
+        userId: args.userId,
+      });
+      if (count.total === 0) return null;
+      return `\n\n🔔 Ждёт вашего подтверждения: ${count.total}. Открыть: /actions`;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          userId: args.userId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: блок «Ждёт подтверждения» упал — пропускаю',
+      );
+      return null;
+    }
   }
 
   /**

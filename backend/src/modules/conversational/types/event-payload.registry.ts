@@ -289,6 +289,39 @@ const EventReminderPayloadSchema = z
   })
   .strict();
 
+/**
+ * Action Center B3 (2026-06-02) — payload повторяющегося напоминания о
+ * pending-подтверждениях. Доставляется `PendingActionsReminderCron` в
+ * Telegram. Текст детерминированный (без LLM): `lines` — готовые строки
+ * сводки, `actionUrl` — ссылка на /actions.
+ *
+ *   - `total` — общее число pending-элементов пользователя;
+ *   - `bySource` — разбивка по источникам (curation/conflict/intake/probe);
+ *   - `urgentCount` — сколько из показанных элементов помечены как срочные;
+ *   - `lines` — до 5 готовых строк заголовков (RU, с пометкой срочного);
+ *   - `actionUrl` — deep-link на страницу действий.
+ *
+ * Фактическая доставка идёт через `system.message` (его уже умеет
+ * рендерить Telegram-адаптер); этот eventType зарегистрирован для
+ * валидации payload и единообразия registry.
+ */
+const ActionsReminderPayloadSchema = z
+  .object({
+    total: z.number().int().min(0),
+    bySource: z
+      .object({
+        curation: z.number().int().min(0),
+        conflict: z.number().int().min(0),
+        intake: z.number().int().min(0),
+        probe: z.number().int().min(0),
+      })
+      .strict(),
+    urgentCount: z.number().int().min(0),
+    actionUrl: z.string().max(2_000),
+    lines: z.array(z.string().min(1).max(500)).max(20),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -315,6 +348,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   // ТЗ 2026-05-29 telegram-self-initiated-checkins — подтверждение сохранения
   // самоинициированного плана/отчёта в чек-ин.
   ['checkin.ack', CheckinAckPayloadSchema],
+  // Action Center B3 — повторяющееся напоминание о pending-подтверждениях.
+  ['actions.reminder', ActionsReminderPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

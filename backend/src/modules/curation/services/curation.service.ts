@@ -138,17 +138,12 @@ export interface RecordDecisionInput {
 const DEFAULT_AUTO_THRESHOLD = 0.85;
 const DEFAULT_DEEP_REVIEW_THRESHOLD = 0.6;
 const DEFAULT_CRITICAL_TYPES = ['regulation', 'process', 'decision'] as const;
-// Action Center A1 «лестница доверия» (2026-06-02).
+// Action Center A1 «лестница доверия» (2026-06-02). Используются как
+// последний parse-fallback в normalizeSettings/triage; платформенные дефолты
+// `def` теперь берутся из cfg.curation (AdminSetting → ENV → default).
 const DEFAULT_PROVISIONAL_THRESHOLD = 0.8;
-const DEFAULT_AI_VERIFIER_ENABLED = true;
 const DEFAULT_AUDIT_SAMPLE_RATE = 0.05;
 // Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch.
-const DEFAULT_AUTOTUNE_ENABLED = false;
-const DEFAULT_THRESHOLD_MIN = 0.6;
-const DEFAULT_THRESHOLD_MAX = 0.97;
-const DEFAULT_AUTOTUNE_STEP = 0.02;
-const DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE = 20;
-const DEFAULT_MAX_PROVISIONAL_OVERRIDE = 0.2;
 /**
  * A2 — значение порога, эффективно отключающее провизорный путь для типа:
  * triage сравнивает `effectiveConfidence >= provisionalT`; при 1.01 условие
@@ -801,6 +796,109 @@ export class CurationService {
     );
 
     return { curationItemId: item.id, curationDecisionId: decision.id };
+  }
+
+  // ──────────────────────────── submitProposal ─────────────────────
+  /**
+   * Action Center E1 «поправить карточку знаний» (2026-06-04) — пользователь
+   * без write-права предлагает правку провизорной карточки. Вместо 403-тупика
+   * создаём `CurationItem(level='light', status='pending')` с
+   * `triageReason.via='user_correction'` и `proposedPayload` = предложенными
+   * полями. Куратор (owner/admin или ассайнментный) увидит это в очереди и
+   * примет/отклонит. Анти-вандализм: правка НЕ применяется напрямую.
+   *
+   * Best-effort: ошибка разрешения кураторов или инкремента метрики не валит
+   * создание item'а (карточка останется в очереди с candidateCuratorIds=[],
+   * lifecycle-cron подберёт owner/admin при экспирации).
+   */
+  async submitProposal(input: {
+    tenantId: string;
+    resourceType: string;
+    resourceId: string;
+    proposedPayload: Record<string, unknown>;
+    submittedBy: string;
+    reason?: string | null;
+  }): Promise<{ curationItemId: string }> {
+    if (!input.tenantId || !input.resourceType || !input.resourceId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_submit_proposal_input',
+          message:
+            'tenantId / resourceType / resourceId обязательны для предложения правки',
+        },
+      });
+    }
+    if (!input.submittedBy) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'submitted_by_required',
+          message: 'submittedBy (User.id) обязателен',
+        },
+      });
+    }
+
+    let candidateCuratorIds: string[] = [];
+    try {
+      candidateCuratorIds = await this.routing.resolveCurators({
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        level: 'light',
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.submitProposal: resolveCurators упал (best-effort, candidates=[])',
+      );
+      // candidateCuratorIds остаётся [] (инициализировано выше).
+    }
+
+    const triageReason = {
+      via: 'user_correction',
+      reason: input.reason ?? null,
+      submittedBy: input.submittedBy,
+    };
+
+    const item = await this.prisma.curationItem.create({
+      data: {
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        level: 'light',
+        status: 'pending',
+        triageReason: triageReason as Prisma.InputJsonValue,
+        proposedPayload: input.proposedPayload as Prisma.InputJsonValue,
+        candidateCuratorIds,
+      },
+    });
+
+    try {
+      this.metrics.incCurationItem({
+        resourceType: input.resourceType,
+        level: 'light',
+        status: 'pending',
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'curation.submitProposal: incCurationItem упал (best-effort)',
+      );
+    }
+
+    this.logger.log(
+      {
+        tenantId: input.tenantId,
+        itemId: item.id,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        submittedBy: input.submittedBy,
+        candidateCuratorIds,
+      },
+      'curation.submitProposal: правка-предложение поставлена в очередь курации',
+    );
+
+    return { curationItemId: item.id };
   }
 
   // ──────────────────────────── list / get ────────────────────────
@@ -1456,18 +1554,18 @@ export class CurationService {
       // A0 — пер-типовые пороги по умолчанию пусты (нет override).
       autoThresholdByType: {},
       deepReviewThresholdByType: {},
-      // A1 «лестница доверия» — дефолты.
-      provisionalThreshold: DEFAULT_PROVISIONAL_THRESHOLD,
+      // A1 «лестница доверия» — платформенные дефолты из AdminSetting/cfg.
+      provisionalThreshold: this.cfg.curation.provisionalThresholdDefault,
       provisionalThresholdByType: {},
-      aiVerifierEnabled: DEFAULT_AI_VERIFIER_ENABLED,
-      auditSampleRate: DEFAULT_AUDIT_SAMPLE_RATE,
-      // A2 «лестница доверия» — autotune + kill-switch guardrails.
-      autotuneEnabled: DEFAULT_AUTOTUNE_ENABLED,
-      thresholdMin: DEFAULT_THRESHOLD_MIN,
-      thresholdMax: DEFAULT_THRESHOLD_MAX,
-      autotuneStep: DEFAULT_AUTOTUNE_STEP,
-      minDecisionsForAutotune: DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
-      maxProvisionalOverride: DEFAULT_MAX_PROVISIONAL_OVERRIDE,
+      aiVerifierEnabled: this.cfg.curation.aiVerifierEnabled,
+      auditSampleRate: this.cfg.curation.auditSampleRate,
+      // A2 «лестница доверия» — autotune + kill-switch guardrails из AdminSetting/cfg.
+      autotuneEnabled: this.cfg.curation.autotuneEnabled,
+      thresholdMin: this.cfg.curation.thresholdMin,
+      thresholdMax: this.cfg.curation.thresholdMax,
+      autotuneStep: this.cfg.curation.autotuneStep,
+      minDecisionsForAutotune: this.cfg.curation.minDecisionsForAutotune,
+      maxProvisionalOverride: this.cfg.curation.maxProvisionalOverride,
     };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return def;
     const obj = raw as Record<string, unknown>;
@@ -1520,24 +1618,32 @@ export class CurationService {
         typeof obj.autotuneEnabled === 'boolean'
           ? obj.autotuneEnabled
           : def.autotuneEnabled,
-      thresholdMin: this.parseUnit(obj.thresholdMin, DEFAULT_THRESHOLD_MIN),
-      thresholdMax: this.parseUnit(obj.thresholdMax, DEFAULT_THRESHOLD_MAX),
-      autotuneStep: this.parseUnit(obj.autotuneStep, DEFAULT_AUTOTUNE_STEP),
+      thresholdMin: this.parseUnit(obj.thresholdMin, def.thresholdMin),
+      thresholdMax: this.parseUnit(obj.thresholdMax, def.thresholdMax),
+      autotuneStep: this.parseUnit(obj.autotuneStep, def.autotuneStep),
       minDecisionsForAutotune:
         typeof obj.minDecisionsForAutotune === 'number' &&
         Number.isInteger(obj.minDecisionsForAutotune) &&
         obj.minDecisionsForAutotune >= 1
           ? obj.minDecisionsForAutotune
-          : DEFAULT_MIN_DECISIONS_FOR_AUTOTUNE,
+          : def.minDecisionsForAutotune,
       maxProvisionalOverride: this.parseUnit(
         obj.maxProvisionalOverride,
-        DEFAULT_MAX_PROVISIONAL_OVERRIDE,
+        def.maxProvisionalOverride,
       ),
     };
   }
 
-  /** A2 — парс числа в [0..1] с fallback на дефолт (для guardrail-настроек). */
-  private parseUnit(raw: unknown, fallback: number): number {
+  /**
+   * A2 — парс числа в [0..1] с fallback на дефолт (для guardrail-настроек).
+   * `fallback` приходит из `def.X` (= cfg.curation.X, admin-дефолт); поле в
+   * `CurationSettingsDto` опционально, поэтому тип допускает `undefined` —
+   * в рантайме cfg всегда отдаёт число (см. typed-config.service guardrails).
+   */
+  private parseUnit(
+    raw: unknown,
+    fallback: number | undefined,
+  ): number | undefined {
     return typeof raw === 'number' &&
       Number.isFinite(raw) &&
       raw >= 0 &&

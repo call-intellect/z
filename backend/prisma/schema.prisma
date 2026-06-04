@@ -2375,6 +2375,9 @@ model Org {
   curatorAssignments CuratorAssignment[]
   /// SBA α-4 wave 2 — слоты «незаполненных полей» нормативных карточек.
   completenessSlots  CompletenessSlot[]
+  /// Action Center B0 (2026-06-02) — generic-snooze для агрегатора
+  /// «требует действия» (PendingActionsService).
+  pendingActionSnoozes PendingActionSnooze[]
 
   // ── SBA α-5 — Layer 5 Chat-v2 Omnichannel ──
   chatV2Conversations ChatV2Conversation[]
@@ -3412,6 +3415,31 @@ model CurationDecision {
 
   @@index([curationItemId])
   @@index([reviewerUserId])
+}
+
+/// PendingActionSnooze — generic «отложить» для агрегатора Action Center B0
+/// (2026-06-02). Любой источник «требует действия» (curation / conflict /
+/// intake / probe) может быть временно скрыт из feed'а пользователя до
+/// `snoozedUntil`. Источник правды о snooze — здесь (а не в самих
+/// resource-таблицах), чтобы PendingActionsProvider'ы оставались read-only.
+///
+/// Уникальность по (tenantId, userId, source, resourceId): один пользователь
+/// откладывает конкретный item один раз (повторный snooze — upsert, обновляет
+/// `snoozedUntil`).
+model PendingActionSnooze {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String
+  source       String   @db.VarChar(40)
+  resourceType String   @db.VarChar(80)
+  resourceId   String   @db.VarChar(80)
+  snoozedUntil DateTime
+  createdAt    DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, source, resourceId])
+  @@index([tenantId, userId, snoozedUntil])
 }
 
 /// ConflictItem — first-class сущность для конфликтов карточек.

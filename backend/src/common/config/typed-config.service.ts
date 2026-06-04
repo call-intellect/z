@@ -1181,21 +1181,128 @@ export class TypedConfigService {
    *   - `criticalTypesDefault` — массив типов, всегда уходящих в deep
    *     review (по умолчанию ['regulation', 'process', 'decision']).
    *   - `itemExpiryDays` — через сколько дней pending → expired.
+   *   - `provisionalThresholdDefault` — A1: порог провизорной AI-канонизации
+   *     критического типа (admin-editable, default 0.8).
+   *   - `aiVerifierEnabled` — A1: включён ли AI-судья для критических типов.
+   *   - `auditSampleRate` — A1: доля авто/провизорных решений в аудит-выборку.
+   *   - `autotuneEnabled` — A2: автоподстройка порогов по override-rate.
+   *   - `thresholdMin` — A2: нижняя граница автоподстройки порога.
+   *   - `thresholdMax` — A2: верхняя граница автоподстройки порога.
+   *   - `autotuneStep` — A2: шаг автоподстройки порога.
+   *   - `minDecisionsForAutotune` — A2: минимум решений до автоподстройки.
+   *   - `maxProvisionalOverride` — A2: порог override-rate для kill-switch.
    *   - `staleDetectorCron` — расписание CardStaleDetectorCron.
    *   - `staleMonthsThreshold` — порог `lastConfirmedAt > N мес.`.
    *   - `staleDynamicScoreThreshold` — порог упавшего `dynamicScore`.
    */
   get curation() {
     return {
-      autoThresholdDefault: this.get('CURATION_AUTO_THRESHOLD_DEFAULT'),
-      deepReviewThresholdDefault: this.get('CURATION_DEEP_REVIEW_THRESHOLD_DEFAULT'),
+      autoThresholdDefault: this.resolveSync<number>(
+        'knowledge.curationAutoThresholdDefault',
+        'CURATION_AUTO_THRESHOLD_DEFAULT',
+        0.85,
+      ),
+      deepReviewThresholdDefault: this.resolveSync<number>(
+        'knowledge.curationDeepReviewThresholdDefault',
+        'CURATION_DEEP_REVIEW_THRESHOLD_DEFAULT',
+        0.6,
+      ),
       criticalTypesDefault: this.get(
         'CURATION_CRITICAL_TYPES_DEFAULT',
       ) as readonly string[],
       itemExpiryDays: this.get('CURATION_ITEM_EXPIRY_DAYS'),
+      // A1/A2 «лестница доверия» — admin-editable дефолты (без ENV-fallback).
+      provisionalThresholdDefault: this.resolveSync<number>(
+        'knowledge.curationProvisionalThresholdDefault',
+        undefined,
+        0.8,
+      ),
+      aiVerifierEnabled: this.resolveSync<boolean>(
+        'knowledge.curationAiVerifierEnabled',
+        undefined,
+        true,
+      ),
+      auditSampleRate: this.resolveSync<number>(
+        'knowledge.curationAuditSampleRate',
+        undefined,
+        0.05,
+      ),
+      autotuneEnabled: this.resolveSync<boolean>(
+        'knowledge.curationAutotuneEnabled',
+        undefined,
+        false,
+      ),
+      thresholdMin: this.resolveSync<number>(
+        'knowledge.curationThresholdMin',
+        undefined,
+        0.6,
+      ),
+      thresholdMax: this.resolveSync<number>(
+        'knowledge.curationThresholdMax',
+        undefined,
+        0.97,
+      ),
+      autotuneStep: this.resolveSync<number>(
+        'knowledge.curationAutotuneStep',
+        undefined,
+        0.02,
+      ),
+      minDecisionsForAutotune: this.resolveSync<number>(
+        'knowledge.curationMinDecisionsForAutotune',
+        undefined,
+        20,
+      ),
+      maxProvisionalOverride: this.resolveSync<number>(
+        'knowledge.curationMaxProvisionalOverride',
+        undefined,
+        0.2,
+      ),
       staleDetectorCron: this.get('CARD_STALE_DETECTOR_CRON'),
       staleMonthsThreshold: this.get('CARD_STALE_MONTHS_THRESHOLD'),
       staleDynamicScoreThreshold: this.get('CARD_STALE_DYNAMIC_SCORE_THRESHOLD'),
+    } as const;
+  }
+
+  // ─────────────────────────── pending-actions (Action Center C2) ─
+  /**
+   * Крутилки «требует действия» (Action Center, Фаза C2 — напоминания).
+   * Admin-editable дефолты (без ENV-fallback): cacheMap → default. Сидятся
+   * в `seed-admin-settings.ts` под префиксом `pendingActions.*`.
+   *
+   *   - `reminderWindowStartHour` / `reminderWindowEndHour` / `reminderStepHours`
+   *     — окно и шаг слот-часов Telegram-напоминаний (PendingActionsReminderCron).
+   *   - `urgentAgeDays` — возраст pending-item (дни), с которого он помечается
+   *     срочным (CurationPendingProvider).
+   *   - `reminderLeadDays` — за сколько дней до истечения expiresAt помечать
+   *     срочным (lead-окно «скоро истечёт»).
+   */
+  get pendingActions() {
+    return {
+      reminderWindowStartHour: this.resolveSync<number>(
+        'pendingActions.reminderWindowStartHour',
+        undefined,
+        9,
+      ),
+      reminderWindowEndHour: this.resolveSync<number>(
+        'pendingActions.reminderWindowEndHour',
+        undefined,
+        21,
+      ),
+      reminderStepHours: this.resolveSync<number>(
+        'pendingActions.reminderStepHours',
+        undefined,
+        3,
+      ),
+      urgentAgeDays: this.resolveSync<number>(
+        'pendingActions.urgentAgeDays',
+        undefined,
+        5,
+      ),
+      reminderLeadDays: this.resolveSync<number>(
+        'pendingActions.reminderLeadDays',
+        undefined,
+        3,
+      ),
     } as const;
   }
 

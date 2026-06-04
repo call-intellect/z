@@ -23,8 +23,13 @@ import {
   mapRegulationDetail,
 } from '@/domain/regulation';
 import { Chip } from '@/ui/components/shared/Chip';
+import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
+import {
+  CardCorrectionActions,
+  type CorrectionField,
+} from '@/ui/components/knowledge/CardCorrectionActions';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -92,6 +97,8 @@ const SEVERITY_CHIP: Record<PolicySeverity, 'danger' | 'warning' | 'info'> = {
 };
 
 function RegulationsListContent() {
+  const { currentOrgRole } = useAuth();
+  const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
   const [data, setData] = useState<RegulationsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -344,6 +351,7 @@ function RegulationsListContent() {
                             {POLICY_SEVERITY_LABEL[r.severity]}
                           </Chip>
                         ) : null}
+                        <TrustBadge tier={r.trustTier} size="sm" />
                       </div>
                       <div className="truncate text-sm font-medium text-fg-primary">
                         {r.name}
@@ -392,6 +400,7 @@ function RegulationsListContent() {
                       {POLICY_SEVERITY_LABEL[detail.severity]}
                     </Chip>
                   ) : null}
+                  <TrustBadge tier={detail.trustTier} size="sm" />
                 </div>
                 <h2 className="text-lg font-semibold">{detail.name}</h2>
                 <dl className="grid grid-cols-1 gap-1 text-xs text-fg-tertiary sm:grid-cols-2">
@@ -509,6 +518,32 @@ function RegulationsListContent() {
                     <History className="mr-1.5 h-4 w-4" />
                     {historyOpen ? 'Скрыть историю' : 'История версий'}
                   </Button>
+                  <CardCorrectionActions
+                    fields={buildRegulationCorrectionFields(detail)}
+                    canApplyDirectly={canApplyDirectly}
+                    trustTier={detail.trustTier}
+                    onCorrect={(values, reason) =>
+                      regulationsApi
+                        .correct(detail.id, {
+                          kind: detail.kind,
+                          correctedPayload: values,
+                          ...(reason ? { reason } : {}),
+                        })
+                        .then((r) => ({ applied: r.applied }))
+                    }
+                    onDispute={(reason) =>
+                      regulationsApi
+                        .dispute(detail.id, {
+                          kind: detail.kind,
+                          ...(reason ? { reason } : {}),
+                        })
+                        .then(() => undefined)
+                    }
+                    onDone={() => {
+                      void loadDetail();
+                      void load();
+                    }}
+                  />
                 </div>
               </section>
 
@@ -581,6 +616,60 @@ function RegulationsListContent() {
       />
     </div>
   );
+}
+
+/**
+ * Поля формы «Исправить» зависят от вида записи.
+ *  - regulation/standard → название + суть + полный текст.
+ *  - process            → название + описание (хранится в contentMd детали).
+ *  - policy             → название + текст политики (contentMd).
+ */
+function buildRegulationCorrectionFields(
+  detail: RegulationDetail,
+): CorrectionField[] {
+  const name: CorrectionField = {
+    key: 'name',
+    label: 'Название',
+    value: detail.name,
+  };
+  if (detail.kind === 'process') {
+    return [
+      name,
+      {
+        key: 'description',
+        label: 'Описание',
+        value: detail.contentMd ?? '',
+        multiline: true,
+      },
+    ];
+  }
+  if (detail.kind === 'policy') {
+    return [
+      name,
+      {
+        key: 'contentMd',
+        label: 'Текст политики',
+        value: detail.contentMd ?? '',
+        multiline: true,
+      },
+    ];
+  }
+  // regulation | standard
+  return [
+    name,
+    {
+      key: 'statement',
+      label: 'Суть',
+      value: detail.statement ?? '',
+      multiline: true,
+    },
+    {
+      key: 'contentMd',
+      label: 'Полный текст',
+      value: detail.contentMd ?? '',
+      multiline: true,
+    },
+  ];
 }
 
 function formatMinutes(min: number): string {

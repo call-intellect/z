@@ -9,6 +9,7 @@ import { CurationService } from './services/curation.service';
 import { CuratorRoutingService } from './services/curator-routing.service';
 import { CardStaleDetectorCron } from './workers/card-stale-detector.cron';
 import { CurationAutotuneCron } from './workers/curation-autotune.cron';
+import { CurationItemLifecycleCron } from './workers/curation-item-lifecycle.cron';
 import {
   CompletenessScannerCron,
   CompletenessScannerService,
@@ -48,6 +49,8 @@ import {
     ConflictService,
     CuratorRoutingService,
     CardStaleDetectorCron,
+    // ── Action Center B5 «оживление expiresAt» (2026-06-02) ──
+    CurationItemLifecycleCron,
     // ── Action Center A2 «лестница доверия» (2026-06-02) ──
     CurationAutotuneCron,
     // ── SBA α-4 wave 2 ──

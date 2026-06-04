@@ -26,8 +26,12 @@ import { RbacService } from '../rbac/rbac.service';
 import {
   ChangeStatusBodySchema,
   type ChangeStatusBody,
+  CorrectDecisionBodySchema,
+  type CorrectDecisionBody,
   CreateDecisionBodySchema,
   type CreateDecisionBody,
+  DisputeDecisionBodySchema,
+  type DisputeDecisionBody,
   type DecisionDetailDto,
   type DecisionHistoryResponse,
   type DecisionStatusDto,
@@ -208,6 +212,53 @@ export class DecisionsController {
       id,
       body,
       reviewerUserId: user.id,
+    });
+  }
+
+  @Post(':id/dispute')
+  @ApiOperation({
+    summary: 'Оспорить решение («это неверно») — обучающий сигнал',
+  })
+  async dispute(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(DisputeDecisionBodySchema))
+    body: DisputeDecisionBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.svc.dispute({
+      tenantId: t,
+      id,
+      reason: body.reason,
+      actorUserId: user.id,
+    });
+  }
+
+  @Post(':id/correct')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Исправить решение (owner/admin — сразу; иначе — предложение в очередь курации)',
+  })
+  async correct(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CorrectDecisionBodySchema))
+    body: CorrectDecisionBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; applied: boolean }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    const canApplyDirectly = await this.rbac.canWrite(user.id, t, 'decision');
+    return this.svc.correct({
+      tenantId: t,
+      id,
+      correctedPayload: body.correctedPayload,
+      reason: body.reason,
+      actorUserId: user.id,
+      canApplyDirectly,
     });
   }
 

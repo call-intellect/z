@@ -20,11 +20,13 @@ import type {
   RegulationListItemApi,
   RegulationStatusApi,
   RegulationVersionItemApi,
+  TrustTierApi,
 } from '@/api/regulations.api';
 
 export type RegulationKind = RegulationKindApi;
 export type RegulationStatus = RegulationStatusApi;
 export type PolicySeverity = PolicySeverityApi;
+export type TrustTier = TrustTierApi;
 
 export const REGULATION_KIND_LABEL: Record<RegulationKind, string> = {
   regulation: 'Регламент',
@@ -56,6 +58,7 @@ export interface RegulationListItem {
   status: RegulationStatus;
   ownerPersonId: string | null;
   confidence: number | null;
+  trustTier: TrustTier;
   lastConfirmedAt: Date | null;
   updatedAt: Date;
   createdAt: Date;
@@ -95,6 +98,7 @@ export function mapRegulationListItem(
 ): RegulationListItem {
   return {
     ...api,
+    trustTier: api.trustTier ?? 'human',
     lastConfirmedAt: api.lastConfirmedAt ? new Date(api.lastConfirmedAt) : null,
     updatedAt: new Date(api.updatedAt),
     createdAt: new Date(api.createdAt),

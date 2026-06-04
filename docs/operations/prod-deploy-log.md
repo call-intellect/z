@@ -60,6 +60,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔔 2026-06-03 — Action Center Часть B: центр подтверждений (`/actions` + колокольчик + напоминания)
+
+План: [plans/tz/2026-06-02-action-center-pending-confirmations.md](../../plans/tz/2026-06-02-action-center-pending-confirmations.md) (Часть B). Модуль `backend/src/modules/pending-actions/`.
+
+**Что выкатывается:**
+- B0 — новый модуль `pending-actions` (агрегатор + 4 read-провайдера) + REST `/api/v1/pending-actions/{count,,snooze,confirm}` + модель `PendingActionSnooze`.
+- B1 — фронт: страница `/actions`, глобальный колокольчик `PendingActionsBell`, пункт сайдбара «Подтверждения», хуки `usePendingActionsCount`/`usePendingActions`.
+- B2 — блок `requiresAction` в `DirectorDashboardDto` (`RequiresActionTile` на главной + `RequiresActionBanner` на «Панели операций»).
+- B3 — `PendingActionsReminderCron` (Telegram-напоминания, eventType `actions.reminder`) + строка «Ждёт подтверждения: N» в ежедневном дайджесте.
+- B4 — one-tap `POST /api/v1/pending-actions/confirm` (light curation approve). Telegram оставлен zero-button (β-1) намеренно.
+- B5 — `CurationItemLifecycleCron` (expiry `CurationItem.expiresAt`).
+
+- **Шаг 4 — Prisma** — **обязательно** (новая модель `PendingActionSnooze`; безопасно — только новая таблица, без data-loss): `docker compose exec backend bun run prisma:push`. Применяется автоматически через `migrate`-контейнер.
+- **Шаг 1 — ENV** — **не требуется** (новых ENV/feature-flag нет). ⚠️ Окна напоминаний и `LEAD_DAYS` переведены в AdminSetting в фазе **C2** — см. запись «Action Center остаток (C1–C3)» ниже (Шаг 7 seed).
+- **Шаг 7 — Seed** — **не требуется** (напоминания — детерминированный шаблон без LLM, новых LLM-маршрутов нет).
+- **Шаг 11 — Docker rebuild** — обязателен (новый модуль `pending-actions` + 2 крона + фронт `/actions`/колокольчик/сайдбар): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - новый REST: `curl -i -H 'Cookie:<owner_session>' -H 'X-Org-Id:<orgId>' https://prod.host/api/v1/pending-actions/count` → 200 `{total, bySource}`; список `GET /api/v1/pending-actions` → urgent-first; `POST /api/v1/pending-actions/confirm` подтверждает light curation.
+  - новые кроны зарегистрированы: `docker compose logs backend | grep -E 'PendingActionsReminderCron|CurationItemLifecycleCron'`.
+  - новый eventType: `docker compose exec backend grep -R "actions.reminder" src/modules/conversational/types` (registry + `EVENT_TYPE_CHANNEL_POLICY`).
+  - фронт: на `/actions` список висящих подтверждений; колокольчик в top-bar с живым бейджом; пункт сайдбара «Подтверждения».
+
+---
+
 ### 👥 2026-06-04 — Команда + персональные доступы сотрудников (Фазы 0–5)
 
 План: [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md). Модули `orgs`/`persons`/`users` (backend) + `structure`/`settings` (frontend).
@@ -185,6 +209,46 @@ docker compose run --rm --no-deps backend \
   - **Метрики**: `curl -s localhost:3000/metrics | grep -E 'goal_kr_autoprogress_total|goals_pulse_(generated|failed|delivered)_total'`.
   - **Новые REST** (Swagger `/api/docs`): `/goals/:id/key-results*`, `/goals/:id/supersede`, `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `/ideas/:id/goal`, `PATCH /cycles/:id` (primaryGoalId). Дашборд `GET /dashboard/director` отдаёт `goalsTree`/`goalsPulse`.
   - **UI**: `/goals` — переключатель «Список / Дерево», секция «Ключевые результаты» с прогресс-барами; на дашборде CEO — виджет «Пульс целей» + дерево.
+
+---
+
+### 🏷️ 2026-06-04 — Action Center остаток (C1 метка доверия · C2 крутилки AdminSetting · C3 detail-страницы курации)
+
+План: [plans/tz/2026-06-03-action-center-remaining.md](../../plans/tz/2026-06-03-action-center-remaining.md). Достройка поверх Частей A/B (выше). Ветка `feature/action-center-trust-ladder`.
+
+**Что выкатывается:**
+- C1 — `trustTier` (из `CardVersion.currentVersion`) пробрасывается в read-DTO регуляций/решений/процессов/политик + provenance документа; фронт-плашка `TrustBadge` («Не проверено человеком» для provisional). Починен pre-existing баг вкладки «Извлечённые сущности» документа (контракт `entityGroups` vs `extractedEntities`).
+- C2 — 14 платформенных дефолтов курации/напоминаний переведены из code-констант в AdminSetting (`resolveSync`, code-fallback): 9 `knowledge.curation*` (provisional/aiVerifier/auditSampleRate/autotune*/threshold*/maxProvisionalOverride) + 5 `pendingActions.*` (reminderWindow/Step/urgentAgeDays/reminderLeadDays). per-Org `curationSettings` не тронут. `urgentAgeDays` применён во всех 3 провайдерах (curation/conflict/intake).
+- C3 — фронт detail-страницы `/curation/[id]` (решение куратора) + `/curation/conflicts` (список) + `/curation/conflicts/[id]` (резолюция/dismiss); `actionUrl` провайдеров теперь deep-link на конкретную карточку/конфликт.
+
+- **Шаг 1 — ENV** — **не требуется** (C2 — admin-only ключи, новых ENV нет; код-дефолты сохранены как fallback).
+- **Шаг 4 — Prisma** — **не требуется отдельно** (`CardVersion.trustTier`/`PendingActionSnooge` уже в записях Частей A/B выше; этот push покрывает и C-фазы).
+- **Шаг 7 — Seed AdminSetting (C2)** — 14 ключей через существующий `seed-admin-settings.ts` (идемпотентно, уже в `apply-prod-deploy.ts` STEPS, phase `seed-base`): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или точечно `bun run scripts/seed-admin-settings.ts`). Без сидера крутилки работают на code-дефолтах, но не редактируются из админки.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: проброс trustTier, cfg-геттеры, провайдеры; frontend: TrustBadge, detail-страницы курации): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - метка доверия: открыть провизорную карточку в `/regulations`/`/decisions` → плашка «Не проверено человеком»; человеческая — без плашки.
+  - крутилки: в админке super_admin изменить `knowledge.curationProvisionalThresholdDefault` или `pendingActions.urgentAgeDays` → значение применяется без релиза (history в `AdminSettingHistory`). Проверить наличие 14 ключей: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.adminSetting.count({where:{OR:[{key:{startsWith:'knowledge.curation'}},{key:{startsWith:'pendingActions.'}}]}}).then(n=>{console.log('knobs:',n);return p.\$disconnect();});"`.
+  - detail-страницы: «Открыть» из колокольчика/`/actions` для curation-item ведёт на `/curation/<id>` (не 404), для конфликта — на `/curation/conflicts/<id>`; решение/резолюция убирают элемент из очереди.
+
+---
+
+### ✍️ 2026-06-04 — Поправить карточку: исправить/оспорить провизорную (E1 backend + E2 frontend)
+
+План: [plans/tz/2026-06-03-knowledge-card-correct.md](../../plans/tz/2026-06-03-knowledge-card-correct.md). Достройка поверх C1 (метка доверия). Ветка `feature/action-center-trust-ladder`.
+
+**Что выкатывается:**
+- E1 — новые REST на существующих модулях: `POST /api/v1/regulations/:id/{dispute,correct}` и `POST /api/v1/decisions/:id/{dispute,correct}`. `correct` от owner/admin применяет правку сразу (новая `CardVersion` `trustTier='human'` + `currentVersionId` + контент таблицы); от рядового — предложение в очередь курации (`CurationService.submitProposal` → `CurationItem(pending, via='user_correction')`). `dispute` → `recordDecision('mark_as_misleading')`. Обучающие сигналы: correct→`correct`, dispute→`misleading`.
+- E2 — фронт `CardCorrectionActions` (кнопки «Исправить»/«Это неверно» на детали `/regulations` и `/decisions`).
+
+- **Шаг 1 — ENV** — **не требуется** (новых ENV/флагов нет).
+- **Шаг 4 — Prisma** — **не требуется** (всё на существующих `CurationItem`/`CardVersion`/канонических таблицах; схема не менялась).
+- **Шаг 7 — Seed** — **не требуется** (новых LLM-маршрутов нет; `mark_as_misleading`/`approve_with_edits` уже маппятся в `PreferenceDatasetService`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: regulations/decisions сервисы+контроллеры, curation.submitProposal; frontend: CardCorrectionActions): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - новые REST (Swagger `/api/docs` → теги `regulations`/`decisions` показывают `:id/dispute` и `:id/correct`). От owner: `correct` на провизорной карточке → `{ok:true,applied:true}`, плашка «Не проверено человеком» снимается, в `/regulations|decisions/:id/history` новая версия `changeReason='user_correction'`.
+  - от пользователя без write-права: `correct` → `{ok:true,applied:false}`, карточка не изменилась, в очереди курации появился `CurationItem(pending)` с `via='user_correction'`.
+  - `dispute` → `{ok:true}` + запись `LlmPreferenceSample(label='misleading')` по карточке.
+- **Заметка (долг, ждёт go):** одобрение куратором *предложения рядового сотрудника* пока НЕ переносит правку в каноническую таблицу — суб-ТЗ [plans/tz/2026-06-04-curation-canonical-writeback.md](../../plans/tz/2026-06-04-curation-canonical-writeback.md) (blast-radius на `decide()`). Обходной путь — owner/admin применяет правку сам.
 
 ---
 

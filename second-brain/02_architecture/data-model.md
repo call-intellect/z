@@ -1301,6 +1301,30 @@ AI-судьёй (`curation-verify` debate) без человека; `human` — 
 - Autotune guardrails: `autotuneEnabled` (default false), `maxProvisionalOverride`, `thresholdMin`,
   `thresholdMax`, `autotuneStep`, `minDecisionsForAutotune` — для `CurationAutotuneCron`.
 
+## PendingActionSnooze — «отложить» (Action Center, Часть B, 2026-06-03)
+
+**Источник:** `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть B). Модуль
+`backend/src/modules/pending-actions/`. Архитектура — [[module-map]] §pending-actions, эндпоинты —
+[[../01_projects/api-layer]] §Pending Actions.
+
+Generic-модель «отложить pending-элемент» для агрегатора Action Center (источники
+curation / conflict / intake / probe). Создаётся через `POST /api/v1/pending-actions/snooze`
+(1д/3д/7д); отложенные элементы выпадают из `count`/list до истечения `snoozeUntil`.
+
+```prisma
+model PendingActionSnooze {
+  tenantId    String
+  userId      String
+  source      String      // curation | conflict | intake | probe
+  resourceId  String      // id отложенного pending-элемента
+  snoozeUntil DateTime
+  createdAt   DateTime @default(now())
+}
+```
+
+Применяется `prisma db push` (новая таблица, безопасно — без data-loss). Точный набор индексов/связей —
+в `backend/prisma/schema.prisma`.
+
 ## EmployeeCapabilityOverride — персональные доступы сотрудников (Фаза 5 «Команда+доступы», 2026-06-04)
 
 **Источник:** `plans/tz/2026-06-03-team-section-and-employee-access.md` (Фаза 5). Модуль

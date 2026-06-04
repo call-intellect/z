@@ -174,6 +174,21 @@ export type DirectorDashboardStrategicAlignmentApi = {
   alertGoals: DirectorDashboardAlertGoalApi[];
 };
 
+// ─── Action Center B2 — «Требует вашего подтверждения» ──────────────────────
+
+export type DirectorDashboardRequiresActionApi = {
+  total: number;
+  bySource: {
+    curation: number;
+    conflict: number;
+    intake: number;
+    probe: number;
+  };
+};
+
+export type DirectorDashboardRequiresActionDomain =
+  DirectorDashboardRequiresActionApi;
+
 // ─── Goals OKR v2 (Фаза 4) — дерево целей + пульс ─────────────────────────────
 
 /** Key Result в составе узла дерева (только то, что нужно для бара прогресса). */
@@ -257,6 +272,9 @@ export type DirectorDashboardApi = {
   /** Pulse Wave 1 §1.5 — KPI-hero «Висящие решения». */
   kpiHangingDecisions?: DirectorDashboardKpiApi;
   strategicAlignment?: DirectorDashboardStrategicAlignmentApi;
+  /** Action Center B2 — блок «Требует вашего подтверждения» (per-user).
+   *  Опц. для backward compatibility со старыми клиентами. */
+  requiresAction?: DirectorDashboardRequiresActionApi;
   /**
    * Goals OKR v2 (Фаза 4) — корневые active-цели с детьми и KR. Опц. для
    * backward compatibility со старым прод-backend (там поля нет). UI скрывает
@@ -377,6 +395,9 @@ export type DirectorDashboardDomain = {
   kpiCommitmentReliability: DirectorDashboardKpiDomain | null;
   kpiHangingDecisions: DirectorDashboardKpiDomain | null;
   strategicAlignment: DirectorDashboardStrategicAlignmentDomain | null;
+  /** Action Center B2 — сводка pending-подтверждений текущего пользователя.
+   *  null если сервер блок не вернул (старый клиент/контракт). */
+  requiresAction: DirectorDashboardRequiresActionDomain | null;
   /** Goals OKR v2 (Фаза 4) — дерево целей. null, если backend поле не вернул. */
   goalsTree: GoalTreeNodeDomain[] | null;
   /** Goals OKR v2 (Фаза 4) — пульс целей. null, если backend поле не вернул. */
@@ -545,10 +566,42 @@ export function directorDashboardFromApi(
     strategicAlignment: api.strategicAlignment
       ? strategicAlignmentFromApi(api.strategicAlignment)
       : null,
+    requiresAction: api.requiresAction
+      ? {
+          total: api.requiresAction.total,
+          bySource: {
+            curation: api.requiresAction.bySource?.curation ?? 0,
+            conflict: api.requiresAction.bySource?.conflict ?? 0,
+            intake: api.requiresAction.bySource?.intake ?? 0,
+            probe: api.requiresAction.bySource?.probe ?? 0,
+          },
+        }
+      : null,
     goalsTree: api.goalsTree ? api.goalsTree.map(goalTreeNodeFromApi) : null,
     goalsPulse: api.goalsPulse ?? null,
     isEmpty: api.isEmpty ?? false,
   };
+}
+
+// ─── Action Center B2 — тон плитки «Требует вашего подтверждения» ────────────
+
+/**
+ * Тон плитки requiresAction (парные цветовые токены):
+ *   - `'none'`   — total=0 → плитку НЕ показываем;
+ *   - `'danger'` — есть конфликты (urgent по природе) → красный тон;
+ *   - `'accent'` — обычные подтверждения → янтарный/accent тон.
+ *
+ * НИКОГДА не возвращает danger при total=0 (memory:
+ * feedback_paired_color_tokens).
+ */
+export type RequiresActionTone = 'none' | 'danger' | 'accent';
+
+export function requiresActionTone(
+  ra: DirectorDashboardRequiresActionDomain | null | undefined,
+): RequiresActionTone {
+  if (!ra || ra.total <= 0) return 'none';
+  if (ra.bySource.conflict > 0) return 'danger';
+  return 'accent';
 }
 
 // ─── UI helpers (цвета сигналов, иконка для dynamic) ────────────────────────

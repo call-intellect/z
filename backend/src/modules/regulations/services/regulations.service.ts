@@ -3,10 +3,13 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { CurationService } from '../../curation/services/curation.service';
 import type {
   ConfirmRegulationBody,
   ListRegulationsQuery,
@@ -16,6 +19,7 @@ import type {
   RegulationKindDto,
   RegulationListItemDto,
   SupersedeRegulationBody,
+  TrustTierDto,
 } from '../dto/regulations.dto';
 
 /**
@@ -31,6 +35,18 @@ import type {
 export class RegulationsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    /**
+     * Action Center E1 «поправить карточку знаний» (2026-06-04) — dispute /
+     * correct → обучающий сигнал + предложение правки в очередь курации.
+     */
+    @Inject(CurationService) private readonly curation: CurationService,
+    /**
+     * Эмит `card-version.created` для cache invalidation (best-effort).
+     * @Optional — EventEmitter глобальный, защищаемся от регрессий и unit-тестов.
+     */
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events: EventEmitter2 | null = null,
   ) {}
 
   // ───────────────────────────── list ─────────────────────────────
@@ -66,16 +82,19 @@ export class RegulationsService {
           where: this.regulationsWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.process.findMany({
           where: this.processesWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.policy.findMany({
           where: this.policiesWhere(args.tenantId, q),
           orderBy: { updatedAt: 'desc' },
           take: q.limit * q.page,
+          include: { currentVersion: { select: { trustTier: true } } },
         }),
         this.prisma.regulation.count({
           where: this.regulationsWhere(args.tenantId, q),
@@ -89,9 +108,15 @@ export class RegulationsService {
       ]);
 
     const merged = [
-      ...regs.map((r) => this.regulationToListItem(r)),
-      ...procs.map((p) => this.processToListItem(p)),
-      ...pols.map((p) => this.policyToListItem(p)),
+      ...regs.map((r) =>
+        this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
+      ),
+      ...procs.map((p) =>
+        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
+      ...pols.map((p) =>
+        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
     ];
     merged.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     const items = merged.slice(skip, skip + take);
@@ -122,11 +147,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.regulation.count({ where }),
     ]);
     return {
-      items: items.map((r) => this.regulationToListItem(r)),
+      items: items.map((r) =>
+        this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -147,11 +175,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.process.count({ where }),
     ]);
     return {
-      items: items.map((p) => this.processToListItem(p)),
+      items: items.map((p) =>
+        this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -172,11 +203,14 @@ export class RegulationsService {
         orderBy: { updatedAt: 'desc' },
         skip: args.skip,
         take: args.take,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.policy.count({ where }),
     ]);
     return {
-      items: items.map((p) => this.policyToListItem(p)),
+      items: items.map((p) =>
+        this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: args.query.page,
       limit: args.query.limit,
@@ -194,17 +228,21 @@ export class RegulationsService {
     if (args.kind === 'process') {
       const proc = await this.prisma.process.findFirst({
         where: { id: args.id, tenantId: args.tenantId },
-        include: { steps: { orderBy: { order: 'asc' } } },
+        include: {
+          steps: { orderBy: { order: 'asc' } },
+          currentVersion: { select: { trustTier: true } },
+        },
       });
       if (!proc) this.notFound(args.kind, args.id);
-      return this.processToDetail(proc);
+      return this.processToDetail(proc, proc.currentVersion?.trustTier ?? 'human');
     }
     if (args.kind === 'policy') {
       const policy = await this.prisma.policy.findFirst({
         where: { id: args.id, tenantId: args.tenantId },
+        include: { currentVersion: { select: { trustTier: true } } },
       });
       if (!policy) this.notFound(args.kind, args.id);
-      return this.policyToDetail(policy);
+      return this.policyToDetail(policy, policy.currentVersion?.trustTier ?? 'human');
     }
     // regulation / standard
     const reg = await this.prisma.regulation.findFirst({
@@ -215,9 +253,10 @@ export class RegulationsService {
           ? { category: 'standard' }
           : { category: 'regulation' }),
       },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!reg) this.notFound(args.kind, args.id);
-    return this.regulationToDetail(reg);
+    return this.regulationToDetail(reg, reg.currentVersion?.trustTier ?? 'human');
   }
 
   // ───────────────────────────── history ─────────────────────────────
@@ -345,6 +384,302 @@ export class RegulationsService {
     return { ok: true, lastConfirmedAt: now.toISOString() };
   }
 
+  // ─────────────────────── dispute / correct (E1) ───────────────────
+  /**
+   * Action Center E1 «поправить карточку знаний» (2026-06-04) — «Это неверно».
+   * Флаг без правки → обучающий сигнал `misleading` через
+   * `CurationService.recordDecision(mark_as_misleading)`.
+   */
+  async dispute(args: {
+    tenantId: string;
+    id: string;
+    kind: RegulationKindDto;
+    reason?: string;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    await this.findByKind(args.tenantId, args.id, args.kind);
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: this.kindToResourceType(args.kind),
+      resourceId: args.id,
+      decisionType: 'mark_as_misleading',
+      recordedBy: args.actorUserId,
+      reason: args.reason ?? null,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Action Center E1 — «Исправить». owner/admin (`canApplyDirectly=true`) →
+   * применяем сразу (новая человеко-проверенная CardVersion + currentVersionId).
+   * read-only → правка уходит предложением в очередь курации (анти-вандализм),
+   * без 403.
+   */
+  async correct(args: {
+    tenantId: string;
+    id: string;
+    kind: RegulationKindDto;
+    correctedPayload: {
+      name?: string;
+      contentMd?: string;
+      statement?: string;
+      description?: string;
+    };
+    reason?: string;
+    actorUserId: string;
+    canApplyDirectly: boolean;
+  }): Promise<{ ok: true; applied: boolean }> {
+    const existing = await this.findByKind(args.tenantId, args.id, args.kind);
+    const resourceType = this.kindToResourceType(args.kind);
+
+    if (!args.canApplyDirectly) {
+      await this.curation.submitProposal({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        proposedPayload: args.correctedPayload,
+        submittedBy: args.actorUserId,
+        reason: args.reason ?? null,
+      });
+      return { ok: true, applied: false };
+    }
+
+    // Apply: собираем update data ТОЛЬКО из полей, применимых к kind.
+    const p = args.correctedPayload;
+
+    if (resourceType === 'process') {
+      const before = {
+        name: existing.name,
+        description: (existing as { description?: string | null }).description ?? null,
+      };
+      const data: Prisma.ProcessUpdateInput = {};
+      if (p.name !== undefined) data.name = p.name;
+      if (p.description !== undefined) data.description = p.description;
+      const rec = await this.prisma.process.update({ where: { id: args.id }, data });
+      await this.writeRegulationCardVersion({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        payload: { name: rec.name, description: rec.description, scope: rec.scope },
+        actorUserId: args.actorUserId,
+        changeReason: 'user_correction',
+      });
+      await this.recordCorrectionSample({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        actorUserId: args.actorUserId,
+        reason: args.reason ?? null,
+        before,
+        after: args.correctedPayload,
+      });
+    } else if (resourceType === 'policy') {
+      const before = { name: existing.name, contentMd: (existing as { contentMd?: string }).contentMd ?? null };
+      const data: Prisma.PolicyUpdateInput = {};
+      if (p.name !== undefined) data.name = p.name;
+      if (p.contentMd !== undefined) data.contentMd = p.contentMd;
+      const rec = await this.prisma.policy.update({ where: { id: args.id }, data });
+      await this.writeRegulationCardVersion({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        payload: {
+          name: rec.name,
+          contentMd: rec.contentMd,
+          severity: rec.severity,
+          scope: rec.scope,
+        },
+        actorUserId: args.actorUserId,
+        changeReason: 'user_correction',
+      });
+      await this.recordCorrectionSample({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        actorUserId: args.actorUserId,
+        reason: args.reason ?? null,
+        before,
+        after: args.correctedPayload,
+      });
+    } else {
+      // regulation / standard
+      const before = {
+        name: existing.name,
+        contentMd: (existing as { contentMd?: string }).contentMd ?? null,
+        statement: (existing as { statement?: string | null }).statement ?? null,
+      };
+      const data: Prisma.RegulationUpdateInput = {};
+      if (p.name !== undefined) data.name = p.name;
+      if (p.contentMd !== undefined) data.contentMd = p.contentMd;
+      if (p.statement !== undefined) data.statement = p.statement;
+      const rec = await this.prisma.regulation.update({ where: { id: args.id }, data });
+      await this.writeRegulationCardVersion({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        payload: {
+          name: rec.name,
+          contentMd: rec.contentMd,
+          statement: rec.statement,
+          category: rec.category,
+          scope: rec.scope,
+        },
+        actorUserId: args.actorUserId,
+        changeReason: 'user_correction',
+      });
+      await this.recordCorrectionSample({
+        tenantId: args.tenantId,
+        resourceType,
+        resourceId: args.id,
+        actorUserId: args.actorUserId,
+        reason: args.reason ?? null,
+        before,
+        after: args.correctedPayload,
+      });
+    }
+
+    // Клиент перечитывает карточку через GET — тело апдейта не возвращаем.
+    return { ok: true, applied: true };
+  }
+
+  /**
+   * Обучающий сэмпл approve_with_edits (label='correct') через recordDecision.
+   */
+  private async recordCorrectionSample(args: {
+    tenantId: string;
+    resourceType: 'regulation' | 'process' | 'policy';
+    resourceId: string;
+    actorUserId: string;
+    reason: string | null;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  }): Promise<void> {
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: args.resourceType,
+      resourceId: args.resourceId,
+      decisionType: 'approve_with_edits',
+      recordedBy: args.actorUserId,
+      reason: args.reason,
+      context: { before: args.before, after: args.after },
+    });
+  }
+
+  /** kind → CardVersion.resourceType ('standard' маппится в 'regulation'). */
+  private kindToResourceType(
+    kind: RegulationKindDto,
+  ): 'regulation' | 'process' | 'policy' {
+    if (kind === 'process') return 'process';
+    if (kind === 'policy') return 'policy';
+    return 'regulation';
+  }
+
+  /**
+   * Вернуть запись из таблицы под kind (или кинуть 404).
+   * Для regulation/standard учитывает category.
+   */
+  private async findByKind(
+    tenantId: string,
+    id: string,
+    kind: RegulationKindDto,
+  ): Promise<
+    | { id: string; name: string; description: string | null; scope: string | null }
+    | { id: string; name: string; contentMd: string; statement: string | null; category: string; scope: string | null }
+    | { id: string; name: string; contentMd: string; severity: string; scope: string | null }
+  > {
+    if (kind === 'process') {
+      const rec = await this.prisma.process.findFirst({
+        where: { id, tenantId },
+      });
+      if (!rec) this.notFound(kind, id);
+      return rec;
+    }
+    if (kind === 'policy') {
+      const rec = await this.prisma.policy.findFirst({
+        where: { id, tenantId },
+      });
+      if (!rec) this.notFound(kind, id);
+      return rec;
+    }
+    const rec = await this.prisma.regulation.findFirst({
+      where: {
+        id,
+        tenantId,
+        ...(kind === 'standard'
+          ? { category: 'standard' }
+          : { category: 'regulation' }),
+      },
+    });
+    if (!rec) this.notFound(kind, id);
+    return rec;
+  }
+
+  /**
+   * Записать новую CardVersion для regulation/process/policy. По образцу
+   * `DecisionsService.writeCardVersion`: уникальный constraint на
+   * (resourceType, resourceId, version) — next version считаем сами;
+   * trustTier НЕ передаём (дефолт схемы — 'human').
+   */
+  private async writeRegulationCardVersion(args: {
+    tenantId: string;
+    resourceType: 'regulation' | 'process' | 'policy';
+    resourceId: string;
+    payload: Record<string, unknown>;
+    actorUserId: string;
+    changeReason: string;
+  }): Promise<void> {
+    const last = await this.prisma.cardVersion.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+      },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true },
+    });
+    const nextVersion = (last?.version ?? 0) + 1;
+    const created = await this.prisma.cardVersion.create({
+      data: {
+        tenantId: args.tenantId,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+        version: nextVersion,
+        previousVersionId: last?.id ?? null,
+        payload: args.payload as Prisma.InputJsonValue,
+        changeReason: args.changeReason,
+        createdByUserId: args.actorUserId,
+      },
+    });
+    // Сделаем эту версию текущей в соответствующей таблице.
+    if (args.resourceType === 'process') {
+      await this.prisma.process.update({
+        where: { id: args.resourceId },
+        data: { currentVersionId: created.id },
+      });
+    } else if (args.resourceType === 'policy') {
+      await this.prisma.policy.update({
+        where: { id: args.resourceId },
+        data: { currentVersionId: created.id },
+      });
+    } else {
+      await this.prisma.regulation.update({
+        where: { id: args.resourceId },
+        data: { currentVersionId: created.id },
+      });
+    }
+    // Best-effort эмит для CacheInvalidationService.
+    try {
+      this.events?.emit('card-version.created', {
+        tenantId: args.tenantId,
+        cardVersionId: created.id,
+        resourceType: args.resourceType,
+        resourceId: args.resourceId,
+      });
+    } catch {
+      // emit ошибся — не валим apply (best-effort).
+    }
+  }
+
   // ───────────────────────────── helpers ─────────────────────────────
 
   private regulationsWhere(
@@ -402,6 +737,7 @@ export class RegulationsService {
     r: Awaited<ReturnType<PrismaService['regulation']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: r.id,
@@ -414,6 +750,7 @@ export class RegulationsService {
       status: r.status,
       ownerPersonId: r.ownerPersonId ?? null,
       confidence: r.confidence ?? null,
+      trustTier,
       lastConfirmedAt: r.lastConfirmedAt ? r.lastConfirmedAt.toISOString() : null,
       updatedAt: r.updatedAt.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -424,6 +761,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['process']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: p.id,
@@ -436,6 +774,7 @@ export class RegulationsService {
       status: p.status,
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
+      trustTier,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
@@ -446,6 +785,7 @@ export class RegulationsService {
     p: Awaited<ReturnType<PrismaService['policy']['findFirst']>> extends null | infer T
       ? NonNullable<T>
       : never,
+    trustTier: TrustTierDto,
   ): RegulationListItemDto {
     return {
       id: p.id,
@@ -458,15 +798,19 @@ export class RegulationsService {
       status: p.status,
       ownerPersonId: p.ownerPersonId ?? null,
       confidence: p.confidence ?? null,
+      trustTier,
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
     };
   }
 
-  private regulationToDetail(r: NonNullable<Awaited<ReturnType<PrismaService['regulation']['findFirst']>>>): RegulationDetailDto {
+  private regulationToDetail(
+    r: NonNullable<Awaited<ReturnType<PrismaService['regulation']['findFirst']>>>,
+    trustTier: TrustTierDto,
+  ): RegulationDetailDto {
     return {
-      ...this.regulationToListItem(r),
+      ...this.regulationToListItem(r, trustTier),
       contentMd: r.contentMd,
       sourceBlockIds: r.sourceBlockIds,
       personSubjectIds: r.personSubjectIds,
@@ -489,8 +833,9 @@ export class RegulationsService {
         }>;
       }
     >,
+    trustTier: TrustTierDto,
   ): RegulationDetailDto {
-    const base = this.processToListItem(p);
+    const base = this.processToListItem(p, trustTier);
     return {
       ...base,
       contentMd: p.description ?? '',
@@ -509,8 +854,9 @@ export class RegulationsService {
 
   private policyToDetail(
     p: NonNullable<Awaited<ReturnType<PrismaService['policy']['findFirst']>>>,
+    trustTier: TrustTierDto,
   ): RegulationDetailDto {
-    const base = this.policyToListItem(p);
+    const base = this.policyToListItem(p, trustTier);
     return {
       ...base,
       contentMd: p.contentMd,

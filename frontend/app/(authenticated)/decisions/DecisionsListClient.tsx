@@ -18,6 +18,8 @@ import {
   mapDecisionDetail,
   mapDecisionSupersedeChain,
 } from '@/domain/decision';
+import { TrustBadge } from '@/ui/components/shared/TrustBadge';
+import { CardCorrectionActions } from '@/ui/components/knowledge/CardCorrectionActions';
 import { Input } from '@/ui/shadcn/input';
 
 import {
@@ -80,6 +82,8 @@ const DEADLINE_FILTERS: ReadonlyArray<{
 ];
 
 function DecisionsListContent() {
+  const { currentOrgRole } = useAuth();
+  const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
   const [data, setData] = useState<DecisionsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -260,6 +264,7 @@ function DecisionsListContent() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 text-sm font-medium">
                           <StatusBadge status={d.status} />
+                          <TrustBadge tier={d.trustTier} size="sm" />
                           <span className="truncate">{d.statement}</span>
                         </div>
                         <div className="mt-1 text-xs text-fg-tertiary">
@@ -303,6 +308,7 @@ function DecisionsListContent() {
               <header>
                 <div className="flex items-center gap-2 text-xs text-fg-secondary">
                   <StatusBadge status={detail.status} />
+                  <TrustBadge tier={detail.trustTier} size="sm" />
                   {detail.decidedAt ? (
                     <span>
                       Принято {detail.decidedAt.toLocaleDateString('ru-RU')}
@@ -473,6 +479,41 @@ function DecisionsListContent() {
                     Отменить решение
                   </button>
                 ) : null}
+                <CardCorrectionActions
+                  fields={[
+                    {
+                      key: 'statement',
+                      label: 'Суть решения',
+                      value: detail.statement,
+                      multiline: true,
+                    },
+                    {
+                      key: 'rationale',
+                      label: 'Обоснование',
+                      value: detail.rationale ?? '',
+                      multiline: true,
+                    },
+                  ]}
+                  canApplyDirectly={canApplyDirectly}
+                  trustTier={detail.trustTier}
+                  onCorrect={(values, reason) =>
+                    decisionsApi
+                      .correct(detail.id, {
+                        correctedPayload: values,
+                        ...(reason ? { reason } : {}),
+                      })
+                      .then((r) => ({ applied: r.applied }))
+                  }
+                  onDispute={(reason) =>
+                    decisionsApi
+                      .dispute(detail.id, { ...(reason ? { reason } : {}) })
+                      .then(() => undefined)
+                  }
+                  onDone={() => {
+                    void load();
+                    void loadDetail();
+                  }}
+                />
               </div>
 
               {actionMsg ? (

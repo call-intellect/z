@@ -92,7 +92,7 @@ export class DirectorDashboardController {
         },
       });
     }
-    return this.svc.getDirectorView({ tenantId, period: q.period });
+    return this.svc.getDirectorView({ tenantId, period: q.period, userId });
   }
 
   /**

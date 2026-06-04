@@ -110,12 +110,20 @@ describe('DailyDigestService', () => {
       incCooDailyDigestDelivered: vi.fn(),
       setCooDailyDigestAge: vi.fn(),
     };
+    const pendingActions = {
+      getCount: vi.fn().mockResolvedValue({
+        total: 0,
+        bySource: { curation: 0, conflict: 0, intake: 0, probe: 0 },
+      }),
+      getList: vi.fn().mockResolvedValue({ items: [] }),
+    };
     const svc = new DailyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
+      pendingActions as never,
     );
-    return { svc, prisma, llm, metrics };
+    return { svc, prisma, llm, metrics, pendingActions };
   }
 
   it('aggregate: считает доли green/yellow/red и топ-3 красных', async () => {
@@ -226,5 +234,41 @@ describe('DailyDigestService', () => {
         data: expect.objectContaining({ deliveredAt: expect.any(Date) }),
       }),
     );
+  });
+
+  // ───────────── Action Center B3 — блок «Ждёт подтверждения» ─────────────
+
+  it('buildPendingActionsLine: total>0 → строка с количеством и /actions', async () => {
+    const { svc, pendingActions } = buildSvc({});
+    pendingActions.getCount.mockResolvedValueOnce({
+      total: 4,
+      bySource: { curation: 3, conflict: 1, intake: 0, probe: 0 },
+    });
+    const line = await svc.buildPendingActionsLine({
+      tenantId: 't1',
+      userId: 'u1',
+    });
+    expect(line).not.toBeNull();
+    expect(line).toContain('4');
+    expect(line).toContain('/actions');
+  });
+
+  it('buildPendingActionsLine: total=0 → null (блока нет)', async () => {
+    const { svc } = buildSvc({});
+    const line = await svc.buildPendingActionsLine({
+      tenantId: 't1',
+      userId: 'u1',
+    });
+    expect(line).toBeNull();
+  });
+
+  it('buildPendingActionsLine: ошибка PendingActionsService → null, не бросает', async () => {
+    const { svc, pendingActions } = buildSvc({});
+    pendingActions.getCount.mockRejectedValueOnce(new Error('db down'));
+    const line = await svc.buildPendingActionsLine({
+      tenantId: 't1',
+      userId: 'u1',
+    });
+    expect(line).toBeNull();
   });
 });

@@ -130,6 +130,27 @@ export interface DirectorDashboardStrategicAlignmentDto {
 }
 
 /**
+ * Action Center B2 — блок «Требует вашего подтверждения».
+ *
+ * Сводка pending-подтверждений текущего пользователя (`PendingActionsService.
+ * getCount`). Источники: curation (карточки знания), conflict (конфликты),
+ * intake (задачи из встреч), probe (вопросы Коры). UI рисует красную плитку
+ * при наличии конфликтов и янтарную в остальных случаях; при total=0 плитка
+ * не показывается.
+ *
+ * Опциональное поле — best-effort: если сервис недоступен, дашборд не падает.
+ */
+export interface DirectorDashboardRequiresActionDto {
+  total: number;
+  bySource: {
+    curation: number;
+    conflict: number;
+    intake: number;
+    probe: number;
+  };
+}
+
+/**
  * Goals OKR v2 Фаза 4 — узел дерева целей для дашборда.
  *
  * Дерево active+живых целей (`promotionState='active'`, `validUntil=null`,
@@ -195,6 +216,9 @@ export interface DirectorDashboardDto {
   /** Phase 9: блок «Согласованность стратегии». Опциональный для backward
    *  compatibility — на проде Фаза 8 уже задеплоена без него. */
   strategicAlignment?: DirectorDashboardStrategicAlignmentDto;
+  /** Action Center B2: блок «Требует вашего подтверждения» (per-user).
+   *  Опциональный — best-effort, не валит дашборд при ошибке сервиса. */
+  requiresAction?: DirectorDashboardRequiresActionDto;
   /** Goals OKR v2 Фаза 4: дерево active-целей с KR-прогрессом и progressStatus.
    *  Опциональный для backward-compat (как strategicAlignment). */
   goalsTree?: DirectorDashboardGoalTreeNodeDto[];

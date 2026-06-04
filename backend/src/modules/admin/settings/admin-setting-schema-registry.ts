@@ -51,6 +51,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutoThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationDeepReviewThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationStaleDynamicScoreThreshold', UNIT_INTERVAL],
+  // Action Center «лестница доверия» A1/A2 — пороги [0..1].
+  ['knowledge.curationProvisionalThresholdDefault', UNIT_INTERVAL],
+  ['knowledge.curationAuditSampleRate', UNIT_INTERVAL],
+  ['knowledge.curationThresholdMin', UNIT_INTERVAL],
+  ['knowledge.curationThresholdMax', UNIT_INTERVAL],
+  ['knowledge.curationAutotuneStep', UNIT_INTERVAL],
+  ['knowledge.curationMaxProvisionalOverride', UNIT_INTERVAL],
   ['knowledge.insightSpikeRatio', z.number().min(0).max(100)],
 
   // ── knowledge-core: целые положительные ───────────────────────────────
@@ -78,11 +85,15 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.personaRoleAggMinPersons', POSITIVE_INT],
   ['knowledge.curationItemExpiryDays', POSITIVE_INT],
   ['knowledge.curationStaleMonthsThreshold', POSITIVE_INT],
+  ['knowledge.curationMinDecisionsForAutotune', POSITIVE_INT],
   ['knowledge.executablePersonaThresholdTraitsCount', POSITIVE_INT],
 
   // ── knowledge-core: master-flag ──────────────────────────────────────
   ['knowledge.v2AgentsEnabled', z.boolean()],
   ['knowledge.chatV2Enabled', z.boolean()],
+  // Action Center «лестница доверия» A1/A2 — булевы флаги.
+  ['knowledge.curationAiVerifierEnabled', z.boolean()],
+  ['knowledge.curationAutotuneEnabled', z.boolean()],
 
   // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
@@ -120,6 +131,14 @@ const registry = new Map<string, ZodTypeAny>([
   ['billing.baseSeatsIncluded', POSITIVE_INT],
   ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
   ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
+
+  // ── pending-actions «требует действия» (Action Center C2) ─────────────
+  // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
+  ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],
+  ['pendingActions.reminderWindowEndHour', z.number().int().min(0).max(23)],
+  ['pendingActions.reminderStepHours', POSITIVE_INT],
+  ['pendingActions.urgentAgeDays', POSITIVE_INT],
+  ['pendingActions.reminderLeadDays', POSITIVE_INT],
 ]);
 
 /**

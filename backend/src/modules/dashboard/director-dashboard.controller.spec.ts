@@ -61,6 +61,7 @@ describe('DirectorDashboardController (IDOR fence)', () => {
     expect(svc.getDirectorView).toHaveBeenCalledWith({
       tenantId: 'org-A',
       period: q.period,
+      userId: 'u-1',
     });
   });
 

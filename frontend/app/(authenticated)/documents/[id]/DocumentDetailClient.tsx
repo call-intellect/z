@@ -15,6 +15,7 @@ import {
 import { useAuth } from '@/contexts/auth-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 
@@ -39,6 +40,17 @@ const ENTITY_GROUP_LABELS: Record<DocumentEntityKindApi, string> = {
   metric: 'Метрики',
   tool: 'Инструменты',
 };
+
+/**
+ * Метку доверия (Фаза C1) показываем только у критических карточек —
+ * process / decision / regulation / policy. metric / tool не версионируются.
+ */
+const TRUST_TIER_KINDS = new Set<DocumentEntityKindApi>([
+  'process',
+  'decision',
+  'regulation',
+  'policy',
+]);
 
 export function DocumentDetailClient({
   documentId,
@@ -254,12 +266,21 @@ function Detail({
                                 {g.items.map((e) => (
                                   <li
                                     key={e.id}
-                                    className="flex items-center justify-between text-sm"
+                                    className="flex items-center justify-between gap-2 text-sm"
                                   >
-                                    <span className="text-fg-primary">
-                                      {e.name}
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <span className="truncate text-fg-primary">
+                                        {e.name}
+                                      </span>
+                                      {TRUST_TIER_KINDS.has(g.kind) &&
+                                        e.trustTier && (
+                                          <TrustBadge
+                                            tier={e.trustTier}
+                                            size="sm"
+                                          />
+                                        )}
                                     </span>
-                                    <span className="text-[10px] text-fg-tertiary">
+                                    <span className="shrink-0 text-[10px] text-fg-tertiary">
                                       {Math.round(e.confidence * 100)}%
                                     </span>
                                   </li>

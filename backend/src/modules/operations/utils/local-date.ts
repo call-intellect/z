@@ -58,6 +58,63 @@ export function getLocalDate(now: Date, timezone: string | null | undefined): st
 }
 
 /**
+ * Получить минуты с начала дня (0..1439) для конкретной TZ. Используется
+ * для сравнения с окном «тихих часов» `HH:mm-HH:mm` в локальном времени
+ * пользователя. Невалидная TZ → fallback на UTC-минуты дня.
+ */
+export function getLocalMinutesOfDay(
+  now: Date,
+  timezone: string | null | undefined,
+): number {
+  const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
+  try {
+    const fmt = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const hourPart = parts.find((p) => p.type === 'hour');
+    const minutePart = parts.find((p) => p.type === 'minute');
+    let h = hourPart ? Number.parseInt(hourPart.value, 10) : now.getUTCHours();
+    const m = minutePart
+      ? Number.parseInt(minutePart.value, 10)
+      : now.getUTCMinutes();
+    if (!Number.isFinite(h)) h = now.getUTCHours();
+    if (h === 24) h = 0; // edge-case полночь в некоторых runtime'ах
+    const mm = Number.isFinite(m) ? m : now.getUTCMinutes();
+    return h * 60 + mm;
+  } catch {
+    return now.getUTCHours() * 60 + now.getUTCMinutes();
+  }
+}
+
+/**
+ * Внутри ли локальное время пользователя окна «тихих часов»
+ * (`HH:mm-HH:mm`, в TZ пользователя). Невалидное окно → false (не тихо).
+ * Поддерживает окна через полночь (start > end).
+ */
+export function isWithinQuietHours(
+  now: Date,
+  timezone: string | null | undefined,
+  quietHours: string | null | undefined,
+): boolean {
+  if (!quietHours) return false;
+  const match = quietHours.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const startMin = Number(match[1]) * 60 + Number(match[2]);
+  const endMin = Number(match[3]) * 60 + Number(match[4]);
+  if (startMin === endMin) return false;
+  const nowMin = getLocalMinutesOfDay(now, timezone);
+  if (startMin < endMin) {
+    return nowMin >= startMin && nowMin < endMin;
+  }
+  // Окно через полночь.
+  return nowMin >= startMin || nowMin < endMin;
+}
+
+/**
  * Проверить, что строка таймзоны валидна (Intl поддерживает).
  */
 export function isValidTimezone(tz: string): boolean {

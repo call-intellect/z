@@ -29,6 +29,7 @@ import type {
   ListDecisionsResponse,
   SetOutcomesBody,
   SupersedeDecisionBody,
+  TrustTierDto,
 } from '../dto/decisions.dto';
 
 /**
@@ -71,11 +72,14 @@ export class DecisionsService {
         orderBy: [{ decidedAt: 'desc' }, { updatedAt: 'desc' }],
         skip: (q.page - 1) * q.limit,
         take: q.limit,
+        include: { currentVersion: { select: { trustTier: true } } },
       }),
       this.prisma.decision.count({ where }),
     ]);
     return {
-      items: items.map((d) => this.toListItem(d)),
+      items: items.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
       total,
       page: q.page,
       limit: q.limit,
@@ -91,9 +95,10 @@ export class DecisionsService {
   }): Promise<DecisionDetailDto> {
     const decision = await this.prisma.decision.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!decision) this.notFound(args.id);
-    return this.toDetail(decision);
+    return this.toDetail(decision, decision.currentVersion?.trustTier ?? 'human');
   }
 
   // ───────────────────────────── history ─────────────────────────────
@@ -130,19 +135,26 @@ export class DecisionsService {
     tenantId: string;
     id: string;
   }): Promise<DecisionSupersedeChainResponse> {
-    const root = await this.prisma.decision.findFirst({
+    type DecisionWithTier = Decision & {
+      currentVersion: { trustTier: TrustTierDto } | null;
+    };
+
+    const root: DecisionWithTier | null = await this.prisma.decision.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
+      include: { currentVersion: { select: { trustTier: true } } },
     });
     if (!root) this.notFound(args.id);
 
     // Идём вверх (родители) — пока supersedesId != null. Cap 50.
-    const ancestors: Decision[] = [];
-    let cur: Decision | null = root;
+    const ancestors: DecisionWithTier[] = [];
+    let cur: DecisionWithTier | null = root;
     const seen = new Set<string>([root.id]);
     while (cur?.supersedesId && ancestors.length < 50) {
-      const parent: Decision | null = await this.prisma.decision.findFirst({
-        where: { id: cur.supersedesId, tenantId: args.tenantId },
-      });
+      const parent: DecisionWithTier | null =
+        await this.prisma.decision.findFirst({
+          where: { id: cur.supersedesId, tenantId: args.tenantId },
+          include: { currentVersion: { select: { trustTier: true } } },
+        });
       if (!parent || seen.has(parent.id)) break;
       ancestors.push(parent);
       seen.add(parent.id);
@@ -151,7 +163,7 @@ export class DecisionsService {
 
     // Потомки — Decision'ы, у которых supersedesId = root.id (и далее
     // транзитивно). BFS, cap 50.
-    const descendants: Decision[] = [];
+    const descendants: DecisionWithTier[] = [];
     const queue: string[] = [root.id];
     const seenDesc = new Set<string>([root.id]);
     while (queue.length > 0 && descendants.length < 50) {
@@ -160,6 +172,7 @@ export class DecisionsService {
       const children = await this.prisma.decision.findMany({
         where: { supersedesId: cur, tenantId: args.tenantId },
         take: 20,
+        include: { currentVersion: { select: { trustTier: true } } },
       });
       for (const c of children) {
         if (seenDesc.has(c.id)) continue;
@@ -170,8 +183,12 @@ export class DecisionsService {
     }
 
     return {
-      ancestors: ancestors.map((d) => this.toListItem(d)),
-      descendants: descendants.map((d) => this.toListItem(d)),
+      ancestors: ancestors.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
+      descendants: descendants.map((d) =>
+        this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
+      ),
     };
   }
 
@@ -465,7 +482,10 @@ export class DecisionsService {
     return where;
   }
 
-  private toListItem(d: Decision): DecisionListItemDto {
+  private toListItem(
+    d: Decision,
+    trustTier: TrustTierDto = 'human',
+  ): DecisionListItemDto {
     return {
       id: d.id,
       statement: d.statement ?? d.text ?? '',
@@ -476,15 +496,16 @@ export class DecisionsService {
       supersedesId: d.supersedesId,
       affectsEntityIds: d.affectsEntityIds,
       confidence: d.confidence !== null ? Number(d.confidence) : null,
+      trustTier,
       updatedAt: d.updatedAt.toISOString(),
       createdAt: d.createdAt.toISOString(),
     };
   }
 
-  private toDetail(d: Decision): DecisionDetailDto {
+  private toDetail(d: Decision, trustTier: TrustTierDto): DecisionDetailDto {
     const alternatives = this.parseAlternatives(d.alternatives);
     return {
-      ...this.toListItem(d),
+      ...this.toListItem(d, trustTier),
       rationale: d.rationale,
       alternatives,
       sourceBlockIds: d.sourceBlockIds,
@@ -588,6 +609,100 @@ export class DecisionsService {
         'card-version.created emit failed (handled inside)',
       );
     }
+  }
+
+  // ─────────────────────── dispute / correct (E1) ───────────────────
+  /**
+   * Action Center E1 «поправить карточку знаний» (2026-06-04) — «Это неверно».
+   * Флаг без правки текста → обучающий сигнал `misleading` через
+   * `CurationService.recordDecision(mark_as_misleading)`.
+   */
+  async dispute(args: {
+    tenantId: string;
+    id: string;
+    reason?: string;
+    actorUserId: string;
+  }): Promise<{ ok: true }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId },
+      select: { id: true },
+    });
+    if (!existing) this.notFound(args.id);
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: 'decision',
+      resourceId: args.id,
+      decisionType: 'mark_as_misleading',
+      recordedBy: args.actorUserId,
+      reason: args.reason ?? null,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Action Center E1 — «Исправить». owner/admin (`canApplyDirectly=true`) →
+   * применяем сразу (новая человеко-проверенная CardVersion). read-only →
+   * правка уходит предложением в очередь курации (анти-вандализм), без 403.
+   */
+  async correct(args: {
+    tenantId: string;
+    id: string;
+    correctedPayload: { statement?: string; rationale?: string };
+    reason?: string;
+    actorUserId: string;
+    canApplyDirectly: boolean;
+  }): Promise<{ ok: true; applied: boolean }> {
+    const existing = await this.prisma.decision.findFirst({
+      where: { id: args.id, tenantId: args.tenantId },
+    });
+    if (!existing) this.notFound(args.id);
+
+    if (!args.canApplyDirectly) {
+      await this.curation.submitProposal({
+        tenantId: args.tenantId,
+        resourceType: 'decision',
+        resourceId: args.id,
+        proposedPayload: args.correctedPayload,
+        submittedBy: args.actorUserId,
+        reason: args.reason ?? null,
+      });
+      return { ok: true, applied: false };
+    }
+
+    const before = {
+      statement: existing.statement,
+      rationale: existing.rationale,
+    };
+    const data: Prisma.DecisionUpdateInput = {};
+    if (args.correctedPayload.statement !== undefined) {
+      data.statement = args.correctedPayload.statement;
+      // legacy-поле `text` — короткая копия statement.
+      data.text = args.correctedPayload.statement.slice(0, 1000);
+    }
+    if (args.correctedPayload.rationale !== undefined) {
+      data.rationale = args.correctedPayload.rationale;
+    }
+    const updated = await this.prisma.decision.update({
+      where: { id: args.id },
+      data,
+    });
+    await this.writeCardVersion({
+      tenantId: args.tenantId,
+      decision: updated,
+      reviewerUserId: args.actorUserId,
+      changeReason: 'user_correction',
+    });
+    // Обучающий сэмпл approve_with_edits (label='correct'); before→after в context.
+    await this.curation.recordDecision({
+      tenantId: args.tenantId,
+      resourceType: 'decision',
+      resourceId: args.id,
+      decisionType: 'approve_with_edits',
+      recordedBy: args.actorUserId,
+      reason: args.reason ?? null,
+      context: { before, after: args.correctedPayload },
+    });
+    return { ok: true, applied: true };
   }
 
   private notFound(id: string): never {

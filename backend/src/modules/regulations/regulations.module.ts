@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CurationModule } from '../curation/curation.module';
 
 import { RegulationsController } from './regulations.controller';
 import { RegulationsService } from './services/regulations.service';
@@ -16,7 +17,7 @@ import { RegulationsService } from './services/regulations.service';
  * `policy` ResourceType (см. policy.csv).
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, CurationModule],
   controllers: [RegulationsController],
   providers: [RegulationsService],
   exports: [RegulationsService],

@@ -124,6 +124,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### ✍️ 2026-06-04 — Поправить карточку: исправить/оспорить провизорную (E1 backend + E2 frontend)
+
+План: [plans/tz/2026-06-03-knowledge-card-correct.md](../../plans/tz/2026-06-03-knowledge-card-correct.md). Достройка поверх C1 (метка доверия). Ветка `feature/action-center-trust-ladder`.
+
+**Что выкатывается:**
+- E1 — новые REST на существующих модулях: `POST /api/v1/regulations/:id/{dispute,correct}` и `POST /api/v1/decisions/:id/{dispute,correct}`. `correct` от owner/admin применяет правку сразу (новая `CardVersion` `trustTier='human'` + `currentVersionId` + контент таблицы); от рядового — предложение в очередь курации (`CurationService.submitProposal` → `CurationItem(pending, via='user_correction')`). `dispute` → `recordDecision('mark_as_misleading')`. Обучающие сигналы: correct→`correct`, dispute→`misleading`.
+- E2 — фронт `CardCorrectionActions` (кнопки «Исправить»/«Это неверно» на детали `/regulations` и `/decisions`).
+
+- **Шаг 1 — ENV** — **не требуется** (новых ENV/флагов нет).
+- **Шаг 4 — Prisma** — **не требуется** (всё на существующих `CurationItem`/`CardVersion`/канонических таблицах; схема не менялась).
+- **Шаг 7 — Seed** — **не требуется** (новых LLM-маршрутов нет; `mark_as_misleading`/`approve_with_edits` уже маппятся в `PreferenceDatasetService`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: regulations/decisions сервисы+контроллеры, curation.submitProposal; frontend: CardCorrectionActions): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - новые REST (Swagger `/api/docs` → теги `regulations`/`decisions` показывают `:id/dispute` и `:id/correct`). От owner: `correct` на провизорной карточке → `{ok:true,applied:true}`, плашка «Не проверено человеком» снимается, в `/regulations|decisions/:id/history` новая версия `changeReason='user_correction'`.
+  - от пользователя без write-права: `correct` → `{ok:true,applied:false}`, карточка не изменилась, в очереди курации появился `CurationItem(pending)` с `via='user_correction'`.
+  - `dispute` → `{ok:true}` + запись `LlmPreferenceSample(label='misleading')` по карточке.
+- **Заметка (долг, ждёт go):** одобрение куратором *предложения рядового сотрудника* пока НЕ переносит правку в каноническую таблицу — суб-ТЗ [plans/tz/2026-06-04-curation-canonical-writeback.md](../../plans/tz/2026-06-04-curation-canonical-writeback.md) (blast-radius на `decide()`). Обходной путь — owner/admin применяет правку сам.
+
+---
+
 ### 📊 2026-06-02 — Smart-tables Фаза 0: 10 системных таблиц при создании Org (auto-provision)
 
 - **Шаг 4 — Prisma** — **обязательно** (безопасное добавление — только новые поля + индексы, опасных изменений нет): `docker compose exec backend bun run prisma:push`.

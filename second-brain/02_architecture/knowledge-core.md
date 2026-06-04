@@ -643,6 +643,26 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 непроверенные** — пользователь видит границу автоматического и человеческого доверия прямо в
 интерфейсе.
 
+### Поправить карточку: исправить или оспорить (E1/E2, 2026-06-04)
+
+Метка — половина петли; вторая половина — **действие**. На детали карточки regulation/process/policy/decision
+(компонент `CardCorrectionActions`, `frontend/src/ui/components/knowledge/`) есть два действия:
+
+- **«Исправить»** (`POST /regulations|decisions/:id/correct`, body `correctedPayload` + опц. `reason`).
+  Ветка по правам (RBAC в контроллере): есть **write-право** (owner/admin) → правка применяется **сразу** —
+  новая `CardVersion` с `trustTier='human'` + `currentVersionId` + обновлённый контент канонической таблицы;
+  плашка «Не проверено человеком» снимается. Нет write-права → правка уходит **предложением**
+  (`CurationService.submitProposal` → `CurationItem(level=light, status=pending, triageReason.via='user_correction',
+  proposedPayload)`) — анти-вандализм, без 403. Обучающий сигнал — `recordDecision('approve_with_edits')`
+  → `LlmPreferenceSample(label='correct')` с context `{before, after}` («как правильно»).
+- **«Это неверно»** (`POST /.../:id/dispute`, опц. `reason`) → `recordDecision('mark_as_misleading')`
+  → `LlmPreferenceSample(label='misleading')`. Сигнал-флаг (образец — `entities/:id/mark-wrong`).
+
+> **Известный пробел (суб-ТЗ `2026-06-04-curation-canonical-writeback.md`, ждёт go):** одобрение куратором
+> *предложения рядового сотрудника* через `decide(approve*)` пишет `CardVersion`, но НЕ переносит
+> `proposedPayload` в каноническую таблицу (нет write-back-слушателя; затрагивает ядро `decide()`).
+> Обходной путь: куратор (owner/admin) применяет правку сам через «Исправить».
+
 > **Известный пробел:** карточки пока **не цитируются** в корпоративном чате — там нет ссылок на
 > карточки как на источники, а значит и метки `trustTier` рядом с цитатами. Закрывается отдельным
 > суб-ТЗ D (цитаты chat-v2 + метка доверия у цитат).

@@ -141,6 +141,7 @@ export class MeetingsController {
         customPrompt: body.custom_prompt ?? null,
         cardId: body.card_id ?? null,
         recordByDefault: body.record_by_default,
+        invitees: body.invitees,
       },
       user.id,
     );

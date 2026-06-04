@@ -28,6 +28,17 @@ export type CreateMeetingApiRequest = {
    */
   card_id?: string | null;
   record_by_default?: boolean;
+  /**
+   * Приглашённые сотрудники/контакты (Фаза 2). Backend (Фаза 2.1) pre-seed'ит
+   * `Participant` с `userId`/`personId` и шлёт приглашение по выбранным
+   * каналам `sendVia` (почта / Telegram).
+   */
+  invitees?: Array<{
+    userId?: string | null;
+    personId?: string | null;
+    email?: string | null;
+    sendVia?: ('email' | 'telegram')[];
+  }>;
 };
 
 export type ListMeetingsApiRequest = {

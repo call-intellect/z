@@ -48,6 +48,10 @@ import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { Checkbox } from '@/ui/shadcn/checkbox';
 import {
+  ParticipantPicker,
+  type ParticipantPickerValue,
+} from '@/ui/shared/ParticipantPicker';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -121,6 +125,7 @@ export function CreateMeetingFormV2() {
   const [recordByDefault, setRecordByDefault] = useState(true);
   const [customPrompt, setCustomPrompt] = useState('');
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
+  const [invitees, setInvitees] = useState<ParticipantPickerValue[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
 
@@ -151,6 +156,14 @@ export function CreateMeetingFormV2() {
       if (!includeTasks) promptParts.push('[no tasks]');
       const finalPrompt = promptParts.length > 0 ? promptParts.join('\n\n') : null;
 
+      // Приглашённые → invitees-контракт бэка (Фаза 2.1).
+      const inviteesPayload = invitees.map((v) => ({
+        userId: v.type === 'user' ? v.userId : null,
+        personId: v.type === 'person' ? v.personId : null,
+        email: v.email ?? null,
+        sendVia: v.sendVia ?? [],
+      }));
+
       const result = await meetingsApi.create({
         type: baseType,
         title: title.trim(),
@@ -158,6 +171,7 @@ export function CreateMeetingFormV2() {
         record_by_default: recordByDefault,
         ...(selected.kind === 'custom' ? { templateId: selected.template.id } : {}),
         ...(cardId ? { card_id: cardId } : {}),
+        ...(inviteesPayload.length > 0 ? { invitees: inviteesPayload } : {}),
       });
       setCreated(result);
     } catch (e) {
@@ -301,6 +315,21 @@ export function CreateMeetingFormV2() {
                 </div>
               </div>
             </label>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="meeting-invitees">Пригласить сотрудников</Label>
+            <ParticipantPicker
+              value={invitees}
+              onChange={setInvitees}
+              placeholder="Найти сотрудника по имени или почте"
+              showChannels
+            />
+            <p className="mt-1 text-xs text-fg-tertiary">
+              Выберите коллег из списка. Для каждого отметьте, как отправить
+              приглашение — на почту, в Телеграм или оба канала. Если каналы не
+              выбраны, приглашение не отправится.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">

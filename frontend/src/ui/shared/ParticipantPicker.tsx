@@ -43,10 +43,34 @@ import {
 
 // ─────────────────────────── Types ───────────────────────────────────
 
-/** Выбранный участник для передачи в EventForm.onChange / submit. */
+/** Канал доставки приглашения участнику. */
+export type ParticipantSendChannel = 'email' | 'telegram';
+
+/**
+ * Выбранный участник для передачи в EventForm.onChange / submit.
+ *
+ * Поля `email` и `sendVia` опциональны:
+ *   - `email` приходит из `org-members/search` (backend отдаёт; раньше терялся
+ *     в `toValueFromSearch`). Нужен для доставки приглашения по почте;
+ *   - `sendVia` — выбранные на чипе каналы доставки (почта / Telegram).
+ *     Заполняется только когда пикер показывает переключатели каналов
+ *     (`showChannels`). В сценариях без каналов остаётся пустым/undefined.
+ */
 export type ParticipantPickerValue =
-  | { type: 'user'; userId: string; name: string }
-  | { type: 'person'; personId: string; name: string };
+  | {
+      type: 'user';
+      userId: string;
+      name: string;
+      email?: string;
+      sendVia?: ParticipantSendChannel[];
+    }
+  | {
+      type: 'person';
+      personId: string;
+      name: string;
+      email?: string;
+      sendVia?: ParticipantSendChannel[];
+    };
 
 export interface ParticipantPickerProps {
   value: ParticipantPickerValue[];
@@ -54,6 +78,12 @@ export interface ParticipantPickerProps {
   placeholder?: string;
   /** Disabled = поле readonly + плашка-подсказка. */
   disabled?: boolean;
+  /**
+   * Показывать ли на чипе компактные переключатели канала доставки
+   * (почта / Telegram). По умолчанию выключено — другие сценарии
+   * (EventForm) каналы не используют.
+   */
+  showChannels?: boolean;
 }
 
 // ─────────────────────────── Helpers ─────────────────────────────────
@@ -72,9 +102,20 @@ function toValueFromSearch(
   item: OrgMemberSearchItemApi,
 ): ParticipantPickerValue {
   if (item.type === 'user') {
-    return { type: 'user', userId: item.userId, name: item.name };
+    // backend (org-members/search) отдаёт email — пробрасываем, не роняем.
+    return {
+      type: 'user',
+      userId: item.userId,
+      name: item.name,
+      email: item.email,
+    };
   }
-  return { type: 'person', personId: item.personId, name: item.name };
+  return {
+    type: 'person',
+    personId: item.personId,
+    name: item.name,
+    email: item.email ?? undefined,
+  };
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -93,6 +134,7 @@ export function ParticipantPicker({
   onChange,
   placeholder = 'Найти коллегу или внешний контакт',
   disabled = false,
+  showChannels = false,
 }: ParticipantPickerProps): JSX.Element {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -156,6 +198,22 @@ export function ParticipantPicker({
   const removeParticipant = useCallback(
     (target: ParticipantPickerValue) => {
       onChange(value.filter((v) => !isSameParticipant(v, target)));
+    },
+    [value, onChange],
+  );
+
+  const toggleChannel = useCallback(
+    (target: ParticipantPickerValue, channel: ParticipantSendChannel) => {
+      onChange(
+        value.map((v) => {
+          if (!isSameParticipant(v, target)) return v;
+          const current = v.sendVia ?? [];
+          const next = current.includes(channel)
+            ? current.filter((c) => c !== channel)
+            : [...current, channel];
+          return { ...v, sendVia: next };
+        }),
+      );
     },
     [value, onChange],
   );
@@ -238,6 +296,8 @@ export function ParticipantPicker({
                 }
                 value={v}
                 onRemove={() => removeParticipant(v)}
+                onToggleChannel={(channel) => toggleChannel(v, channel)}
+                showChannels={showChannels}
                 disabled={disabled}
               />
             ))}
@@ -317,19 +377,38 @@ export function ParticipantPicker({
 function ParticipantChip({
   value,
   onRemove,
+  onToggleChannel,
+  showChannels,
   disabled,
 }: {
   value: ParticipantPickerValue;
   onRemove: () => void;
+  onToggleChannel: (channel: ParticipantSendChannel) => void;
+  showChannels: boolean;
   disabled: boolean;
 }): JSX.Element {
   const isUser = value.type === 'user';
+  const sendVia = value.sendVia ?? [];
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-bg-elevated px-2 py-0.5 text-xs text-fg-primary">
       <span aria-hidden className="text-[10px]">
         {isUser ? '◉' : '○'}
       </span>
       <span className="max-w-[180px] truncate">{value.name}</span>
+      {showChannels && !disabled && (
+        <span className="ml-0.5 inline-flex items-center gap-0.5">
+          <ChannelToggle
+            label="Почта"
+            active={sendVia.includes('email')}
+            onToggle={() => onToggleChannel('email')}
+          />
+          <ChannelToggle
+            label="Телеграм"
+            active={sendVia.includes('telegram')}
+            onToggle={() => onToggleChannel('telegram')}
+          />
+        </span>
+      )}
       {!disabled && (
         <button
           type="button"
@@ -344,6 +423,36 @@ function ParticipantChip({
         </button>
       )}
     </span>
+  );
+}
+
+/** Компактный переключатель канала доставки приглашения на чипе участника. */
+function ChannelToggle({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      aria-pressed={active}
+      title={`Отправить приглашение: ${label}`}
+      className={
+        active
+          ? 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-accent text-accent-fg'
+          : 'rounded px-1.5 py-0.5 text-[10px] font-medium bg-bg-overlay text-fg-tertiary hover:text-fg-secondary'
+      }
+    >
+      {label}
+    </button>
   );
 }
 

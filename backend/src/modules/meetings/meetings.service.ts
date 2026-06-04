@@ -9,6 +9,7 @@ import {
   type Recording,
   type Transcript,
 } from '@prisma/client';
+import { nanoid } from 'nanoid';
 import { ulid } from 'ulid';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -205,6 +206,12 @@ export class MeetingsService {
       customPrompt?: string | null;
       cardId?: string | null;
       recordByDefault?: boolean;
+      invitees?: Array<{
+        userId?: string | null;
+        personId?: string | null;
+        email?: string | null;
+        sendVia?: ('email' | 'telegram')[];
+      }>;
     },
     userId: string,
   ): Promise<Meeting> {
@@ -258,6 +265,49 @@ export class MeetingsService {
           userId,
         },
       });
+
+      // Pre-seed приглашённых (ТЗ 2026-06-04, Фаза 2.1). Создаём
+      // Participant'ов со статусом 'invited' и персональным inviteToken —
+      // identity сотрудника протягивается до диаризации/графа ещё до входа.
+      // Доставка приглашений (email/Telegram) — Фаза 3, здесь только pre-seed.
+      const invitees = input.invitees ?? [];
+      for (const invitee of invitees) {
+        // Хост уже добавлен выше — не дублируем его как приглашённого.
+        if (invitee.userId && invitee.userId === userId) continue;
+
+        let resolvedName: string;
+        if (invitee.userId) {
+          const u = await tx.user.findUnique({
+            where: { id: invitee.userId },
+            select: { name: true },
+          });
+          resolvedName = u?.name ?? invitee.email ?? 'Приглашённый';
+        } else if (invitee.personId) {
+          const p = await tx.person.findUnique({
+            where: { id: invitee.personId },
+            select: { name: true },
+          });
+          resolvedName = p?.name ?? invitee.email ?? 'Приглашённый';
+        } else {
+          resolvedName = invitee.email ?? 'Приглашённый';
+        }
+
+        const inviteToken = nanoid();
+        await tx.participant.create({
+          data: {
+            meetingId,
+            livekitIdentity: `invitee:${inviteToken}`,
+            name: resolvedName,
+            role: 'guest',
+            isRegisteredUser: Boolean(invitee.userId),
+            userId: invitee.userId ?? null,
+            personId: invitee.personId ?? null,
+            invitationStatus: 'invited',
+            inviteToken,
+            invitedAt: new Date(),
+          },
+        });
+      }
 
       // Денормализация счётчиков карточки. Делается в той же транзакции —
       // консистентно. Без recountMeetings: дешевле прибавить +1.

@@ -166,7 +166,7 @@
 
 ---
 
-## Ф6 — пороги графа на малом тенанте + мёртвые крутилки `[ ]`
+## Ф6 — пороги графа на малом тенанте + мёртвые крутилки `[x]`
 
 **Корень (баги #17/#22/#33/#34/#35/#36, finding `block-linker-threshold`, high):**
 - **block-linker:** `block-linker.worker.ts:122-133` skip при `canonicalCount < minBlocks`; `minBlocks=this.cfg.knowledgeCore.linkerMinBlocks` (`:123`), резолвится синхронным `this.get('LINKER_MIN_BLOCKS')` (`typed-config.service.ts:71-73,729`) = статичный ENV. `env.schema.ts:515` default **50**, `.env` нет → эффективный порог 50. AdminSetting `knowledge.linkerMinBlocks` зарегистрирован (`admin-setting-schema-registry.ts:61`) и засеян **3** (`seed-admin-settings.ts:228`), но воркер его НЕ читает через `getDynamic`/`resolveSync` — **крутилка мёртвая**, и дефолты рассинхронизированы (ENV 50 vs seed 3).

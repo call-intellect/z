@@ -93,6 +93,10 @@ export class Specialist34ProjectCustomerWorker {
           { blockId },
           'specialist-3-4: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -100,16 +104,23 @@ export class Specialist34ProjectCustomerWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-4: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
-        // RouterService может диспатчить и draft (на момент Фаза 2),
-        // но rollup карточек строится только из canonical. Подождём
+        // rollup карточек строится только из canonical. Подождём
         // BlockDistillWorker и следующего dispatch'а.
         this.logger.debug(
           { blockId, status: block.status },
           'specialist-3-4: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
 
@@ -131,6 +142,10 @@ export class Specialist34ProjectCustomerWorker {
           { blockId },
           'specialist-3-4: нет релевантных entity-упоминаний — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -156,6 +171,10 @@ export class Specialist34ProjectCustomerWorker {
           { blockId, entityIds },
           'specialist-3-4: блок ссылается на entity, но Card не найдено — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist34ProjectCustomerWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

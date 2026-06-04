@@ -63,6 +63,10 @@ export class Specialist32KnowledgeCloneWorker {
           { blockId },
           'specialist-3-2: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -70,6 +74,10 @@ export class Specialist32KnowledgeCloneWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-2: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -77,6 +85,10 @@ export class Specialist32KnowledgeCloneWorker {
           { blockId, status: block.status },
           'specialist-3-2: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
 
@@ -95,6 +107,10 @@ export class Specialist32KnowledgeCloneWorker {
           { blockId },
           'specialist-3-2: упомянутых Person-entities нет — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -113,6 +129,10 @@ export class Specialist32KnowledgeCloneWorker {
           { blockId, entityIds },
           'specialist-3-2: упомянутые Entity не связаны с Person-сотрудниками — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist32KnowledgeCloneWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

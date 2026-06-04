@@ -88,6 +88,10 @@ export class PersonalRelationBuilderWorker {
           tenantTop,
           result: 'skipped_no_pair',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -95,9 +99,19 @@ export class PersonalRelationBuilderWorker {
           tenantTop,
           result: 'error',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
-      if (block.status !== 'canonical') return;
+      if (block.status !== 'canonical') {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
+        return;
+      }
 
       const personEntities = block.entities.filter(
         (be) => be.entity?.type === 'person',
@@ -106,6 +120,10 @@ export class PersonalRelationBuilderWorker {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_no_pair',
+        });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
         });
         return;
       }
@@ -120,6 +138,10 @@ export class PersonalRelationBuilderWorker {
           tenantTop,
           result: 'skipped_low_confidence',
         });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -129,6 +151,10 @@ export class PersonalRelationBuilderWorker {
         this.metrics.incPersonalRelationBuilderRun({
           tenantTop,
           result: 'skipped_low_confidence',
+        });
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: PersonalRelationBuilderWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
         });
         return;
       }

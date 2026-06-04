@@ -71,6 +71,10 @@ export class ExperimentDetectorWorker {
           { blockId },
           'experiment-detector: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: ExperimentDetectorWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -78,6 +82,10 @@ export class ExperimentDetectorWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'experiment-detector: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: ExperimentDetectorWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -85,6 +93,10 @@ export class ExperimentDetectorWorker {
           { blockId, status: block.status },
           'experiment-detector: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: ExperimentDetectorWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       const allowed = new Set(['hypothesis', 'result', 'lesson']);
@@ -93,6 +105,10 @@ export class ExperimentDetectorWorker {
           { blockId, signalType: block.signalType },
           'experiment-detector: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: ExperimentDetectorWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

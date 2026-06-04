@@ -160,7 +160,13 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const { blockId, tenantId, signalType } = job.data;
-    if (!RoleMapBuilderWorker.RELEVANT_SIGNALS.has(signalType)) return;
+    if (!RoleMapBuilderWorker.RELEVANT_SIGNALS.has(signalType)) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
+      return;
+    }
 
     // Проверим, что block ещё canonical и привязан к roleId.
     const block = await this.prisma.ideaBlock.findUnique({
@@ -173,13 +179,33 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
         roleRelevant: true,
       },
     });
-    if (
-      !block ||
-      block.tenantId !== tenantId ||
-      block.status !== 'canonical' ||
-      !block.roleId ||
-      !block.roleRelevant
-    ) {
+    if (!block) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
+        reason: 'block_not_found',
+      });
+      return;
+    }
+    if (block.tenantId !== tenantId) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
+        reason: 'tenant_mismatch',
+      });
+      return;
+    }
+    if (block.status !== 'canonical') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
+        reason: 'not_canonical',
+      });
+      return;
+    }
+    if (!block.roleId || !block.roleRelevant) {
+      // Блок не привязан к роли — вне области специалиста по role-map.
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
       return;
     }
     const roleId = block.roleId;

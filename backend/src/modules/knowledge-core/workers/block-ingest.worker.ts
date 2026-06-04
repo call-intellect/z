@@ -39,7 +39,6 @@ import {
 } from '../services/block-extraction.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
-import { RouterService } from '../services/router.service';
 import { SegmentBuilderService } from '../services/segment-builder.service';
 
 /**
@@ -117,7 +116,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(GraphService) private readonly graph: GraphService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Inject(RouterService) private readonly router: RouterService,
     @Inject(AxisClassifierService)
     private readonly axisClassifier: AxisClassifierService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -547,31 +545,20 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // SBA α-3 — RouterService.dispatch для каждого блока. Best-effort:
-      // не блокирует основной pipeline (dispatch внутри уже не throw'ит).
-      // На α-3 consumer'ы ещё не существуют — jobs накапливаются.
-      // SBA α-3 wave 3 — после router.dispatch вызываем AxisClassifier
-      // (синхронно, idempotent по unique (tenantId, blockId, axis, label)).
+      // SBA α-3 wave 3 — AxisClassifier для каждого блока (синхронно,
+      // idempotent по unique (tenantId, blockId, axis, label)). Работает на
+      // draft-блоке корректно.
+      //
+      // Ф3 МТЗ «разблокировка конвейера» (баг #15/#23) — RouterService.dispatch
+      // ОТСЮДА УБРАН. Раньше диспатч шёл на свежесозданный `status='draft'`
+      // блок, а специалисты обрабатывают только `canonical` (skip на draft) →
+      // первая проекция не рождалась из живого потока. Теперь диспатч делает
+      // block-distill на переходе draft→canonical (markCanonical / mergeInto).
       for (let i = 0; i < blocksInOrder.length; i++) {
         const block = blocksInOrder[i] as ExtractedBlock;
         const blockId = indexToBlockId.get(i);
         if (!blockId) continue;
-        await this.router
-          .dispatch({
-            id: blockId,
-            tenantId: event.tenantId,
-            signalType: block.signalType,
-          })
-          .catch((err) => {
-            this.logger.warn(
-              {
-                blockId,
-                err: err instanceof Error ? err.message : String(err),
-              },
-              'block-ingest: RouterService.dispatch упал — продолжаем без роутинга',
-            );
-          });
-        // SBA α-3 wave 3 — AxisClassifier (внутри не throw'ит).
+        // AxisClassifier (внутри не throw'ит).
         await this.axisClassifier
           .classify({
             blockId,

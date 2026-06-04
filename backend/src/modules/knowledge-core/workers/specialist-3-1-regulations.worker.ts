@@ -64,6 +64,10 @@ export class Specialist31RegulationsWorker {
           { blockId },
           'specialist-3-1: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -71,6 +75,10 @@ export class Specialist31RegulationsWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-1: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -78,6 +86,10 @@ export class Specialist31RegulationsWorker {
           { blockId, status: block.status },
           'specialist-3-1: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
 
@@ -91,6 +103,10 @@ export class Specialist31RegulationsWorker {
           { blockId, signalType: block.signalType },
           'specialist-3-1: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist31RegulationsWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

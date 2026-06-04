@@ -57,6 +57,10 @@ export class Specialist37SkillWorker {
       });
       if (!block) {
         this.logger.debug({ blockId }, 'specialist-3-7: блок не найден — skip');
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -64,6 +68,10 @@ export class Specialist37SkillWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-7: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -71,6 +79,10 @@ export class Specialist37SkillWorker {
           { blockId, status: block.status },
           'specialist-3-7: блок не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (
@@ -82,6 +94,10 @@ export class Specialist37SkillWorker {
           { blockId, signalType: block.signalType },
           'specialist-3-7: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -100,6 +116,10 @@ export class Specialist37SkillWorker {
           { blockId },
           'specialist-3-7: subject-Person отсутствует — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 
@@ -118,6 +138,10 @@ export class Specialist37SkillWorker {
           { blockId, entityIds },
           'specialist-3-7: subject не employee — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist37SkillWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

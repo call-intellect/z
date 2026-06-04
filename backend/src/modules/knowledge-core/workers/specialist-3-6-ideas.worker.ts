@@ -38,11 +38,35 @@ export class Specialist36IdeasWorker {
         where: { id: blockId },
         select: { id: true, tenantId: true, status: true, signalType: true },
       });
-      if (!block) return;
-      if (block.tenantId !== tenantId) return;
-      if (block.status !== 'canonical') return;
+      if (!block) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
+        return;
+      }
+      if (block.tenantId !== tenantId) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
+        return;
+      }
+      if (block.status !== 'canonical') {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
+        return;
+      }
       const allowed = new Set(['idea', 'feature_request']);
-      if (!allowed.has(block.signalType)) return;
+      if (!allowed.has(block.signalType)) {
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist36IdeasWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
+        return;
+      }
       await this.svc.processBlock({ tenantId, blockId });
       this.logger.log(
         { blockId, signalType: block.signalType },

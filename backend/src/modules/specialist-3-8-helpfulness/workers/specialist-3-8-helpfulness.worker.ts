@@ -76,6 +76,10 @@ export class Specialist38HelpfulnessWorker {
         { blockId, signalType },
         'specialist-3-8: signalType вне области специалиста — skip',
       );
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
       return;
     }
 
@@ -94,6 +98,10 @@ export class Specialist38HelpfulnessWorker {
           { blockId },
           'specialist-3-8: блок не найден — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -101,6 +109,10 @@ export class Specialist38HelpfulnessWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-8: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -108,6 +120,10 @@ export class Specialist38HelpfulnessWorker {
           { blockId, status: block.status },
           'specialist-3-8: блок не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (
@@ -116,6 +132,10 @@ export class Specialist38HelpfulnessWorker {
         )
       ) {
         // DB-уточнение, если в payload signalType отсутствовал.
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

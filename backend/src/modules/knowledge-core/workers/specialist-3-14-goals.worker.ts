@@ -55,6 +55,10 @@ export class Specialist314GoalsWorker {
       });
       if (!block) {
         this.logger.debug({ blockId }, 'specialist-3-14: блок не найден — skip');
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'block_not_found',
+        });
         return;
       }
       if (block.tenantId !== tenantId) {
@@ -62,6 +66,10 @@ export class Specialist314GoalsWorker {
           { blockId, expected: tenantId, actual: block.tenantId },
           'specialist-3-14: tenant mismatch — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'tenant_mismatch',
+        });
         return;
       }
       if (block.status !== 'canonical') {
@@ -69,6 +77,10 @@ export class Specialist314GoalsWorker {
           { blockId, status: block.status },
           'specialist-3-14: блок ещё не canonical — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'not_canonical',
+        });
         return;
       }
       if (!Specialist314GoalsWorker.ALLOWED_SIGNAL_TYPES.has(block.signalType)) {
@@ -76,6 +88,10 @@ export class Specialist314GoalsWorker {
           { blockId, signalType: block.signalType },
           'specialist-3-14: signalType вне области специалиста — skip',
         );
+        this.metrics.incCoreSpecialistSkipped({
+          specialist: Specialist314GoalsWorker.SPECIALIST_NAME,
+          reason: 'signal_out_of_scope',
+        });
         return;
       }
 

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { type Job } from 'bullmq';
 
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { type SprintHelperJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { SprintHelperService } from '../services/sprint-helper.service';
@@ -28,6 +29,8 @@ export class SprintHelperWorker {
 
   constructor(
     @Inject(SprintHelperService) private readonly svc: SprintHelperService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   async handle(job: Job<SprintHelperJobData>): Promise<void> {
@@ -41,7 +44,15 @@ export class SprintHelperWorker {
 
   private async process(job: Job<SprintHelperJobData>): Promise<void> {
     const { cycleId, tenantId, reason = 'cron' } = job.data;
-    if (!cycleId || !tenantId) return;
+    if (!cycleId || !tenantId) {
+      // Sprint-helper работает по cycleId (не по блоку); пустой payload —
+      // нечего обрабатывать. Метрика skip, чтобы не сливалось с success.
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: SprintHelperWorker.JOB_NAME,
+        reason: 'signal_out_of_scope',
+      });
+      return;
+    }
     try {
       const { created, reused } = await this.svc.runForCycle({
         cycleId,

@@ -370,6 +370,11 @@ export class BusinessMetricsService implements OnModuleInit {
   // SBA α-7 — счётчик неуспешных LLM-extraction'ов специалистов (reason:
   // 'llm_error', 'json_parse', 'schema_validation', 'arbiter_skip', ...).
   private coreSpecialistExtractionFailuresTotal!: Counter<'type' | 'reason'>;
+  // Ф3 МТЗ «разблокировка конвейера» (баг #18) — счётчик ранних skip-return'ов
+  // хендлеров специалистов. До этого skip был неотличим от success (duration-
+  // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
+  // 'tenant_mismatch' / 'not_canonical' / 'signal_out_of_scope'.
+  private coreSpecialistSkippedTotal!: Counter<'specialist' | 'reason'>;
   // SBA β-3 — evolving-конфликты (отдельный counter рядом с
   // core_specialist_conflict_events_total). Не сливаем в один counter, чтобы
   // не ломать обратную совместимость существующих label'ов.
@@ -1876,6 +1881,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_specialist_extraction_failures_total',
       help: 'SBA α-7 — провалы LLM-extraction специалистов Слоя 3 (type × reason). reason: `llm_error`/`json_parse`/`schema_validation`/`arbiter_skip`/`db_error`.',
       labelNames: ['type', 'reason'] as const,
+    });
+    // Ф3 МТЗ «разблокировка конвейера» (баг #18) — skip-return'ы хендлеров.
+    this.coreSpecialistSkippedTotal = this.getOrCreateCounter({
+      name: 'core_specialist_skipped_total',
+      help: 'Ф3 МТЗ — ранние skip-return хендлеров специалистов Слоя 3 (specialist × reason). reason: block_not_found / tenant_mismatch / not_canonical / signal_out_of_scope. До этого skip был неотличим от success.',
+      labelNames: ['specialist', 'reason'] as const,
     });
     // SBA β-3 — evolving-конфликты (отдельный counter).
     this.coreSpecialistConflictEvolvingTotal = this.getOrCreateCounter({
@@ -4627,6 +4638,19 @@ export class BusinessMetricsService implements OnModuleInit {
       { type: args.type },
       args.seconds,
     );
+  }
+
+  /**
+   * Ф3 МТЗ «разблокировка конвейера» (баг #18) — хендлер специалиста сделал
+   * ранний skip-return (блок не найден / чужой тенант / не canonical /
+   * signalType вне области). Отдельный counter, чтобы skip больше не
+   * сливался с success в duration-метрике.
+   */
+  incCoreSpecialistSkipped(args: { specialist: string; reason: string }): void {
+    this.coreSpecialistSkippedTotal.inc({
+      specialist: args.specialist,
+      reason: args.reason,
+    });
   }
 
   /** Прирост токенов, потраченных специалистом на LLM-вызов. */

@@ -21,7 +21,11 @@ describe('PersonalRelationBuilderWorker', () => {
       ideaBlock: { findUnique: vi.fn().mockResolvedValue(overrides.block ?? null) },
       entityLink: { upsert: vi.fn().mockResolvedValue({}) },
     };
-    const metrics = { incPersonalRelationBuilderRun: vi.fn() };
+    const metrics = {
+      incPersonalRelationBuilderRun: vi.fn(),
+      // Ф3 МТЗ — единый skip-counter специалистов.
+      incCoreSpecialistSkipped: vi.fn(),
+    };
     const worker = new PersonalRelationBuilderWorker(
       prisma as never,
       metrics as never,
@@ -178,7 +182,11 @@ describe('CheckInConflictDetectorCron', () => {
       person: { findFirst: personFindFirst, findMany: personFindMany },
       entityLink: { upsert: entityLinkUpsert },
     };
-    const metrics = { incPersonalRelationBuilderRun: vi.fn() };
+    const metrics = {
+      incPersonalRelationBuilderRun: vi.fn(),
+      // Ф3 МТЗ — единый skip-counter специалистов.
+      incCoreSpecialistSkipped: vi.fn(),
+    };
 
     const cron = new CheckInConflictDetectorCron(
       prisma as never,

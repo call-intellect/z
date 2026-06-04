@@ -96,23 +96,24 @@
 
 ---
 
-## Ф3 — специалисты Слоя 3: диспатч на `draft`, обработка `canonical` `[ ]`
+## Ф3 — специалисты Слоя 3: диспатч на `draft`, обработка `canonical` `[x]`
 
 **Корень (баг #15 + #23, critical):** `block-ingest.worker.ts:750` создаёт IdeaBlock со `status='draft'`, затем `block-ingest.worker.ts:559-573` сразу вызывает `router.dispatch` на этом draft-блоке. `enqueueSpecialistRouting` (`core-queue.service.ts:443-461`) добавляет job **БЕЗ delay**, тогда как `enqueueBlockDistill` (`core-queue.service.ts:145-156`) — с `delay=distillDebounceMs` (`env.schema.ts:495` default 30000мс). То есть специалист стартует ~сразу, а канонизация (`block-distill.worker.ts:164-206` `markCanonical`) только через ~30с. Специалисты делают `if (block.status !== 'canonical') return` (`specialist-3-14-goals.worker.ts:116-122`, `specialist-3-3-decisions.worker.ts:131-137`) — **без throw** → job completed, ретрая нет. `markCanonical`/`mergeInto` (`block-distill.worker.ts:164-206`, ~307-328) **не вызывают** `router.dispatch` (re-dispatch отсутствует). `ProjectionRebuilderService` (`projection-rebuilder.service.ts:183-258`) ищет проекции по `sourceBlockIds has blockId` — пересобирает только **существующие**, новую первую проекцию не создаёт. Combined-путь (`specialists-combined.worker.ts`) под `SPECIALISTS_COMBINED_ENABLED` + `KNOWLEDGE_CORE_V2_AGENTS_ENABLED` (оба default false) — OFF в проде, живёт только сломанный per-block путь.
 
 **Правки:**
-- [ ] Перенести диспатч специалистов на переход в `canonical`: убрать `this.router.dispatch` из `block-ingest.worker.ts:559-573` и вызывать `router.dispatch` внутри `markCanonical` (`block-distill.worker.ts:164`, best-effort `.catch`) и внутри `mergeInto` для `canonicalId` (~`block-distill.worker.ts:307`). Тогда специалист всегда видит `status='canonical'`.
-- [ ] `AxisClassifier` (`block-ingest.worker.ts:575-589`) оставить на draft — он идемпотентен по `@@unique(tenantId,blockId,axis,label)`.
-- [ ] НЕ давать специалистам обрабатывать `draft` (иначе дубли проекций после merge).
-- [ ] **Наблюдаемость (баг #18):** ветки skip (jobName-mismatch уже throw из Ф2; не-canonical; signalType вне области) — не помечать молча success без сигнала. Метрика `observeCoreSpecialistPipelineDuration` сейчас в `finally` на ВСЕХ путях (`specialist-3-14-goals.worker.ts:137-142`) — skip неотличим от success; ввести skip-reason метрику/лог.
+- [x] Перенести диспатч специалистов на переход в `canonical`: убрал `this.router.dispatch` из `block-ingest.worker.ts` (RouterService больше не инжектится в ingest) и вызываю `router.dispatch` внутри `markCanonical` (best-effort `.catch`) и внутри `mergeInto` для `canonicalId` (signalType захвачен из `canonical` внутри транзакции → `canonicalSignalType`). RouterService инжектирован в block-distill (доступен из @Global KnowledgeCoreModule). Специалист всегда видит `status='canonical'`.
+- [x] `AxisClassifier` оставлен на draft в block-ingest — идемпотентен по `@@unique(tenantId,blockId,axis,label)`; цикл сохранён только под classify.
+- [x] НЕ даём специалистам обрабатывать `draft` — диспатч теперь только на canonical; внутренний guard `status!=='canonical'` оставлен как защита.
+- [x] **Наблюдаемость (баг #18):** добавлен Counter `core_specialist_skipped_total{specialist,reason}` + метод `incCoreSpecialistSkipped` в `BusinessMetricsService`. Инкрементится на КАЖДОЙ skip-ветке во всех 14 handler'ах (reason: block_not_found / tenant_mismatch / not_canonical / signal_out_of_scope). duration-метрика в `finally` остаётся, skip теперь отличим от success.
 
 > Альтернатива меньшего радиуса: добавить опциональный `delayMs` в `enqueueSpecialistRouting` и диспатчить с `delay>=distillDebounceMs`. Хрупко (distill может задержаться из-за LLM judgeMerge) — предпочтителен перенос на canonical-переход.
 
 **Критерий приёмки Ф3:**
-- `grep -n "router.dispatch" block-ingest.worker.ts` → диспатча из ingest нет; `grep -n "router.dispatch\|dispatch(" block-distill.worker.ts` → диспатч есть в `markCanonical` и `mergeInto`.
-- Интеграционный тест: ingest блока → ждём canonical → ассерт, что specialist-3-x создал Goal/Decision (первая проекция из живого потока).
-- Тест: дубль проекции после merge не создаётся.
-- `bun run typecheck` · `bun run test:integration` зелёные.
+- [x] `grep -n "router.dispatch" block-ingest.worker.ts` → пусто (диспатча из ingest нет); `grep -n "router.dispatch\|this.router" block-distill.worker.ts` → есть в `markCanonical` и `mergeInto`.
+- [x] Unit-тест `block-distill.worker.spec.ts`: markCanonical → `router.dispatch({id:block.id, signalType:block.signalType})`; mergeInto → `router.dispatch({id:canonicalId, signalType:канонического})`; dispatch best-effort (бросает → markCanonical/mergeInto не падают). Все зелёные.
+- [x] `block-ingest.worker.spec.ts`: конструктор обновлён (RouterService убран, 13 аргументов) — подтверждает, что ingest больше не зависит от router.
+- [~] Интеграционный тест против реального Postgres «первая проекция рождается / дубль после merge не создаётся» — НЕ прогнан (Docker недоступен в среде). Логика покрыта unit-тестами; требует прод/CI-прогона.
+- [x] `bun run typecheck` · `bun run lint` (0 errors) · `bun run build` зелёные; затронутые vitest-specs (5 файлов, 17 тестов + 30 файлов / 185 тестов по модулям) зелёные.
 
 **Разблокирует:** рождение первой проекции (Goal/Decision/Insight/Idea/задачи) из живого потока встреч. Зависит от Ф2 (доставка до специалиста). **prisma db push:** нет. **ENV:** нет. **prod-deploy-log:** Шаг 12 (smoke).
 

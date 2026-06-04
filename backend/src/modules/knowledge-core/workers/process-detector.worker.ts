@@ -105,14 +105,37 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
   private async process(job: Job<SpecialistRoutingJobData>): Promise<void> {
     const { blockId, tenantId, signalType } = job.data;
     if (!ProcessDetectorWorker.RELEVANT_SIGNALS.has(signalType)) {
-      return; // RouterService может прислать что-то ещё — фильтруем.
+      // RouterService может прислать что-то ещё — фильтруем.
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'signal_out_of_scope',
+      });
+      return;
     }
     // Проверим, что block ещё существует и canonical — иначе skip.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: blockId },
       select: { id: true, tenantId: true, status: true, signalType: true },
     });
-    if (!block || block.tenantId !== tenantId || block.status !== 'canonical') {
+    if (!block) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'block_not_found',
+      });
+      return;
+    }
+    if (block.tenantId !== tenantId) {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'tenant_mismatch',
+      });
+      return;
+    }
+    if (block.status !== 'canonical') {
+      this.metrics.incCoreSpecialistSkipped({
+        specialist: ProcessDetectorWorker.SPECIALIST_NAME,
+        reason: 'not_canonical',
+      });
       return;
     }
 
@@ -256,7 +279,8 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     }
-    void this.metrics; // метрики уже инкрементятся внутри extraction.
+    // Метрики extractBatch инкрементятся внутри ProcessExtractionService;
+    // skip-метрика — в process() выше.
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

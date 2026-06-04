@@ -352,6 +352,21 @@ const STEPS: Step[] = [
     hint: 'Person для владельцев Org без Person (Ф9)',
     skipBootstrap: true,
   },
+  // 2026-06-04 — Ф1.3 (meeting-identity-and-clones-attribution): атрибуция
+  // role='subject' для ИСТОРИЧЕСКИХ canonical-блоков семейства reasoning
+  // (Фаза 1.2 покрывает только новые). Находит автора через source-RawEvent
+  // (meeting: сегмент/спикер; text: payload.userId), upsert IdeaBlockEntity
+  // role='subject' + ре-enqueue core.skill-profile-rebuild для employee-Person.
+  // Идемпотентен (upsert по PK + дедуп enqueue по personId). На чистом старте
+  // нет исторических блоков → skipBootstrap. Уважает kill-switch
+  // knowledge.subjectAttributionEnabled.
+  // ТЗ: plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md §1.3.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-subject-attribution.ts',
+    hint: 'role=subject для исторических reasoning-блоков + rebuild клонов (Ф1.3)',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

@@ -94,3 +94,60 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
     expect(segments[0]!.speakers).toEqual([]);
   });
 });
+
+/**
+ * Фаза 1 (meeting-identity) — сегмент несёт identity спикера
+ * (participantId дорожки) для атрибуции авторства (role='subject').
+ */
+describe('SegmentBuilderService — speakerParticipantId (Фаза 1)', () => {
+  const makeSvc = (maxTokens = 2000) =>
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('turn с speakerParticipantId → сегмент несёт его', () => {
+    const svc = makeSvc();
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [
+          {
+            speaker: 'Алиса',
+            text: 'Привет',
+            startSec: 0,
+            endSec: 1,
+            speakerParticipantId: 'p1',
+          },
+        ],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.speakerParticipantId).toBe('p1');
+  });
+
+  it('turn без speakerParticipantId → сегмент speakerParticipantId == null', () => {
+    const svc = makeSvc();
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker: 'Боб', text: 'Здравствуй', startSec: 0, endSec: 1 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.speakerParticipantId).toBeNull();
+  });
+
+  it('fullText/free_note сегменты — speakerParticipantId не задан (undefined)', () => {
+    const svc = makeSvc();
+    const segs = svc.buildSegments({ fullText: 'Текст' });
+    expect(segs[0]!.speakerParticipantId).toBeUndefined();
+  });
+});

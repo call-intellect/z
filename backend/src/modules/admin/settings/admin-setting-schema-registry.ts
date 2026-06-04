@@ -94,6 +94,8 @@ const registry = new Map<string, ZodTypeAny>([
   // Action Center «лестница доверия» A1/A2 — булевы флаги.
   ['knowledge.curationAiVerifierEnabled', z.boolean()],
   ['knowledge.curationAutotuneEnabled', z.boolean()],
+  // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
+  ['knowledge.subjectAttributionEnabled', z.boolean()],
 
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],

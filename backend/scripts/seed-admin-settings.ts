@@ -267,6 +267,9 @@ function buildSettings(): SettingSeed[] {
     ['knowledge.curationMinDecisionsForAutotune', envInt('CURATION_MIN_DECISIONS_FOR_AUTOTUNE', 20), 'low', 'Курация: минимум решений до автоподстройки'],
     ['knowledge.curationMaxProvisionalOverride', envFloat('CURATION_MAX_PROVISIONAL_OVERRIDE', 0.2), 'medium', 'Курация: порог override-rate для kill-switch провизорного уровня'],
     ['knowledge.executablePersonaThresholdTraitsCount', envInt('EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT', 10), 'medium', 'ExecutablePersona: порог traits для rebuild'],
+    // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
+    // Дефолт TRUE — атрибуция критична для skill/persona/clone-проекций.
+    ['knowledge.subjectAttributionEnabled', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ENABLED', true), 'high', 'Kill-switch атрибуции авторства IdeaBlock (false = subject не проставляется)'],
     // МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE
     // (false = только Postgres, Cypher-вызовы no-op). Дефолт TRUE — граф критичен.
     ['graph.ageEnabled', envBool('GRAPH_AGE_ENABLED', true), 'high', 'Kill-switch записи в граф AGE (false = только Postgres)'],

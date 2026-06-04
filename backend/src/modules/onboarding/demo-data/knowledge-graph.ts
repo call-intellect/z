@@ -1,8 +1,10 @@
 /**
  * Демо-данные «ТехноСтрим» — граф знаний (knowledge-core).
  *
- * Создаёт: IdeaBlock (20), IdeaBlockLink (15), Entity (15), EntityLink (20),
- * Theme (7), ThemeIdeaBlock (21), ThemeEntity (10).
+ * Создаёт: IdeaBlock (20 + 20 extra + 10 reasoning), IdeaBlockLink (15),
+ * Entity (15 + person-Entity авторов), EntityLink (20), Theme (7),
+ * ThemeIdeaBlock (21), ThemeEntity (10),
+ * IdeaBlockEntity{role:'subject'} (для reasoning-блоков — оживление клонов, Ф1.4).
  *
  * Маппинги enum (ТЗ → Prisma):
  *   IdeaBlockStatus:        active → canonical
@@ -531,7 +533,219 @@ const THEME_ENTITIES: Record<string, string[]> = {
   // th_team — no entity links
 };
 
+// ──────────────────────── Reasoning-блоки (атрибуция subject) ───────────────────
+//
+// Ф1.4 ТЗ 2026-06-04-meeting-identity-and-clones-attribution: демо НЕ создавало
+// `IdeaBlockEntity` вовсе → клоны демо-сотрудников были навсегда пусты
+// (`loadSubjectReasoningBlocks` читает `role:'subject'` + reasoning-семейство).
+// Эти блоки — рассуждения конкретных демо-сотрудников; их автор детерминированно
+// помечается `IdeaBlockEntity{role:'subject', mentionContext:'author'}` (см. сид
+// ниже). Резолв автора: author-ключ → демо-Person (`ids.persons`) → его Entity.
+
+/** signalType ∈ reasoning-семейство, читаемое клонами (specialist-3-7 и др.). */
+const REASONING_SIGNAL_TYPES = new Set<string>([
+  'reasoning',
+  'rationale',
+  'decision_basis',
+  'expertise',
+  'experience',
+  'competence',
+]);
+
+interface ReasoningBlockDef {
+  key: string;
+  name: string;
+  /** Один из REASONING_SIGNAL_TYPES. */
+  signalType: string;
+  confidence: number;
+  criticalQuestion: string;
+  trustedAnswer: string;
+  /** Ключ автора-демо-сотрудника в `ids.persons` (см. org-structure.ts). */
+  authorPersonKey: string;
+  daysAgoCreated: number;
+}
+
+const REASONING_BLOCKS: ReasoningBlockDef[] = [
+  {
+    key: 'ib41',
+    name: 'Козлов: почему OAuth2 + PKCE, а не refresh-token rotation',
+    signalType: 'reasoning',
+    confidence: 0.9,
+    criticalQuestion: 'Чем обоснован выбор OAuth2 + PKCE для auth?',
+    trustedAnswer:
+      'PKCE закрывает перехват кода без хранения секрета на клиенте; ' +
+      'rotation не решает корневую проблему бессрочных JWT, а лишь маскирует.',
+    authorPersonKey: 'kozlov',
+    daysAgoCreated: 6,
+  },
+  {
+    key: 'ib42',
+    name: 'Козлов: критерий, когда hotfix важнее рефакторинга',
+    signalType: 'rationale',
+    confidence: 0.85,
+    criticalQuestion: 'Как Козлов решает hotfix vs рефакторинг?',
+    trustedAnswer:
+      'Если уязвимость в проде и эксплуатируема — hotfix сразу, рефакторинг ' +
+      'в отдельном спринте; иначе чинить корень.',
+    authorPersonKey: 'kozlov',
+    daysAgoCreated: 11,
+  },
+  {
+    key: 'ib43',
+    name: 'Козлов: опыт миграции SFU-кластера на K8s',
+    signalType: 'experience',
+    confidence: 0.8,
+    criticalQuestion: 'Какой опыт миграции медиа-стека на Kubernetes?',
+    trustedAnswer:
+      'TURN держать вне кластера на host-network; SFU за headless-service, ' +
+      'иначе ICE-кандидаты ломаются за NAT.',
+    authorPersonKey: 'kozlov',
+    daysAgoCreated: 17,
+  },
+  {
+    key: 'ib44',
+    name: 'Волкова: основание приоритизации бэклога по метрикам активации',
+    signalType: 'decision_basis',
+    confidence: 0.88,
+    criticalQuestion: 'На чём Волкова строит приоритизацию бэклога?',
+    trustedAnswer:
+      'Сначала фичи, двигающие activation-rate новых команд; монетизация — ' +
+      'после стабилизации ядра удержания.',
+    authorPersonKey: 'volkova',
+    daysAgoCreated: 5,
+  },
+  {
+    key: 'ib45',
+    name: 'Волкова: почему CustDev-интервью раз в неделю обязательны',
+    signalType: 'reasoning',
+    confidence: 0.82,
+    criticalQuestion: 'Зачем продакту еженедельный CustDev?',
+    trustedAnswer:
+      'Без живого голоса клиента бэклог дрейфует к внутренним гипотезам; ' +
+      'недельный ритм держит решения на данных.',
+    authorPersonKey: 'volkova',
+    daysAgoCreated: 9,
+  },
+  {
+    key: 'ib46',
+    name: 'Соколова: экспертиза по конкурентам в enterprise-сделках',
+    signalType: 'expertise',
+    confidence: 0.86,
+    criticalQuestion: 'Как Соколова отстраивается от Zoom в продаже?',
+    trustedAnswer:
+      'Демпинг Zoom бьётся через SLA-поддержку на русском и ФСТЭК-готовность; ' +
+      'цену не сравнивать лоб-в-лоб, переводить на совокупную стоимость.',
+    authorPersonKey: 'sokolova',
+    daysAgoCreated: 7,
+  },
+  {
+    key: 'ib47',
+    name: 'Соколова: основание агрессивного закрытия сделки в Q2',
+    signalType: 'decision_basis',
+    confidence: 0.78,
+    criticalQuestion: 'Почему форсировать закрытие Ростелекома сейчас?',
+    trustedAnswer:
+      'Бюджетный цикл клиента закрывается в июне; пропустим окно — сделка ' +
+      'уедет на квартал и обнулит прогноз ARR.',
+    authorPersonKey: 'sokolova',
+    daysAgoCreated: 4,
+  },
+  {
+    key: 'ib48',
+    name: 'Морозов: основание приоритета безопасности на Q2',
+    signalType: 'decision_basis',
+    confidence: 0.9,
+    criticalQuestion: 'Почему безопасность — главный приоритет квартала?',
+    trustedAnswer:
+      'Enterprise-пилоты блокируются без аудита auth; один инцидент утечки ' +
+      'обнулит доверие и воронку — риск дороже любой фичи.',
+    authorPersonKey: 'morozov',
+    daysAgoCreated: 8,
+  },
+  {
+    key: 'ib49',
+    name: 'Морозов: компетенция в выстраивании B2B SaaS-воронки',
+    signalType: 'competence',
+    confidence: 0.84,
+    criticalQuestion: 'В чём управленческая сильная сторона Морозова?',
+    trustedAnswer:
+      'Связывает продуктовые метрики с unit-экономикой; делегирует техдетали, ' +
+      'держит фокус команды на growth-метриках.',
+    authorPersonKey: 'morozov',
+    daysAgoCreated: 14,
+  },
+  {
+    key: 'ib50',
+    name: 'Петрова: почему итеративный подход с референсами в дизайне',
+    signalType: 'reasoning',
+    confidence: 0.8,
+    criticalQuestion: 'Как Петрова обосновывает процесс дизайна?',
+    trustedAnswer:
+      'Референсы до макета снимают споры о вкусе; итерации малыми шагами ' +
+      'дешевле, чем большой финальный пересмотр.',
+    authorPersonKey: 'petrova',
+    daysAgoCreated: 10,
+  },
+];
+
 // ──────────────────────────── Seed function ────────────────────────────────────
+
+/**
+ * Резолв «демо-Person автора → его Entity{type:'person'}». Идемпотентно:
+ * демо пересоздаётся, поэтому Entity ищется по `canonicalName` прежде, чем
+ * создавать. Сидер чисто prisma-прямой (без DI EntityResolutionService),
+ * поэтому Entity создаётся напрямую и `Person.entityId` проставляется здесь
+ * (Ф1.4 ТЗ; ср. EntityResolutionService.ensurePersonEntity).
+ *
+ * @returns Entity.id (type='person') автора, либо null если Person не найден.
+ */
+async function ensureDemoAuthorEntity(
+  prisma: SeedContext['prisma'],
+  tenantId: string,
+  personId: string,
+  entityCache: Map<string, string>,
+): Promise<string | null> {
+  const cached = entityCache.get(personId);
+  if (cached) return cached;
+
+  const person = await prisma.person.findFirst({
+    where: { id: personId, tenantId },
+    select: { id: true, name: true, entityId: true },
+  });
+  if (!person) return null;
+
+  // 1. Уже привязан — используем существующий Entity.
+  if (person.entityId) {
+    entityCache.set(personId, person.entityId);
+    return person.entityId;
+  }
+
+  // 2. Идемпотентный findOrCreate Entity{type:'person'} по canonicalName.
+  let entity = await prisma.entity.findFirst({
+    where: { tenantId, type: 'person', canonicalName: person.name },
+    select: { id: true },
+  });
+  if (!entity) {
+    entity = await prisma.entity.create({
+      data: {
+        tenantId,
+        type: 'person',
+        canonicalName: person.name,
+        externalSource: 'demo',
+      },
+      select: { id: true },
+    });
+  }
+
+  // 3. Проставить обратную связь Person.entityId (двойная точка отказа Ф1.1).
+  await prisma.person.update({
+    where: { id: person.id },
+    data: { entityId: entity.id },
+  });
+
+  entityCache.set(personId, entity.id);
+  return entity.id;
+}
 
 export const seedKnowledgeGraph: SeedFn = async (
   ctx: SeedContext,
@@ -639,6 +853,91 @@ export const seedKnowledgeGraph: SeedFn = async (
   console.log(
     `[knowledge-graph] ✓ ${EXTRA_BLOCKS.length} extra IdeaBlocks ` +
       `(${EXTRA_BLOCKS.filter((b) => b.signalType === ('commitment' as SignalType)).length} commitments).`,
+  );
+
+  // ── 1c. Reasoning-блоки + атрибуция subject (Ф1.4) ─────────────────────
+  //
+  // Для reasoning-семейства автор детерминированно помечается
+  // `IdeaBlockEntity{role:'subject', mentionContext:'author'}` → клоны
+  // демо-сотрудников перестают быть пустыми (`loadSubjectReasoningBlocks`).
+  // Идемпотентность: блок ищется по `tags=['author:<key>','reasoning-demo']`
+  // прежде, чем создавать; связь — `upsert` по композитному ключу
+  // (blockId, entityId), апгрейд mentioned→subject односторонний.
+
+  console.log(
+    `[knowledge-graph] Creating ${REASONING_BLOCKS.length} reasoning IdeaBlocks + subject-атрибуция…`,
+  );
+
+  // Кеш Person.id → Entity.id (type=person), чтобы не плодить запросы/Entity.
+  const authorEntityCache = new Map<string, string>();
+  let subjectLinkCount = 0;
+
+  for (const r of REASONING_BLOCKS) {
+    if (!REASONING_SIGNAL_TYPES.has(r.signalType)) {
+      throw new Error(
+        `[knowledge-graph] ib '${r.key}': signalType '${r.signalType}' вне reasoning-семейства`,
+      );
+    }
+
+    const reasoningTags = [`author:${r.authorPersonKey}`, 'reasoning-demo'];
+
+    // Идемпотентный поиск ранее засеянного блока (демо пересоздаётся).
+    const existing = await prisma.ideaBlock.findFirst({
+      where: { tenantId, name: r.name },
+      select: { id: true },
+    });
+    const block =
+      existing ??
+      (await prisma.ideaBlock.create({
+        data: {
+          tenantId,
+          name: r.name,
+          criticalQuestion: r.criticalQuestion,
+          trustedAnswer: r.trustedAnswer,
+          signalType: r.signalType as SignalType,
+          confidence: r.confidence,
+          status: 'canonical',
+          dataClass: 'internal',
+          tags: reasoningTags,
+          createdAt: daysAgo(r.daysAgoCreated),
+        },
+        select: { id: true },
+      }));
+    ids.ideaBlocks[r.key] = block.id;
+
+    // Резолв автора-демо-сотрудника → его Entity{type:'person'}.
+    const personId = ids.persons[r.authorPersonKey];
+    if (!personId) {
+      console.warn(
+        `[knowledge-graph] ib '${r.key}': демо-Person '${r.authorPersonKey}' не найден — subject пропущен`,
+      );
+      continue;
+    }
+    const entityId = await ensureDemoAuthorEntity(
+      prisma,
+      tenantId,
+      personId,
+      authorEntityCache,
+    );
+    if (!entityId) continue;
+
+    // Идемпотентный upsert связи: создаём `subject` либо апгрейдим mentioned→subject.
+    await prisma.ideaBlockEntity.upsert({
+      where: { blockId_entityId: { blockId: block.id, entityId } },
+      create: {
+        blockId: block.id,
+        entityId,
+        mentionContext: 'author',
+        role: 'subject',
+      },
+      update: { role: 'subject', mentionContext: 'author' },
+    });
+    subjectLinkCount++;
+  }
+
+  console.log(
+    `[knowledge-graph] ✓ ${REASONING_BLOCKS.length} reasoning IdeaBlocks, ` +
+      `${subjectLinkCount} IdeaBlockEntity(role='subject') created`,
   );
 
   // ── 2. IdeaBlockLinks ──────────────────────────────────────────────
@@ -770,7 +1069,9 @@ export const seedKnowledgeGraph: SeedFn = async (
 
   console.log(
     '[knowledge-graph] ✓ Knowledge graph seeded: ' +
-      '20 IdeaBlocks, 15 IdeaBlockLinks, 15 Entities, 20 EntityLinks, ' +
-      `7 Themes, ${tibCount} ThemeIdeaBlock, ${teCount} ThemeEntity`,
+      `20 IdeaBlocks, ${EXTRA_BLOCKS.length} extra, ${REASONING_BLOCKS.length} reasoning, ` +
+      `15 IdeaBlockLinks, 15 Entities (+ авторские person-Entity), 20 EntityLinks, ` +
+      `7 Themes, ${tibCount} ThemeIdeaBlock, ${teCount} ThemeEntity, ` +
+      `${subjectLinkCount} IdeaBlockEntity(role='subject')`,
   );
 };

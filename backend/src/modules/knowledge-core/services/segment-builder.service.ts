@@ -11,6 +11,12 @@ export interface Segment {
   endMs: number;
   speakers: string[];
   text: string;
+  /**
+   * Фаза 1 (meeting-identity) — participantId дорожки спикера. Несёт identity
+   * автора для атрибуции (role='subject') в block-ingest. undefined для
+   * fullText/freeNote/fallback сегментов.
+   */
+  speakerParticipantId?: string | null;
 }
 
 /** Структура turn'а в transcript meeting-payload. См. MeetingIngestAdapter. */
@@ -19,6 +25,8 @@ interface MeetingTurn {
   text: string;
   startSec: number;
   endSec: number;
+  /** Фаза 0.3 — participantId дорожки спикера (для атрибуции авторства). */
+  speakerParticipantId?: string | null;
 }
 
 interface MeetingTranscript {
@@ -147,6 +155,8 @@ export class SegmentBuilderService {
           endMs: Math.round(endSec * 1000),
           speakers: [speaker],
           text,
+          // В группе один speaker — берём participantId из первого turn'а.
+          speakerParticipantId: group[0]?.speakerParticipantId ?? null,
         });
         buffer = [];
         bufferChars = 0;

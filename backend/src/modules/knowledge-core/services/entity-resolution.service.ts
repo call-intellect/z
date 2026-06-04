@@ -778,7 +778,10 @@ export class EntityResolutionService {
     const lowered = this.normalizeName(person.name).toLowerCase();
     if (lowered.length === 0) return;
 
-    const entity = await this.prisma.entity.findFirst({
+    // Берём ВСЕ person-Entity Org и ищем по нормализованному имени (как в
+    // linkEntityPerson). Прежний findFirst без фильтра по имени брал первый
+    // person-Entity и при >1 сущности не находил нужный.
+    const entities = await this.prisma.entity.findMany({
       where: {
         tenantId: args.tenantId,
         type: 'person',
@@ -786,9 +789,10 @@ export class EntityResolutionService {
       },
       select: { id: true, canonicalName: true },
     });
-    if (!entity) return;
-
-    if (entity.canonicalName.trim().toLowerCase() !== lowered) {
+    const entity = entities.find(
+      (e) => this.normalizeName(e.canonicalName).toLowerCase() === lowered,
+    );
+    if (!entity) {
       // Точного совпадения нет — fuzzy/cosine — TODO.
       return;
     }
@@ -848,6 +852,123 @@ export class EntityResolutionService {
       { personId: match.id, entityId: args.entityId },
       'entity ↔ person линковка установлена (новый Entity нашёл Person-а)',
     );
+  }
+
+  /**
+   * Гарантирует наличие Entity{type=person} для данного Person и заполняет
+   * Person.entityId. Идемпотентно: если entityId уже задан — просто
+   * возвращает его. Ленивое создание для атрибуции авторства (role='subject').
+   *
+   * Возвращает Entity.id или null (Person не найден / удалён / чужая Org /
+   * пустое имя).
+   */
+  async ensurePersonEntity(args: {
+    tenantId: string;
+    personId: string;
+  }): Promise<string | null> {
+    const person = await this.prisma.person.findUnique({
+      where: { id: args.personId },
+      select: { tenantId: true, name: true, entityId: true, deletedAt: true },
+    });
+    if (!person || person.deletedAt || person.tenantId !== args.tenantId) {
+      return null;
+    }
+    if (person.entityId) return person.entityId; // уже слинкован
+
+    if (this.normalizeName(person.name).length === 0) {
+      // findOrCreateEntity бросает на пустом имени — не зовём.
+      return null;
+    }
+
+    const { entity } = await this.findOrCreateEntity({
+      tenantId: args.tenantId,
+      type: 'person',
+      name: person.name,
+    });
+    await this.prisma.person.update({
+      where: { id: args.personId },
+      data: { entityId: entity.id },
+    });
+    this.logger.debug(
+      { personId: args.personId, entityId: entity.id },
+      'ensurePersonEntity: person-Entity создан/найден, Person.entityId заполнен',
+    );
+    return entity.id;
+  }
+
+  /**
+   * Резолвит автора рассуждения (role='subject') в Entity.id (type=person),
+   * лениво создавая person-Entity при необходимости. Источники по приоритету
+   * (первый успех возвращает):
+   *   1. authorUserId — текстовые каналы (free_note / in_app).
+   *   2. speakerParticipantId — встречи (дорожка участника).
+   *   3. speakerName — fallback по имени спикера.
+   * Все ветки tenant-scoped. Возвращает null, если автора определить нельзя.
+   */
+  async resolveSubjectEntityId(
+    tenantId: string,
+    input: {
+      speakerParticipantId?: string | null;
+      speakerName?: string | null;
+      authorUserId?: string | null;
+    },
+  ): Promise<string | null> {
+    const personToEntity = async (person: {
+      id: string;
+      entityId: string | null;
+    }): Promise<string | null> => {
+      if (person.entityId) return person.entityId;
+      return this.ensurePersonEntity({ tenantId, personId: person.id });
+    };
+
+    // 1. authorUserId — текстовые каналы.
+    if (input.authorUserId) {
+      const p = await this.prisma.person.findFirst({
+        where: { tenantId, userId: input.authorUserId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (p) return personToEntity(p);
+    }
+
+    // 2. speakerParticipantId — встречи.
+    if (input.speakerParticipantId) {
+      const part = await this.prisma.participant.findUnique({
+        where: { id: input.speakerParticipantId },
+        select: { personId: true, userId: true },
+      });
+      if (part) {
+        if (part.personId) {
+          const p = await this.prisma.person.findUnique({
+            where: { id: part.personId },
+            select: { id: true, entityId: true, deletedAt: true },
+          });
+          if (p && !p.deletedAt) {
+            return personToEntity({ id: p.id, entityId: p.entityId });
+          }
+        }
+        if (part.userId) {
+          const p = await this.prisma.person.findFirst({
+            where: { tenantId, userId: part.userId, deletedAt: null },
+            select: { id: true, entityId: true },
+          });
+          if (p) return personToEntity(p);
+        }
+      }
+    }
+
+    // 3. speakerName — fallback по имени спикера.
+    if (input.speakerName) {
+      const pid = await this.resolvePersonByHint(tenantId, input.speakerName);
+      if (pid) {
+        const p = await this.prisma.person.findUnique({
+          where: { id: pid },
+          select: { id: true, entityId: true },
+        });
+        if (p) return personToEntity(p);
+      }
+    }
+
+    return null;
   }
 
   // ─────────────────────────── SBA α-3: Vendor/Event helpers ──────────────

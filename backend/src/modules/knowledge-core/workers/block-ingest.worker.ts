@@ -39,7 +39,25 @@ import {
 } from '../services/block-extraction.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { EntityResolutionService } from '../services/entity-resolution.service';
-import { SegmentBuilderService } from '../services/segment-builder.service';
+import {
+  SegmentBuilderService,
+  type Segment,
+} from '../services/segment-builder.service';
+
+/**
+ * Фаза 1.2 (meeting-identity & clones-attribution) — типы сигналов-рассуждений,
+ * для которых автор детерминированно помечается `IdeaBlockEntity.role='subject'`
+ * (оживление ролевых клонов: Specialist 3-7 / ExecutablePersona читают первые 3).
+ * Все 6 значений существуют в enum `SignalType` (schema.prisma).
+ */
+const REASONING_SUBJECT_SIGNAL_TYPES: ReadonlySet<string> = new Set([
+  'reasoning',
+  'rationale',
+  'decision_basis',
+  'expertise',
+  'experience',
+  'competence',
+]);
 
 /**
  * KC-Temporal W1.4 (2026-05-25) — типизированный спан-уровневый провенанс.
@@ -243,6 +261,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const payload = await this.loadPayload(event);
       const segments = this.segments.buildSegments(payload);
+      // Фаза 1.2 — автор текстовых каналов (free_note/in_app): payload.userId.
+      const authorUserId = this.tryGetAuthorUserId(payload);
       const meetingTitle = this.tryGetMeetingTitle(payload);
       const extraction = await this.extractor.extractFull({
         tenantId: event.tenantId,
@@ -319,6 +339,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           embedding: vector ?? null,
           roleRelevant: block.role_relevant && roleId !== null,
           roleId,
+          segments,
+          authorUserId,
         });
         if (blockId) {
           blockIds.push(blockId);
@@ -719,6 +741,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Фаза 1.2 — извлечение автора текстовых каналов (free_note / in_app):
+   * `payload.userId` — id пользователя, написавшего заметку/сообщение. Несёт
+   * identity автора для атрибуции `role='subject'` в text-источниках.
+   * Возвращает null, если поле отсутствует/пустое/не строка (встречи —
+   * атрибуция идёт по `speakerParticipantId` сегмента, не отсюда).
+   */
+  private tryGetAuthorUserId(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const v = (payload as { userId?: unknown }).userId;
+    return typeof v === 'string' && v.trim().length > 0 ? v : null;
+  }
+
+  /**
    * Sprint 3 B1-3.1 — извлечение `signalTypeHint` из payload (TrackerAdapter
    * проставляет его как явное указание signalType, чтобы worker не зависел
    * от LLM-классификации для детерминированных событий трекера).
@@ -810,6 +845,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     embedding: number[] | null;
     roleRelevant: boolean;
     roleId: string | null;
+    segments: Segment[];
+    authorUserId: string | null;
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
     try {
@@ -925,6 +962,28 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           );
         });
       }
+
+      // Фаза 1.2 — детерминированная атрибуция автора (role='subject') для
+      // блоков-рассуждений. Best-effort: ошибка/выключенный kill-switch не
+      // валит persist основного блока. LLM-промпт НЕ трогается — атрибуция
+      // идёт по identity сегмента (meeting) / payload.userId (text).
+      if (blockId && REASONING_SUBJECT_SIGNAL_TYPES.has(block.signalType)) {
+        await this.attributeSubject({
+          event,
+          block,
+          blockId,
+          segments: args.segments,
+          authorUserId: args.authorUserId,
+        }).catch((err) => {
+          this.logger.warn(
+            {
+              blockId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-ingest: subject-атрибуция не удалась — пропуск',
+          );
+        });
+      }
       return blockId;
     } catch (err) {
       this.logger.error(
@@ -937,6 +996,87 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       );
       return null;
     }
+  }
+
+  /**
+   * Фаза 1.2 — детерминированная атрибуция автора блока-рассуждения как
+   * `IdeaBlockEntity.role='subject'` (БЕЗ LLM, prompt-cache сохранён).
+   *
+   * Источник identity:
+   *   - meeting: сегмент, перекрывающий evidence по времени, даёт
+   *     `speakerParticipantId` (+ `speakers[0]` как fallback-имя).
+   *   - text (free_note/in_app): `authorUserId` (`payload.userId`).
+   *
+   * `resolveSubjectEntityId` лениво создаёт person-Entity и возвращает его id.
+   * upsert по композитному PK `@@id([blockId,entityId])` — апгрейд связи
+   * `mentioned→subject` односторонний (коллизия «автор уже упомянут»).
+   *
+   * Kill-switch — AdminSetting `knowledge.subjectAttributionEnabled`
+   * (code-fallback `true`). При `false` шаг пропускается (регресс-страховка).
+   */
+  private async attributeSubject(args: {
+    event: RawEvent;
+    block: ExtractedBlock;
+    blockId: string;
+    segments: Segment[];
+    authorUserId: string | null;
+  }): Promise<void> {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.subjectAttributionEnabled',
+      undefined,
+      true,
+    );
+    if (!enabled) return;
+
+    // Встреча: ищем сегмент, чей таймкод-диапазон покрывает evidenceStartMs.
+    // Для text-сегментов (endMs=0) это условие ложно → identity берётся из
+    // authorUserId. Берём speakers[0] как fallback-имя спикера.
+    const seg =
+      args.segments.find(
+        (s) =>
+          s.endMs > 0 &&
+          args.block.evidenceStartMs >= s.startMs &&
+          args.block.evidenceStartMs <= s.endMs,
+      ) ?? null;
+    const speakerParticipantId = seg?.speakerParticipantId ?? null;
+    const speakerName = seg?.speakers?.[0] ?? null;
+
+    const subjectEntityId = await this.entities.resolveSubjectEntityId(
+      args.event.tenantId,
+      {
+        speakerParticipantId,
+        speakerName,
+        authorUserId: args.authorUserId,
+      },
+    );
+    if (!subjectEntityId) return;
+
+    await this.prisma.ideaBlockEntity.upsert({
+      where: {
+        blockId_entityId: { blockId: args.blockId, entityId: subjectEntityId },
+      },
+      create: {
+        blockId: args.blockId,
+        entityId: subjectEntityId,
+        mentionContext: 'author',
+        role: 'subject',
+      },
+      update: { role: 'subject' },
+    });
+
+    this.logger.debug(
+      {
+        blockId: args.blockId,
+        entityId: subjectEntityId,
+        signalType: args.block.signalType,
+        via: speakerParticipantId
+          ? 'speakerParticipantId'
+          : args.authorUserId
+            ? 'authorUserId'
+            : 'speakerName',
+      },
+      'block-ingest: автор помечен role=subject',
+    );
   }
 
   private async linkEntity(args: {

@@ -13,6 +13,11 @@ depends_on:
   - 2026-05-25-billing-and-referrals-tz.md (модель Subscription и событие SubscriptionStatusChanged)
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ⬜ не делалось (заменено/отменено) — 5%.**
+> Ранний черновик-дизайн (2026-05-25), полностью вытесненный более поздней линейкой демо-ТЗ (demo-cabinet, demo-workspace, paywall-no-trial, demo-auto-seed-and-cleanup, demo-shared-org-model). Функциональная цель достигнут
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Демо-кабинет для новых Org
 
 > Анализ-источник: `plans/analysis/2026-05-25-billing-and-referrals.md` (Часть 2 «Регистрация компании и демо-режим»).

@@ -7,6 +7,11 @@ priority: high (экономия 50-90% на LLM-вызовах в цепочк�
 related-modules: ai (LlmRouter, DeepSeekService), knowledge-core, dialog-layer
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ⬜ не делалось (заменено/отменено) — 10%.**
+> Production-код по ТЗ не написан (нет cache-prefix-builder.ts, нет orchestrator, специалисты не отрефакторены, нет метрики ratio). Сделана только экспериментально-документная часть (llm-cache-status.md + раздел в code-pit
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Применить принцип «общего кэшируемого префикса» ко всем LLM-цепочкам в проекте
 
 ## 0. Кратко

@@ -8,6 +8,11 @@ related:
   - plans/tz/2026-05-27-tracker-parity-with-competitors.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью: вся обещанная инфраструктура (User.tourProgress, REST GET/PATCH/reset, Zod-DTO, сервис+тесты, метрики Prometheus, TourProvider/Tooltip/Backdrop/Overlay/useTour, реестр туров, интеграция в Authentic
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Onboarding-тур
 
 ## TL;DR

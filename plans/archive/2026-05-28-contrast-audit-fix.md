@@ -5,6 +5,11 @@ feature: contrast-audit-fix
 date: 2026-05-28
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью и подтверждено кодом: конфиг-фиксы (shadcn-алиасы, bg-muted/hover, --text-disabled), mass-replace bg-white (37/38, 1 намеренный остаток), Calendar, CauseCategory, Entity Graph, BrandVoice — всё в ко
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Исправление контрастности и дизайн-токенов (аудит P0–P1)
 
 > Аналитика: аудит произведён агентом в сессии 2026-05-28; полный отчёт — в чате.

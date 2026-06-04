@@ -7,6 +7,11 @@ effort: 0.5 дня
 depends_on: []
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью (done, 100%): оба spec-файла созданы и проходят (18 тестов зелёных), Вариант А с throw на дубликат checkInId реализован в парсере, reason='invalid_element' метрика заведена, коммит 7ede43db соответс
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Unit-тесты для CheckinSentimentBatchCron + parser
 
 > Связанный контекст: [plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md §6](2026-05-25-llm-architecture-changes-from-experiments.md) (миграция operations на batch-cron), коммит `3cba11d` (Фаза 2 миграции LLM на DeepSeek-V4-Pro), задача 2 из [plans/analysis/2026-05-26-llm-migration-followup-prompt.md](../analysis/2026-05-26-llm-migration-followup-prompt.md).

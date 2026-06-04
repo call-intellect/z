@@ -38,6 +38,11 @@ existing_critical_files:
   - frontend/app/(admin)/admin/demo/DemoClient.tsx                          # /admin/demo: изменить семантику кнопок
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 98%.**
+> Реализовано целиком: все обещанные артефакты (schema-изменения, DemoObserverGuard, RBAC canMutate + policy.csv, ENV ZDEMO_ORG_ID, register/getMe, listener-detach, удаление авто-сидинга, оба patch-скрипта в apply-prod-dep
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: единая эталонная демо-Org «ТехноСтрим»
 
 > Архитектурный обзор и доказательство выбора — в [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../analysis/2026-06-01-demo-shared-org-architecture.md). Этот ТЗ — execution-ready план реализации.

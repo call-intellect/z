@@ -7,6 +7,11 @@ depends-on: —
 related-modules: knowledge-core, ai, participants, tasks
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Реализовано полностью: оба новых сервиса (ParticipantContextService, TaskAssigneeResolverService) созданы и покрыты тестами, метрика заведена, все три промпта проброшены, оба воркера подключены, Prisma-relation Task.assi
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Жёсткая идентификация участников встречи (User.id вместо matching by name)
 
 ## 0. Кратко

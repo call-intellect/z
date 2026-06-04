@@ -15,6 +15,11 @@ related_plans:
   - plans/analysis/2026-05-25-billing-and-referrals.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 98%.**
+> Реализовано полностью по всем фазам: backend (схема, create с contractAccepted, маскировка клиентов, расширенный getStats, getIncomeChart, getFunnel, promo-event endpoint, closePeriod с payoutDetails, DTO, Prometheus-мет
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Партнёрский кабинет Коры — перестройка UX и расширение аналитики (первый запуск)
 
 ## 1. Контекст и зачем

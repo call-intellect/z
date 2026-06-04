@@ -8,6 +8,11 @@ priority: medium (бэкенд готов, не блокирует прод)
 related-modules: frontend (app/(authenticated)/admin/llm-routes), backend admin/llm-routes (готов)
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью: все 6 фаз и все acceptance criteria подтверждены реальным кодом (страница, таблица, фильтры, модалка с тремя tier, защита super_admin на бэке, second-brain обновлён). Сверх ТЗ добавлены pinnedVersi
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 > **Итог 2026-05-25:** все 6 фаз выполнены. Страница реально лежит в `app/(authenticated)/admin/llm-routes/` (не `(admin)` — это были ранние черновики ТЗ). Дополнительно по факту: расширены `LLM_PROVIDERS` / `KNOWN_MODELS` / `providerLabel` на `'kie'`/`'grsai'` (см. ТЗ [2026-05-24-kie-grsai-llm-router-integration.md](2026-05-24-kie-grsai-llm-router-integration.md)). Поле `pinnedVersionNote` (фаза 6.5 clone-reliability-hardening) учтено в модалке с warning для критичных taskType (skill-trait-detect / clone-respond / block-ingest). DeepSeek-Pro warning в модалке тоже добавлен.
 
 # Админка: страница управления моделями LLM по типам задач

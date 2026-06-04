@@ -12,6 +12,11 @@ relates_to:
   - frontend/app/(admin)/admin/login/layout.tsx
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Основная цель достигнута: вся админка (88 страниц + support-файлы) перенесена в route-группу (admin), создан AdminAuthGuard, новые layout'ы рендерят только AdminShell без пользовательских провайдеров, старая (authenticat
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Z-Admin — отдельная route-группа без пользовательского кабинета
 
 ## 0. Контекст

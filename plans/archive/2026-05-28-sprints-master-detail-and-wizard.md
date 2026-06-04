@@ -14,6 +14,11 @@ related:
   - backend/src/modules/vendors/vendors.controller.ts
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 97%.**
+> Все 3 фазы реализованы и подтверждены кодом: backend (SprintsController/Service, VendorsService CRUD, translit-утилиты, RBAC, unit+integration тесты, расширенный smoke), frontend (master-detail SprintsListClient без загл
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Спринты — master-detail список и расширенный мастер создания
 
 ## 0. Контекст

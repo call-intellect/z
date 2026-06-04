@@ -8,6 +8,11 @@ related:
   - plans/archive/2026-05-23-tracker-phase-1-models-api.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Функция реализована практически полностью: endpoint /issues/:id/children, includeChildrenCount, защита от циклов и глубины >2, verb parent_changed, метрика subtasks_created_total, все frontend-компоненты (IssueSubtasks, 
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # UI подзадач в задаче
 
 ## TL;DR

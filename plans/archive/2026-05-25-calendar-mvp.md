@@ -1,3 +1,7 @@
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Фазы 1 и 2 реализованы целиком и подтверждены кодом (Prisma-модели, 11 эндпоинтов, 5 Concierge-tools, cron+worker+очередь, ICS-feed, find-free-slot, frontend Day/Week/Month/EventForm, тесты) и тремя коммитами. Фаза 3 соз
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
 # Календарь MVP — расширение модуля Events + Concierge tools
 
 **Дата:** 2026-05-25

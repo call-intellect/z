@@ -6,6 +6,11 @@ date: 2026-05-24
 completed: 2026-05-25
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 92%.**
+> ТЗ реализовано по всем 7 фазам (A-G), что подтверждено кодом: OKLCH-токены, все shared-компоненты, design-preview галереи, sonner-shim, полный набор backend-spec (knowledge-core/api, rbac, tenant guard, entitlements, pub
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Модернизация интерфейса, дизайн-системы и критического покрытия API
 
 > Аналитические материалы:

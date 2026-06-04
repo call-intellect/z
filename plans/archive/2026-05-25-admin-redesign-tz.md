@@ -5,6 +5,11 @@ feature: admin-redesign
 date: 2026-05-25
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): 🟢 почти реализовано — 92%.**
+> Реализовано по факту почти целиком: все 10 моделей БД, getDynamic, AdminSettingsService + bootstrap + pub/sub, CronManagerService через SchedulerRegistry, все 9 фронт-компонентов и 4 хука, двухуровневый сайдбар и все ~36
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Редизайн глобальной админки Z-Admin
 
 > Анализ: [plans/analysis/2026-05-25-admin-redesign.md](plans/analysis/2026-05-25-admin-redesign.md)

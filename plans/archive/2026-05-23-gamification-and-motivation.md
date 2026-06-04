@@ -10,6 +10,11 @@ related:
   - second-brain/01_projects/ideas.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 98%.**
+> Реализовано полностью: backend (модели, 4 cron'а, 5 контроллеров, воркер, seed, RBAC, prompt-key, тесты) + frontend (2 страницы вклада, 3 виджета, api/domain-слой, opt-out endpoint) — всё подтверждено в коде. «Осталось» 
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Геймификация и мотивация — sub-ТЗ
 
 ## TL;DR

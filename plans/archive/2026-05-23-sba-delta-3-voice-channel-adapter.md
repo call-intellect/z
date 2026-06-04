@@ -10,6 +10,11 @@ related:
   - plans/tz/2026-05-22-final-roadmap.md §δ-3
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью: ASR REST, TTS REST, VoiceChannelAdapter, RBAC, ENV, 4 метрики, фронт voice.api+ConciergeVoice, и единственный «отложенный» пункт (WebSocket-голосовой ввод в Concierge, /ws/voice) тоже доделан и про
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # SBA δ-3 — VoiceChannelAdapter (inbound + outbound)
 
 ## 1. Цель и контекст

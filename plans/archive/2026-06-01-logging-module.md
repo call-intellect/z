@@ -1,3 +1,8 @@
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью и подтверждено кодом на 100%: Prisma-модели+enum+индексы, ENV LOG_DB_*, весь backend-модуль logging/, контроллер /api/v1/platform/logs под SuperAdminGuard, интеграция в AppModule и AllExceptionsFilt
+> ⚠️ Хвосты (см. реестр приоритетов): Impersonation-блокировка из исходного ТЗ сознательно не реализована — в проекте нет механизма impersonation (зафиксирова
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
 # ТЗ: Модуль технического логирования в БД (LoggingModule)
 
 Дата: 2026-06-01. Ветка: `logSystem`.

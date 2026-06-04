@@ -13,6 +13,11 @@ related:
   - backend/src/modules/knowledge-core/services/router.service.ts (заглушка для `commitment_status`)
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 97%.**
+> ТЗ реализовано практически полностью (≈97%): схема БД, enum resolves, специалист, cron, handler, удалена заглушка router'а, оба контроллера и эндпоинты, RBAC, ENV, LLM-маршруты, промпт-поля, Prometheus-метрики, оба backf
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # SBA β-8.2 — Хранитель обещаний
 
 ## 1. Цель и контекст

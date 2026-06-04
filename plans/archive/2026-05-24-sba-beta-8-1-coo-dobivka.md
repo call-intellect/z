@@ -12,6 +12,11 @@ related:
   - backend/src/modules/operations/services/operations-dashboard.service.ts
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью и подтверждено кодом: схема (4 поля DailyCheckIn + модель WeeklyOperationsDigest + индексы), воркер настроения, недельный cron с идемпотентностью и доставкой, сервис дайджеста, оба контроллера и три
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # SBA β-8.1 — Добивка панели операционного директора
 
 ## 1. Цель и контекст

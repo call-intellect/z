@@ -5,6 +5,11 @@ feature: admin-subscription-ui-v2
 date: 2026-05-29
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 98%.**
+> Все пункты Scope (A навигация, B рефакторинг заголовков, C новые UI-блоки InvoiceRowActions/AdjustSeatsDialog/ForceStatusDialog/SubscriptionEventsTimeline, D бейдж «Бонус») и DoD подтверждены в коде; четыре фазы закоммич
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Admin Subscription UI v2 — табы «Тариф и лимиты» + «Подписка и счета»
 
 > Связанные:

@@ -6,6 +6,12 @@ area: frontend, backend (entitlements)
 backend-ready: true
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Реализовано полностью отдельным коммитом 8c35614c: все 6 задач (regulations/ideas/entities/skills-table/sidebar-subgroup/access-control) подтверждены в коде frontend+backend. Сознательные отклонения (нет отдельных guards
+> ⚠️ Хвосты (см. реестр приоритетов): Роль member отсутствует в Z — entitlement-флаги заложены «на будущее», фактической member-роли нет
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 ## Итог реализации (2026-05-26)
 
 **Все 3 волны выполнены.** `bun run typecheck` и `bun run lint` чистые

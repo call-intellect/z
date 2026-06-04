@@ -12,6 +12,11 @@ related:
   - plans/archive/2026-05-23-tracker-phase-5-import.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Зонтик фактически закрыт: все 6 подчинённых функций реализованы в коде (модели Board/ProjectDocument/IssueChecklist(+Item), контроллеры boards/checklists/project-documents/overview зарегистрированы в tracker.module.ts, f
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Трекер Z/Кора — паритет с Kaiten/Weeek/YouGile
 
 ## TL;DR

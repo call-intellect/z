@@ -1,3 +1,8 @@
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью и подтверждено кодом: приоритет data.traceId в deriveTraceFromJob, auto-stamp через CoreQueueService.stamp() во всех q.add(), traceId? в 10 payload-интерфейсах, наследование mtg_ в block-ingest чере
+> ⚠️ Хвосты (см. реестр приоритетов): Рантайм-смоук на проде (прогон реальной встречи → проверка в /admin/logs по mtg_<id>, что видны и AI_ANALYSIS, и KNOWLED
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
 # ТЗ: Сшивка graph-контура в единый traceId встречи (mtg_<id>)
 
 Дата: 2026-06-03. Ветка: `logExt`.

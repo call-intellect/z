@@ -5,6 +5,11 @@ feature: backend-lint-cleanup
 date: 2026-05-25
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): 🟢 почти реализовано — 90%.**
+> Главная цель достигнута и верифицирована прогоном: `bun run lint` → 0 errors, exit 0 (было 112 errors), resolver и spec-override закоммичены в eslint.config.mjs. Это снимает блокировку CI/hooks — основная ценность достав
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Очистка backend lint и type-coverage
 
 > Связанный контекст: [plans/tz/2026-05-24-ui-api-modernization.md](2026-05-24-ui-api-modernization.md) — `bun run lint` бэка падает 112 ошибками и 1573 предупреждениями. Это технический долг, накопленный за все предыдущие фазы. Frontend lint уже чистый (0 errors, 0 warnings).

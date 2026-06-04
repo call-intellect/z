@@ -5,6 +5,11 @@ feature: env-to-admin-setting-call-sites-migration
 date: 2026-05-25
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью: каркас (resolveSync/hydrateSync/applySync/cacheMap), bootstrap-сервис, pub/sub {key,value}, 64 поля в 12 геттерах мигрированы, сидер со всеми группами, 41 unit-тест, документация и рефлексия. Все 5
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Реальный переезд ENV → AdminSetting (миграция call-sites через sync-cache)
 
 > Анализ: продолжение [plans/analysis/2026-05-25-admin-redesign.md](../analysis/2026-05-25-admin-redesign.md) и [plans/tz/2026-05-25-admin-redesign-tz.md](2026-05-25-admin-redesign-tz.md).

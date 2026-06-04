@@ -1,3 +1,7 @@
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Все code-фазы (1-6) полностью реализованы и подтверждены кодом: ENV-флаг, @Optional() DialogService, isDialogLayerEnabled(), preRetrieve(), summary-блок, cache short-circuit (cachedAnswer.text), три новые метрики, second
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
 # ТЗ: Concierge → подключение dialog-layer и summary в контекст
 
 **Дата:** 2026-05-27

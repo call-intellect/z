@@ -14,6 +14,12 @@ relates_to:
   - docs/reference/llm-models-playbook.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью (100%): сервисы KieService/GrsaiService, регистрация в роутере и ai.module, enum/capability/dispatch, цены, seed провайдеров+моделей, A/B-маршрут на dialog-multi-query, admin+frontend DTO-списки, EN
+> ⚠️ Хвосты (см. реестр приоритетов): Massовый перевод существующих taskType на Gemini/Claude — отдельное продуктовое решение (вне scope)
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: KIE и GRSAI как полноценные провайдеры LlmRouter
 
 ## Цель

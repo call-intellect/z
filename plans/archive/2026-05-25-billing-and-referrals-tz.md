@@ -13,6 +13,12 @@ relates_to:
   - backend/src/modules/entitlements/entitlement.service.ts
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Реализовано практически целиком и подтверждено кодом: все 8 Prisma-моделей + 6 enum, три модуля (billing/referrals/meetings-balance) зарегистрированы в AppModule, FSM подписки, формулы seat, генерация PDF-счетов, атомарн
+> ⚠️ Хвосты (см. реестр приоритетов): Email-уведомление рефералу в кроне выплат — допускался TODO-комментарий если MailService отсутствует (фаза 4.5)
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Биллинг, реферальная программа, накопительный баланс встреч
 
 > Источник правды по продуктовым решениям: [`plans/analysis/2026-05-25-billing-and-referrals.md`](../analysis/2026-05-25-billing-and-referrals.md). Все цены, формулы и FSM (Finite State Machine — конечный автомат) подписки взяты оттуда без изменений.

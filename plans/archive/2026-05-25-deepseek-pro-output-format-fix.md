@@ -15,6 +15,12 @@ used-by:
   - clone-reliability-hardening Фаза 6.1 — переключение skill-trait-detect на deepseek-v4-pro
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 100%.**
+> Реализовано полностью (100%): автоконвертация в buildParams, восстановление text в mapResponse, метрика z_deepseek_schema_to_tool_conversion_total, логи, 8 unit-тестов, probe-скрипт — всё подтверждено в коде. Коммиты из 
+> ⚠️ Хвосты (см. реестр приоритетов): §8.1 Переключить default-модель в seed-llm-task-routes*.ts на deepseek-v4-pro для приоритетных taskType — отдельное прод
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # Формат вывода для DeepSeek-V4-Pro: автоматическая конвертация json_schema → tools
 
 ## 0. Кратко

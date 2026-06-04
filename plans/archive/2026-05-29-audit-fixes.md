@@ -11,6 +11,11 @@ related:
   - plans/tz/2026-05-27-sprints.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 97%.**
+> Реализовано практически полностью: все 15 блокеров + 17 высоких + 31 средний риск имеют отдельные fix(audit) коммиты, спот-проверка ~12 из них на уровне кода и схемы Prisma подтвердила реальные изменения (не пустые комми
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: исправление находок аудита коммитов 2026-05-26 → 2026-05-29
 
 **Источник:** многоагентный аудит 139 коммитов / 970 файлов / ~98K строк за 3 дня (биллинг 1-9, sprints 1-5, tracker-паритет, onboarding v2, credentials β-10, concierge dialog-layer, clones marketplace, LLM-migration на DeepSeek V4 Pro, Telegram через прокси, demo workspace, ребрендинг Z → Кора, unified-login + AdminDemoController).

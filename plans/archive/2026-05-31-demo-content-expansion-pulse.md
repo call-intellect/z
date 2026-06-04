@@ -27,6 +27,11 @@ related_uncommitted:
   - backend/src/modules/dashboard/services/dashboard-queue.service.ts
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> ТЗ реализовано на ~95% и смержено в main через PR #7 (коммиты 985d802b + f0b28bd3). Все ключевые артефакты присутствуют в коде: 8 Pulse-snapshot-моделей, seedUsers/Helpfulness/ProcessTemplates/extras, Org.demoUserIds, gu
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: расширение контента демо-кабинета под Pulse v2
 
 > Pulse v2 ([`2026-05-30-pulse-full.md`](./2026-05-30-pulse-full.md)) переписал главную: теперь она читает данные из **snapshot-таблиц**, которые наполняют 11 cron-AI-агентов. Текущий seed «ТехноСтрим» был сделан **до** Pulse v2 и эти таблицы НЕ наполняет → первое, что видит новый пользователь — **семь пустых Pulse-виджетов на главной**.

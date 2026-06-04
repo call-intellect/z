@@ -14,6 +14,11 @@ related:
   - backend/src/modules/company-foundation/workers/maturity-scorer.cron.ts
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 98%.**
+> Все три фазы реализованы и подтверждены кодом (модель+миграция, cron, сервис, контроллер с 3 эндпоинтами, LLM taskType, 2 seed-скрипта, ENV, метрики, тесты, фронт-страница+виджеты+API/domain, навигация). Реализация прове
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # SBA β-8.3 — Доделка операционного директора
 
 ## 1. TL;DR

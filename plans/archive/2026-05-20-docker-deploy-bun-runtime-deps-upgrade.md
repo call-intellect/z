@@ -5,6 +5,11 @@ feature: docker-deploy-bun-runtime-deps-upgrade
 date: 2026-05-20
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Все технические цели реализованы и проверены по коду: полный переход на Bun (Dockerfile-ы на oven/bun, tsx/ts-node удалены), агрессивный апгрейд пакетов (Next 16, React 19, Prisma 7, zod 4, Tailwind 4, NestJS 11, ESLint 
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Docker-деплой (backend/frontend раздельно) + полный переход на Bun + апгрейд пакетов
 
 > Контекст: подготовка Z к развёртыванию через `docker compose`. Деплой backend и

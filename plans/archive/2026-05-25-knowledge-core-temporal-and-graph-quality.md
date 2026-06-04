@@ -16,6 +16,12 @@ parent_analysis:
   - plans/analysis/2026-05-25-knowledge-core-ideal-target.md (тезисы, см. §0.1)
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Зонтичное ТЗ реализовано фактически целиком: все 20 фаз (волны 1-4 + governance) подтверждены кодом — Prisma-поля, сервисы, воркеры/cron, скрипты backfill, ENV, промпты, golden-set, ADR-шаблон, policy-docs и 5 frontend-с
+> ⚠️ Хвосты (см. реестр приоритетов): Поэтапное включение feature-флагов на проде (1 Org → 10 → все; shadow→enforce для W4) — операционный шаг деплоя, флаги п
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: knowledge-core — temporal model + graph quality (Кора v3)
 
 > **Кодовое имя:** KC-Temporal.

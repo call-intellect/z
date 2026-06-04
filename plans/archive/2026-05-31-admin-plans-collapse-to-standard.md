@@ -17,6 +17,11 @@ relates_to:
   - plans/tz/2026-05-31-z-admin-standalone-route-group.md            # параллельное ТЗ по layout админки
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Реализовано целиком: registry-ключи billing.*, идемпотентный seed (зарегистрирован в apply-prod-deploy), SeatService и MeetingsBalanceService переведены на async+AdminSetting с code-fallback, CRUD admin/plans свёрнут в е
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Z-Admin / Тариф — один `tier_standard` + доп. сотрудники по 1 000 ₽, цена редактируется в кабинете super_admin
 
 ## 0. Контекст

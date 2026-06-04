@@ -15,6 +15,11 @@ related:
   - second-brain/01_projects/skill-and-clone.md
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Все 6 фаз реализованы и закоммичены (полный git-трейл b87a8691/9379fd8d/6a15b884/4cd9ef25/16ab67b5, рефлексия 93158cc8 «26/26 фаз»): Prisma versioning-поля, handler role.bearer_changed, удаление/редирект старых UI, новая
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Клоны = Роли — рефакторинг γ-1 UI и публичных артефактов
 
 > **Кодовое имя:** «Клоны = Роли».

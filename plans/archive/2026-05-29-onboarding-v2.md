@@ -5,6 +5,11 @@ feature: Онбординг v2 — Знакомство + Action-тур + Обз
 date: 2026-05-29
 ---
 
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Все ключевые артефакты ТЗ подтверждены кодом: Prisma-поля + enum, OnboardingModule с 4 эндпоинтами, side-effect'ы в 5 сервисах, backfill-скрипт в apply-prod-deploy, 6 экранов знакомства, переписанный welcome.ts с kind='n
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
+
 # ТЗ: Онбординг v2
 
 > Анализ: `plans/analysis/2026-05-28-onboarding-v2-redesign.md`

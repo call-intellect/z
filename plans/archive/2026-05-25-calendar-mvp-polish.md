@@ -1,3 +1,7 @@
+> 📦 **АРХИВ (аудит 2026-06-04): ✅ реализовано — 95%.**
+> Все 4 фазы (P1 LiveKit auto-create/cancel, P2 email-напоминания, P3 серверный projectId-фильтр, P4 ParticipantPicker + org-members/search + persons/quick-create) реализованы в коде backend и frontend, подтверждены тестам
+> Полный разбор: `plans/analysis/2026-06-04-tz-audit-reestr-i-prioritety.md`
+
 # Calendar MVP Polish — добор недоделок Фаз 1-2
 
 **Дата:** 2026-05-25

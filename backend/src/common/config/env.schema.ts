@@ -546,6 +546,17 @@ const KnowledgeCoreSchema = z.object({
    * под малый тенант (выровнено со seed-admin-settings.ts; admin-editable).
    */
   ENTITY_GRAPH_MIN_COMENTIONS: z.coerce.number().int().positive().default(2),
+  /**
+   * МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE.
+   * При `true` (default) GraphService пишет узлы/рёбра в `z_graph` через
+   * `cypher()` (best-effort, post-commit). При `false` все Cypher-вызовы —
+   * no-op, а Postgres-часть (EntityLink / Process / Decision / …) продолжает
+   * работать как источник правды. Дефолт TRUE — граф критичен; switch нужен
+   * для аварийного отключения, если AGE недоступен на проде (рестарт кластера,
+   * проблема с shared_preload_libraries). Лучше крутить через AdminSetting
+   * `graph.ageEnabled` (admin-editable), ENV — fallback.
+   */
+  GRAPH_AGE_ENABLED: zBool(true),
 
   // ── Фаза 4: Theme + clusterer + card-rollup-v2 ──
   /**

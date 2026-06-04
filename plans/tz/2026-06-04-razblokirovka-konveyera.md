@@ -137,7 +137,7 @@
 
 ---
 
-## Ф5 — AGE/граф: search_path + развязка транзакции + видимость отказа `[ ]`
+## Ф5 — AGE/граф: search_path + развязка транзакции + видимость отказа `[x]`
 
 **Корень (finding `cypher-age`, баги #10/#11/#12/#13/#21/#31/#32, high→critical):** графовая запись AGE идёт через **неквалифицированный** `cypher('z_graph', ...)` (`graph.service.ts:551`, `:573`, `:580`; `Z_GRAPH='z_graph'` в `cypher-builder.ts:60`) в рантайм-пуле, у которого **нет `ag_catalog` в `search_path`**. `LOAD 'age'` / `SET search_path=ag_catalog` есть ТОЛЬКО в `postgres-init.sql:16-18`, прогоняемом отдельным короткоживущим `pg.Client` (`apply-postgres-init.ts:32-39`), который закрывается — настройки session-local. Рантайм-пул Prisma (`prisma.service.ts:43` `new PrismaPg({ connectionString: cfg.db.url })`) НИКОГДА не делает `LOAD age`/`SET search_path`; `DATABASE_URL` не содержит `options=-c search_path`. Дефолтный `search_path` = `"$user",public` → `cypher()` не резолвится → Postgres `42883 function cypher does not exist` **даже при установленном AGE** (поправка после pull). Двойная запись усугубляет: `upsertEntity` (`graph.service.ts:497-516`) и `upsertDecision` (`:911-945`) держат Postgres-INSERT и `runCypherMergeNode` в **ОДНОЙ** `prisma.$transaction` → падение `cypher()` откатывает и бизнес-строку (Process/Regulation/Policy/Tool/Metric/Decision). В worker всё проглатывается: `block-ingest.worker.ts:304-306/338-340/.../524-526 → warnTypedFail (:1081-1090)` только `logger.warn`, RawEvent безусловно `processingStatus='ingested'` (`:529-536`) — тихая потеря.
 

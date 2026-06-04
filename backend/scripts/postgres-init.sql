@@ -29,6 +29,19 @@ BEGIN
   END IF;
 END $$;
 
+-- 1d. МТЗ «разблокировка конвейера» Ф5 — закрепить ag_catalog в search_path
+--     РОЛИ приложения (а не session-local). Строки 17-18 выше ставят
+--     search_path только для текущего короткоживущего клиента apply-postgres-init,
+--     соединение которого закрывается — рантайм-пул Prisma этих настроек НЕ видит
+--     и неквалифицированный cypher()/agtype не резолвится (Postgres 42883).
+--     ALTER ROLE прописывает search_path на КАЖДОЕ новое соединение этой роли,
+--     поэтому рантайм-пул резолвит cypher() без дополнительных LOAD/SET.
+--     CURRENT_USER = пользователь из DATABASE_URL (роль может менять свой
+--     search_path). Идемпотентно — повторный ALTER ROLE просто перезаписывает.
+--     На проде AGE предзагружен (shared_preload_libraries='age'), поэтому
+--     достаточно search_path; LOAD 'age' на каждое соединение не нужен.
+ALTER ROLE CURRENT_USER SET search_path = ag_catalog, "$user", public;
+
 -- 2. HNSW-индекс на эмбеддингах для cross-meeting search и AI-чата по архиву.
 --    Прогон ИДЕМПОТЕНТНЫЙ — IF NOT EXISTS защищает от повторного выполнения.
 --    Запускать ПОСЛЕ `prisma db push` (когда таблица уже существует).

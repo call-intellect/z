@@ -9,6 +9,7 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../config';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { CypherBuilder, Z_GRAPH } from './cypher-builder';
@@ -67,19 +68,28 @@ const UPSERTABLE_BY_NAME: Partial<Record<NodeType, keyof Tx>> = {
  * `GraphService` — единая точка работы с графовой инфраструктурой
  * (PostgreSQL + Apache AGE) проекта Z.
  *
- * Главное свойство: **двойная запись** Postgres (`EntityLink`) + AGE
- * (`z_graph`) в одной Prisma-транзакции. Если AGE-запись падает — Postgres
- * откатывается, и наоборот. Гарантия консистентности обеспечивается ТОЛЬКО
- * внутри этого сервиса. Прямое обращение к `cypher(...)` из бизнес-сервисов
- * запрещено (см. `second-brain/02_architecture/code-pitfalls.md`).
+ * Главное свойство: **двойная запись** Postgres (`EntityLink` / Process /
+ * Decision / …) + AGE (`z_graph`). МТЗ «разблокировка конвейера» Ф5 РАЗВЯЗАЛ
+ * транзакцию: Postgres-строка — **источник правды**, коммитится ПЕРВОЙ внутри
+ * `$transaction`; AGE-часть (`cypher()` MERGE/DELETE) выполняется ПОСЛЕ
+ * коммита как **post-commit best-effort** (`try/catch+warn`). Отказ AGE
+ * (недоступность, не настроен `search_path` → Postgres 42883) больше НЕ
+ * откатывает бизнес-строку — раньше это приводило к тихой потере сущностей.
+ * Kill-switch `cfg.graph.ageEnabled=false` делает все write-Cypher no-op.
+ * Прямое обращение к `cypher(...)` из бизнес-сервисов запрещено (см.
+ * `second-brain/02_architecture/code-pitfalls.md`).
  *
- * См. план: `plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md` §6.
+ * См. план: `plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md` §6
+ * и `plans/tz/2026-06-04-razblokirovka-konveyera.md` §Ф5.
  */
 @Injectable()
 export class GraphService {
   private readonly logger = new Logger(GraphService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cfg: TypedConfigService,
+  ) {}
 
   // ─────────────────────────── узлы ──────────────────────────────────
 
@@ -117,8 +127,11 @@ export class GraphService {
     }
     const label = CypherBuilder.toAgeLabel(type);
 
+    // МТЗ Ф5 — РАЗВЯЗКА ТРАНЗАКЦИИ. Soft-delete EntityLink (Postgres) —
+    // источник правды, коммитим ПЕРВЫМ. DETACH DELETE в AGE — post-commit
+    // best-effort: падение cypher() не возвращает уже архивированные связи.
     await this.prisma.$transaction(async (tx) => {
-      // 1. Soft-delete всех EntityLink, где этот узел — `from` или `to`.
+      // Soft-delete всех EntityLink, где этот узел — `from` или `to`.
       const now = new Date();
       await tx.entityLink.updateMany({
         where: {
@@ -134,14 +147,24 @@ export class GraphService {
           deletedAt: now,
         },
       });
+    });
 
-      // 2. Удалить узел из AGE — DETACH DELETE убирает все его рёбра.
+    // Удалить узел из AGE — DETACH DELETE убирает все его рёбра.
+    try {
       const cypher =
         `MATCH (n:${label} {id: '${CypherBuilder.escapeString(id)}', ` +
         `tenant_id: '${CypherBuilder.escapeString(tenantId)}'}) ` +
         `DETACH DELETE n`;
-      await this.runRawCypher(tx, cypher);
-    });
+      await this.runRawCypher(this.prisma, cypher);
+    } catch (err) {
+      this.logger.warn(
+        {
+          node: `${type}:${id}`,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'removeNode: AGE DETACH DELETE упал (post-commit best-effort) — EntityLink уже архивирован',
+      );
+    }
   }
 
   // ─────────────────────────── рёбра ─────────────────────────────────
@@ -191,8 +214,12 @@ export class GraphService {
     const effectiveExplanation = explanation ?? DEFAULT_EXPLANATION;
     const effectiveProperties = properties ?? {};
 
+    // МТЗ Ф5 — РАЗВЯЗКА ТРАНЗАКЦИИ. EntityLink (Postgres) — источник правды,
+    // коммитим ПЕРВЫМ внутри tx. AGE-часть (merge узлов + ребра) вынесена
+    // НАРУЖУ как post-commit best-effort: падение cyp() (AGE недоступен,
+    // search_path не настроен) больше НЕ откатывает EntityLink.
     await this.prisma.$transaction(async (tx) => {
-      // 1. EntityLink upsert (Postgres).
+      // EntityLink upsert (Postgres).
       //
       // Composite unique включает nullable `fromType/toType`. Prisma
       // допускает использование composite unique только когда все поля не
@@ -235,13 +262,17 @@ export class GraphService {
           deletedAt: null,
         },
       });
+    });
 
-      // 2. Гарантируем существование обоих узлов в AGE (на случай, если
-      //    addNode не вызывали — типичный сценарий extraction-воркера).
-      await this.runCypherMergeNode(tx, tenantId, from.type, from.id);
-      await this.runCypherMergeNode(tx, tenantId, to.type, to.id);
+    // AGE-часть — ПОСЛЕ коммита EntityLink, best-effort. Семантика графа
+    // неизменна (те же MERGE узлов + MERGE ребра + SET свойств).
+    try {
+      // Гарантируем существование обоих узлов в AGE (на случай, если addNode
+      // не вызывали — типичный сценарий extraction-воркера).
+      await this.runCypherMergeNode(this.prisma, tenantId, from.type, from.id);
+      await this.runCypherMergeNode(this.prisma, tenantId, to.type, to.id);
 
-      // 3. MERGE ребра в AGE + SET свойств.
+      // MERGE ребра в AGE + SET свойств.
       const baseMerge = CypherBuilder.buildMergeEdge({
         fromType: from.type,
         fromId: from.id,
@@ -262,8 +293,18 @@ export class GraphService {
         ` r.valid_from = '${validFromIso}',` +
         ` r.valid_to = ${validToIso ? `'${validToIso}'` : 'NULL'},` +
         ` r.properties = '${propsJson}'`;
-      await this.runRawCypher(tx, baseMerge + setProps);
-    });
+      await this.runRawCypher(this.prisma, baseMerge + setProps);
+    } catch (err) {
+      this.logger.warn(
+        {
+          from: `${from.type}:${from.id}`,
+          to: `${to.type}:${to.id}`,
+          linkType,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'addEdge: AGE-часть упала (post-commit best-effort) — EntityLink сохранён',
+      );
+    }
   }
 
   /**
@@ -281,8 +322,11 @@ export class GraphService {
     CypherBuilder.toAgeLabel(to.type);
     CypherBuilder.toRelType(linkType);
 
+    // МТЗ Ф5 — РАЗВЯЗКА ТРАНЗАКЦИИ. Soft-delete EntityLink (Postgres) —
+    // источник правды, коммитим ПЕРВЫМ. DELETE ребра в AGE — post-commit
+    // best-effort.
     await this.prisma.$transaction(async (tx) => {
-      // 1. Soft-delete EntityLink.
+      // Soft-delete EntityLink.
       await tx.entityLink.updateMany({
         where: {
           tenantId,
@@ -299,8 +343,10 @@ export class GraphService {
           deletedBy: deletedBy ?? null,
         },
       });
+    });
 
-      // 2. Удалить ребро в AGE.
+    // Удалить ребро в AGE.
+    try {
       const cypher = CypherBuilder.buildDeleteEdge({
         fromType: from.type,
         fromId: from.id,
@@ -309,8 +355,18 @@ export class GraphService {
         linkType,
         tenantId,
       });
-      await this.runRawCypher(tx, cypher);
-    });
+      await this.runRawCypher(this.prisma, cypher);
+    } catch (err) {
+      this.logger.warn(
+        {
+          from: `${from.type}:${from.id}`,
+          to: `${to.type}:${to.id}`,
+          linkType,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'removeEdge: AGE DELETE ребра упал (post-commit best-effort) — EntityLink уже архивирован',
+      );
+    }
   }
 
   // ─────────────────────────── чтение ────────────────────────────────
@@ -494,26 +550,36 @@ export class GraphService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const result = await this.upsertNameKeyedEntity(
-        tx,
-        tenantId,
-        type,
-        name,
-        data,
-        confidence,
-      );
-      // AGE-узел — гарантируем существование.
-      await this.runCypherMergeNode(tx, tenantId, type, result.id);
+    // МТЗ Ф5 — РАЗВЯЗКА ТРАНЗАКЦИИ. Бизнес-строка (Process/Regulation/Policy/
+    // Tool/Metric) — источник правды, коммитим ПЕРВОЙ. AGE-узел (MERGE) —
+    // post-commit best-effort: падение cypher() больше НЕ откатывает
+    // бизнес-строку (раньше падение AGE на рантайм-пуле без search_path
+    // приводило к 42883 → откат всей tx → тихая потеря сущности).
+    const result = await this.prisma.$transaction(async (tx) =>
+      this.upsertNameKeyedEntity(tx, tenantId, type, name, data, confidence),
+    );
 
-      if (result.created && sourceProvenance) {
-        this.logger.debug(
-          `upsertEntity: created ${type}=${result.id} (provenance: ` +
-            `${JSON.stringify(sourceProvenance)})`,
-        );
-      }
-      return result;
-    });
+    if (result.created && sourceProvenance) {
+      this.logger.debug(
+        `upsertEntity: created ${type}=${result.id} (provenance: ` +
+          `${JSON.stringify(sourceProvenance)})`,
+      );
+    }
+
+    // AGE-узел — гарантируем существование (после коммита бизнес-строки).
+    try {
+      await this.runCypherMergeNode(this.prisma, tenantId, type, result.id);
+    } catch (err) {
+      this.logger.warn(
+        {
+          node: `${type}:${result.id}`,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'upsertEntity: AGE MERGE узла упал (post-commit best-effort) — бизнес-строка сохранена',
+      );
+    }
+
+    return result;
   }
 
   // ─────────────────────────── private helpers ──────────────────────
@@ -530,6 +596,10 @@ export class GraphService {
     id: string,
     properties?: Record<string, unknown>,
   ): Promise<void> {
+    // МТЗ Ф5 kill-switch: при выключенном AGE — no-op (Postgres-часть пишется
+    // вызывающим без графа). Центральная точка — `runRawCypher` ниже, но здесь
+    // короткое замыкание избегает лишней сборки Cypher.
+    if (!this.cfg.graph.ageEnabled) return;
     const merge = CypherBuilder.buildMergeNode(type, id, tenantId);
     let cypher = merge;
     if (properties && Object.keys(properties).length > 0) {
@@ -547,6 +617,11 @@ export class GraphService {
     client: PrismaService | Tx,
     cypher: string,
   ): Promise<void> {
+    // МТЗ Ф5 kill-switch: единая no-op точка для ВСЕХ write-Cypher
+    // (MERGE/DELETE/SET узлов и рёбер). Чинит весь класс одним рычагом —
+    // addNode/addEdge/upsertEntity/removeNode/removeEdge. Read-путь
+    // (getNeighbors/findPath/traverse через runRawCypherRows) не трогаем.
+    if (!this.cfg.graph.ageEnabled) return;
     const sql =
       `SELECT * FROM cypher('${Z_GRAPH}', $cypher$ ${cypher} $cypher$) AS (v agtype)`;
     await client.$queryRawUnsafe(sql);
@@ -908,14 +983,16 @@ export class GraphService {
         ? (data['sourceIdeaBlockId'] as string)
         : sourceProvenance?.ideaBlockId ?? null;
 
-    return this.prisma.$transaction(async (tx) => {
+    // МТЗ Ф5 — РАЗВЯЗКА ТРАНЗАКЦИИ. Decision (Postgres) — источник правды,
+    // коммитим ПЕРВЫМ. AGE-узел (MERGE) — post-commit best-effort, не
+    // откатывает Decision при отказе cypher(). `id` захватываем из tx.
+    const result = await this.prisma.$transaction(async (tx) => {
       if (sourceIdeaBlockId) {
         const existing = await tx.decision.findUnique({
           where: { sourceIdeaBlockId },
           select: { id: true, tenantId: true },
         });
         if (existing && existing.tenantId === tenantId) {
-          await this.runCypherMergeNode(tx, tenantId, 'decision', existing.id);
           return { id: existing.id, created: false };
         }
       }
@@ -940,9 +1017,23 @@ export class GraphService {
         },
         select: { id: true },
       });
-      await this.runCypherMergeNode(tx, tenantId, 'decision', created.id);
       return { id: created.id, created: true };
     });
+
+    // AGE-узел Decision — после коммита бизнес-строки (best-effort).
+    try {
+      await this.runCypherMergeNode(this.prisma, tenantId, 'decision', result.id);
+    } catch (err) {
+      this.logger.warn(
+        {
+          node: `decision:${result.id}`,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'upsertDecision: AGE MERGE узла упал (post-commit best-effort) — Decision сохранён',
+      );
+    }
+
+    return result;
   }
 }
 

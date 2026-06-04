@@ -63,6 +63,72 @@ export interface PropertySpan {
 }
 
 /**
+ * МТЗ «разблокировка конвейера» Ф5 — классификация причины провала записи
+ * типизированной сущности группы Б.
+ *
+ *   - `age_unavailable` — СИСТЕМНЫЙ отказ графа: `cypher()` не резолвится
+ *     (рантайм-пул без `ag_catalog` в search_path → Postgres 42883
+ *     `function cypher does not exist`), либо иной сбой обращения к `z_graph`.
+ *     После развязки транзакции (Ф5) бизнес-строка переживает это, НО факт
+ *     отказа графа значим: block-ingest НЕ помечает RawEvent='ingested',
+ *     а уводит job в failed → BullMQ ретрайнет после восстановления AGE.
+ *   - `idempotent_skip` — Prisma `P2002` (unique violation) при гонке
+ *     concurrency=2: сущность уже создана параллельным джобом — норма, не отказ.
+ *   - `validation_error` — невалидные данные сущности (BadRequest/Zod):
+ *     извлечение кривое, ретрай не поможет — не системный отказ.
+ *   - `other` — всё остальное.
+ */
+export type TypedFailReason =
+  | 'age_unavailable'
+  | 'idempotent_skip'
+  | 'validation_error'
+  | 'other';
+
+export function classifyTypedFailReason(err: unknown): TypedFailReason {
+  // P2002 (unique violation при гонке concurrency) — идемпотентный skip.
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === 'P2002'
+  ) {
+    return 'idempotent_skip';
+  }
+
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
+
+  // Системный отказ графа AGE: cypher() не резолвится / ошибка z_graph.
+  if (
+    message.includes('cypher') ||
+    message.includes('z_graph') ||
+    message.includes('function cypher') ||
+    message.includes('42883') ||
+    message.includes('ag_catalog') ||
+    message.includes('agtype')
+  ) {
+    return 'age_unavailable';
+  }
+
+  // P2002 по message (на случай, если ошибка завёрнута и instanceof не сработал).
+  if (message.includes('p2002') || message.includes('unique constraint')) {
+    return 'idempotent_skip';
+  }
+
+  // Валидационные ошибки извлечённой сущности.
+  const errName =
+    err instanceof Error ? err.constructor?.name ?? err.name : '';
+  if (
+    errName === 'ValidationError' ||
+    errName === 'ZodError' ||
+    errName === 'BadRequestException' ||
+    message.includes('validation') ||
+    message.includes('required')
+  ) {
+    return 'validation_error';
+  }
+
+  return 'other';
+}
+
+/**
  * Block-ingest worker (`core.raw-events` consumer).
  *
  * Шаги на job `{ rawEventId }`:
@@ -267,6 +333,12 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // Decision имеет приоритет: LLM-вернутый item затирает auto-create.
       const llmDecisionBlockIds = new Set<string>();
 
+      // МТЗ Ф5 — аккумулятор СИСТЕМНОГО отказа графа. Если хоть одна сущность
+      // группы Б упала с reason='age_unavailable' (cypher не резолвится),
+      // НЕ помечаем RawEvent='ingested' (см. ниже) — job уйдёт в failed и
+      // BullMQ ретрайнет после восстановления AGE (вместо тихой потери).
+      let systemFailure = false;
+
       // Process
       for (const proc of typed.processes) {
         try {
@@ -300,7 +372,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          this.warnTypedFail('process', proc.name, err);
+          if (this.warnTypedFail('process', proc.name, err) === 'age_unavailable')
+            systemFailure = true;
         }
       }
 
@@ -334,7 +407,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          this.warnTypedFail('regulation', reg.name, err);
+          if (this.warnTypedFail('regulation', reg.name, err) === 'age_unavailable')
+            systemFailure = true;
         }
       }
 
@@ -364,7 +438,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          this.warnTypedFail('policy', pol.name, err);
+          if (this.warnTypedFail('policy', pol.name, err) === 'age_unavailable')
+            systemFailure = true;
         }
       }
 
@@ -394,7 +469,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          this.warnTypedFail('tool', tool.name, err);
+          if (this.warnTypedFail('tool', tool.name, err) === 'age_unavailable')
+            systemFailure = true;
         }
       }
 
@@ -426,7 +502,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             action: res.created ? 'created' : 'merged',
           });
         } catch (err) {
-          this.warnTypedFail('metric', metric.name, err);
+          if (this.warnTypedFail('metric', metric.name, err) === 'age_unavailable')
+            systemFailure = true;
         }
       }
 
@@ -478,7 +555,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           });
           if (sourceBlockId) llmDecisionBlockIds.add(sourceBlockId);
         } catch (err) {
-          this.warnTypedFail('decision', dec.text.slice(0, 80), err);
+          if (
+            this.warnTypedFail('decision', dec.text.slice(0, 80), err) ===
+            'age_unavailable'
+          )
+            systemFailure = true;
         }
       }
 
@@ -520,8 +601,31 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             });
           }
         } catch (err) {
-          this.warnTypedFail('decision (fallback)', block.trustedAnswer.slice(0, 80), err);
+          if (
+            this.warnTypedFail(
+              'decision (fallback)',
+              block.trustedAnswer.slice(0, 80),
+              err,
+            ) === 'age_unavailable'
+          )
+            systemFailure = true;
         }
+      }
+
+      // МТЗ Ф5 — при СИСТЕМНОМ отказе графа (age_unavailable) НЕ помечаем
+      // RawEvent='ingested'. Бизнес-строки (IdeaBlock + те сущности, что
+      // прошли) уже сохранены — повторный заход джоба идемпотентен (skip
+      // существующих по unique-ключам), а вот пометка ingested здесь была бы
+      // тихой потерей графовой записи. Бросаем — сработает внешний catch
+      // (processingStatus='failed') и BullMQ ретрайнет после восстановления
+      // AGE. idempotent_skip/validation_error/other системным отказом НЕ
+      // считаются — для них ingested ставится как раньше.
+      if (systemFailure) {
+        throw new Error(
+          'block-ingest: системный отказ графа AGE (cypher не резолвится) — ' +
+            'RawEvent НЕ помечен ingested, job уходит в failed для ретрая ' +
+            'после восстановления AGE',
+        );
       }
 
       await this.prisma.rawEvent.update({
@@ -1064,16 +1168,35 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
   /**
    * Безопасный warn для падений группы Б — мы не валим весь job из-за
    * одной кривой сущности, но детально логируем для аудита.
+   *
+   * МТЗ Ф5: КЛАССИФИЦИРУЕМ причину (`age_unavailable`/`idempotent_skip`/
+   * `validation_error`/`other`), инкрементим метрику `kc_typed_entity_failed_total`
+   * и ВОЗВРАЩАЕМ reason — вызывающий аккумулирует системный отказ графа,
+   * чтобы НЕ помечать RawEvent='ingested' (тихая потеря → наблюдаемый failed
+   * + авто-ретрай BullMQ после восстановления AGE). idempotent_skip /
+   * validation_error / other — НЕ системный отказ, ingested остаётся.
    */
-  private warnTypedFail(type: string, name: string, err: unknown): void {
+  private warnTypedFail(
+    type: string,
+    name: string,
+    err: unknown,
+  ): TypedFailReason {
+    const reason = classifyTypedFailReason(err);
+    // Нормализуем type-метку («decision (fallback)» → «decision»).
+    const metricType = type.split(' ')[0] ?? type;
+    this.metrics.incTypedEntityFailed({ type: metricType, reason });
     this.logger.warn(
       {
         type,
         name,
+        reason,
         err: err instanceof Error ? err.message : String(err),
       },
-      'block-ingest: типизированная сущность группы Б не сохранилась — пропуск',
+      reason === 'age_unavailable'
+        ? 'block-ingest: системный отказ графа AGE при записи сущности группы Б — RawEvent НЕ будет помечен ingested (failed + ретрай)'
+        : 'block-ingest: типизированная сущность группы Б не сохранилась — пропуск',
     );
+    return reason;
   }
 
   /**

@@ -788,6 +788,28 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── граф Apache AGE ────────────────────
+  /**
+   * МТЗ «разблокировка конвейера» Ф5 — настройки записи в граф Apache AGE.
+   *
+   *   - `ageEnabled` — kill-switch записи в `z_graph` через `cypher()`.
+   *     При `false` все Cypher-вызовы GraphService — no-op (Postgres-часть
+   *     работает как источник правды). Дефолт TRUE — граф критичен; switch
+   *     для аварийного отключения при недоступности AGE на проде.
+   *
+   * Admin-editable (`resolveSync`: cacheMap → ENV → default). Дефолт TRUE,
+   * seed TRUE, ENV TRUE — без флипа текущего поведения.
+   */
+  get graph() {
+    return {
+      ageEnabled: this.resolveSync<boolean>(
+        'graph.ageEnabled',
+        'GRAPH_AGE_ENABLED',
+        true,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── KC-Temporal Bitemporal ─────────────
   /**
    * KC-Temporal W1.1 (2026-05-25) — bi-temporal факты, supersede-арбитр.

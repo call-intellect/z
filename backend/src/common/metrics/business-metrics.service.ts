@@ -375,6 +375,12 @@ export class BusinessMetricsService implements OnModuleInit {
   // метрика в finally на ВСЕХ путях). reason: 'block_not_found' /
   // 'tenant_mismatch' / 'not_canonical' / 'signal_out_of_scope'.
   private coreSpecialistSkippedTotal!: Counter<'specialist' | 'reason'>;
+  // МТЗ «разблокировка конвейера» Ф5 — провалы записи типизированной сущности
+  // группы Б (Process/Regulation/Policy/Tool/Metric/Decision) в block-ingest.
+  // reason: 'age_unavailable' (системный отказ графа — cypher не резолвится) /
+  // 'validation_error' / 'idempotent_skip' (P2002 гонка concurrency — норма) /
+  // 'other'. Раньше любой провал глушился warn'ом без метрики.
+  private kcTypedEntityFailedTotal!: Counter<'type' | 'reason'>;
   // SBA β-3 — evolving-конфликты (отдельный counter рядом с
   // core_specialist_conflict_events_total). Не сливаем в один counter, чтобы
   // не ломать обратную совместимость существующих label'ов.
@@ -1887,6 +1893,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_specialist_skipped_total',
       help: 'Ф3 МТЗ — ранние skip-return хендлеров специалистов Слоя 3 (specialist × reason). reason: block_not_found / tenant_mismatch / not_canonical / signal_out_of_scope. До этого skip был неотличим от success.',
       labelNames: ['specialist', 'reason'] as const,
+    });
+    // Ф5 МТЗ «разблокировка конвейера» — провалы типизированных сущностей
+    // группы Б в block-ingest (по type × reason).
+    this.kcTypedEntityFailedTotal = this.getOrCreateCounter({
+      name: 'kc_typed_entity_failed_total',
+      help: 'Ф5 МТЗ — провалы записи типизированной сущности группы Б в block-ingest (type × reason). type: process/regulation/policy/tool/metric/decision. reason: age_unavailable (системный отказ графа) / validation_error / idempotent_skip (P2002 гонка — норма) / other. age_unavailable блокирует пометку RawEvent ingested → failed+ретрай.',
+      labelNames: ['type', 'reason'] as const,
     });
     // SBA β-3 — evolving-конфликты (отдельный counter).
     this.coreSpecialistConflictEvolvingTotal = this.getOrCreateCounter({
@@ -4649,6 +4662,20 @@ export class BusinessMetricsService implements OnModuleInit {
   incCoreSpecialistSkipped(args: { specialist: string; reason: string }): void {
     this.coreSpecialistSkippedTotal.inc({
       specialist: args.specialist,
+      reason: args.reason,
+    });
+  }
+
+  /**
+   * Ф5 МТЗ «разблокировка конвейера» — провал записи типизированной сущности
+   * группы Б (Process/Regulation/Policy/Tool/Metric/Decision) в block-ingest.
+   * reason ∈ age_unavailable | validation_error | idempotent_skip | other.
+   * age_unavailable — системный отказ графа (cypher() не резолвится), он
+   * блокирует пометку RawEvent='ingested' (job уходит в failed + ретрай).
+   */
+  incTypedEntityFailed(args: { type: string; reason: string }): void {
+    this.kcTypedEntityFailedTotal.inc({
+      type: args.type,
       reason: args.reason,
     });
   }

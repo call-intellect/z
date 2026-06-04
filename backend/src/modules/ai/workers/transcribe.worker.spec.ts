@@ -260,7 +260,7 @@ describe('TranscribeWorker.process', () => {
 
   it('параллель + allSettled: одна дорожка падает → две успешные upsert, merge НЕ ставится, ошибка', async () => {
     const failingIdentity = 'guest:bob';
-    const pollImpl = vi.fn(async (taskId: string) => {
+    const _pollImpl = vi.fn(async (_taskId: string) => {
       // poll получает taskId, но мы не знаем какой трек — определяем по submit-маппингу ниже.
       return completedResult;
     });

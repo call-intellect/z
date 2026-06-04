@@ -175,6 +175,34 @@ describe('TelegramWebhooksController — β-9 глобальный путь', ()
   });
 });
 
+describe('TelegramWebhooksController — proxy путь /s/:secret', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('happy: секрет в пути совпадает → ingestUpdate(tenantId=undefined) + dispatch', async () => {
+    const { ctrl, adapter, conversational } = build();
+    const res = await ctrl.receiveViaProxy(SECRET, validBody as never);
+    expect(res).toEqual({ ok: true });
+    expect(
+      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
+    ).toBeUndefined();
+    expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
+  });
+
+  it('403 если секрет в пути не совпадает', async () => {
+    const { ctrl } = build();
+    await expect(
+      ctrl.receiveViaProxy('wrong-secret-1234567', validBody as never),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('404 если глобального канала нет', async () => {
+    const { ctrl } = build({ globalChannel: null });
+    await expect(
+      ctrl.receiveViaProxy(SECRET, validBody as never),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('TelegramWebhooksController — legacy :tenantId путь', () => {
   beforeEach(() => vi.clearAllMocks());
 

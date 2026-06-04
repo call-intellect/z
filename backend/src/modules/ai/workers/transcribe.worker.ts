@@ -29,12 +29,17 @@ import { VoxService } from '../services/vox.service';
  *
  * Идемпотентность:
  *   - На входе проверяем status. Если уже `transcription_processing` или дальше — выходим.
- *   - Если у `Transcript` уже есть треки — пропускаем загрузку, сразу enqueueMerge.
+ *   - Если у `Transcript` транскрибированы ВСЕ дорожки (count == audioTracks) —
+ *     пропускаем загрузку, сразу enqueueMerge. Частичный набор НЕ короткозамыкаем:
+ *     проваливаемся в пул, который доделает недостающие дорожки (per-track skip).
  */
 @Injectable()
 export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TranscribeWorker.name);
   private worker: Worker<AiJobData> | null = null;
+
+  /** Сколько дорожек транскрибируем одновременно (не перегружая Vox). */
+  private static readonly TRACK_POOL_SIZE = 4;
 
   @Inject(PipelineRunner)
   private readonly pipe!: PipelineRunner;
@@ -108,7 +113,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       where: { id: meetingId },
       include: {
         recording: { include: { audioTracks: true } },
-        transcript: { include: { tracks: { take: 1 } } },
+        transcript: true,
       },
     });
     if (!meeting) {
@@ -135,13 +140,6 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // Если треки уже есть в БД — повторно не транскрибируем.
-    if (meeting.transcript && meeting.transcript.tracks.length > 0) {
-      this.logger.log({ meetingId }, 'transcribe: треки уже в БД — переходим к merge');
-      await this.queue.enqueueMerge(meetingId);
-      return;
-    }
-
     const audioTracks = meeting.recording?.audioTracks ?? [];
     if (audioTracks.length === 0) {
       this.logger.warn({ meetingId }, 'transcribe: нет audio-треков');
@@ -151,6 +149,26 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       });
       this.metrics.incMeetingFailed('transcribe');
       return;
+    }
+
+    // Идемпотентность: если ВСЕ дорожки уже транскрибированы — сразу merge.
+    // (Частичный набор НЕ короткозамыкаем: провалимся в пул, который по
+    //  per-track идемпотентности пропустит готовые и доделает оставшиеся.
+    //  Иначе при ретрае после частичного успеха — например, 2 из 3 дорожек —
+    //  одна-единственная TranscriptTrack увела бы джоб в merge и недостающая
+    //  дорожка не транскрибировалась бы никогда.)
+    if (meeting.transcript) {
+      const doneTracks = await this.prisma.transcriptTrack.count({
+        where: { transcriptId: meeting.transcript.id },
+      });
+      if (doneTracks >= audioTracks.length) {
+        this.logger.log(
+          { meetingId, doneTracks },
+          'transcribe: все дорожки уже в БД — переходим к merge',
+        );
+        await this.queue.enqueueMerge(meetingId);
+        return;
+      }
     }
 
     this.logger.debug(
@@ -169,37 +187,25 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       update: {},
     });
 
+    // Транскрибируем дорожки ПАРАЛЛЕЛЬНО с ограничением одновременности
+    // (пул TRACK_POOL_SIZE — чтобы не перегрузить Vox). allSettled: падение
+    // одной дорожки не валит остальные; успешные персистятся (upsert
+    // идемпотентен), упавшие ретраятся джобом.
     let totalWords = 0;
     let totalTextLength = 0;
-    for (const [idx, track] of audioTracks.entries()) {
-      this.logger.debug(
-        { meetingId, trackIndex: idx + 1, total: audioTracks.length, identity: track.livekitIdentity, trackId: track.id },
-        'transcribe: обрабатываем трек',
-      );
-      const summary = await this.transcribeOneTrack(meetingId, transcript.id, track, baseStartedAt, job);
-      totalWords += summary.wordsCount;
-      totalTextLength += summary.textLength;
-      this.logger.debug(
-        { meetingId, trackIndex: idx + 1, identity: track.livekitIdentity },
-        'transcribe: трек транскрибирован',
-      );
-      // Результат по треку в DB-логи (видно спикера, слова, текст).
-      this.dbLog(
-        summary.wordsCount === 0 && summary.textLength === 0 ? 'WARN' : 'INFO',
-        'ai.transcribe.track',
-        `transcribe: трек ${idx + 1}/${audioTracks.length} «${summary.speakerName}» — ${summary.wordsCount} слов, ${summary.textLength} символов`,
-        {
-          trackIndex: idx + 1,
-          totalTracks: audioTracks.length,
-          trackId: track.id,
-          identity: track.livekitIdentity,
-          speakerName: summary.speakerName,
-          wordsCount: summary.wordsCount,
-          textLength: summary.textLength,
-          durationSeconds: summary.durationSeconds,
-          transcriptPreview: summary.transcriptPreview,
-        },
-      );
+    let anyFailed = false;
+    const results = await this.runWithConcurrency(
+      audioTracks,
+      TranscribeWorker.TRACK_POOL_SIZE,
+      (track, idx) => this.processTrackWithLog(meetingId, transcript.id, track, baseStartedAt, job, idx, audioTracks.length),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        totalWords += r.value.wordsCount;
+        totalTextLength += r.value.textLength;
+      } else {
+        anyFailed = true;
+      }
     }
 
     // Метрика длительности всей стадии.
@@ -209,6 +215,29 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       model: this.cfg.ai.vox.model,
       seconds: (Date.now() - startedAt) / 1000,
     });
+
+    // Guard перед merge: считаем фактическое число TranscriptTrack'ов для
+    // этого transcriptId. Если оно меньше числа audioTracks (хотя бы одна
+    // дорожка упала) — НЕ ставим merge, а бросаем ошибку, чтобы BullMQ
+    // ретраил джоб. Идемпотентность (voxTaskId reuse + upsert) не даст дублей.
+    const persistedTracks = await this.prisma.transcriptTrack.count({
+      where: { transcriptId: transcript.id },
+    });
+    if (persistedTracks < audioTracks.length) {
+      this.dbLog(
+        'WARN',
+        'ai.transcribe.incomplete',
+        `transcribe: транскрибированы НЕ все дорожки (${persistedTracks}/${audioTracks.length}) — merge отложен, джоб будет переотправлен`,
+        { meetingId, persistedTracks, totalTracks: audioTracks.length, anyFailed },
+      );
+      this.logger.warn(
+        { meetingId, persistedTracks, totalTracks: audioTracks.length },
+        'transcribe: не все дорожки готовы — бросаем ошибку для ретрая',
+      );
+      throw new Error(
+        `transcribe: не все дорожки транскрибированы (${persistedTracks}/${audioTracks.length})`,
+      );
+    }
 
     // Детект пустой транскрипции на уровне встречи: ни в одном треке нет ни слов,
     // ни текста. Делаем это ЗАМЕТНЫМ в БД-логах (иначе пустой транскрипт уходит
@@ -226,6 +255,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // Только когда ВСЕ дорожки имеют TranscriptTrack — merge ровно один раз.
     await this.queue.enqueueMerge(meetingId);
     this.dbLog(
       'INFO',
@@ -237,6 +267,85 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       { meetingId, tracks: audioTracks.length, totalWords, totalTextLength },
       'transcribe: успешно — merge поставлен',
     );
+  }
+
+  /**
+   * Транскрибирует один трек и пишет per-track DB-лог. Обёртка над
+   * `transcribeOneTrack`, чтобы лог по треку был внутри пула (не блокировал
+   * остальные дорожки). Любая ошибка пробрасывается — её ловит allSettled.
+   */
+  private async processTrackWithLog(
+    meetingId: string,
+    transcriptId: string,
+    track: AudioTrack,
+    baseStartedAt: Date,
+    job: Job<AiJobData>,
+    idx: number,
+    total: number,
+  ): Promise<{
+    speakerName: string;
+    wordsCount: number;
+    textLength: number;
+    durationSeconds: number;
+    transcriptPreview: string;
+  }> {
+    this.logger.debug(
+      { meetingId, trackIndex: idx + 1, total, identity: track.livekitIdentity, trackId: track.id },
+      'transcribe: обрабатываем трек',
+    );
+    const summary = await this.transcribeOneTrack(meetingId, transcriptId, track, baseStartedAt, job);
+    this.logger.debug(
+      { meetingId, trackIndex: idx + 1, identity: track.livekitIdentity },
+      'transcribe: трек транскрибирован',
+    );
+    // Результат по треку в DB-логи (видно спикера, слова, текст).
+    this.dbLog(
+      summary.wordsCount === 0 && summary.textLength === 0 ? 'WARN' : 'INFO',
+      'ai.transcribe.track',
+      `transcribe: трек ${idx + 1}/${total} «${summary.speakerName}» — ${summary.wordsCount} слов, ${summary.textLength} символов`,
+      {
+        trackIndex: idx + 1,
+        totalTracks: total,
+        trackId: track.id,
+        identity: track.livekitIdentity,
+        speakerName: summary.speakerName,
+        wordsCount: summary.wordsCount,
+        textLength: summary.textLength,
+        durationSeconds: summary.durationSeconds,
+        transcriptPreview: summary.transcriptPreview,
+      },
+    );
+    return summary;
+  }
+
+  /**
+   * Маленький пул промисов БЕЗ внешних зависимостей. Обрабатывает `items`
+   * с ограничением `poolSize` одновременных задач, возвращает результаты в
+   * исходном порядке как `PromiseSettledResult` (как `Promise.allSettled`).
+   */
+  private async runWithConcurrency<T, R>(
+    items: T[],
+    poolSize: number,
+    fn: (item: T, index: number) => Promise<R>,
+  ): Promise<Array<PromiseSettledResult<R>>> {
+    const results: Array<PromiseSettledResult<R>> = new Array(items.length);
+    let next = 0;
+    const workers = new Array(Math.min(Math.max(poolSize, 1), items.length))
+      .fill(null)
+      .map(async () => {
+        for (;;) {
+          const idx = next++;
+          if (idx >= items.length) return;
+          try {
+            const value = await fn(items[idx]!, idx);
+            results[idx] = { status: 'fulfilled', value };
+          } catch (reason) {
+            results[idx] = { status: 'rejected', reason };
+          }
+        }
+      });
+    await Promise.all(workers);
+    return results;
   }
 
   /** Сводка результата транскрипции одного трека (для логов и агрегации). */
@@ -286,6 +395,26 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       throw new Error(`transcribe: пустой audio key для track ${track.id}`);
     }
 
+    // 0. Per-track идемпотентность: если для (transcriptId, livekitIdentity)
+    // уже есть TranscriptTrack — пропускаем (не качаем аудио, не дёргаем Vox).
+    const existing = await this.prisma.transcriptTrack.findUnique({
+      where: {
+        transcriptId_livekitIdentity: { transcriptId, livekitIdentity: track.livekitIdentity },
+      },
+    });
+    if (existing) {
+      this.logger.debug(
+        { meetingId, trackId: track.id, identity: track.livekitIdentity },
+        'transcribeOneTrack: TranscriptTrack уже есть — пропуск',
+      );
+      return TranscribeWorker.trackSummary(
+        existing.speakerName,
+        existing.transcriptText,
+        Array.isArray(existing.words) ? existing.words.length : 0,
+        existing.durationSeconds,
+      );
+    }
+
     this.logger.debug(
       { meetingId, trackId: track.id, identity: track.livekitIdentity, audioKey },
       'transcribeOneTrack: читаем аудио из S3',
@@ -298,17 +427,56 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       'transcribeOneTrack: аудио прочитано из S3',
     );
 
-    // 2. Submit + poll Vox.
+    const pollOpts = {
+      intervalMs: this.cfg.ai.vox.pollIntervalMs,
+      maxAttempts: this.cfg.ai.vox.pollMaxAttempts,
+    };
+
+    // 2. Submit + poll Vox. taskId сохраняем в AudioTrack.voxTaskId ДО poll —
+    // при ретрае джоба не делаем повторный submit (опрос той же задачи).
     let voxResult;
     let success = false;
     let errorText: string | null = null;
     try {
-      const submitted = await this.vox.submit(audio, {});
-      this.logger.debug(
-        { meetingId, trackId: track.id, identity: track.livekitIdentity, taskId: submitted.taskId },
-        'transcribeOneTrack: Vox задача принята — ожидаем результат',
-      );
-      voxResult = await this.vox.poll(submitted.taskId);
+      if (track.voxTaskId) {
+        // Переиспользуем сохранённый taskId — продолжаем опрос той же задачи.
+        this.logger.debug(
+          { meetingId, trackId: track.id, identity: track.livekitIdentity, taskId: track.voxTaskId },
+          'transcribeOneTrack: переиспользуем сохранённый voxTaskId — poll',
+        );
+        try {
+          voxResult = await this.vox.poll(track.voxTaskId, pollOpts);
+        } catch (err) {
+          // Защита от «протухшего» taskId (4xx — задача не найдена/истекла):
+          // очищаем voxTaskId и делаем свежий submit (один уровень fallback).
+          this.logger.warn(
+            { meetingId, trackId: track.id, identity: track.livekitIdentity, taskId: track.voxTaskId },
+            `transcribeOneTrack: poll по сохранённому voxTaskId упал (${err instanceof Error ? err.message : String(err)}) — пересабмитим`,
+          );
+          await this.prisma.audioTrack.update({
+            where: { id: track.id },
+            data: { voxTaskId: null },
+          });
+          const resubmitted = await this.vox.submit(audio, {});
+          await this.prisma.audioTrack.update({
+            where: { id: track.id },
+            data: { voxTaskId: resubmitted.taskId },
+          });
+          voxResult = await this.vox.poll(resubmitted.taskId, pollOpts);
+        }
+      } else {
+        const submitted = await this.vox.submit(audio, {});
+        this.logger.debug(
+          { meetingId, trackId: track.id, identity: track.livekitIdentity, taskId: submitted.taskId },
+          'transcribeOneTrack: Vox задача принята — сохраняем taskId и ожидаем результат',
+        );
+        // Сохраняем taskId ДО poll — чтобы ретрай переиспользовал задачу.
+        await this.prisma.audioTrack.update({
+          where: { id: track.id },
+          data: { voxTaskId: submitted.taskId },
+        });
+        voxResult = await this.vox.poll(submitted.taskId, pollOpts);
+      }
       this.logger.debug(
         {
           meetingId, trackId: track.id, identity: track.livekitIdentity,
@@ -342,23 +510,31 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       throw new Error('transcribe: voxResult пуст');
     }
 
-    // 3. Сохраняем в БД (TranscriptTrack).
+    // 3. Сохраняем в БД (TranscriptTrack). upsert per-track — идемпотентно по
+    // (transcriptId, livekitIdentity): повтор не создаёт дублей.
     this.logger.debug(
       { meetingId, trackId: track.id, identity: track.livekitIdentity },
       'transcribeOneTrack: сохраняем в БД',
     );
-    await this.prisma.transcriptTrack.create({
-      data: {
+    const trackData = {
+      speakerName: track.participantName,
+      participantId: track.participantId ?? null,
+      trackStartedAt: track.startedAt,
+      baseStartedAt,
+      transcriptText: voxResult.transcriptText,
+      durationSeconds: voxResult.durationSeconds,
+      words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
+    };
+    await this.prisma.transcriptTrack.upsert({
+      where: {
+        transcriptId_livekitIdentity: { transcriptId, livekitIdentity: track.livekitIdentity },
+      },
+      create: {
         transcriptId,
         livekitIdentity: track.livekitIdentity,
-        speakerName: track.participantName,
-        participantId: track.participantId ?? null,
-        trackStartedAt: track.startedAt,
-        baseStartedAt,
-        transcriptText: voxResult.transcriptText,
-        durationSeconds: voxResult.durationSeconds,
-        words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
+        ...trackData,
       },
+      update: trackData,
     });
 
     return TranscribeWorker.trackSummary(

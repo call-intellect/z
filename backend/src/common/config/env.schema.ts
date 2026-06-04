@@ -125,6 +125,8 @@ const VoxSchema = z.object({
   VOX_MODEL: z.string().min(1).default('v3_rnnt'),
   VOX_LANGUAGE: z.string().min(1).default('ru'),
   VOX_PUNCTUATION_MODE: z.string().min(1).default('pro'),
+  VOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5000),
+  VOX_POLL_MAX_ATTEMPTS: z.coerce.number().int().positive().default(180),
 });
 
 const OpenAiSchema = z.object({

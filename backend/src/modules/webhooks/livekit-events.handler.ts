@@ -360,12 +360,17 @@ export class LivekitEventsHandler {
       return;
     }
     if (info.requestType === 'track') {
-      // Старт track egress'а — отметим время в AudioTrack'е (если найдём по trackEgressId).
+      // Старт track egress'а — отметим РЕАЛЬНОЕ время старта записи из LiveKit
+      // (если есть) вместо времени бэкенда на вебхуке — иначе тайм-выравнивание
+      // реплик «уезжает». Graceful fallback на new Date(), если LiveKit не отдал.
       await this.prisma.audioTrack.updateMany({
         where: { trackEgressId: info.egressId },
-        data: { startedAt: new Date() },
+        data: { startedAt: info.startedAt ?? new Date() },
       });
-      this.logger.log({ meetingId, egressId: info.egressId }, 'egress_started: track');
+      this.logger.log(
+        { meetingId, egressId: info.egressId, startedAt: info.startedAt?.toISOString() ?? null },
+        'egress_started: track',
+      );
     }
   }
 
@@ -605,6 +610,48 @@ export class LivekitEventsHandler {
    * `requestType` — что именно: composite/track. У SDK это `request.case`
    * (`'roomComposite'` | `'track'` | ...).
    */
+  /**
+   * Конвертирует время старта egress'а в `Date`.
+   *
+   * LiveKit отдаёт `started_at` / `startedAt` в Unix-наносекундах (proto int64,
+   * который при protojson-сериализации приходит строкой/числом/bigint). Делим
+   * на 1e6 → миллисекунды. Доп. fallback — `createdAtSec` (Unix-секунды самого
+   * webhook-события). Устойчиво к 0/undefined/мусору → `null`.
+   *
+   * Чистая функция (static) — тестируется без вебхука.
+   */
+  static parseEgressStartedAt(
+    startedAtNs: unknown,
+    createdAtSec?: unknown,
+  ): Date | null {
+    const fromNs = (raw: unknown): Date | null => {
+      let n: number | null = null;
+      if (typeof raw === 'bigint') n = Number(raw);
+      else if (typeof raw === 'number') n = raw;
+      else if (typeof raw === 'string' && raw !== '') {
+        const parsed = Number(raw);
+        n = Number.isFinite(parsed) ? parsed : null;
+      }
+      if (n === null || !Number.isFinite(n) || n <= 0) return null;
+      const ms = n / 1_000_000;
+      const d = new Date(ms);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const fromSec = (raw: unknown): Date | null => {
+      let n: number | null = null;
+      if (typeof raw === 'bigint') n = Number(raw);
+      else if (typeof raw === 'number') n = raw;
+      else if (typeof raw === 'string' && raw !== '') {
+        const parsed = Number(raw);
+        n = Number.isFinite(parsed) ? parsed : null;
+      }
+      if (n === null || !Number.isFinite(n) || n <= 0) return null;
+      const d = new Date(n * 1000);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    return fromNs(startedAtNs) ?? fromSec(createdAtSec);
+  }
+
   private extractEgressInfo(
     event: WebhookEvent,
   ): {
@@ -616,6 +663,7 @@ export class LivekitEventsHandler {
       size: number | null;
       duration: number | null;
     }>;
+    startedAt: Date | null;
     error: string | null;
   } | null {
     const info = (event as unknown as {
@@ -632,6 +680,8 @@ export class LivekitEventsHandler {
         track?: unknown;
         fileResults?: unknown;
         file_results?: unknown;
+        startedAt?: unknown;
+        started_at?: unknown;
         error?: unknown;
       };
       egress_info?: unknown; // snake_case вариант
@@ -690,6 +740,16 @@ export class LivekitEventsHandler {
 
     const error = typeof obj.error === 'string' ? obj.error : null;
 
-    return { egressId, requestType, fileResults, error };
+    // Реальное время старта записи. LiveKit отдаёт `started_at`/`startedAt` в
+    // Unix-наносекундах. Fallback — `createdAt` самого webhook-события (сек).
+    const createdAtSec =
+      (event as unknown as { createdAt?: unknown }).createdAt ??
+      (event as unknown as { created_at?: unknown }).created_at;
+    const startedAt = LivekitEventsHandler.parseEgressStartedAt(
+      obj.startedAt ?? obj.started_at,
+      createdAtSec,
+    );
+
+    return { egressId, requestType, fileResults, startedAt, error };
   }
 }

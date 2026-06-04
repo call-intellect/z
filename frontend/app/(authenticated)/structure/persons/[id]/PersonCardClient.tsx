@@ -48,6 +48,13 @@ const SYSTEM_ROLE_LABELS: Record<
   demo_observer: 'Наблюдатель',
 };
 
+const CAPABILITY_LABELS: Record<string, string> = {
+  'memory:regulations': 'Память: Правила и стандарты',
+  'memory:entities': 'Память: Сущности',
+  'feature:graph': 'Граф знаний',
+  'panel:operations': 'Панель операций',
+};
+
 const INVITATION_LABELS: Record<TeamRosterItemApi['invitationStatus'], string> = {
   none: 'не приглашён',
   pending: 'приглашение отправлено',
@@ -306,6 +313,8 @@ function AccessTab({
       </section>
 
       <CloneGrants orgId={orgId} userId={userId} canEdit={canEdit} roles={roles} />
+
+      {canEdit && <CapabilityControls orgId={orgId} userId={userId} />}
     </div>
   );
 }
@@ -474,6 +483,78 @@ function CloneGrants({
         </div>
       )}
       {dialog}
+    </section>
+  );
+}
+
+function CapabilityControls({
+  orgId,
+  userId,
+}: {
+  orgId: string;
+  userId: string;
+}) {
+  const capsSwr = useSWR(['member-capabilities', orgId, userId], () =>
+    orgsApi.listMemberCapabilities(orgId, userId),
+  );
+  const items = capsSwr.data?.capabilities ?? [];
+
+  const handleSet = async (capability: string, value: string) => {
+    try {
+      if (value === 'default') {
+        await orgsApi.removeMemberCapability(orgId, userId, capability);
+      } else {
+        await orgsApi.upsertMemberCapability(orgId, userId, capability, {
+          effect: value as 'allow' | 'deny',
+        });
+      }
+      toast.success('Доступ обновлён.');
+      void capsSwr.mutate();
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : 'Не удалось обновить доступ.',
+      );
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
+      <h2 className="mb-1 text-base font-medium text-fg-primary">
+        Память и панели
+      </h2>
+      <p className="mb-3 text-xs text-fg-tertiary">
+        «По умолчанию» — доступ как у роли и тарифа. «Открыть» / «Закрыть» —
+        персональное исключение для этого сотрудника.
+      </p>
+      {capsSwr.isLoading ? (
+        <p className="text-sm text-fg-secondary">Загрузка…</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((c) => (
+            <div
+              key={c.capability}
+              className="flex items-center justify-between gap-3"
+            >
+              <span className="text-sm text-fg-secondary">
+                {CAPABILITY_LABELS[c.capability] ?? c.capability}
+              </span>
+              <Select
+                value={c.effect ?? 'default'}
+                onValueChange={(v) => void handleSet(c.capability, v)}
+              >
+                <SelectTrigger className="h-8 w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">По умолчанию</SelectItem>
+                  <SelectItem value="allow">Открыть</SelectItem>
+                  <SelectItem value="deny">Закрыть</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

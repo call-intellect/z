@@ -473,4 +473,7 @@ return {
 - Рефлексия в `second-brain/05_история/`.
 
 ## Итог (заполнит оркестратор)
-- [ ] Ф0 · [ ] Ф1 · [ ] Ф2 · [ ] Ф3 · [ ] Ф4 — реализовано / осталось: …
+- [x] Ф0 · [x] Ф1 · [x] Ф2 · [x] Ф3 · [x] Ф4 · [x] Ф5 — **реализовано целиком** (dev, 2026-06-05).
+  - Коммиты: Ф0 `158a33d8`, Ф1 `b4ac1ebd`, Ф2 `b2fde6c9`, Ф3 `b5a07ebe`, Ф4 `d0609a90`, Ф5.1 `779b4811`, Ф5.2 (см. лог), контракт+Ф5 `0e3b2208`, docs.
+  - Верификация: backend+frontend typecheck/lint/build зелёные; затронутые модули 417 тестов зелёные; prompt-cache цел.
+  - Осталось (прод, локальной БД в сессии не было): `prisma:push` Ф0; прогон `backfill-subject-attribution.ts`; боевая проверка ветки `meetingTasksToTrackerOnly=ON` перед включением флага. См. `docs/operations/prod-deploy-log.md` и рефлексию `second-brain/05_история/2026-06-05-meeting-identity-and-clones-attribution-realizacia.md`.

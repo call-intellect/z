@@ -220,3 +220,21 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 - `kc_typed_entity_failed_total{type, reason}` — провал типизированной записи в граф AGE (классификация ошибок, см. [[../02_architecture/age-deployment-decision]]).
 
 [[../index|← index]]
+
+## Identity встречи + атрибуция клонов (МТЗ №1, 2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md`](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md) (Фазы 0–5). Здесь — изменения AI-пайплайна; схема — [[../02_architecture/data-model]] §Participant, механизм атрибуции — [[../02_architecture/knowledge-core]] §«Детерминированная subject-атрибуция».
+
+### `block-ingest` — шаг subject-атрибуции (Ф1, коммит `b4ac1ebd`)
+
+После persist'а блоков `block-ingest.worker` выполняет `attributeSubject`: для reasoning-семейства `signalType ∈ {reasoning, rationale, decision_basis, expertise, experience, competence}` пишет `IdeaBlockEntity{role:'subject', mentionContext:'author'}` (upsert по PK, апгрейд `mentioned→subject`). Автор резолвится `resolveSubjectEntityId` (`entity-resolution.service`) — по `speakerParticipantId`/`speakerName` (встречи) или `payload.userId` (текст), с ленивым `ensurePersonEntity`. Kill-switch `AdminSetting knowledge.subjectAttributionEnabled` (code-fallback `true`). Это **оживляет** клон-специалистов (`3-2`/`3-7`), `router.hasEmployeeSubject`, WHO-ось и `card-rollup-v2` — раньше они читали пустой `role:'subject'`. Backfill — `backend/scripts/backfill-subject-attribution.ts`.
+
+### `meeting-report-fast` ставит `assigneeUserId` (Ф4, коммит `d0609a90`)
+
+`meeting-report-fast.worker` резолвит `Task.assigneeUserId` **пост-фактум** из `assigneeRaw` через `TaskAssigneeResolverService` против участников встречи (`ParticipantContextService.loadForMeeting`). LLM-промпт **не тронут** (prompt-cache сохранён) — резолв чисто детерминированный, после генерации. Тот же резолвер используется в legacy `tasks-extract` / `meeting-analyze-v2` (см. §«Hard participant identification» выше).
+
+### Голос → задача в тректоре (Ф5.1, коммит `779b4811`)
+
+`meeting-extract-actions.service` резолвит исполнителя через `TaskAssigneeResolverService` против **участников встречи** (приватный substring-резолв `resolveAssigneeId` удалён). `intake-auto-triage` для `source='meeting'` теперь берёт upstream identity-резолвнутый `suggestedAssigneeId`, а не угадывает по тексту.
+
+[[../index|← index]]

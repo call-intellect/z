@@ -95,6 +95,18 @@ Soft-delete с 30-дневным grace, retention-cron делает hard-delete.
 
 **`role`:** `host` | `guest`. Гость = `is_registered_user: false`, имя вводит на странице входа.
 
+**Identity-фундамент (МТЗ №1 Фаза 0, 2026-06-05, коммит `158a33d8`).** Чтобы «чей голос» и «Настя → задача» работали для приглашённых, `Participant` связывается с реальными `User` / `Person`:
+
+- `userId String?` + relation `user → User?` (`@relation("ParticipantUser")`, `onDelete: SetNull`). `participant-context.service.ts loadForMeeting` теперь отдаёт `userId` **всем** `isRegisteredUser`, а не только хосту (раньше обнулялся для не-host — см. [[code-pitfalls]]).
+- `personId String?` + relation `person → Person?` (`@relation("ParticipantPerson")`, `onDelete: SetNull`) — связь участника с карточкой сотрудника.
+- `invitationStatus ParticipantInvitationStatus @default(none)` — новый enum **`ParticipantInvitationStatus { none invited joined }`**: `invited` — pre-seeded приглашённый (ещё не вошёл), `joined` — вошёл.
+- `inviteToken String? @unique` — одноразовый `nanoid` для входа по ссылке `/m/<id>?inv=<token>`; `invitedAt DateTime?` — когда приглашён.
+- Back-relations: `User.participantsAsUser[]`, `Person.participantsAsPerson[]`.
+
+Pre-seed приглашённых создаётся в транзакции `meetings.service.createForUser` (`role:'guest'`, `isRegisteredUser`, `livekitIdentity='invitee:<token>'`); единый join по `inviteToken`/pre-seed `userId` (`participants.service.joinAsInvited`) переиспользует существующую запись, а не плодит дубль. Доставка приглашений — см. [[../01_projects/api-layer]] §invitees.
+
+**Speaker identity в транскрипте.** `DialogTurn` (тип в `ai/services/prompts/common.ts`, не Prisma-модель) теперь несёт `speakerParticipantId` / `speakerLivekitIdentity`. Идентичность спикера протянута через `merger.ts` → `merge.worker.ts` → `meeting.adapter.ts` до `DialogTurn` и payload ingest — чтобы граф знал, **кто** автор реплики (фундамент `role:'subject'` атрибуции, см. [[knowledge-core]]).
+
 ### Recording
 
 ```json

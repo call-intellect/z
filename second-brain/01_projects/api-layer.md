@@ -458,6 +458,15 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 `POST /api/v1/persons` (модуль `persons`) расширен полем `linkUserId` — привязка создаваемой карточки сотрудника к существующему участнику. Приглашение участника (`InviteMemberSchema`) расширено `personId` — резолв `Person`, дедуп pending по `personId`, сохранение `personId` в `OrgInvitation`.
 
+## Meetings — приглашение сотрудников + задачи встречи (МТЗ №1, 2026-06-05)
+
+ТЗ — [`plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md`](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md) (Фазы 2–5). Модуль `meetings`. Подробнее — [[../02_architecture/module-map]] §«Identity встречи».
+
+- **POST создания встречи** (`CreateMeetingForUserSchema`) расширен полем `invitees[]` (Ф2): массив `{ userId? | personId? | email?, sendVia: ('email'|'telegram')[] }`, max 50. Приглашённые pre-seed'ятся в транзакции как `Participant(role:'guest', isRegisteredUser, invitationStatus:'invited', inviteToken=nanoid)`; после транзакции — best-effort рассылка `deliverMeetingInvites` (joinUrl `${publicFrontendUrl}/m/<id>?inv=<token>`).
+- **`GET /api/v1/meetings/:id/tasks`** (Ф5.2) — теперь **gate-coupled** на `AdminSetting knowledge.meetingTasksToTrackerOnly` (code-fallback FALSE): при дефолте читает `Task` и отдаёт **прежний контракт байт-в-байт**; при `ON` — задачи из tracker-`Issue` по `linkedMeetingIds`, нормализованные в ту же форму. Единый источник — `MeetingActionItemsService`. Внешний контракт при дефолте не изменился.
+
+**Новый conversational `eventType 'meeting.invite'`** (Ф3) — политика каналов `telegram → email → in_app` (`EVENT_TYPE_CHANNEL_POLICY`), payload-схема в `event-payload.registry.ts`; обрабатывается в `telegram-bot.adapter` / `max-bot.adapter`. Для **внешних** адресатов (email без аккаунта) приглашение идёт через `mail.sendMeetingInvite`, не через conversational (см. [[../02_architecture/code-pitfalls]] §«два движка email»).
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
@@ -469,5 +478,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-05-26 (clones admin CRUD + user list):** добавлены 5 admin endpoints `/api/v1/admin/clones/access-grants` (list / create / revoke / extend / per-clone-view) + 2 user endpoints `/api/v1/clones/conversations` (мои диалоги с клоном) и `/api/v1/me/clone-access` (что мне выдано). `AdminAuditInterceptor.classifyAction` расширен 3 ветками (grant/revoke/extend, severity high). `RbacService.canAccess*Clone` исправлен: теперь фильтрует активность грантов (`revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > now())`). См. [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md).
 - **2026-06-02 (Goals OKR v2):** добавлен раздел «Goals OKR v2 — Граф целей» — KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, расширенный `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `POST /ideas/:id/goal`, расширенный `PATCH /cycles/:id` (primaryGoalId), дашборд `goalsTree`/`goalsPulse`. Новый RBAC-ресурс `goal_key_result`. См. [plans/tz/2026-06-02-goals-okr-v2.md](../../plans/tz/2026-06-02-goals-okr-v2.md).
 - **2026-06-04 (Команда + доступы):** добавлен раздел «Команда + персональные доступы сотрудников» — `GET /orgs/:id/team-roster`, capabilities CRUD `GET/PUT/DELETE /orgs/:id/members/:userId/capabilities[/:capability]`, `GET /orgs/:id/effective-access`; `POST /persons` расширен `linkUserId`, приглашение — `personId`. Новая модель `EmployeeCapabilityOverride`. См. [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md).
+- **2026-06-05 (МТЗ №1 meeting-identity):** добавлен раздел «Meetings — приглашение сотрудников + задачи встречи» — POST создания встречи принимает `invitees[]`; `GET /meetings/:id/tasks` стал gate-coupled на `knowledge.meetingTasksToTrackerOnly` (контракт при дефолте сохранён); новый conversational `eventType 'meeting.invite'`. См. [plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md).
 
 [[../index|← index]]

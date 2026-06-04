@@ -2148,3 +2148,24 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`SegmentBuilder` (Фаза 10, коммит `78e6cbff`)** — распознаёт `kind='free_note'`: берёт чистый `text` вместо JSON.stringify-обёртки (раньше free-note из Telegram попадал в граф как сериализованный JSON).
 
 [[../index|← index]]
+
+## Identity встречи + атрибуция клонов (МТЗ №1, 2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md`](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md) (Фазы 0–5). Схема — [[data-model]] §Participant, механизм атрибуции — [[knowledge-core]] §«Детерминированная subject-атрибуция», AI-пайплайн — [[../01_projects/ai-jobs]] §«Identity встречи + атрибуция клонов».
+
+### Единая задача встречи: `MeetingActionItemsService` (Ф5.2)
+
+- **`backend/src/modules/meetings/` — `MeetingActionItemsService`** (новый, в `@Global() MeetingsModule` — инжектится без `imports`). Единая точка чтения «задач встречи»: флаг `AdminSetting knowledge.meetingTasksToTrackerOnly` (code-fallback **FALSE**) — `OFF` → читаем `Task`, `ON` → `Issue` по `linkedMeetingIds`. Репойнт 7 потребителей: public-api (`GET /meetings/:id/tasks` с сохранением контракта), admin, chat, search, exports (md + docx), bulk-zip, внутренний `tasks.service` для фронта. Фронт не тронут (его эндпоинт gate-coupled на бэке). Грабля «два артефакта Task+Issue» — [[code-pitfalls]].
+- `meeting-report-fast.worker.writeTasks` получил gate: при `ON` `Task` для action-items не создаётся.
+
+### Скрипты
+
+- **`backend/scripts/backfill-subject-attribution.ts`** (новый, Ф1) — идемпотентный upsert `IdeaBlockEntity{role:'subject'}` для reasoning-блоков + ре-enqueue `core.skill-profile-rebuild`. Поддерживает `--dry-run`. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`). См. [[knowledge-core]] §«Детерминированная subject-атрибуция».
+
+### Прочие правки модулей
+
+- **`meetings.service`** (Ф2/Ф3) — `createForUser` pre-seed'ит приглашённых (`invitees[]`) в транзакции; `deliverMeetingInvites` (после транзакции, best-effort) рассылает приглашения: email через `mail.sendMeetingInvite` (вкл. внешних), telegram/in-app через `ConversationalService.sendNotification` (каскад).
+- **`mail`** (Ф3) — `MEETING_INVITE_TEMPLATE` + `sendMeetingInvite`; `meeting-invite` добавлен в `STATIC_TEMPLATES` (bootstrap-sync в `EmailTemplate`, редактируется из админки писем).
+- **`conversational`** (Ф3) — новый `eventType 'meeting.invite'` (политика каналов `telegram→email→in_app`, payload-схема в `event-payload.registry.ts`) + case в `telegram-bot.adapter` и `max-bot.adapter`.
+
+[[../index|← index]]

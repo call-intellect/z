@@ -60,6 +60,44 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧩 2026-06-04 — Единая видимая задача из встречи (ТЗ meeting-identity, Ф5.2)
+
+> Контракт: `plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md` §5.2. Дедуп Task↔Issue: из встречи рождается ОДНА видимая задача (tracker `Issue`), а не дубль Task+Issue. **GATE-COUPLED, дефолт OFF** — до включения флага владельцем поведение прода не меняется.
+
+- **Шаг 4 — Prisma db push** — **не требуется** (схема не менялась; читаем существующие `Issue.linkedMeetingIds`/`externalSource`).
+- **Шаг 1 — ENV/AdminSetting** — новых ENV нет. Новый AdminSetting-флаг `knowledge.meetingTasksToTrackerOnly` (**default FALSE**, code-fallback FALSE через `TypedConfigService.getDynamic`). Менять в админке настроек под super_admin. При `true`: meeting-`Task` для action-items не создаётся (gate в `meeting-report-fast.worker`), 6 потребителей + фронт читают задачи встречи из `Issue` по `linkedMeetingIds`.
+- **Шаг 7 — Seed admin-settings** — идемпотентно засеивает ключ `knowledge.meetingTasksToTrackerOnly` (FALSE): `docker compose exec backend bun run scripts/seed-admin-settings.ts` (или `apply-prod-deploy.ts --mode update`). Без сидера флаг работает на code-дефолте FALSE.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый `MeetingActionItemsService` + репойнт 6 потребителей; фронт НЕ менялся — форма ответа при OFF сохранена байт-в-байт): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - регистрация флага: `docker compose exec backend grep -c "knowledge.meetingTasksToTrackerOnly" src/modules/admin/settings/admin-setting-schema-registry.ts scripts/seed-admin-settings.ts` → по 1 в каждом.
+  - LLM-промпты не тронуты (prompt-cache): diff по `meeting-report-fast.prompt.ts` / `block-ingest.prompt.ts` пуст.
+  - после включения флага в админке (`true`): новая встреча → таб «Задачи» карточки и `GET /api/v1/meetings/:id/tasks` отдают Issue-задачи; meeting-`Task` (action-items) не плодится.
+- ⚠ **НЕ проверено без БД (dev):** Issue-ветка (флаг ON) — дормант, верифицирована только unit-мок-тестами (маппинг Issue→форма Task + контракт public API при ON). Боевая проверка ON-режима — после включения флага владельцем на проде. При OFF поведение всех потребителей идентично прежнему (читают Task) — это гарантия безопасности дефолта.
+- ℹ Это запись по Ф5.2 (дедуп задач). **Identity-фундамент + приглашения + subject-атрибуция (Ф0–Ф5)** того же ТЗ — отдельной записью ниже (schema-push, новый kill-switch, backfill, шаблон письма).
+
+---
+
+### 🎙️ 2026-06-05 — Meeting-identity: identity участника + приглашение сотрудников + subject-атрибуция (Ф0–Ф5)
+
+> Контракт: `plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md` (Фазы 0–5). Связывает `Participant` с `User`/`Person`, приглашает сотрудников из списка (email/Telegram), оживляет клонов через `IdeaBlockEntity.role='subject'`. Коммиты: Ф0 `158a33d8`, Ф1 `b4ac1ebd`, Ф2 `b2fde6c9`, Ф3 `b5a07ebe`, Ф4 `d0609a90`, Ф5.1 `779b4811`.
+
+- **Шаг 4 — Prisma db push** — **обязательно** (Ф0, аддитивно, без data-loss, без `--accept-data-loss`): `Participant` += `personId String?` / `inviteToken String? @unique` / `invitationStatus ParticipantInvitationStatus @default(none)` / `invitedAt DateTime?` + relations `user`(ParticipantUser)/`person`(ParticipantPerson) + back-relations `User.participantsAsUser[]` / `Person.participantsAsPerson[]`; новый enum `ParticipantInvitationStatus { none invited joined }`. Команда: `docker compose exec backend bun run prisma:push` (через `migrate`-контейнер автоматически).
+- **Шаг 1 — ENV/AdminSetting** — новых ENV нет. **Два AdminSetting kill-switch** (оба code-fallback в `TypedConfigService`, засеиваются Шагом 7):
+  - `knowledge.subjectAttributionEnabled` — **default TRUE** (Ф1: шаг `attributeSubject` в `block-ingest` пишет `role:'subject'`). `false` = откат к старому (только `mentioned`).
+  - `knowledge.meetingTasksToTrackerOnly` — **default FALSE** (Ф5.2, см. запись выше) — поэтапная раскатка.
+- **Шаг 7 — Seed**:
+  - admin-settings (новые ключи `knowledge.subjectAttributionEnabled`=true, `knowledge.meetingTasksToTrackerOnly`=false): `docker compose exec backend bun run scripts/seed-admin-settings.ts` (или `apply-prod-deploy.ts --mode update`). Без сидера работают code-дефолты.
+  - **email-шаблон `meeting-invite`** — **спец-сида не нужно.** `MEETING_INVITE_TEMPLATE` лежит в `STATIC_TEMPLATES` (`email-templates-admin.service.ts`) и **bootstrap-sync'ается автоматически** в таблицу `EmailTemplate` при первом GET `/admin/content/email-templates` (когда `count===0`); код остаётся fallback'ом. Дальше редактируется из админки писем.
+- **Шаг 8 — Backfill** — `scripts/backfill-subject-attribution.ts` — идемпотентный upsert `IdeaBlockEntity{role:'subject'}` для reasoning-блоков + ре-enqueue `core.skill-profile-rebuild`. Сначала dry-run, затем применение: `docker compose exec backend bun run scripts/backfill-subject-attribution.ts --dry-run` → `… backfill-subject-attribution.ts`. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`), идёт и через агрегатор `apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: identity-связи, `deliverMeetingInvites`, `mail.sendMeetingInvite`, conversational `meeting.invite`, subject-атрибуция; frontend: блок «Пригласить сотрудников» в форме создания встречи + вход `/m/[id]?inv=<token>`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Swagger `/api/docs` → POST создания встречи принимает `invitees[]` в теле.
+  - `eventType 'meeting.invite'` зарегистрирован: `docker compose exec backend grep -R "meeting.invite" src/modules/conversational/types` (registry + `EVENT_TYPE_CHANNEL_POLICY`).
+  - `GET /api/v1/meetings/:id/tasks` при **дефолтном** флаге (`knowledge.meetingTasksToTrackerOnly=false`) — форма ответа не изменилась.
+  - subject-атрибуция работает: после прохода встречи у reasoning-блоков сотрудника-спикера появляются `IdeaBlockEntity{role:'subject'}` (`docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.ideaBlockEntity.count({where:{role:'subject'}}).then(n=>{console.log('subject links:',n);return p.\$disconnect();});"`) → > 0.
+
+---
+
 ### 🔓 2026-06-04 — Разблокировка конвейера встреча→граф→задачи (МТЗ №1, Ф1–Ф11)
 
 > Ветка `feature/pipeline-unblock`. Контракт: `plans/tz/2026-06-04-razblokirovka-konveyera.md`. Чинит критпуть B1–B7 + развязку видео от AI-статуса.

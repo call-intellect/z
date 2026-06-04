@@ -669,5 +669,25 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 Полная карта курации — [[../01_projects/curation]].
 
+## Детерминированная subject-атрибуция: «кто автор знания» (МТЗ №1 Фаза 1, 2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md`](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md) Фаза 1, коммит `b4ac1ebd`.
+
+**Проблема (до фикса).** Единственный продюсер `IdeaBlockEntity` хардкодил `role:'mentioned'` — `role:'subject'` (автор знания) **не писался нигде**. При этом клон-специалист (`specialist-3-2/3-7`), `router.hasEmployeeSubject` (роутинг reasoning'а в `3-7-skill`), `axis-classifier` (WHO-ось), `card-rollup-v2` (`personSubjectIds`) и дашборд-агенты читают именно `role:'subject'` — и получали **пустую** выборку. Клоны фактически не наполнялись из графа.
+
+**Решение — `attributeSubject` в `block-ingest.worker`.** Для reasoning-семейства `signalType ∈ { reasoning, rationale, decision_basis, expertise, experience, competence }` после persist'а блоков пишется `IdeaBlockEntity{ role:'subject', mentionContext:'author' }` (upsert по composite PK `(blockId, entityId)`; если уже была `mentioned` — апгрейд до `subject`). Источник автора:
+- **встречи** — сегмент по перекрытию времени `evidence` (по `speakerParticipantId` / `speakerName`; identity протянута через `DialogTurn`, см. [[data-model]] §Participant);
+- **текстовые каналы** — `payload.userId` (Telegram/email/free-note).
+
+**Ленивое создание person-Entity.** `entity-resolution.service` получил `ensurePersonEntity(tenantId, personId)` (лениво создаёт `Entity{type:person}` + проставляет `Person.entityId`) и `resolveSubjectEntityId(tenantId, {speakerParticipantId, speakerName, authorUserId})`. Создание person-Entity делается **лениво именно в `resolveSubjectEntityId`** — не проактивно в `persons`-сервисе: причины — tx-visibility hazard и риск циклического DI `persons ↔ knowledge-core` (решение оркестратора). Заодно починен баг `linkPersonEntity` (был `findFirst` без фильтра по имени → теперь `findMany` + match по имени).
+
+`Segment` / `MeetingTurn` (`segment-builder`) теперь несут `speakerParticipantId` — чтобы по перекрытию времени найти автора.
+
+**Kill-switch.** `AdminSetting knowledge.subjectAttributionEnabled` (code-fallback `true`).
+
+**Backfill.** `backend/scripts/backfill-subject-attribution.ts` (`--dry-run`, идемпотентный upsert, в конце ре-enqueue `core.skill-profile-rebuild`; зарегистрирован в `apply-prod-deploy.ts` STEPS, `phase: backfill`). Демо-данные (`onboarding/demo-data/knowledge-graph.ts`) теперь тоже создают subject-связи.
+
+**Эффект.** Клоны (specialist-3-7 / ExecutablePersona), `router.hasEmployeeSubject`, WHO-ось `axis-classifier`, `card-rollup-v2` и дашборд-агенты впервые получают непустую `role:'subject'` выборку. Грабля зафиксирована в [[code-pitfalls]].
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

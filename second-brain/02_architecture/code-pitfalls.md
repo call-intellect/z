@@ -408,4 +408,73 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 **Вывод:** «добавить typecheck» класс «код↔схема» НЕ закрывает. Закрывает —
 аннотация литерала (верхний уровень) + integration-тест на критпуть (вложенное).
 
+## Задачи встречи: ДВА несвязанных артефакта (Task + Issue), читаются 7 разных мест (2026-06-04)
+
+Одна встреча исторически порождала **два** артефакта без общего дедупа:
+(а) `Task` (`meeting-report-fast.worker` → таб «Задачи» карточки + `/tasks`);
+(б) `Issue` (`analyze.worker` → `IntakeIssue` → auto-triage → проект «Из встреч»).
+Связи `Task↔Issue` в схеме нет; `Issue` несёт встречу через **массив**
+`linkedMeetingIds String[]` + `externalSource='meeting'`, а `Task` — через
+скаляр `meetingId`. `Task.status` = enum `TaskStatus(open/in_progress/done/cancelled)`,
+`Issue` статус — через `state.category(backlog/unstarted/started/completed/cancelled)`
+(маппинг: started→in_progress, completed→done, backlog/unstarted→open).
+
+**Грабля:** `prisma.task.findMany({where:{meetingId}})` для «задач встречи»
+размазан по **6 backend-потребителям + 1 внутреннему эндпоинту фронта**
+(public-api, admin, chat, search, exports.worker×2, bulk-zip + `tasks.service.listByMeeting`).
+Один из них (`search.service.searchTasks`) — НЕ per-meeting, а полнотекст по
+`userId`+title по всем задачам; `listForMeeting(meetingId)` ему не подходит —
+нужен отдельный метод поиска по заголовку.
+
+**Решение (ТЗ Ф5.2, gate-coupled, дефолт OFF):** единый
+`MeetingActionItemsService` в `@Global() MeetingsModule` (инжектится без
+imports). Флаг `knowledge.meetingTasksToTrackerOnly` (AdminSetting,
+code-fallback FALSE): OFF → читаем Task (форма прежняя байт-в-байт), ON → Issue.
+Где внешний контракт богаче нормализованной формы (public-api отдаёт ПОЛНЫЙ
+объект Task; `mapTask` фронта требует `sourceStartMs`/`createdManually`/...) —
+держать OFF-ветку на прямом чтении Task, через helper гонять только ON-ветку
+(маппинг Issue→полный набор полей с нейтральными дефолтами). Так дефолт = ноль
+изменений в проде; ON-ветка дормант до включения владельцем.
+
+## Subject-атрибуция, identity участника, два движка email (МТЗ №1, 2026-06-05)
+
+### `IdeaBlockEntity.role` до Ф1 ВСЕГДА `'mentioned'` — клоны были пустые
+
+Единственный продюсер `IdeaBlockEntity` (`block-ingest.worker`) хардкодил
+`role:'mentioned'` — `role:'subject'` (автор знания) **не писался никогда**.
+А клон-специалисты (`3-2`/`3-7` / ExecutablePersona), `router.hasEmployeeSubject`,
+WHO-ось `axis-classifier`, `card-rollup-v2.personSubjectIds` и дашборд-агенты
+читают именно `subject` — и молча получали пустую выборку. Симптом: клоны не
+наполняются из графа, хотя пайплайн «зелёный».
+
+**Фикс (Ф1, коммит `b4ac1ebd`):** шаг `attributeSubject` в `block-ingest.worker`
+пишет `role:'subject'` для reasoning-семейства signalType
+(`reasoning/rationale/decision_basis/expertise/experience/competence`); автор
+резолвится через `resolveSubjectEntityId` (по `speakerParticipantId`/`speakerName`
+для встреч, `payload.userId` для текста) + ленивое `ensurePersonEntity`.
+Подробно — [[knowledge-core]] §«Детерминированная subject-атрибуция».
+
+**Правило:** новый агент/проекция, который завязан на «автора знания», читает
+`role:'subject'` — но это звено появилось только в Ф1; для старых данных нужен
+`backfill-subject-attribution.ts`. Не предполагай, что `subject` был всегда.
+
+### `participant-context` обнулял `userId` для не-host
+
+`ParticipantContextService.loadForMeeting` отдавал `userId` только хосту —
+для приглашённых сотрудников identity терялась, и `Task.assigneeUserId` /
+«чей голос» по ним не резолвились. **Фикс (Ф0, `158a33d8`):** `userId`
+отдаётся **всем** `isRegisteredUser`. См. [[data-model]] §Participant.
+
+### Два движка email — для внешних только `mail.*`, не conversational
+
+В Z живут **два** независимых пути доставки писем: (1) `mail.sendPlain` /
+`MailService` (прямой SMTP, шаблоны в `mail.templates.ts` + `STATIC_TEMPLATES`
+с bootstrap-sync в `EmailTemplate`); (2) `ConversationalService.sendNotification`
+(omnichannel, каскад каналов по `EVENT_TYPE_CHANNEL_POLICY`, требует
+linked-канал/`User`). Conversational доходит только до **залогиненных** с
+привязанным каналом. Для **внешних** адресатов (приглашённый по email без
+аккаунта) — только `mail.*`. Поэтому `meetings.service.deliverMeetingInvites`
+(Ф3, `b5a07ebe`) шлёт email через `mail.sendMeetingInvite` (вкл. внешних), а
+telegram/in-app — через conversational-каскад (только для своих).
+
 [[../index|← index]]

@@ -227,7 +227,10 @@ export class AdminTelegramBotService {
     let autoRegisterOutcome: 'skipped' | 'ok' | 'failed' = 'skipped';
 
     if (this.cfg.telegramProxy.enabled) {
-      const reg = await this.autoRegisterInProxy({ token: trimmed });
+      const reg = await this.autoRegisterInProxy({
+        token: trimmed,
+        name: botUsername ?? 'Kora Bot',
+      });
       autoRegisterOutcome = reg.outcome;
       proxyPatch = reg.patch;
       webhookSecretToPersist = reg.webhookSecretToPersist;
@@ -270,6 +273,7 @@ export class AdminTelegramBotService {
    */
   private async autoRegisterInProxy(args: {
     token: string;
+    name: string;
   }): Promise<{
     outcome: 'ok' | 'failed';
     patch: Record<string, unknown>;
@@ -290,11 +294,15 @@ export class AdminTelegramBotService {
       webhookSecretToPersist = this.crypto.encrypt(secret);
     }
 
-    const targetUrl = this.computeWebhookUrl();
+    // Прокси не отдаёт свой webhook-secret через REST, поэтому мы кладём
+    // СВОЙ секрет в путь targetWebhookUrl. Прокси POST-ит апдейты ровно на
+    // этот URL — секрет в пути и есть наша аутентификация (см.
+    // TelegramWebhooksController, роут `/s/:secret`).
+    const targetUrl = this.computeWebhookTargetUrl(secret);
     try {
       const info = await this.proxyAdmin.upsertBot({
+        name: args.name,
         token: args.token,
-        secretToken: secret,
         targetUrl,
       });
       return {
@@ -304,7 +312,7 @@ export class AdminTelegramBotService {
           proxyBotId: info.id,
           proxyRegisteredAt: new Date().toISOString(),
           proxyLastSyncError: null,
-          webhookUrl: targetUrl,
+          webhookUrl: this.computeWebhookUrl(),
         },
       };
     } catch (err) {
@@ -381,11 +389,14 @@ export class AdminTelegramBotService {
     let proxyLastSyncError: string | null = null;
 
     if (useProxy) {
+      // В proxy-режиме секрет передаётся в пути targetWebhookUrl (прокси
+      // не принимает secret_token и не отдаёт свой через REST).
+      const botUsername = config.botUsername;
       try {
         const info = await this.proxyAdmin.upsertBot({
+          name: botUsername ?? 'Kora Bot',
           token,
-          secretToken: newSecret,
-          targetUrl: webhookUrl,
+          targetUrl: `${webhookUrl}/s/${newSecret}`,
         });
         proxyBotId = info.id;
         proxyRegisteredAt = new Date().toISOString();
@@ -767,6 +778,16 @@ export class AdminTelegramBotService {
   private computeWebhookUrl(): string {
     const base = this.cfg.publicHostUrl.replace(/\/+$/, '');
     return `${base}/api/v1/webhooks/telegram-bot`;
+  }
+
+  /**
+   * URL приёма webhook'ов с секретом в пути — то, что мы регистрируем в
+   * прокси как `targetWebhookUrl`. Прокси POST-ит апдейты ровно сюда;
+   * секрет в пути — наша аутентификация (`TelegramWebhooksController`
+   * роут `/s/:secret`). См. также `feedback conversational_channels_principles`.
+   */
+  private computeWebhookTargetUrl(secret: string): string {
+    return `${this.computeWebhookUrl()}/s/${secret}`;
   }
 
   private generateWebhookSecret(): string {

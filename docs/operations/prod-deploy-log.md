@@ -1563,12 +1563,18 @@ INACTIVE_BINDING_DAYS=30
 # === Telegram через прокси telegram.crossmark.ru (2026-05-26) ===
 # ТЗ: plans/tz/2026-05-26-telegram-via-crossmark-proxy.md.
 # Прод по умолчанию через прокси — backend и Telegram не имеют прямой связи из ДЦ.
+# ВАЖНО: PUBLIC_HOST_URL — публичный https-адрес БЭКЕНДА, на который прокси
+# шлёт вебхуки. Из него собирается targetWebhookUrl=${PUBLIC_HOST_URL}/api/v1/webhooks/telegram-bot/s/<secret>.
+# Кодом НЕ определяется. Если пуст — fallback на PUBLIC_FRONTEND_URL (обычно домен
+# фронта → вебхуки уйдут не туда). В проде задавать обязательно.
+PUBLIC_HOST_URL=https://<публичный-хост-бэкенда>
 TELEGRAM_PROXY_ENABLED=true                       # default true; false = аварийный rollback на api.telegram.org
 TELEGRAM_PROXY_API_BASE=https://telegram.crossmark.ru
 TELEGRAM_PROXY_FILE_BASE=https://telegram.crossmark.ru
-TELEGRAM_PROXY_ADMIN_EMAIL=<email учётки в прокси>   # регистрация — на /register прокси, один раз
-TELEGRAM_PROXY_ADMIN_PASSWORD=<секрет>               # хранить в vault; ротация раз в квартал
-TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC=60             # обновлять JWT за 60с до exp
+# 2026-06-04: авторизация админ-API прокси переведена на статический Bearer-токен.
+# Токен создаётся один раз в веб-админке прокси (POST /api/tokens) и кладётся сюда.
+# Старые TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD/JWT_PREFETCH_SEC — УДАЛЕНЫ из схемы, не нужны.
+TELEGRAM_PROXY_TOKEN=<статический Bearer-токен из веб-админки прокси>  # хранить в vault
 TELEGRAM_PROXY_REQUEST_TIMEOUT_MS=15000              # потолок одного outbound-вызова
 TELEGRAM_PROXY_HEALTH_INTERVAL_SEC=30                # интервал health-cron
 
@@ -1828,10 +1834,10 @@ docker compose exec backend bun run scripts/patch-migrate-clone-access.ts
 #   2. Аварийный режим, когда веб-админка временно недоступна.
 #
 # Предусловия:
-#   - TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD в .env (см. Шаг 1);
+#   - TELEGRAM_PROXY_TOKEN в .env (см. Шаг 1); статический токен из веб-админки прокси;
+#   - PUBLIC_HOST_URL в .env (публичный хост бэкенда — из него собирается targetWebhookUrl);
 #   - в /admin/system/telegram-bot уже установлен токен бота (иначе скрипт
-#     выходит с инструкцией и кодом 0);
-#   - аккаунт зарегистрирован вручную на https://telegram.crossmark.ru/register.
+#     выходит с инструкцией и кодом 0).
 docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts
 # опц. — ротация webhookSecret (старый перестаёт работать сразу):
 # docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts --rotate-secret

@@ -12,8 +12,9 @@
  *   2. Расшифровывает `config.botToken` и `config.webhookSecret` через
  *      `CryptoService`.
  *   3. Если `webhookSecret` пуст — генерирует новый.
- *   4. Логинится в прокси, делает `upsertBot({ token, secretToken,
- *      targetUrl })`. Прокси сам зарегистрирует `setWebhook` у Telegram.
+ *   4. Делает `upsertBot({ name, token, targetUrl })` со статическим
+ *      Bearer-токеном (`TELEGRAM_PROXY_TOKEN`); секрет — в пути targetUrl.
+ *      Прокси сам зарегистрирует `setWebhook` у Telegram.
  *   5. Сохраняет `proxyBotId`, `proxyRegisteredAt`, `proxyLastSyncError=null`,
  *      `webhookSecret` (encrypted) обратно в `Channel.config`.
  *
@@ -85,12 +86,10 @@ async function main(args: CliArgs): Promise<void> {
   const proxyExplicitlyDisabled = ['false', '0'].includes(
     (process.env['TELEGRAM_PROXY_ENABLED'] ?? '').toLowerCase(),
   );
-  const hasCreds =
-    !!process.env['TELEGRAM_PROXY_ADMIN_EMAIL'] &&
-    !!process.env['TELEGRAM_PROXY_ADMIN_PASSWORD'];
-  if (proxyExplicitlyDisabled || !hasCreds) {
+  const hasToken = !!process.env['TELEGRAM_PROXY_TOKEN'];
+  if (proxyExplicitlyDisabled || !hasToken) {
     log(
-      'TELEGRAM_PROXY выключен или admin-креды не заданы — регистрация бота пропущена (Nest не поднимаем). ' +
+      'TELEGRAM_PROXY выключен или TELEGRAM_PROXY_TOKEN не задан — регистрация бота пропущена (Nest не поднимаем). ' +
         'Задай TELEGRAM_PROXY_* в .env и запусти скрипт снова.',
     );
     return;
@@ -125,11 +124,11 @@ async function main(args: CliArgs): Promise<void> {
       log('TELEGRAM_PROXY_ENABLED=false — прокси выключен. Скрипт ничего не делает.');
       return;
     }
-    if (!cfg.telegramProxy.adminEmail || !cfg.telegramProxy.adminPassword) {
+    if (!cfg.telegramProxy.token) {
       log(
-        'TELEGRAM_PROXY_ADMIN_EMAIL / TELEGRAM_PROXY_ADMIN_PASSWORD не заданы в env — ' +
+        'TELEGRAM_PROXY_TOKEN не задан в env — ' +
           'регистрация бота в прокси пропущена (конфигурация ещё не готова). ' +
-          'Задай креды прокси в .env и запусти скрипт снова. Обновление не требуется сейчас.',
+          'Задай токен прокси в .env и запусти скрипт снова. Обновление не требуется сейчас.',
       );
       return;
     }
@@ -193,18 +192,25 @@ async function main(args: CliArgs): Promise<void> {
     }
 
     const publicHostUrl = cfg.publicHostUrl.replace(/\/+$/, '');
-    const targetUrl =
+    const webhookUrl =
       args.webhookUrlOverride ?? `${publicHostUrl}/api/v1/webhooks/telegram-bot`;
-    if (!/^https:\/\//i.test(targetUrl)) {
+    if (!/^https:\/\//i.test(webhookUrl)) {
       log(
-        `targetUrl должен быть https://... — получено: ${targetUrl}. ` +
+        `webhookUrl должен быть https://... — получено: ${webhookUrl}. ` +
           'Проверь PUBLIC_HOST_URL в .env или передай --webhook-url=https://... . Регистрация пропущена.',
       );
       return;
     }
+    // Секрет — в путь targetWebhookUrl (прокси не принимает secret_token и
+    // не отдаёт свой через REST; см. TelegramProxyAdminClient + контроллер).
+    const targetUrl = `${webhookUrl}/s/${secret}`;
+    const botName =
+      typeof cfgRaw['botUsername'] === 'string' && cfgRaw['botUsername']
+        ? (cfgRaw['botUsername'] as string)
+        : 'Kora Bot';
 
     log(
-      `Канал: id=${channel.id}, токен=****${token.slice(-4)}, secret_rotated=${secretGenerated}, target_url=${targetUrl}`,
+      `Канал: id=${channel.id}, токен=****${token.slice(-4)}, secret_rotated=${secretGenerated}, webhook_url=${webhookUrl}`,
     );
     log(`Прокси: ${cfg.telegramProxy.apiBase}`);
 
@@ -216,20 +222,20 @@ async function main(args: CliArgs): Promise<void> {
     let proxyBotId: string;
     try {
       const info = await proxyAdmin.upsertBot({
+        name: botName,
         token,
-        secretToken: secret,
         targetUrl,
       });
       proxyBotId = info.id;
     } catch (err) {
-      // Прокси — нестабильная внешняя зависимость (сеть / протухший JWT).
+      // Прокси — нестабильная внешняя зависимость (сеть / отозванный токен).
       // Не валим весь `apply-prod-deploy` из-за неё: фиксируем причину в
       // Channel.config.proxyLastSyncError для observability и выходим чисто.
       // Оператор перезапустит скрипт после восстановления прокси.
       const proxyLastSyncError = err instanceof Error ? err.message : String(err);
       log(
         `WARN: прокси отверг upsertBot: ${proxyLastSyncError}. ` +
-          `Проверь TELEGRAM_PROXY_ADMIN_* и доступность ${cfg.telegramProxy.apiBase}, затем запусти скрипт снова. ` +
+          `Проверь TELEGRAM_PROXY_TOKEN и доступность ${cfg.telegramProxy.apiBase}, затем запусти скрипт снова. ` +
           'Регистрация бота отложена — остальной выкат не блокируется.',
       );
       await prisma.channel.update({
@@ -247,7 +253,7 @@ async function main(args: CliArgs): Promise<void> {
       proxyBotId,
       proxyRegisteredAt: new Date().toISOString(),
       proxyLastSyncError: null,
-      webhookUrl: targetUrl,
+      webhookUrl,
       webhookSecret: newSecretEnc,
     };
     await prisma.channel.update({

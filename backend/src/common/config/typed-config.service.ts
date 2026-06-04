@@ -1064,11 +1064,11 @@ export class TypedConfigService {
    *     дёргает прокси сам (наш бэк не вызывает `setWebhook` напрямую).
    *   - `apiBase` — базовый URL для Bot API через прокси (без trailing slash).
    *   - `fileBase` — базовый URL для `/file/bot<token>/<path>`.
-   *   - `adminEmail` / `adminPassword` — креды учётки прокси для
-   *     `POST /auth/login`. Опциональны: если `enabled=false` — не нужны;
-   *     если `enabled=true` и пусты — `TelegramProxyAdminClient` бросит
-   *     внятную ошибку при первом обращении.
-   *   - `jwtPrefetchSec` — за сколько секунд до `exp` обновлять JWT.
+   *   - `token` — статический Bearer-токен админ-API прокси
+   *     (`POST /api/tokens` в веб-админке прокси). Опционален: если
+   *     `enabled=false` — не нужен; если `enabled=true` и пуст —
+   *     `TelegramProxyAdminClient` бросит внятную ошибку при первом
+   *     обращении. Пришёл на смену email/password + `/auth/login`.
    *   - `requestTimeoutMs` — timeout каждого вызова. 0 → без timeout.
    *   - `healthIntervalSec` — интервал health-check'а прокси.
    */
@@ -1077,9 +1077,7 @@ export class TypedConfigService {
       enabled: this.get('TELEGRAM_PROXY_ENABLED'),
       apiBase: this.get('TELEGRAM_PROXY_API_BASE').replace(/\/+$/, ''),
       fileBase: this.get('TELEGRAM_PROXY_FILE_BASE').replace(/\/+$/, ''),
-      adminEmail: this.get('TELEGRAM_PROXY_ADMIN_EMAIL'),
-      adminPassword: this.get('TELEGRAM_PROXY_ADMIN_PASSWORD'),
-      jwtPrefetchSec: this.get('TELEGRAM_PROXY_ADMIN_JWT_PREFETCH_SEC'),
+      token: this.get('TELEGRAM_PROXY_TOKEN'),
       requestTimeoutMs: this.get('TELEGRAM_PROXY_REQUEST_TIMEOUT_MS'),
       healthIntervalSec: this.get('TELEGRAM_PROXY_HEALTH_INTERVAL_SEC'),
       /** audit С28 — hard-timeout для proxyAdmin.ping() в крон-tick'е. */

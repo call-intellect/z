@@ -1,3 +1,4 @@
+import { MEETING_STATUSES } from './enums';
 import type { MeetingStatus, MeetingType, ParticipantRole } from './enums';
 
 /**
@@ -207,3 +208,69 @@ export function meetingDurationSeconds(m: MeetingDomain): number | null {
   if (ms <= 0) return null;
   return Math.round(ms / 1000);
 }
+
+// ─────────────── статус встречи — центральный маппер ───────────────
+
+/**
+ * Семантический «тон» статуса встречи. Маппится на парные цветовые токены
+ * (`bg-chip-{tone}-bg` + `text-chip-{tone}-fg`) — без жёстких hex/slate.
+ */
+export type MeetingStatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+export type MeetingStatusView = {
+  /** Человекочитаемый русский лейбл статуса. */
+  label: string;
+  /** Семантический тон для подбора цвета. */
+  tone: MeetingStatusTone;
+  /** CSS-классы парных токенов чипа (`bg-chip-…-bg text-chip-…-fg`). */
+  chipClass: string;
+  /**
+   * `true` — терминальный сбой AI-ветки: запись в порядке, но AI-отчёт
+   * не сформирован. Не путать с полным провалом (`failed`).
+   */
+  isAiFailed: boolean;
+  /** `true` — полный провал встречи (ни записи, ни отчёта). */
+  isFailed: boolean;
+};
+
+const STATUS_VIEW: Record<MeetingStatus, { label: string; tone: MeetingStatusTone }> = {
+  scheduled: { label: 'Запланирована', tone: 'neutral' },
+  active: { label: 'Идёт', tone: 'info' },
+  completed: { label: 'Завершена', tone: 'success' },
+  recording_processing: { label: 'Обработка записи', tone: 'info' },
+  recording_ready: { label: 'Запись готова', tone: 'info' },
+  transcription_processing: { label: 'Распознаём речь', tone: 'info' },
+  transcription_ready: { label: 'Расшифровка готова', tone: 'info' },
+  ai_processing: { label: 'Готовим отчёт', tone: 'info' },
+  ai_ready: { label: 'Отчёт готов', tone: 'success' },
+  failed: { label: 'Ошибка', tone: 'danger' },
+  // Запись есть, AI-ветка упала — это НЕ полный провал, поэтому «warning».
+  ai_failed: { label: 'Запись готова · отчёт не удался', tone: 'warning' },
+};
+
+const TONE_CHIP_CLASS: Record<MeetingStatusTone, string> = {
+  neutral: 'bg-bg-overlay text-fg-secondary',
+  info: 'bg-chip-info-bg text-chip-info-fg',
+  success: 'bg-chip-success-bg text-chip-success-fg',
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
+};
+
+/**
+ * Центральный маппер статуса встречи → лейбл + тон + парные цветовые токены.
+ * Единственный источник правды для бейджей/чипов статуса в UI.
+ */
+export function meetingStatusView(status: MeetingStatus): MeetingStatusView {
+  const v = STATUS_VIEW[status];
+  return {
+    label: v.label,
+    tone: v.tone,
+    chipClass: TONE_CHIP_CLASS[v.tone],
+    isAiFailed: status === 'ai_failed',
+    isFailed: status === 'failed',
+  };
+}
+
+/** Список всех статусов с их представлением — для фильтров/легенд. */
+export const MEETING_STATUS_VIEWS: ReadonlyArray<{ status: MeetingStatus } & MeetingStatusView> =
+  MEETING_STATUSES.map((status) => ({ status, ...meetingStatusView(status) }));

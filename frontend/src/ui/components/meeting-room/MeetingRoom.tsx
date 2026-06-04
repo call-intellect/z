@@ -113,6 +113,7 @@ export function MeetingRoom({
     if (
       status === 'completed' ||
       status === 'failed' ||
+      status === 'ai_failed' ||
       status === 'recording_processing' ||
       status === 'transcription_processing' ||
       status === 'ai_processing' ||

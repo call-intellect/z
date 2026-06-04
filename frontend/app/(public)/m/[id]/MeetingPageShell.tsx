@@ -25,6 +25,10 @@ const FINISHED_STATUSES: MeetingStatus[] = [
   'transcription_ready',
   'ai_processing',
   'ai_ready',
+  // `ai_failed` — встреча завершена, упала только AI-ветка, но запись готова.
+  // Это НЕ полный провал: показываем «завершено» (запись доступна), а не
+  // экран ошибки.
+  'ai_failed',
 ];
 
 type JoinedState = {

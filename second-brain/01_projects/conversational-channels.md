@@ -190,8 +190,8 @@ Per-event-type defaults в α-1:
 `backend/src/modules/conversational/adapters/telegram-bot/`:
 - `telegram-bot.adapter.ts` — `IChannel`-адаптер: `send`, `ingestUpdate`, intent classify + Vox ASR + DocumentsService.upload.
 - `telegram-api-client.ts` — тонкий клиент Bot API (`sendMessage`, `setWebhook`, `setMyCommands` (с пустым списком), `getMe`, `deleteWebhook`, `getFile`, `downloadFile`) с throttle через Redis-bucket (`cfg.telegramBot.globalRps`). С 2026-05-26 транспорт идёт через прокси `telegram.crossmark.ru` (см. ниже «Транспорт Telegram через прокси»).
-- `telegram-webhooks.controller.ts` — `POST /api/v1/webhooks/telegram-bot/:tenantId` с `X-Telegram-Bot-Api-Secret-Token` timing-safe verification. Также подписан на Redis pub/sub `conversational:channel:updated:telegram_bot` — после ротации `webhookSecret` в админке кэш `globalChannelCache` сбрасывается без рестарта.
-- `telegram-proxy-admin.client.ts` (2026-05-26) — REST-клиент к админ-API прокси: `login()` с JWT-кэшем в Redis, `upsertBot()`, `getBotByToken()`, `apiRequest()` с retry-on-401, `ping()`.
+- `telegram-webhooks.controller.ts` — три роута: `POST /api/v1/webhooks/telegram-bot` (direct, секрет в заголовке `X-Telegram-Bot-Api-Secret-Token`), `POST .../telegram-bot/s/:secret` (proxy, секрет в пути), `POST .../telegram-bot/:tenantId` (legacy). Все — timing-safe verification. Также подписан на Redis pub/sub `conversational:channel:updated:telegram_bot` — после ротации `webhookSecret` в админке кэш `globalChannelCache` сбрасывается без рестарта.
+- `telegram-proxy-admin.client.ts` (2026-05-26, авторизация переписана 2026-06-04) — REST-клиент к админ-API прокси: `getAdminToken()` (статический Bearer из `TELEGRAM_PROXY_TOKEN`, без Redis/`/auth/login`), `upsertBot()` (`{name, token, targetWebhookUrl}`, обновление через `PATCH`), `getBotByToken()` (матч по `telegramBotId`), `apiRequest()` (на 401 — внятная ошибка, re-login невозможен), `ping()` (`GET /health`).
 - `telegram-proxy-health.cron.ts` (2026-05-26) — раз в `TELEGRAM_PROXY_HEALTH_INTERVAL_SEC` секунд (default 30) пингует прокси, пишет `tg:proxy:healthy` в Redis. Лидер-выбор по `SET NX EX`.
 - `telegram.types.ts` — типизированный subset Update / Message / Voice / Document / SendMessage. Без `reply_markup`, без `callback_query`, без `BotCommand`.
 - `SMOKE.md` — инструкция ручного smoke на проде.
@@ -216,10 +216,16 @@ Z живёт в ДЦ Новосибирска. Прямые исходящие �
 
 **Inbound** (Telegram → Z). Прокси регистрирует у Telegram свой URL
 `/webhook/<secret>`, принимает Update и форвардит на наш
-`targetWebhookUrl` (`POST /api/v1/webhooks/telegram-bot`), проставляя
-`X-Telegram-Bot-Api-Secret-Token`. Прокси гарантирует до 3 ретраев с
-возрастающей задержкой на не-2xx нашего ответа. Наш контроллер
-верифицирует секрет через `timingSafeEqual`.
+`targetWebhookUrl`. Прокси гарантирует до 3 ретраев с возрастающей
+задержкой на не-2xx нашего ответа. Наш контроллер верифицирует секрет
+через `timingSafeEqual`. **Две модели секрета** (2026-06-04):
+- **proxy-режим** (default): прокси НЕ отдаёт свой webhook-secret через
+  REST (только в веб-карточке бота), поэтому мы кладём СВОЙ секрет
+  в путь `targetWebhookUrl = ${PUBLIC_HOST_URL}/api/v1/webhooks/telegram-bot/s/<secret>`.
+  Контроллер сверяет `:secret` из пути (роут `POST .../telegram-bot/s/:secret`).
+- **direct-режим** (`TELEGRAM_PROXY_ENABLED=false`): Telegram шлёт
+  `X-Telegram-Bot-Api-Secret-Token` на базовый `POST .../telegram-bot` —
+  сверяем заголовок. Оба сверяют один и тот же `Channel.config.webhookSecret`.
 
 **Регистрация бота в прокси.** Автоматическая — при первом
 `PUT /admin/system/telegram-bot/token` (кнопка «Установить токен»
@@ -237,10 +243,12 @@ webhookSecret).
 недоступна) — patch-скрипт `patch-telegram-register-in-proxy.ts`
 (идемпотентен, регистрируется в `apply-prod-deploy.ts` Шаг 6.11).
 
-**Аутентификация в админ-API прокси.** Через `POST /auth/login` JWT;
-кэшируется в Redis (`tg:proxy:admin:jwt`) с TTL ≈ `exp - prefetchSec`.
-Креды (`TELEGRAM_PROXY_ADMIN_EMAIL/PASSWORD`) — в ENV, не в БД (уровень
-инфры).
+**Аутентификация в админ-API прокси** (2026-06-04). Статический
+Bearer-токен `TELEGRAM_PROXY_TOKEN` (создаётся один раз в веб-админке
+прокси `POST /api/tokens`), в ENV, не в БД. Раньше был `POST /auth/login`
+(email/password → JWT с кэшем в Redis) — убрано как хрупкое (ротация
+серверного секрета, спам логинами с нод). На 401 re-login невозможен —
+клиент бросает внятную ошибку «токен отвергнут, проверь TELEGRAM_PROXY_TOKEN».
 
 **Кэш канала и ротация secret'а.** `TelegramWebhooksController` держит
 `globalChannelCache` в памяти процесса. При любой мутации

@@ -4,6 +4,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { BillingModule } from '../billing/billing.module';
 import { ConversationalLinkCodeService } from '../conversational/link-code.service';
 import { MailModule } from '../mail/mail.module';
+import { PersonsModule } from '../persons/persons.module';
 import { TablesModule } from '../tables/tables.module';
 
 import { CapabilitiesService } from './capabilities.service';
@@ -35,7 +36,7 @@ import { OrgsService } from './orgs.service';
  *     plans/tz/2026-05-25-telegram-bot-global-and-invites.md §8.
  */
 @Module({
-  imports: [PrismaModule, MailModule, BillingModule, TablesModule],
+  imports: [PrismaModule, MailModule, BillingModule, TablesModule, PersonsModule],
   controllers: [OrgsController, OrgInvitationsAcceptController],
   providers: [
     OrgsService,

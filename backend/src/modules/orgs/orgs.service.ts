@@ -18,6 +18,7 @@ import type {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SubscriptionService } from '../billing/services/subscription.service';
+import { PersonsService } from '../persons/services/persons.service';
 import { RbacService } from '../rbac/rbac.service';
 import { TablesAutoProvisionService } from '../tables/services/tables-auto-provision.service';
 
@@ -63,6 +64,7 @@ export class OrgsService {
     @Inject(SubscriptionService) private readonly subscriptions: SubscriptionService,
     @Inject(TablesAutoProvisionService)
     private readonly tablesAutoProvision: TablesAutoProvisionService,
+    @Inject(PersonsService) private readonly persons: PersonsService,
   ) {}
 
   /**
@@ -95,6 +97,18 @@ export class OrgsService {
         role: 'owner',
         invitedBy: null,
       },
+    });
+    // Ф9 (no_person): сразу создаём Person владельца и проставляем
+    // Membership.personId — иначе `me/promises` отдаёт 403, а dump уходит в
+    // legacy-ветку без provenance. Идемпотентно (ensurePersonForUser сначала
+    // ищет по userId). Внутри того же транзакционного клиента `client`.
+    const ownerPerson = await this.persons.ensurePersonForUser(
+      { tenantId: org.id, userId: input.ownerId },
+      client,
+    );
+    await client.membership.update({
+      where: { orgId_userId: { orgId: org.id, userId: input.ownerId } },
+      data: { personId: ownerPerson.id },
     });
     // knowledge-core Фаза 1: дефолтный Source для встреч.
     // Канонический name берётся из MeetingIngestAdapter.DEFAULT_SOURCE_NAME,

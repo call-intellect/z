@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { PersonsModule } from '../persons/persons.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
@@ -37,6 +38,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
  */
 @Global()
 @Module({
+  imports: [PersonsModule],
   controllers: [
     IngestController,
     RawEventsController,

@@ -60,6 +60,115 @@ export class PersonsService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
+  // ─────────────────────── ensurePersonForUser ──────────────────────
+
+  /**
+   * Гарантирует, что у пары (tenantId, userId) есть Person-карточка, и
+   * возвращает её id. Идемпотентен (повторный вызов не плодит дублей).
+   *
+   * Логика (Ф9 «владелец без Person», `plans/tz/2026-06-04-razblokirovka-konveyera.md`):
+   *   1. Если Person по (tenantId, userId, deletedAt=null) уже есть — вернуть её.
+   *   2. Иначе если у Membership(orgId=tenantId, userId) есть `personId`,
+   *      и та Person ещё не привязана (`userId===null`) и не удалена —
+   *      привязать ей userId (линковка осиротевшей карточки; образец —
+   *      `OrgInvitationsService.acceptInsideTransaction`).
+   *   3. Иначе создать минимальную Person с `relationship='employee'`,
+   *      подтянув name/email из User. На уникальность `(tenantId,email,
+   *      deletedAt)` ловим P2002 и линкуем существующую безличную карточку.
+   *
+   * Вызывается из `OrgsService.createForOwner` (создание Org), `DumpService`
+   * (provenance дампа) и backfill-скрипта `backfill-owner-person.ts`.
+   *
+   * @param tx — опциональный транзакционный клиент; по умолчанию `this.prisma`.
+   */
+  async ensurePersonForUser(
+    args: { tenantId: string; userId: string },
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ id: string }> {
+    const db = tx ?? this.prisma;
+
+    // 1. Уже есть привязанная Person.
+    const existing = await db.person.findFirst({
+      where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
+      select: { id: true },
+    });
+    if (existing) return { id: existing.id };
+
+    // 2. Осиротевшая Person из Membership.personId — привязать userId.
+    const membership = await db.membership.findUnique({
+      where: { orgId_userId: { orgId: args.tenantId, userId: args.userId } },
+      select: { personId: true },
+    });
+    if (membership?.personId) {
+      const orphan = await db.person.findFirst({
+        where: {
+          id: membership.personId,
+          tenantId: args.tenantId,
+          userId: null,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (orphan) {
+        await db.person.update({
+          where: { id: orphan.id },
+          data: { userId: args.userId },
+        });
+        return { id: orphan.id };
+      }
+    }
+
+    // 3. Создать минимальную Person, подтянув name/email из User.
+    const user = await db.user.findUnique({
+      where: { id: args.userId },
+      select: { email: true, name: true },
+    });
+    const email = user?.email ?? '';
+    try {
+      const created = await db.person.create({
+        data: {
+          tenantId: args.tenantId,
+          userId: args.userId,
+          name: user?.name ?? '',
+          // Колонка non-null; при отсутствии email сохраняем '' (как quickCreate).
+          email,
+          relationship: 'employee',
+        },
+        select: { id: true },
+      });
+      return { id: created.id };
+    } catch (err) {
+      // Уникальность (tenantId, email, deletedAt) — гонка или ранее
+      // созданный безличный контакт с тем же email. Линкуем существующую.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        // Повторный поиск по userId (гонка двух ensurePersonForUser).
+        const raced = await db.person.findFirst({
+          where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
+          select: { id: true },
+        });
+        if (raced) return { id: raced.id };
+        // Контакт с тем же email без userId — привяжем его к этому user'у.
+        if (email) {
+          const byEmail = await db.person.findFirst({
+            where: { tenantId: args.tenantId, email, deletedAt: null },
+            select: { id: true, userId: true },
+          });
+          if (byEmail && byEmail.userId === null) {
+            await db.person.update({
+              where: { id: byEmail.id },
+              data: { userId: args.userId },
+            });
+            return { id: byEmail.id };
+          }
+        }
+      }
+      throw err;
+    }
+  }
+
   // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {

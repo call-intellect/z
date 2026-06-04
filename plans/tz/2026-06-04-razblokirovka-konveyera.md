@@ -235,7 +235,7 @@
 
 ---
 
-## Ф9 — владелец без Person: ensurePersonForUser + backfill `[ ]`
+## Ф9 — владелец без Person: ensurePersonForUser + backfill `[x]`
 
 **Корень (баг #7/#26, finding `room-messages-person`, high; учтена поправка после pull):** `Person.userId` линкуется ТОЛЬКО при accept приглашения с `personId` (`org-invitations.service.ts:742-757`). `Person.create` везде ставит `userId:null` (`persons.service.ts:197-200`, `:619-622`). `OrgsService.createForOwner` (`orgs.service.ts:74-117`) создаёт Org + Membership(owner, без personId) + Source + Subscription, но **Person владельца не создаёт**. Следствия: `CommitmentsService.resolveSelfPerson` (`commitments.service.ts:44-62`) бросает `ForbiddenException code='no_person'`, а `MyPromisesController.list` (`my-promises.controller.ts:58-63`) вызывает его безусловно → `GET /me/promises` отдаёт hard-403; `DumpService` уходит в legacy-ветку (`dump.service.ts:80-83 person==null → :114-147`) — без Document и без provenance (`block-ingest.worker.ts:1064-1067,1110` `derived_from` к Document не строится). **Поправка после pull:** merge добавил РУЧНУЮ привязку через раздел «Команда» (`persons.service.ts` `linkUserId`), но `createForOwner`/commitments/dump **не изменены** — автолинковки нет.
 

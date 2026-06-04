@@ -12,6 +12,7 @@ import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../../audit/audit-log.service';
 import { AUDIT } from '../../../audit/audit.types';
 import { CoreQueueService } from '../../../core-queue/core-queue.service';
+import { PersonsService } from '../../../persons/services/persons.service';
 import { QuotaService } from '../../../quotas/quota.service';
 import { IngestService } from '../../ingest.service';
 
@@ -42,6 +43,7 @@ export class DumpService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    @Inject(PersonsService) private readonly persons: PersonsService,
   ) {}
 
   async createDump(input: {
@@ -72,15 +74,13 @@ export class DumpService {
     const occurredAt = input.occurredAt ?? new Date();
     const dataClass = input.dataClass ?? source.dataClass;
 
-    // 4. Фаза 0b: если у текущего user'а есть привязанный Person — создаём
-    //    Document {kind:'text', status:'parsed'} как контейнер дампа, чтобы
-    //    /documents/:id и provenance в knowledge-core работали единообразно.
-    //    Если Person нет (пользователь без membership.person или из старой
-    //    Org до Phase 0a) — деградируем на legacy-путь: только RawEvent.
-    const person = await this.prisma.person.findFirst({
-      where: { tenantId: input.tenantId, userId: input.userId, deletedAt: null },
-      select: { id: true },
-    });
+    // 4. Фаза 0b + Ф9 (no_person): гарантируем Person владельца через
+    //    `ensurePersonForUser`, чтобы дамп ВСЕГДА шёл через Document-путь
+    //    {kind:'text', status:'parsed'} с uploaderPersonId — иначе provenance
+    //    (derived_from-ребро к Document) не строится. Если ensurePersonForUser
+    //    не смог (бросил) — graceful fallback на legacy-ветку (только RawEvent),
+    //    чтобы не валить сам дамп.
+    const person = await this.resolvePersonOrNull(input.tenantId, input.userId);
 
     if (person) {
       const documentId = await this.createTextDocumentAndPublish({
@@ -144,6 +144,30 @@ export class DumpService {
     );
 
     return { rawEventId: result.rawEvent.id, idempotent: result.idempotent };
+  }
+
+  /**
+   * Ф9 (no_person): гарантирует Person владельца через `ensurePersonForUser`,
+   * чтобы дамп шёл через Document-путь (provenance). При сбое — graceful
+   * fallback (null), чтобы не валить сам дамп (legacy RawEvent-ветка).
+   */
+  private async resolvePersonOrNull(
+    tenantId: string,
+    userId: string,
+  ): Promise<{ id: string } | null> {
+    try {
+      return await this.persons.ensurePersonForUser({ tenantId, userId });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId,
+          userId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'dump: ensurePersonForUser не смог — fallback на legacy-путь',
+      );
+      return null;
+    }
   }
 
   /**

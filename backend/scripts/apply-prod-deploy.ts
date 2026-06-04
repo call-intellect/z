@@ -339,6 +339,19 @@ const STEPS: Step[] = [
     args: ['--apply'],
     skipBootstrap: true,
   },
+  // 2026-06-04 — Ф9 (no_person): Person для владельцев Org без Person
+  // (Membership.personId IS NULL). Создаёт минимальную карточку
+  // (relationship=employee, name/email из User) и проставляет personId.
+  // Чинит me/promises 403 и legacy-ветку dump. Идемпотентен. На чистом
+  // старте нет legacy Org → skipBootstrap.
+  // ТЗ: plans/tz/2026-06-04-razblokirovka-konveyera.md §Ф9.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-owner-person.ts',
+    args: ['--apply'],
+    hint: 'Person для владельцев Org без Person (Ф9)',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

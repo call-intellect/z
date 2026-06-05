@@ -4,6 +4,7 @@ import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { AiQueueService } from './ai-queue.service';
+import { AiUsageLogCleanupService } from './services/ai-usage-log-cleanup.service';
 import { AiUsageLogService } from './services/ai-usage-log.service';
 import { AnthropicService } from './services/anthropic.service';
 import { BehaviorLlmRefineService } from './services/behavior-llm-refine';
@@ -62,6 +63,10 @@ import { VoxService } from './services/vox.service';
   providers: [
     AiQueueService,
     AiUsageLogService,
+    // ТЗ LLM cost-safety Ф3 — two-tier ретеншен AiUsageLog (Tier-1 гасит
+    // 8КБ-превью рано, Tier-2 удаляет строки поздно, сохраняя историю
+    // стоимости). Self-scheduling (setInterval), как LogCleanupService.
+    AiUsageLogCleanupService,
     RetryService,
     // Провайдеры — нужны для LlmRouter в HTTP-side.
     AnthropicService,

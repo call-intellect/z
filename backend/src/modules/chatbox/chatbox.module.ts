@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { ChatboxAnalyzeCron } from './chatbox-analyze.cron';
 import { ChatboxApiClient } from './chatbox-api.client';
+import { ChatboxChatsController } from './chatbox-chats.controller';
+import { ChatboxChatsService } from './chatbox-chats.service';
 import { ChatboxIngestService } from './chatbox-ingest.service';
 import { ChatboxIntegrationController } from './chatbox-integration.controller';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
@@ -29,9 +31,14 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
  *   - AiModule — LlmRouterService (Ф5: LLM-summary сессии, @Global).
  */
 @Module({
-  controllers: [ChatboxIntegrationController, ChatboxWebhookController],
+  controllers: [
+    ChatboxIntegrationController,
+    ChatboxWebhookController,
+    ChatboxChatsController,
+  ],
   providers: [
     ChatboxApiClient,
+    ChatboxChatsService,
     ChatboxIntegrationService,
     ChatboxSessionService,
     ChatboxSyncService,

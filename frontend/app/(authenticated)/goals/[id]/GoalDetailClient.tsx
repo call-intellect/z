@@ -468,8 +468,8 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             </div>
             {alignmentClamped === null && (
               <p className="mt-3 text-sm text-fg-tertiary">
-                Согласованность ещё не рассчитана. Дождитесь cron&apos;а
-                04:00 или нажмите «Пересчитать сейчас».
+                Согласованность ещё не рассчитана. Кора рассчитывает оценку
+                каждую ночь, можно нажать «Пересчитать сейчас».
               </p>
             )}
             {goal.latestSnapshot?.explanation && (
@@ -507,20 +507,20 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
           {/* Timeline */}
           <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
             <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
-              Timeline согласованности
+              История движения к цели
             </h2>
             {goal.timeline.length >= 3 ? (
               <TimelineChart snapshots={goal.timeline} />
             ) : (
               <p className="text-xs text-fg-tertiary">
-                Недостаточно данных, нужно ≥3 snapshots.
+                Недостаточно данных, нужно хотя бы 3 замера.
               </p>
             )}
 
             {goal.timeline.length > 0 && (
               <div className="mt-4">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-                  История snapshots ({goal.timeline.length})
+                  Замеры ({goal.timeline.length})
                 </h3>
                 <ul className="flex flex-col divide-y divide-border-subtle">
                   {goal.timeline.slice(0, 30).map((s) => (
@@ -862,7 +862,7 @@ function KeyResultDialog({
               maxLength={50}
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="встреч, %, ₽"
+              placeholder="встреч, задач, %"
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -1229,7 +1229,7 @@ function DeltaPill({ delta }: { delta: number | null }) {
         tone === 'down' && 'bg-danger/15 text-danger',
         tone === 'flat' && 'bg-bg-overlay text-fg-tertiary',
       )}
-      title="Изменение относительно предыдущего snapshot"
+      title="Изменение по сравнению с прошлым замером"
     >
       {tone === 'up' && <ArrowUpRight size={12} />}
       {tone === 'down' && <ArrowDownRight size={12} />}

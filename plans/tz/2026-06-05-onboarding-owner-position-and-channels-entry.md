@@ -143,7 +143,7 @@ export default function SettingsIntegrationsPage(): never {
 
 Зависимости: Ф1 и Ф2 независимы (можно параллельно). Ф3 зависит от Ф2 (общий каркас карточек на «Я»). Ф4 зависит от Ф2+Ф3 (баннер ссылается на обе карточки). Ф5 — финальная чистка, зависит от Ф1.
 
-### Ф1 [ ] — Telegram: навигация и устранение дубля (СКОРРЕКТИРОВАНО)
+### Ф1 [x] — Telegram: навигация и устранение дубля (СКОРРЕКТИРОВАНО)
 **Цель:** канон `/me/channels` доступен из меню; дубль привязки убран со страницы интеграций; `DestinationsClient` сохранён.
 **Файлы:**
 - [Sidebar.tsx](frontend/src/ui/components/app-shell/Sidebar.tsx): в `ME_GROUP.items` добавить пункт «Каналы»→`/me/channels` (icon `Send`, добавлен в import). Пункт «Интеграции» в `SETTINGS_BASE_ITEMS` **СОХРАНИТЬ** (ведёт на `/settings/integrations`, где остаётся `DestinationsClient`).
@@ -157,7 +157,7 @@ export default function SettingsIntegrationsPage(): never {
 - `bun run typecheck && bun run lint` зелёные.
 **Закрывает:** R5, R6, R7.
 
-### Ф2 [ ] — Карточка «Telegram» на «Я»
+### Ф2 [x] — Карточка «Telegram» на «Я»
 **Цель:** на странице «Я» виден статус Telegram и переход к привязке.
 **Мини-картография:** карточки на «Я» рендерятся в [MeClient.tsx `Content`](frontend/app/(authenticated)/me/MeClient.tsx#L85-L99) (SWR-ключ профиля `['me-profile', orgId]`, [:51](frontend/app/(authenticated)/me/MeClient.tsx#L51)). Стиль карточек — `Card/CardHeader/CardTitle/CardContent` из `@/ui/shadcn/card` (как `RoleProfileBlock`).
 **Файлы:**
@@ -172,7 +172,7 @@ export default function SettingsIntegrationsPage(): never {
 - typecheck/lint зелёные; `bun run test:unit` (если добавлен маппинг-тест) зелёный.
 **Закрывает:** R3, R4.
 
-### Ф3 [ ] — Карточка «Должность» на «Я» (выбрать/создать + назначить)
+### Ф3 [x] — Карточка «Должность» на «Я» (выбрать/создать + назначить)
 **Цель:** собственник назначает себе должность в 1–2 клика; шапка «Я» перестаёт показывать «Должность не назначена».
 **Файлы:**
 - Новый компонент `frontend/app/(authenticated)/me/MyPositionCard.tsx`: props `{ orgId, profile }` (profile из `meProfileApi`). Поведение:
@@ -191,7 +191,7 @@ export default function SettingsIntegrationsPage(): never {
 - typecheck/lint зелёные.
 **Закрывает:** R1, R2.
 
-### Ф4 [ ] — Баннер-подсказка «заполните профиль»
+### Ф4 [x] — Баннер-подсказка «заполните профиль»
 **Цель:** пока должность и/или Telegram не заполнены — мягко подсказать сверху «Я».
 **Файлы:**
 - [MeClient.tsx](frontend/app/(authenticated)/me/MeClient.tsx) `Content`: над шапкой рендерить баннер, если `profile.role===null` ИЛИ Telegram `status!=='linked'`. Баннер: одна строка текста + ссылки-якоря на `#me-card-position` / `#me-card-telegram` (или плавный scroll). Цвет — мягкий info через парные токены (например `bg-accent-muted`/`text-accent`), без жёстких hex.
@@ -203,7 +203,7 @@ export default function SettingsIntegrationsPage(): never {
 - Текст полностью на русском; токены парные; typecheck/lint зелёные.
 **Закрывает:** R8.
 
-### Ф5 [ ] — Чистка мёртвого кода
+### Ф5 [x] — Чистка мёртвого кода
 **Цель:** удалить осиротевший после Ф1 `TelegramLinkSection`.
 **Файлы:**
 - Удалить `frontend/app/(authenticated)/settings/integrations/TelegramLinkSection.tsx`.
@@ -249,4 +249,16 @@ export default function SettingsIntegrationsPage(): never {
 
 ## Итог
 
-_(заполнит tz-orchestrator по завершении: что реализовано целиком, что осталось.)_
+**Реализовано целиком (2026-06-05, ветка `feature/onboarding-owner-position-and-channels-entry`).** Все 5 фаз закрыты. Фича чисто фронтовая — бэкенд/Prisma/ENV не тронуты; prod-операций нет.
+
+| Фаза | Коммит | Что сделано |
+|---|---|---|
+| Ф1 | `25cb46d2` | Пункт меню «Каналы»→`/me/channels` в «Моё пространство»; со страницы `/settings/integrations` убран дубль `TelegramLinkSection`, оставлен `DestinationsClient`; пункт «Интеграции» сохранён |
+| Ф2 | `b97db12c` | Карточка «Telegram» на «Я» (статус + CTA→`/me/channels`, якорь `#me-card-telegram`) |
+| Ф3 | `33f16eae` | Карточка «Должность» на «Я» (Popover+Command, выбор/создание роли, `PATCH /persons/:id {roleId}`, якорь `#me-card-position`) |
+| Ф4 | `c2d9bb8d` | Баннер-подсказка «заполните профиль» (показ пока нет должности/Telegram) |
+| Ф5 | `7a9704e8` | Удалён мёртвый `TelegramLinkSection.tsx` |
+
+**Отклонение от исходного ТЗ (зафиксировано выше в Р1/REALITY-CHECK):** изначальный план «redirect `/settings/integrations`→`/me/channels` + убрать пункт «Интеграции»» был ошибочным — страница хостит ещё `DestinationsClient` (направления доставки). Скорректировано при реализации: страница и пункт «Интеграции» сохранены, удалён только дубль-блок Telegram. Цель Р1 (одна точка привязки Telegram) достигнута полностью.
+
+**Верификация:** `typecheck`, `lint`, `build` фронта — зелёные после каждой фазы и финально. Ручная боевая проверка (реальное назначение должности + привязка Telegram в проде) — НЕ выполнялась, оставлена владельцу.

@@ -19,6 +19,7 @@ import {
   AdminForbidden,
 } from '@app/(admin)/admin/AdminStateViews';
 
+import { MyPositionCard } from './MyPositionCard';
 import { MyTelegramCard } from './MyTelegramCard';
 
 const BLOCK_TITLES: Record<string, string> = {
@@ -91,6 +92,8 @@ function Content({
         profile={profile ?? null}
         userName={userName}
       />
+
+      <MyPositionCard orgId={orgId} profile={profile ?? null} />
 
       <RoleProfileBlock loading={profileSwr.isLoading} profile={profile ?? null} />
 

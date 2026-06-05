@@ -183,15 +183,22 @@ export function OperationsDashboardClient() {
               numericValue={data.missedGoalsCount}
               threshold={{ green: 0, yellow: 2, inverted: true }}
             />
-            {/* Тон — по числу перегруженных (≥1 = жёлтый), а сама цифра —
-                средний % загрузки. KpiHero берёт тон из numericValue, поэтому
-                процент рендерим строкой во `value` (без CountUp-анимации). */}
-            <KpiHero
-              label="Средняя загрузка"
-              value={`${data.capacityAvgPercent}%`}
-              numericValue={data.capacityOverloadedCount}
-              threshold={{ green: 0, yellow: 1, inverted: true }}
-            />
+            {commitments === null ? (
+              // Запрос упал — нейтральный KPI без threshold-тона, экран не падает.
+              <KpiHero
+                label="Открытые обещания"
+                value={0}
+                numericValue={0}
+              />
+            ) : (
+              <KpiHero
+                label="Открытые обещания"
+                value={commitments.total}
+                numericValue={commitments.total}
+                threshold={{ green: 5, yellow: 15, inverted: true }}
+                href="/dashboard/operations/weekly"
+              />
+            )}
           </div>
         </section>
       </div>

@@ -690,6 +690,16 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'goal-extract',
   'goal-hierarchy-link',
   'goals-pulse-summarize',
+  // Закрытие дыры реестра (2026-06-05): объявлены в типе LlmTaskType, но
+  // отсутствовали в этом массиве → не попадали в /admin/ai-models и в сиды,
+  // ехали по аварийному DEFAULT_FALLBACK_CHAIN. См. ТЗ 2026-06-05-llm-router-resilience.
+  'knowledge-specialists-combined',
+  'dialog-multi-query-clone',
+  'checkin-sentiment-batch',
+  // Дыра оказалась шире (найдено при реализации 2026-06-05): Specialist 3.9
+  // тоже не был зарегистрирован.
+  'experiment-extract',
+  'experiment-summarize-lessons',
 ] as const;
 
 /**
@@ -739,8 +749,10 @@ const PROVIDER_CAPABILITY: Record<
   deepseek: { maxDataClass: 'internal', localOnly: false },
   ollama: { maxDataClass: 'private', localOnly: true },
   // KIE / GRSAI — внешние мульти-провайдер прокси (Claude/GPT/Gemini).
-  // Пропускаем только internal-данные; sensitive/private — никогда.
-  kie: { maxDataClass: 'internal', localOnly: false },
+  // grsai пропускает только internal-данные; sensitive — никогда.
+  // kie поднят до private (2026-06-05), т.к. стал универсальным tertiary;
+  // приватность сейчас в деприоритете — решение владельца.
+  kie: { maxDataClass: 'private', localOnly: false },
   grsai: { maxDataClass: 'internal', localOnly: false },
 };
 
@@ -785,7 +797,7 @@ export function maxDataClass(
 const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
   { provider: 'deepseek', tier: 'primary' },
   { provider: 'openai-via-proxy', tier: 'secondary' },
-  { provider: 'ollama', tier: 'tertiary' },
+  { provider: 'kie', model: 'gemini-3.1-pro', tier: 'tertiary' },
 ];
 
 /**

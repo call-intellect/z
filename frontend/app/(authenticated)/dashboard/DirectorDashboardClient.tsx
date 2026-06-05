@@ -589,11 +589,11 @@ function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
           />
         </div>
       </div>
-      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Пока endpoint
-          /dashboard/people-at-risk не реализован — items=null → виджет скрыт.
-          См. dashboards-registry §4.4 «Открытые хвосты». */}
+      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Endpoint
+          /dashboard/people-at-risk реализован (ТЗ-G Ф1) — виджет тянет данные
+          сам (self-fetch через SWR + currentOrgId), проп items не нужен. */}
       <div className="mb-6">
-        <PeopleAtRiskWidget items={null} />
+        <PeopleAtRiskWidget />
       </div>
       <TabBottomLink href="/teams" label="Открыть /teams →" />
     </StaggerSection>

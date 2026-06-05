@@ -570,6 +570,10 @@ export class ChatboxSyncService {
         chats: 0,
       };
     }
+    // Фиксируем курсор НА СТАРТЕ: чаты, обновлённые во время прогона, не
+    // будут пропущены на следующем инкременте.
+    const startedAt = new Date();
+
     const row = await this.prisma.chatboxIntegration.findUnique({
       where: { tenantId },
       select: { lastIncrementalSyncAt: true },
@@ -586,7 +590,7 @@ export class ChatboxSyncService {
 
     await this.prisma.chatboxIntegration.updateMany({
       where: { tenantId },
-      data: { lastIncrementalSyncAt: new Date() },
+      data: { lastIncrementalSyncAt: startedAt },
     });
 
     return { channels, customers, channelClients, members, chats };

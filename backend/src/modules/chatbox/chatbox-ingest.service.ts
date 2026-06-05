@@ -185,6 +185,7 @@ export class ChatboxIngestService {
         id: true,
         chatId: true,
         seq: true,
+        startedAt: true,
         endedAt: true,
         previousSessionId: true,
       },
@@ -289,11 +290,9 @@ export class ChatboxIngestService {
 
     const source = await this.upsertSource(tenantId);
 
-    const lastMessageAt =
-      messages.length > 0
-        ? messages[messages.length - 1]!.externalCreatedAt
-        : null;
-    const occurredAt = session.endedAt ?? lastMessageAt ?? new Date();
+    // стабильный occurredAt = startedAt: idempotencyKey не должен меняться при
+    // дозаполнении сессии (иначе дубль RawEvent)
+    const occurredAt = session.startedAt;
 
     const res = await this.ingest.ingest({
       tenantId,

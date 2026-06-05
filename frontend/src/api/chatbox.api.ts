@@ -67,7 +67,7 @@ export type ChatboxChatStatusApi = 'active' | 'closed';
 
 export type ChatboxPartyApi = {
   externalId: string;
-  name: string;
+  name: string | null;
 };
 
 export type ChatboxChatApi = {
@@ -76,7 +76,7 @@ export type ChatboxChatApi = {
   channelType: string;
   status: ChatboxChatStatusApi;
   customer: ChatboxPartyApi | null;
-  clientName: string;
+  clientName: string | null;
   responsible: ChatboxPartyApi | null;
   lastMessageAt: string | null;
   messageCount: number;
@@ -86,7 +86,7 @@ export type ChatboxChatApi = {
 export type MessengerIdentityApi = {
   channelType: string;
   externalId: string;
-  name: string;
+  name: string | null;
   avatarUrl: string | null;
 };
 
@@ -125,7 +125,7 @@ export type ChatboxContentTypeApi =
 export type ChatboxMessageApi = {
   id: string;
   senderType: ChatboxSenderTypeApi;
-  senderName: string;
+  senderName: string | null;
   contentType: ChatboxContentTypeApi;
   text: string | null;
   imageUrl: string | null;

@@ -42,6 +42,7 @@ function makeService(
     chatboxMessage: {
       findMany: vi.fn(),
       count: vi.fn(),
+      findUnique: vi.fn(),
       upsert: vi.fn(),
     },
     chatboxCustomer: { findMany: vi.fn(), findFirst: vi.fn() },
@@ -312,6 +313,7 @@ describe('ChatboxChatsService.sendMessage', () => {
       sender: { id: 'sndr1', name: 'Менеджер', type: 'USER' },
       createdAt: '2026-06-04T10:00:00.000Z',
     });
+    prisma.chatboxMessage.findUnique.mockResolvedValue(null);
     prisma.chatboxMessage.upsert.mockResolvedValue({});
     prisma.chatboxChat.update.mockResolvedValue({});
 
@@ -341,6 +343,39 @@ describe('ChatboxChatsService.sendMessage', () => {
           lastMessageAt: new Date('2026-06-04T10:00:00.000Z'),
         }),
       }),
+    );
+  });
+
+  it('сообщение уже записано (гонка с синком) → messageCount НЕ инкрементим', async () => {
+    const { service, prisma, client, integration } = makeService();
+    prisma.chatboxChat.findFirst.mockResolvedValue({
+      id: 'db1',
+      externalId: 'ext1',
+      lastMessageAt: new Date('2026-06-04T09:00:00.000Z'),
+    });
+    integration.getConfigForSync.mockResolvedValue({
+      workspaceId: 'ws1',
+      token: 'tok',
+      integrationId: 'int1',
+    });
+    client.sendMessage.mockResolvedValue({
+      id: 'apiMsg1',
+      content: { type: 'TEXT', text: 'Ответ' },
+      sender: { id: 'sndr1', name: 'Менеджер', type: 'USER' },
+      createdAt: '2026-06-04T10:00:00.000Z',
+    });
+    // строка уже существует — upsert пойдёт по update
+    prisma.chatboxMessage.findUnique.mockResolvedValue({ id: 'existing' });
+    prisma.chatboxMessage.upsert.mockResolvedValue({});
+    prisma.chatboxChat.update.mockResolvedValue({});
+
+    const out = await service.sendMessage('t1', 'db1', 'Ответ');
+
+    expect(out).toEqual({ id: 'apiMsg1' });
+    const updateArg = prisma.chatboxChat.update.mock.calls[0]![0];
+    expect(updateArg.data.messageCount).toBeUndefined();
+    expect(updateArg.data.lastMessageAt).toEqual(
+      new Date('2026-06-04T10:00:00.000Z'),
     );
   });
 

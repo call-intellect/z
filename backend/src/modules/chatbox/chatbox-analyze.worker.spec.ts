@@ -63,17 +63,17 @@ describe('ChatboxAnalyzeWorker', () => {
         data: { analysisStatus: 'analyzing' },
       }),
     );
-    // summary persist
-    expect(prismaMock.chatboxChatSession.update).toHaveBeenCalledWith(
+    // summary persist (tenant-scoped updateMany)
+    expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 's1' },
+        where: { id: 's1', tenantId: 't1' },
         data: { summary: 's' },
       }),
     );
-    // done + rawEventId + analyzedAt
-    expect(prismaMock.chatboxChatSession.update).toHaveBeenCalledWith(
+    // done + rawEventId + analyzedAt (tenant-scoped updateMany)
+    expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 's1' },
+        where: { id: 's1', tenantId: 't1' },
         data: expect.objectContaining({
           analysisStatus: 'done',
           rawEventId: 'r',
@@ -89,10 +89,10 @@ describe('ChatboxAnalyzeWorker', () => {
 
     await worker.process(job);
 
-    expect(prismaMock.chatboxChatSession.update).not.toHaveBeenCalledWith(
+    expect(prismaMock.chatboxChatSession.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: { summary: expect.anything() } }),
     );
-    expect(prismaMock.chatboxChatSession.update).toHaveBeenCalledWith(
+    expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ analysisStatus: 'done' }),
       }),
@@ -115,9 +115,9 @@ describe('ChatboxAnalyzeWorker', () => {
 
     await expect(worker.process(job)).rejects.toThrow('boom');
 
-    expect(prismaMock.chatboxChatSession.update).toHaveBeenCalledWith(
+    expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 's1' },
+        where: { id: 's1', tenantId: 't1' },
         data: { analysisStatus: 'failed' },
       }),
     );

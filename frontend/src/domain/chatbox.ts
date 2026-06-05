@@ -233,7 +233,7 @@ export type ChatboxMessageView = {
 };
 
 function clientNameOf(api: ChatboxChatApi): string {
-  return api.customer?.name ?? api.clientName;
+  return api.customer?.name ?? api.clientName ?? 'Без имени';
 }
 
 export function mapChat(api: ChatboxChatApi): ChatboxChatView {
@@ -274,7 +274,7 @@ function mapMessengerIdentity(
     channelType: api.channelType,
     channelLabel: chatboxChannelTypeLabel(api.channelType),
     externalId: api.externalId,
-    name: api.name,
+    name: api.name ?? api.externalId,
     avatarUrl: api.avatarUrl ?? null,
   };
 }
@@ -356,7 +356,7 @@ export function mapMessage(api: ChatboxMessageApi): ChatboxMessageView {
     id: api.id,
     senderType: api.senderType,
     senderRole: senderRoleOf(api.senderType),
-    senderName: api.senderName,
+    senderName: api.senderName ?? '',
     contentType: api.contentType,
     text: api.text ?? null,
     imageUrl: api.imageUrl ?? null,

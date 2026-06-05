@@ -316,6 +316,14 @@ export class ChatboxChatsService {
 
     const createdAt = new Date(apiMsg.createdAt);
 
+    // messageCount инкрементим только если сообщение реально новое — иначе при
+    // гонке с синком/вебхуком (upsert пошёл по update) счётчик завышается.
+    const existing = await this.prisma.chatboxMessage.findUnique({
+      where: { tenantId_externalId: { tenantId, externalId: apiMsg.id } },
+      select: { id: true },
+    });
+    const isNewMessage = existing === null;
+
     await this.prisma.chatboxMessage.upsert({
       where: {
         tenantId_externalId: { tenantId, externalId: apiMsg.id },
@@ -353,7 +361,7 @@ export class ChatboxChatsService {
       where: { id: chatDbId },
       data: {
         lastMessageAt: nextLastMessageAt,
-        messageCount: { increment: 1 },
+        ...(isNewMessage ? { messageCount: { increment: 1 } } : {}),
       },
     });
 

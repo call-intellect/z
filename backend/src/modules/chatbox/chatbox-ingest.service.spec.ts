@@ -130,6 +130,7 @@ describe('ChatboxIngestService.ingestSession', () => {
       id: 's1',
       chatId: 'c1',
       seq: 2,
+      startedAt: new Date('2026-06-04T12:00:00.000Z'),
       endedAt: new Date('2026-06-04T12:30:00.000Z'),
       previousSessionId: null,
     });
@@ -176,6 +177,9 @@ describe('ChatboxIngestService.ingestSession', () => {
         sourceId: 'src1',
         sourceExternalId: 's1',
         dataClass: 'sensitive',
+        // стабильный occurredAt = startedAt (не endedAt) — idempotencyKey не
+        // должен меняться при дозаполнении сессии (иначе дубль RawEvent)
+        occurredAt: new Date('2026-06-04T12:00:00.000Z'),
         payload: expect.objectContaining({
           kind: 'chatbox_chat_session',
           fullText: expect.stringContaining('Клиент [Arsenii]: Привет'),
@@ -198,6 +202,7 @@ describe('ChatboxIngestService.upsertSource (через ingestSession)', () => {
       id: 's1',
       chatId: 'c1',
       seq: 1,
+      startedAt: new Date('2026-06-04T12:00:00.000Z'),
       endedAt: new Date('2026-06-04T12:30:00.000Z'),
       previousSessionId: null,
     });

@@ -85,8 +85,8 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       // 2. Best-effort LLM-summary — persist только при наличии.
       const summary = await this.ingest.generateSummary(tenantId, sessionId);
       if (summary !== null) {
-        await this.prisma.chatboxChatSession.update({
-          where: { id: sessionId },
+        await this.prisma.chatboxChatSession.updateMany({
+          where: { id: sessionId, tenantId },
           data: { summary },
         });
       }
@@ -102,8 +102,8 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
 
       // 4. Успех — фиксируем результат.
-      await this.prisma.chatboxChatSession.update({
-        where: { id: sessionId },
+      await this.prisma.chatboxChatSession.updateMany({
+        where: { id: sessionId, tenantId },
         data: {
           analysisStatus: 'done',
           analyzedAt: new Date(),
@@ -116,8 +116,8 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       // 5. Помечаем failed (best-effort) и пробрасываем для retry BullMQ.
       await this.prisma.chatboxChatSession
-        .update({
-          where: { id: sessionId },
+        .updateMany({
+          where: { id: sessionId, tenantId },
           data: { analysisStatus: 'failed' },
         })
         .catch(() => undefined);

@@ -37,11 +37,14 @@ import {
   GOAL_HORIZON_LABELS,
   GOAL_HORIZON_VALUES,
   GOAL_KR_SOURCE_KIND_LABELS,
+  CONFIDENCE_LEVEL_LABELS,
   GOAL_KR_SOURCE_KIND_VALUES,
   GOAL_STATUS_LABELS,
   GOAL_THEME_SOURCE_LABELS,
   alignmentBarColor,
   alignmentTextColor,
+  confidenceChipClasses,
+  confidenceLevel,
   daysUntil,
   deltaTone,
   formatAlignment,
@@ -50,6 +53,7 @@ import {
   krProgressBarColor,
   statusBadgeVariant,
   targetDateLabel,
+  type ConfidenceLevel,
   type GoalAlignmentSnapshotDomain,
   type GoalDetailDomain,
   type GoalHorizon,
@@ -150,6 +154,11 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     goal.cachedAlignment === null
       ? null
       : Math.max(0, Math.min(100, goal.cachedAlignment));
+  const confLevel: ConfidenceLevel = confidenceLevel(
+    goal.latestSnapshot?.themesCount ?? 0,
+    goal.latestSnapshot?.blocksCount ?? goal.blocksCount,
+  );
+  const confChip = confidenceChipClasses(confLevel);
 
   async function handleRecompute() {
     if (!currentOrgId || recomputing) return;
@@ -430,8 +439,17 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                     />
                   )}
                 </div>
-                <p className="mt-1 text-[11px] text-fg-tertiary">
-                  AI-индикатор движения, точность ±10 пунктов.
+                <p className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-tertiary">
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      confChip.bg,
+                      confChip.fg,
+                    )}
+                  >
+                    {CONFIDENCE_LEVEL_LABELS[confLevel]}
+                  </span>
+                  <span>AI-индикатор движения, точность ±10 пунктов.</span>
                 </p>
               </div>
             </div>

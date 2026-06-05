@@ -22,11 +22,14 @@ import { goalsApi } from '@/api/goals.api';
 import { usePersons } from '@/hooks/usePersons';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  CONFIDENCE_LEVEL_LABELS,
   GOAL_STATUS_LABELS,
   GOAL_STATUS_VALUES,
   alignmentBarColor,
   alignmentTextColor,
   buildTree,
+  confidenceChipClasses,
+  confidenceLevel,
   daysUntil,
   deltaTone,
   formatAlignment,
@@ -34,6 +37,7 @@ import {
   goalFromApi,
   statusBadgeVariant,
   targetDateLabel,
+  type ConfidenceLevel,
   type GoalDomain,
   type GoalStatus,
 } from '@/domain/goal';
@@ -303,6 +307,11 @@ function GoalCard({
       : Math.max(0, Math.min(100, goal.cachedAlignment));
   const tone = deltaTone(goal.cachedAlignmentDelta);
   const deltaText = formatDelta(goal.cachedAlignmentDelta);
+  const confLevel: ConfidenceLevel = confidenceLevel(
+    goal.themesCount,
+    goal.blocksCount,
+  );
+  const confChip = confidenceChipClasses(confLevel);
 
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elevated p-4 transition-colors hover:border-accent/60">
@@ -369,6 +378,18 @@ function GoalCard({
               style={{ width: `${alignmentClamped}%` }}
             />
           ) : null}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-fg-tertiary">Достоверность:</span>
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+              confChip.bg,
+              confChip.fg,
+            )}
+          >
+            {CONFIDENCE_LEVEL_LABELS[confLevel]}
+          </span>
         </div>
         {alignmentClamped === null && (
           <p className="text-[11px] text-fg-tertiary">

@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildTree,
+  confidenceLevel,
   goalFromApi,
   goalKeyResultFromApi,
   goalSourceLabel,
@@ -240,4 +241,15 @@ describe('buildTree (Фаза 4 — сборка дерева из плоско�
   it('пустой список → пустое дерево', () => {
     expect(buildTree([])).toEqual([]);
   });
+});
+
+describe('confidenceLevel', () => {
+  it('0 тем → low', () => expect(confidenceLevel(0, null)).toBe('low'));
+  it('1 тема, 3 блока → low', () => expect(confidenceLevel(1, 3)).toBe('low'));
+  it('2 темы, 12 блоков → medium', () =>
+    expect(confidenceLevel(2, 12)).toBe('medium'));
+  it('4 темы, 25 блоков → high', () =>
+    expect(confidenceLevel(4, 25)).toBe('high'));
+  it('blocksCount=null оценивается по темам', () =>
+    expect(confidenceLevel(5, null)).toBe('high')); // 5*5=25 ≥20 и тем≥3
 });

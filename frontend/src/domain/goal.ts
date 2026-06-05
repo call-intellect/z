@@ -493,6 +493,45 @@ export function alignmentBarColor(score: number | null): string {
   return 'bg-success';
 }
 
+// ── Светофор уверенности (ТЗ-F Ф2) ──
+export type ConfidenceLevel = 'low' | 'medium' | 'high';
+
+export const CONFIDENCE_LEVEL_LABELS: Record<ConfidenceLevel, string> = {
+  low: 'Мало данных',
+  medium: 'Достаточно данных',
+  high: 'Много данных',
+};
+
+/**
+ * Светофор уверенности (derive, C-1). themesCount/blocksCount → уровень.
+ * blocksCount=null (в списке без snapshot) → оценка по числу тем.
+ */
+export function confidenceLevel(
+  themesCount: number,
+  blocksCount: number | null,
+): ConfidenceLevel {
+  if (themesCount === 0) return 'low';
+  const blocks = blocksCount ?? themesCount * 5; // оценка для списка, где blocksCount нет
+  if (themesCount >= 3 && blocks >= 20) return 'high';
+  if (blocks < 5) return 'low';
+  return 'medium';
+}
+
+/** Парные токены чипа светофора (правило bg-{c}+text-{c}-fg). */
+export function confidenceChipClasses(level: ConfidenceLevel): {
+  bg: string;
+  fg: string;
+} {
+  switch (level) {
+    case 'low':
+      return { bg: 'bg-chip-danger-bg', fg: 'text-chip-danger-fg' };
+    case 'medium':
+      return { bg: 'bg-chip-warning-bg', fg: 'text-chip-warning-fg' };
+    case 'high':
+      return { bg: 'bg-chip-success-bg', fg: 'text-chip-success-fg' };
+  }
+}
+
 /**
  * Goals OKR v2 — цвет прогресс-бара Key Result по проценту выполнения.
  * Только semantic-токены: пока не достигнуто — `bg-info`, при 100% — `bg-success`.

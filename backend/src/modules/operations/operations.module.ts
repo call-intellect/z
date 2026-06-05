@@ -11,6 +11,7 @@ import { MyPromisesController } from './controllers/my-promises.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
+import { WeeklyPerPersonController } from './controllers/weekly-per-person.controller';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
@@ -22,6 +23,7 @@ import { OperationsDashboardService } from './services/operations-dashboard.serv
 import { PersonalRelationService } from './services/personal-relation.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
+import { WeeklyPerPersonService } from './services/weekly-per-person.service';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
@@ -76,6 +78,8 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     PersonalRelationsController,
     // SBA β-8.1 — новый endpoint недельного дайджеста.
     WeeklyDigestController,
+    // ТЗ-D Фаза 4 — недельный план-факт по людям.
+    WeeklyPerPersonController,
     // SBA β-8.2 — `/me/promises`.
     MyPromisesController,
     // SBA β-8.3 — ежедневный отчёт COO.
@@ -91,6 +95,8 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     DailyCheckInPromptCron,
     // SBA β-8.1 — voiceless над основными сервисами β-8.
     WeeklyDigestService,
+    // ТЗ-D Фаза 4 — недельный план-факт по людям.
+    WeeklyPerPersonService,
     OperationsWeeklyDigestCron,
     CheckinSentimentAnalyzerWorker,
     // ТЗ 2026-05-25 LLM-architecture §6 — batch-cron (основной механизм

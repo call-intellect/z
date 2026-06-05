@@ -479,12 +479,14 @@ async function psqlScalar(url: string, sql: string): Promise<string | null> {
  * срабатывает только ОДИН раз (после первого успешного прогона таблица миграций
  * уже есть, и ветка существующей-БД больше не выполняется).
  *
- * Логика:
+ * Логика (детекция schema-агностична — pg_class по всем схемам, т.к. из-за AGE
+ * search_path `_prisma_migrations` может лежать не в public):
  *   1. Есть `_prisma_migrations` → ничего не делаем (обычный `migrate deploy`).
  *   2. Нет таблиц приложения (пустая БД) → ничего: `migrate deploy` создаст всё из 0_init.
  *   3. Существующая БД без `_prisma_migrations` → `migrate resolve --applied 0_init`
  *      (помечаем init применённым, SQL не выполняется). БД создана прошлым
- *      `db push` из той же `schema.prisma` → уже соответствует 0_init.
+ *      `db push` из той же `schema.prisma` → уже соответствует 0_init. P3008
+ *      (уже applied) трактуется как успех (идемпотентно).
  *
  * ВАЖНО — почему БЕЗ reconcile-диффа. Схема Z РАЗДЕЛЕНА: `schema.prisma` +
  * `postgres-init.sql` (GIN/HNSW/trgm-индексы, generated-колонки `*_search_tsv`,
@@ -505,18 +507,22 @@ async function ensureBaseline(): Promise<boolean> {
     return false;
   }
 
-  const hasMigrations = await psqlScalar(url, "SELECT to_regclass('public._prisma_migrations') IS NOT NULL");
+  // Детекция schema-АГНОСТИЧНАЯ (pg_class по всем схемам, не только public):
+  // из-за AGE search_path роли = `ag_catalog, "$user", public`, Prisma создаёт
+  // `_prisma_migrations` НЕ обязательно в public → `to_regclass('public.…')` дал бы
+  // ложный NULL. Считаем по relname в любой схеме.
+  const hasMigrations = await psqlScalar(url, "SELECT count(*) FROM pg_class WHERE relname = '_prisma_migrations'");
   if (hasMigrations === null) return false;
-  if (hasMigrations === 't') {
+  if (hasMigrations !== '0') {
     // eslint-disable-next-line no-console
     console.log('[schema] baseline не нужен (_prisma_migrations есть) → обычный migrate deploy.');
     return true;
   }
 
   // Сентинел существующей схемы — таблица "User" (есть в любой непустой БД Z).
-  const hasTables = await psqlScalar(url, `SELECT to_regclass('public."User"') IS NOT NULL`);
+  const hasTables = await psqlScalar(url, `SELECT count(*) FROM pg_class WHERE relname = 'User' AND relkind = 'r'`);
   if (hasTables === null) return false;
-  if (hasTables !== 't') {
+  if (hasTables === '0') {
     // eslint-disable-next-line no-console
     console.log('[schema] пустая БД — migrate deploy создаст схему с нуля (0_init).');
     return true;
@@ -529,10 +535,20 @@ async function ensureBaseline(): Promise<boolean> {
   // eslint-disable-next-line no-console
   console.log('>>> [schema] bunx prisma migrate resolve --applied 0_init');
   const resolve = Bun.spawn(['bunx', 'prisma', 'migrate', 'resolve', '--applied', '0_init'], {
-    stdout: 'inherit',
-    stderr: 'inherit',
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
+  const resolveOut = (await new Response(resolve.stdout).text()) + (await new Response(resolve.stderr).text());
+  // eslint-disable-next-line no-console
+  console.log(resolveOut.trim());
   if ((await resolve.exited) !== 0) {
+    // P3008 = миграция уже отмечена applied (детекция могла промахнуться/прошлый
+    // прогон уже забэйслайнил) → это не ошибка, продолжаем к migrate deploy.
+    if (/P3008|already recorded as applied/i.test(resolveOut)) {
+      // eslint-disable-next-line no-console
+      console.log('[schema] 0_init уже отмечен applied (P3008) — baseline уже сделан, продолжаем.');
+      return true;
+    }
     // eslint-disable-next-line no-console
     console.error('[schema] ✗ migrate resolve --applied 0_init упал.');
     return false;

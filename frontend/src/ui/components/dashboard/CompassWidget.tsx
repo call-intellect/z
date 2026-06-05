@@ -226,8 +226,24 @@ type Props = {
   error: string | null;
 };
 
+/**
+ * Уровень детализации компаса (ТЗ-B Фаза 4, переключатель внутри виджета):
+ *   - company — большая стрелка по главной цели + отделы + drill на людей;
+ *   - goals   — сетка ячеек по каждой цели;
+ *   - sprint  — та же сетка, но помечена «за текущую неделю».
+ * Переключение чисто клиентское — все данные уже в `data.goals`.
+ */
+type CompassLevel = 'company' | 'goals' | 'sprint';
+
+const LEVEL_OPTIONS: ReadonlyArray<{ value: CompassLevel; label: string }> = [
+  { value: 'company', label: 'Вся компания' },
+  { value: 'goals', label: 'По целям' },
+  { value: 'sprint', label: 'По спринту недели' },
+];
+
 export function CompassWidget({ data, loading, error }: Props) {
   const [openDepartmentId, setOpenDepartmentId] = useState<string | null>(null);
+  const [level, setLevel] = useState<CompassLevel>('company');
 
   const hasGoals = !!data && data.goals.length > 0;
 
@@ -249,6 +265,60 @@ export function CompassWidget({ data, loading, error }: Props) {
   const primaryVector = primaryGoal
     ? computeCompass(primaryGoal.proScore, primaryGoal.contraScore, maxVolume)
     : null;
+
+  const primaryGoalId = primaryGoal?.goalId ?? null;
+
+  // Сетка ячеек по каждой цели — общий рендер для уровней goals и sprint
+  // (данные те же, на sprint лишь добавляется подпись «за неделю»).
+  const renderGoalsGrid = () => (
+    <div className="flex flex-wrap gap-4">
+      {data!.goals.map((goal) => {
+        const goalVector = computeCompass(
+          goal.proScore,
+          goal.contraScore,
+          maxVolume,
+        );
+        const isPrimaryCell = goal.goalId === primaryGoalId;
+        return (
+          <div
+            key={goal.goalId}
+            className={cn(
+              'flex w-[148px] flex-col items-center gap-1 rounded-lg p-3 text-center',
+              isPrimaryCell
+                ? 'border border-accent/30 bg-bg-overlay/30'
+                : 'bg-bg-overlay/20',
+            )}
+          >
+            <CompassArrow
+              proScore={goal.proScore}
+              contraScore={goal.contraScore}
+              maxVolume={maxVolume}
+              size={84}
+            />
+            {isPrimaryCell && (
+              <span className="text-[11px] font-medium uppercase tracking-wide text-accent-fg">
+                главная
+              </span>
+            )}
+            <span className="w-full truncate text-xs text-fg-secondary">
+              {goal.goalTitle}
+            </span>
+            <span
+              className={cn(
+                'text-[11px] font-medium',
+                TONE_TEXT_CLASS[goalVector.tone],
+              )}
+            >
+              {toneVerdict(goalVector.tone)}
+            </span>
+            <span className="text-[11px] text-fg-tertiary tabular-nums">
+              +{fmtScore(goal.proScore)} / −{fmtScore(goal.contraScore)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <Card>
@@ -282,6 +352,40 @@ export function CompassWidget({ data, loading, error }: Props) {
 
         {!loading && !error && hasGoals && primaryGoal && primaryVector && (
           <div className="space-y-5">
+            {/* Переключатель уровней (ТЗ-B Ф4) — чистый клиент, без запросов */}
+            <div className="inline-flex flex-wrap gap-1 rounded-lg bg-bg-overlay/30 p-1">
+              {LEVEL_OPTIONS.map((opt) => {
+                const active = level === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setLevel(opt.value)}
+                    aria-pressed={active}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                      active
+                        ? 'bg-accent/15 text-accent-fg'
+                        : 'text-fg-secondary hover:bg-bg-overlay/40',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Уровень «по спринту недели» — подпись окна периода */}
+            {level === 'sprint' && (
+              <p className="text-xs text-fg-tertiary">За текущую неделю</p>
+            )}
+
+            {/* Уровни «по целям» и «по спринту» — сетка ячеек по всем целям */}
+            {(level === 'goals' || level === 'sprint') && renderGoalsGrid()}
+
+            {/* Уровень «вся компания» — большая стрелка + отделы + drill */}
+            {level === 'company' && (
+              <>
             {/* Главная цель — большая стрелка + вердикт */}
             <div className="flex items-center gap-4">
               <CompassArrow
@@ -405,6 +509,8 @@ export function CompassWidget({ data, loading, error }: Props) {
                   </div>
                 )}
               </div>
+            )}
+              </>
             )}
           </div>
         )}

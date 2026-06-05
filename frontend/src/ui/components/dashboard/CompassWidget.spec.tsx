@@ -6,7 +6,7 @@
  * виджета (русская подпись «Цель ещё не задана…»).
  */
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { CompassWidget, computeCompass } from './CompassWidget';
 
@@ -120,5 +120,55 @@ describe('CompassWidget', () => {
     expect(screen.getByText('Выручка квартала')).toBeInTheDocument();
     expect(screen.getAllByText('Идём к цели').length).toBeGreaterThan(0);
     expect(screen.getByText('Продажи')).toBeInTheDocument();
+  });
+
+  // Данные с двумя целями — для проверки переключателя уровней (Ф4).
+  const twoGoalsData = {
+    primaryGoalId: 'g1',
+    goals: [
+      {
+        goalId: 'g1',
+        goalTitle: 'Выручка квартала',
+        isPrimary: true,
+        proScore: 20,
+        contraScore: 2,
+        netScore: 18,
+        topContributors: [],
+        byDepartment: [
+          {
+            departmentId: 'd1',
+            departmentName: 'Продажи',
+            proScore: 12,
+            contraScore: 1,
+            netScore: 11,
+          },
+        ],
+      },
+      {
+        goalId: 'g2',
+        goalTitle: 'Снижение оттока',
+        isPrimary: false,
+        proScore: 3,
+        contraScore: 9,
+        netScore: -6,
+        topContributors: [],
+        byDepartment: [],
+      },
+    ],
+  };
+
+  it('есть данные → виден переключатель уровней (3 русские подписи)', () => {
+    render(<CompassWidget loading={false} error={null} data={twoGoalsData} />);
+    expect(screen.getByText('Вся компания')).toBeInTheDocument();
+    expect(screen.getByText('По целям')).toBeInTheDocument();
+    expect(screen.getByText('По спринту недели')).toBeInTheDocument();
+  });
+
+  it('клик «По целям» → видны заголовки нескольких целей одновременно', () => {
+    render(<CompassWidget loading={false} error={null} data={twoGoalsData} />);
+    fireEvent.click(screen.getByText('По целям'));
+    // Сетка целей рендерит обе цели сразу.
+    expect(screen.getByText('Снижение оттока')).toBeInTheDocument();
+    expect(screen.getByText('Выручка квартала')).toBeInTheDocument();
   });
 });

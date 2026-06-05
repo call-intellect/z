@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
@@ -26,9 +27,13 @@ import {
   ListSpotlightsQuerySchema,
   type ListSpotlightsQuery,
   type ListSpotlightsResponse,
+  type SocialContributionOptOutBody,
+  SocialContributionOptOutBodySchema,
+  type SocialContributionOptOutDto,
   type SocialContributionProfileDto,
 } from '../dto/helpfulness.dto';
 import { HelpfulnessApiService } from '../services/helpfulness-api.service';
+import { SocialContributionPreferenceService } from '../services/social-contribution-preference.service';
 
 /**
  * SBA Wave 2 — REST API Specialist 3.8 (Helpfulness Agent) — user-facing.
@@ -54,6 +59,8 @@ export class HelpfulnessController {
   constructor(
     @Inject(HelpfulnessApiService) private readonly svc: HelpfulnessApiService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(SocialContributionPreferenceService)
+    private readonly optOutPref: SocialContributionPreferenceService,
   ) {}
 
   // ────────────── Social contribution profile ──────────────
@@ -92,6 +99,34 @@ export class HelpfulnessController {
       tenantId: t,
       targetUserId,
     });
+  }
+
+  // ────────────── Social contribution opt-out (ТЗ-E Ф4) ──────────────
+
+  @Get('me/social-contribution/opt-out')
+  @ApiOperation({
+    summary: 'Моя настройка opt-out социального вклада (скрыть публично)',
+  })
+  async getMyOptOut(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SocialContributionOptOutDto> {
+    const t = this.requireTenant(tenantId);
+    return this.optOutPref.get(t, user.id);
+  }
+
+  @Post('me/social-contribution/opt-out')
+  @ApiOperation({
+    summary: 'Установить opt-out социального вклада (скрыть/показать публично)',
+  })
+  async setMyOptOut(
+    @Body(new ZodValidationPipe(SocialContributionOptOutBodySchema))
+    body: SocialContributionOptOutBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SocialContributionOptOutDto> {
+    const t = this.requireTenant(tenantId);
+    return this.optOutPref.set(t, user.id, body.optedOut);
   }
 
   // ────────────── Spotlights ──────────────

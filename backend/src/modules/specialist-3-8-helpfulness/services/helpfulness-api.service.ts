@@ -79,10 +79,33 @@ export class HelpfulnessApiService {
       take: 100,
     });
 
+    const constructiveFeedbackCount = profile
+      ? await this.countConstructiveFeedback(args.tenantId, args.userId)
+      : 0;
+
     return {
-      profile: profile ? toProfileDto(profile) : null,
+      profile: profile ? toProfileDto(profile, constructiveFeedbackCount) : null,
       recentTraits: traits.map(toTraitDto),
     };
+  }
+
+  /**
+   * ТЗ-E Ф4 — счётчик «Фидбек» (конструктивная обратная связь). Отдельной
+   * колонки в SocialContributionProfile нет, поэтому считаем активные trait'ы
+   * того же типа тем же фильтром, что и публичные счётчики профиля.
+   */
+  private countConstructiveFeedback(
+    tenantId: string,
+    userId: string,
+  ): Promise<number> {
+    return this.prisma.helpfulnessTrait.count({
+      where: {
+        tenantId,
+        helperUserId: userId,
+        status: 'active',
+        traitType: 'constructive_feedback',
+      },
+    });
   }
 
   async getProfileForPerson(args: {
@@ -115,8 +138,12 @@ export class HelpfulnessApiService {
       take: 50,
     });
 
+    const constructiveFeedbackCount = profile
+      ? await this.countConstructiveFeedback(args.tenantId, args.targetUserId)
+      : 0;
+
     return {
-      profile: profile ? toProfileDto(profile) : null,
+      profile: profile ? toProfileDto(profile, constructiveFeedbackCount) : null,
       publicTraits: traits.map(toTraitDto),
     };
   }
@@ -462,21 +489,24 @@ export class HelpfulnessApiService {
 
 // ─────────────────────────── mappers ──────────────────────────────────
 
-function toProfileDto(p: {
-  id: string;
-  userId: string;
-  helpProvidedCount: number;
-  proactiveHintCount: number;
-  mentoringCount: number;
-  emotionalSupportCount: number;
-  expertiseTopics: string[];
-  socialRoles: string[];
-  lastWeekHelpCount: number;
-  lastMonthHelpCount: number;
-  contributionScoreCached: Prisma.Decimal | null;
-  buildVersion: number;
-  lastBuiltAt: Date;
-}): SocialContributionProfileDto {
+function toProfileDto(
+  p: {
+    id: string;
+    userId: string;
+    helpProvidedCount: number;
+    proactiveHintCount: number;
+    mentoringCount: number;
+    emotionalSupportCount: number;
+    expertiseTopics: string[];
+    socialRoles: string[];
+    lastWeekHelpCount: number;
+    lastMonthHelpCount: number;
+    contributionScoreCached: Prisma.Decimal | null;
+    buildVersion: number;
+    lastBuiltAt: Date;
+  },
+  constructiveFeedbackCount: number,
+): SocialContributionProfileDto {
   return {
     id: p.id,
     userId: p.userId,
@@ -484,6 +514,7 @@ function toProfileDto(p: {
     proactiveHintCount: p.proactiveHintCount,
     mentoringCount: p.mentoringCount,
     emotionalSupportCount: p.emotionalSupportCount,
+    constructiveFeedbackCount,
     expertiseTopics: p.expertiseTopics,
     socialRoles: p.socialRoles,
     lastWeekHelpCount: p.lastWeekHelpCount,

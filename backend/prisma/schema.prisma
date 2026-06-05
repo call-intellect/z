@@ -2986,6 +2986,14 @@ model IdeaBlock {
   commitmentStatus            String?                      @db.VarChar(20)
   /// Адресат обещания (Person той же Org). NULL если не извлечён.
   commitmentRecipientPersonId String?
+  /// ТЗ-D (2026-06-05) — АВТОР обещания (кто дал слово), Person той же Org.
+  /// Заполняется ТОЛЬКО для блоков signalType='commitment'. Для остальных
+  /// типов всегда NULL. В отличие от commitmentRecipientPersonId (fuzzy по
+  /// имени от LLM), автор заполняется ДЕТЕРМИНИРОВАННО по identity спикера
+  /// сегмента (speakerParticipantId) или payload.userId — резолвер
+  /// EntityResolutionService.resolveSubjectPersonId. NULL если identity не
+  /// разрешилась. Атрибуция БЕЗ LLM — prompt-cache сохранён.
+  commitmentAuthorPersonId    String?
   /// Когда последний раз ушёл probe «выполнил ли?».
   commitmentAskedAt           DateTime?
   /// Когда эскалировали при молчании (probe ушёл COO + owner).
@@ -3035,6 +3043,8 @@ model IdeaBlock {
   axisLabels          IdeaBlockAxisLabel[]
   /// SBA β-8.2 — адресат обещания (для блоков signalType='commitment').
   commitmentRecipient Person?              @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
+  /// ТЗ-D — автор обещания (для блоков signalType='commitment').
+  commitmentAuthor    Person?              @relation("CommitmentAuthor", fields: [commitmentAuthorPersonId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
@@ -3049,6 +3059,10 @@ model IdeaBlock {
   @@index([tenantId, validUntil])
   /// KC-Temporal W1.1 — снапшот «активные блоки данного signalType».
   @@index([tenantId, signalType, validUntil])
+  /// ТЗ-D — выборка «обещания, данные человеком» (план-факт по автору).
+  @@index([tenantId, commitmentAuthorPersonId])
+  /// ТЗ-D — план-факт за неделю: автор × статус × срок.
+  @@index([tenantId, signalType, commitmentAuthorPersonId, commitmentDueDate])
 }
 
 /// IdeaBlockAxisLabel — fan-out IdeaBlock по 4 осям знания
@@ -3918,6 +3932,12 @@ model Goal {
   /// Фаза 0a §11.6 — горизонт цели для декомпозиции strategic→annual→…→sprint.
   /// Default quarterly — типичная цель компании в delivery/03-frame.md.
   horizon                 GoalHorizon @default(quarterly)
+  /// ТЗ-B (2026-06-05) — флаг «главная цель компании» = «север» компаса Вектора.
+  /// Одна primary на tenant гарантируется PARTIAL UNIQUE index в
+  /// postgres-init.sql (`goal_primary_unique` WHERE "isPrimary" = true) —
+  /// Prisma `@@unique` не поддерживает WHERE. Снятие/выставление флага —
+  /// в UI целей (ТЗ-F). Default false. Якорь Вектора цели (решение Р1).
+  isPrimary               Boolean     @default(false)
   /// Фаза 0a §11.6 — декомпозиция целей. Self-relation; UI появится в Фазе γ.
   parentGoalId            String?
   parent                  Goal?       @relation("GoalDecomposition", fields: [parentGoalId], references: [id], onDelete: SetNull)
@@ -3986,6 +4006,8 @@ model Goal {
   @@index([tenantId, parentGoalId])
   @@index([tenantId, promotionState])
   @@index([tenantId, validUntil])
+  /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
+  @@index([tenantId, isPrimary])
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;
@@ -4426,6 +4448,8 @@ model Person {
   /// SBA β-8.2 — обратная связь для обещаний, адресованных этому человеку
   /// (`IdeaBlock.commitmentRecipientPersonId`).
   commitmentsToMe       IdeaBlock[]        @relation("CommitmentRecipient")
+  /// ТЗ-D — обещания, ДАННЫЕ этим человеком (автор).
+  commitmentsAuthored   IdeaBlock[]        @relation("CommitmentAuthor")
   /// ТЗ 2026-05-25 Фаза 3 — отделы, где этот Person — глава.
   headOfDepartments     Department[]       @relation("DepartmentHead")
   /// Calendar MVP (2026-05-25) — участие как Person (external контакт).

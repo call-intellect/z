@@ -15,15 +15,15 @@
  *     если они вдруг придут в DTO — domain-маппер их фильтрует).
  *   - Никаких рейтингов / сравнений с коллегами.
  *
- * Опт-аут:
- *   - POST `/api/v1/me/settings/privacy/social-contribution-opt-out`
- *     (эндпоинт пока не реализован — отображаем кнопку, при отсутствии бэка
- *     показываем toast «Доступно после ближайшего обновления»). Это
- *     запланировано в /me/settings/privacy, но интерфейс мы держим здесь как
- *     entry-point, чтобы пользователь видел опт-аут вместе с данными.
+ * Опт-аут (ТЗ-E Ф4):
+ *   - GET/POST `/api/v1/me/social-contribution/opt-out` — реальное сохранение
+ *     намерения в Redis (SocialContributionPreferenceService). Switch читает
+ *     текущее значение при загрузке и сразу сохраняет изменение.
+ *   - ⚠ Фактическая фильтрация публичной ленты «Спасибо команде» и счётчиков
+ *     по optedOut=true — вне scope Ф4 (отдельная задача в spotlight-pipeline).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import {
   AlertCircle,
@@ -58,6 +58,7 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Switch } from '@/ui/shadcn/switch';
 
 const MY_PROFILE_SWR_KEY = ['me/social-contribution'];
+const OPT_OUT_SWR_KEY = ['me/social-contribution/opt-out'];
 
 export function MySocialContributionClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
@@ -70,9 +71,19 @@ export function MySocialContributionClient() {
   );
 
   const [markingId, setMarkingId] = useState<string | null>(null);
-  // Опт-аут хранится локально пока нет соответствующего эндпоинта;
-  // визуально показываем переключатель + честный toast.
+
+  // Опт-аут: читаем текущее значение с бэка (Redis), храним локально для
+  // мгновенного отклика Switch; busy блокирует переключатель на время записи.
+  const { data: optOutData } = useSWR(
+    currentOrgId ? OPT_OUT_SWR_KEY : null,
+    () => helpfulnessApi.getMyOptOut(),
+  );
   const [optOut, setOptOut] = useState(false);
+  const [optOutSaving, setOptOutSaving] = useState(false);
+
+  useEffect(() => {
+    if (optOutData) setOptOut(optOutData.optedOut);
+  }, [optOutData]);
 
   async function handleMarkMisleading(trait: HelpfulnessTrait) {
     setMarkingId(trait.id);
@@ -91,14 +102,31 @@ export function MySocialContributionClient() {
     }
   }
 
-  function handleToggleOptOut(next: boolean) {
-    // Backend-эндпоинта для глобального опт-аута пока нет — показываем честный
-    // statement. Локальный state сохраняется, чтобы пользователь видел
-    // намерение. Реализация — в `/me/settings/privacy` (TODO).
+  async function handleToggleOptOut(next: boolean) {
+    // Оптимистично переключаем, сохраняем на бэк (Redis). При ошибке —
+    // откатываем переключатель к предыдущему значению.
+    const prev = optOut;
     setOptOut(next);
-    toast(next
-        ? 'Опт-аут поставлен в очередь — окончательное переключение в /me/settings/privacy.'
-        : 'Опт-аут отключён.');
+    setOptOutSaving(true);
+    try {
+      const res = await helpfulnessApi.setMyOptOut(next);
+      setOptOut(res.optedOut);
+      await mutate(OPT_OUT_SWR_KEY);
+      toast.success(
+        next
+          ? 'Сохранено — ваш вклад скрыт из публичной ленты.'
+          : 'Сохранено — ваш вклад снова виден публично.',
+      );
+    } catch (e) {
+      setOptOut(prev);
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : 'Не удалось сохранить — попробуйте ещё раз.';
+      toast.error(message);
+    } finally {
+      setOptOutSaving(false);
+    }
   }
 
   if (authLoading) return null;
@@ -151,7 +179,8 @@ export function MySocialContributionClient() {
           />
           <PrivacyPanel
             optOut={optOut}
-            onToggle={handleToggleOptOut}
+            saving={optOutSaving}
+            onToggle={(next) => void handleToggleOptOut(next)}
           />
         </>
       )}
@@ -437,9 +466,11 @@ function TraitCard({
 
 function PrivacyPanel({
   optOut,
+  saving,
   onToggle,
 }: {
   optOut: boolean;
+  saving: boolean;
   onToggle: (next: boolean) => void;
 }) {
   return (
@@ -465,6 +496,7 @@ function PrivacyPanel({
           </div>
           <Switch
             checked={optOut}
+            disabled={saving}
             onCheckedChange={onToggle}
             aria-label="Опт-аут публичной видимости"
           />
@@ -472,8 +504,8 @@ function PrivacyPanel({
         <div className="flex items-start gap-2 rounded-md bg-bg-subtle p-3 text-xs text-fg-tertiary">
           <Info size={14} className="mt-0.5 shrink-0" />
           <span>
-            Окончательное переключение опт-аута сохраняется в «Настройки →
-            Приватность». Здесь — быстрый доступ.
+            Переключатель сохраняется сразу. Накопленные наблюдения остаются в
+            базе, но при включённом опт-ауте не показываются публично.
           </span>
         </div>
       </CardContent>

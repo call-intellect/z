@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -13,6 +14,7 @@ import type {
   ListMyPromisesQuery,
   MarkPromiseBody,
   OpenCommitmentsListDto,
+  ReschedulePromiseBody,
 } from '../dto/commitments.dto';
 
 /**
@@ -111,7 +113,39 @@ export class CommitmentsService {
       select: this.commitmentSelect(),
     });
 
-    return { items: blocks.map((b) => this.toDto(b, null)) };
+    // ТЗ-E — заголовки встреч-источников ОДНИМ батчем (без N+1). Собираем
+    // уникальные meetingId из evidence, тянем title с фильтром по tenantId.
+    const meetingTitles = await this.resolveMeetingTitles(
+      args.tenantId,
+      blocks,
+    );
+
+    return { items: blocks.map((b) => this.toDto(b, null, meetingTitles)) };
+  }
+
+  /**
+   * ТЗ-E — батч-резолв `Meeting.title` по evidence блоков (без N+1).
+   * Возвращает Map<meetingId, title>; встречи чужого tenant'а отфильтрованы.
+   */
+  private async resolveMeetingTitles(
+    tenantId: string,
+    blocks: Array<{
+      evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }> | null;
+    }>,
+  ): Promise<Map<string, string>> {
+    const ids = Array.from(
+      new Set(
+        blocks
+          .map((b) => this.extractSourceMeetingId(b))
+          .filter((id): id is string => id !== null),
+      ),
+    );
+    if (ids.length === 0) return new Map();
+    const meetings = await this.prisma.meeting.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: { id: true, title: true },
+    });
+    return new Map(meetings.map((m) => [m.id, m.title]));
   }
 
   /**
@@ -160,6 +194,94 @@ export class CommitmentsService {
       where: { id: block.id },
       data: {
         commitmentStatus: args.body.status,
+        trustedAnswer: `${block.trustedAnswer}${noteSuffix}`.slice(0, 8_000),
+      },
+      select: this.commitmentSelect(),
+    });
+    return this.toDto(updated, null);
+  }
+
+  /**
+   * ТЗ-E — перенос срока обещания (`PATCH /me/promises/:blockId/reschedule`).
+   * Меняет только `commitmentDueDate`, статус возвращает в `open` (НЕ
+   * терминальный). Разрешён тем же self-фильтром, что `markMine`.
+   *
+   * Ограничения:
+   *   - новый срок не может быть в прошлом (`due_date_in_past`);
+   *   - перенести можно только незакрытое обещание — статус ∈
+   *     {open, asked, null} (`commitment_terminal` иначе).
+   *
+   * Заметка дописывается в `trustedAnswer` строкой
+   * `[reschedule → <ISO>] <note?>` (как markMine дописывает `[status]`).
+   */
+  async rescheduleMine(args: {
+    tenantId: string;
+    selfPersonId: string;
+    blockId: string;
+    body: ReschedulePromiseBody;
+  }): Promise<CommitmentDto> {
+    const block = await this.prisma.ideaBlock.findFirst({
+      where: {
+        id: args.blockId,
+        tenantId: args.tenantId,
+        signalType: 'commitment',
+        entities: {
+          some: {
+            entity: {
+              type: 'person',
+              tenantId: args.tenantId,
+              persons: { some: { id: args.selfPersonId } },
+            },
+          },
+        },
+      },
+      select: this.commitmentSelect(),
+    });
+    if (!block) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'commitment_not_found',
+          message: 'Обещание не найдено или не доступно',
+        },
+      });
+    }
+
+    const newDue = new Date(args.body.dueDate);
+    if (newDue.getTime() <= Date.now()) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'due_date_in_past',
+          message: 'Новый срок должен быть в будущем',
+        },
+      });
+    }
+
+    const terminal: ReadonlyArray<string> = [
+      'fulfilled',
+      'missed',
+      'cancelled',
+      'superseded',
+    ];
+    if (block.commitmentStatus && terminal.includes(block.commitmentStatus)) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'commitment_terminal',
+          message: 'Нельзя перенести срок у закрытого обещания',
+        },
+      });
+    }
+
+    const noteSuffix = args.body.note
+      ? `\n\n[reschedule → ${newDue.toISOString()}] ${args.body.note}`
+      : `\n\n[reschedule → ${newDue.toISOString()}]`;
+    const updated = await this.prisma.ideaBlock.update({
+      where: { id: block.id },
+      data: {
+        commitmentDueDate: newDue,
+        commitmentStatus: 'open',
         trustedAnswer: `${block.trustedAnswer}${noteSuffix}`.slice(0, 8_000),
       },
       select: this.commitmentSelect(),
@@ -269,6 +391,15 @@ export class CommitmentsService {
       commitmentRecipient: {
         select: { id: true, name: true },
       },
+      // ТЗ-E — источник обещания: первое evidence из встречи. Через
+      // RawEvent.sourceExternalId получаем Meeting.id (для всех 4 эндпоинтов
+      // дёшево: take=1). Заголовок встречи дорезолвивается батчем в listMine.
+      evidence: {
+        where: { sourceType: 'meeting' as const },
+        orderBy: { sourceTimestamp: 'asc' as const },
+        take: 1,
+        select: { rawEvent: { select: { sourceExternalId: true } } },
+      },
       ...(withAuthor
         ? {
             entities: {
@@ -314,6 +445,13 @@ export class CommitmentsService {
     return null;
   }
 
+  /** ТЗ-E — id встречи-источника из первого meeting-evidence блока. */
+  private extractSourceMeetingId(block: {
+    evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }> | null;
+  }): string | null {
+    return block.evidence?.[0]?.rawEvent?.sourceExternalId ?? null;
+  }
+
   private toDto(
     block: {
       id: string;
@@ -327,9 +465,12 @@ export class CommitmentsService {
       commitmentEscalatedAt: Date | null;
       createdAt: Date;
       commitmentRecipient: { id: string; name: string } | null;
+      evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }> | null;
     },
     author: { personId: string; name: string } | null,
+    meetingTitles?: Map<string, string> | null,
   ): CommitmentDto {
+    const sourceMeetingId = this.extractSourceMeetingId(block);
     return {
       id: block.id,
       tenantId: block.tenantId,
@@ -342,6 +483,11 @@ export class CommitmentsService {
       recipientPersonName: block.commitmentRecipient?.name ?? null,
       authorPersonId: author?.personId ?? null,
       authorPersonName: author?.name ?? null,
+      sourceMeetingId,
+      sourceMeetingTitle:
+        sourceMeetingId && meetingTitles
+          ? meetingTitles.get(sourceMeetingId) ?? null
+          : null,
       askedAt: block.commitmentAskedAt
         ? block.commitmentAskedAt.toISOString()
         : null,

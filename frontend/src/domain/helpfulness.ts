@@ -140,9 +140,8 @@ export interface SocialContributionProfile {
     proactive_hint: number;
     mentoring: number;
     emotional_support: number;
-    /** Конструктивная обратная связь — на бэке нет отдельного поля,
-     *  считается из traits на лету (пока ставим 0).
-     *  Если потребуется — добавим в schema/aggregate. */
+    /** Конструктивная обратная связь — на бэке нет отдельной колонки,
+     *  считается из traits на лету (DTO-поле constructiveFeedbackCount). */
     constructive_feedback: number;
   };
   expertiseTopics: string[];
@@ -247,9 +246,8 @@ export function mapSocialContributionProfile(
       proactive_hint: dto.proactiveHintCount,
       mentoring: dto.mentoringCount,
       emotional_support: dto.emotionalSupportCount,
-      // constructive_feedback — нет отдельного поля в DTO; ставим 0.
-      // (трейты этого типа всё равно попадают в recentTraits.)
-      constructive_feedback: 0,
+      // ТЗ-E Ф4 — реальный счётчик «Фидбек», бэк считает из traits на лету.
+      constructive_feedback: dto.constructiveFeedbackCount,
     },
     expertiseTopics: dto.expertiseTopics,
     socialRoles: dto.socialRoles,

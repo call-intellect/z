@@ -963,6 +963,27 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         });
       }
 
+      // ТЗ-D — детерминированная атрибуция АВТОРА обещания (кто дал слово) по
+      // identity спикера сегмента / payload.userId. Best-effort: ошибка или
+      // выключенный kill-switch не валит persist. LLM-промпт НЕ трогается.
+      if (isCommitment && blockId) {
+        await this.attributeCommitmentAuthor({
+          event,
+          block,
+          blockId,
+          segments: args.segments,
+          authorUserId: args.authorUserId,
+        }).catch((err) => {
+          this.logger.warn(
+            {
+              blockId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-ingest: атрибуция автора обещания не удалась — пропуск',
+          );
+        });
+      }
+
       // Фаза 1.2 — детерминированная атрибуция автора (role='subject') для
       // блоков-рассуждений. Best-effort: ошибка/выключенный kill-switch не
       // валит persist основного блока. LLM-промпт НЕ трогается — атрибуция
@@ -1076,6 +1097,64 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             : 'speakerName',
       },
       'block-ingest: автор помечен role=subject',
+    );
+  }
+
+  /**
+   * ТЗ-D (2026-06-05) — детерминированная атрибуция АВТОРА обещания в
+   * IdeaBlock.commitmentAuthorPersonId. Зеркало attributeSubject, но пишет
+   * скаляр-поле (не IdeaBlockEntity) и резолвит Person.id (resolveSubjectPersonId).
+   * Источник identity: сегмент встречи (speakerParticipantId) либо authorUserId
+   * (текстовые каналы). БЕЗ LLM — prompt-cache сохранён.
+   * Kill-switch — AdminSetting knowledge.commitmentAuthorAttributionEnabled
+   * (code-fallback true).
+   */
+  private async attributeCommitmentAuthor(args: {
+    event: RawEvent;
+    block: ExtractedBlock;
+    blockId: string;
+    segments: Segment[];
+    authorUserId: string | null;
+  }): Promise<void> {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'knowledge.commitmentAuthorAttributionEnabled',
+      undefined,
+      true,
+    );
+    if (!enabled) return;
+
+    const seg =
+      args.segments.find(
+        (s) =>
+          s.endMs > 0 &&
+          args.block.evidenceStartMs >= s.startMs &&
+          args.block.evidenceStartMs <= s.endMs,
+      ) ?? null;
+    const speakerParticipantId = seg?.speakerParticipantId ?? null;
+    const speakerName = seg?.speakers?.[0] ?? null;
+
+    const authorPersonId = await this.entities.resolveSubjectPersonId(
+      args.event.tenantId,
+      { speakerParticipantId, speakerName, authorUserId: args.authorUserId },
+    );
+    if (!authorPersonId) return;
+
+    await this.prisma.ideaBlock.update({
+      where: { id: args.blockId },
+      data: { commitmentAuthorPersonId: authorPersonId },
+    });
+
+    this.logger.debug(
+      {
+        blockId: args.blockId,
+        authorPersonId,
+        via: speakerParticipantId
+          ? 'speakerParticipantId'
+          : args.authorUserId
+            ? 'authorUserId'
+            : 'speakerName',
+      },
+      'block-ingest: автор обещания проставлен (commitmentAuthorPersonId)',
     );
   }
 

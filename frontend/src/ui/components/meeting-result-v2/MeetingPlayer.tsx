@@ -88,7 +88,11 @@ export function MeetingPlayer({
           if (playerRef) playerRef.current = node;
         }}
         title={title ?? 'Запись встречи'}
-        src={videoUrl}
+        // Явный тип источника обязателен: presigned S3-URL оканчивается на
+        // `composite.mp4?X-Amz-...`, и Vidstack не может определить провайдера по
+        // расширению из-за query-строки → без `type` плеер не создаёт <video> и
+        // виснет на «вечной крутилке» БЕЗ сетевого запроса к файлу.
+        src={{ src: videoUrl, type: 'video/mp4' }}
         playsInline
         className="aspect-video w-full"
       >

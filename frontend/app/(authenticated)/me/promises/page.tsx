@@ -1,18 +1,10 @@
-import type { Metadata } from 'next';
-
-import { MyPromisesClient } from './MyPromisesClient';
-
-export const metadata: Metadata = {
-  title: 'Мои обещания — Z',
-};
+import { redirect } from 'next/navigation';
 
 /**
- * SBA β-8.2 — `/me/promises` — личный список «обещал → сделал?».
- *
- * Показывает открытые и asked обещания текущего сотрудника.
- * Backend изолирует выборку через `Person.userId === currentUserId`;
- * другие сотрудники в списке не появятся.
+ * `/me/promises` — устаревший URL. Раздел переехал во вкладку «Мои обещания»
+ * кабинета «Я» (ТЗ-E Фаза 1, R10). Серверный redirect сохраняет старые
+ * ссылки рабочими.
  */
-export default function MyPromisesPage() {
-  return <MyPromisesClient />;
+export default function MyPromisesRedirectPage() {
+  redirect('/me?tab=promises');
 }

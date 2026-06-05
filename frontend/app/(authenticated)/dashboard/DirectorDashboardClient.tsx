@@ -355,7 +355,7 @@ export function DirectorDashboardClient() {
               delta={data?.kpiCommitmentReliability?.delta}
               deltaLabel="за 14 дней"
               threshold={{ green: 80, yellow: 60 }}
-              href="/me/promises"
+              href="/me?tab=promises"
             />
             <KpiHero
               label="Висящие решения"

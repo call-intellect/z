@@ -1,16 +1,9 @@
-import type { Metadata } from 'next';
-
-import { MyPulseClient } from './MyPulseClient';
-
-export const metadata: Metadata = { title: 'Мой пульс — Кора' };
+import { redirect } from 'next/navigation';
 
 /**
- * `/me/pulse` — личная Pulse-карточка сотрудника (pulse-full Волна 3).
- *
- * Сам сотрудник смотрит свой пульс: резолвим свой `personId` через
- * `GET /me/profile` и переиспользуем существующий `PersonPulseClient`
- * (backend RBAC разрешает self-view: `Person.userId === currentUser.id`).
+ * `/me/pulse` — устаревший URL. Раздел переехал во вкладку «Пульс» кабинета
+ * «Я» (ТЗ-E Фаза 1, R10). Серверный redirect сохраняет старые ссылки рабочими.
  */
-export default function MyPulsePage() {
-  return <MyPulseClient />;
+export default function MyPulseRedirectPage() {
+  redirect('/me?tab=pulse');
 }

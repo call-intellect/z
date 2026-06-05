@@ -367,6 +367,12 @@ const STEPS: Step[] = [
     hint: 'role=subject для исторических reasoning-блоков + rebuild клонов (Ф1.3)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-commitment-author.ts',
+    hint: 'ТЗ-D: заполнение commitmentAuthorPersonId для исторических обещаний',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

@@ -944,7 +944,7 @@ export class WeeklyDigestService {
             depName: name,
             signal: 'sentiment_improved',
             delta,
-            detail: `Настроение +${delta} pts (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
+            detail: `Настроение +${delta} балл. (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
           });
         } else if (delta <= -SENTIMENT_THRESHOLD) {
           candidates.push({
@@ -952,7 +952,7 @@ export class WeeklyDigestService {
             depName: name,
             signal: 'sentiment_dropped',
             delta,
-            detail: `Настроение ${delta} pts (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
+            detail: `Настроение ${delta} балл. (${prevIdx} → ${curIdx}); ${sc.total} чек-инов`,
           });
         }
       }
@@ -970,7 +970,7 @@ export class WeeklyDigestService {
             depName: name,
             signal: 'promises_improved',
             delta,
-            detail: `Обещания +${delta} pp (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
+            detail: `Обещания +${delta} п.п. (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
           });
         } else if (delta <= -PROMISES_THRESHOLD) {
           candidates.push({
@@ -978,7 +978,7 @@ export class WeeklyDigestService {
             depName: name,
             signal: 'promises_dropped',
             delta,
-            detail: `Обещания ${delta} pp (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
+            detail: `Обещания ${delta} п.п. (${prevPct}% → ${curPct}%); ${rc.total} обещаний`,
           });
         }
       }
@@ -1174,13 +1174,13 @@ function buildLinearForecast(
     if (delta > 0) {
       return {
         metric,
-        projection: `Настроение продолжит расти, ожидаемое значение ~${projected} pts к концу недели.`,
+        projection: `Настроение продолжит расти, ожидаемое значение ~${projected} балл. к концу недели.`,
         confidence,
       };
     }
     return {
       metric,
-      projection: `При сохранении тренда настроение может упасть до ~${projected} pts.`,
+      projection: `При сохранении тренда настроение может упасть до ~${projected} балл.`,
       confidence,
     };
   }

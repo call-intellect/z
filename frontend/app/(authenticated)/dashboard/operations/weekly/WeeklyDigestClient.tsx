@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
+import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -31,46 +35,15 @@ export function WeeklyDigestClient() {
   const router = useRouter();
   const initialWeek = searchParams?.get('weekStart') ?? defaultLastMondayUtc();
   const [weekStart, setWeekStart] = useState(initialWeek);
-  const [data, setData] = useState<WeeklyOperationsDigestApi | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    weeklyDigestApi
-      .get(weekStart)
-      .then((res) => {
-        if (cancelled) return;
-        setData(res);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setData(null);
-        if (err instanceof ApiError && err.code === 'digest_not_found') {
-          setError(
-            'Дайджест за выбранную неделю ещё не сгенерирован. Он появится в понедельник утром по локальному времени организации.',
-          );
-        } else if (err instanceof ApiError && err.code === 'forbidden_role') {
-          setError(
-            'Нет доступа к недельной сводке (нужна роль coo / admin / owner).',
-          );
-        } else {
-          setError(
-            err instanceof Error
-              ? err.message
-              : 'Не удалось загрузить недельную сводку',
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [weekStart]);
+  const digestSwr = useSWR(
+    ['weekly-digest', weekStart],
+    () => weeklyDigestApi.get(weekStart),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const data = digestSwr.data ?? null;
+  const loading = digestSwr.isLoading;
+  const error = weeklyDigestErrorMessage(digestSwr.error);
 
   const goToWeek = (nextWeek: string) => {
     setWeekStart(nextWeek);
@@ -188,15 +161,19 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Повторяющиеся блокеры</h2>
           <ul className="mt-2 space-y-1 text-sm">
-            {data.metrics.topBlockers.map((b, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="text-fg-tertiary">·</span>
-                <span className="flex-1">{b.text}</span>
-                <span className="text-xs text-fg-secondary">
-                  упоминаний: {b.count}
-                </span>
-              </li>
-            ))}
+            {data.metrics.topBlockers.map((b, i) => {
+              const tone = blockerTone(b.count);
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
+                  <span className="flex-1">{b.text}</span>
+                  <span className="text-xs text-fg-secondary">
+                    упоминаний: {b.count}
+                  </span>
+                  <OpenLink href="/themes" />
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -205,17 +182,24 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Главные сигналы</h2>
           <ul className="mt-2 space-y-1 text-sm">
-            {data.metrics.topInsights.map((it) => (
-              <li key={it.insightId} className="flex items-start gap-2">
-                <span className="rounded bg-bg-subtle px-2 py-0.5 text-xs text-fg-secondary">
-                  {it.kind}
-                </span>
-                <span className="flex-1">{it.statement}</span>
-                <span className="text-xs text-fg-secondary">
-                  динамика: {it.dynamicLabel}
-                </span>
-              </li>
-            ))}
+            {data.metrics.topInsights.map((it) => {
+              const tone = insightDynamicTone(it.dynamicLabel);
+              return (
+                <li key={it.insightId} className="flex items-start gap-2">
+                  <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
+                  <span className="rounded bg-bg-subtle px-2 py-0.5 text-xs text-fg-secondary">
+                    {it.kind}
+                  </span>
+                  <span className="flex-1">{it.statement}</span>
+                  <span className="text-xs text-fg-secondary">
+                    динамика: {insightDynamicLabelRu(it.dynamicLabel)}
+                  </span>
+                  <OpenLink
+                    href={`/insights?id=${encodeURIComponent(it.insightId)}`}
+                  />
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -224,15 +208,21 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         <section className="rounded border bg-bg-card p-4">
           <h2 className="text-lg font-semibold">Висящие решения</h2>
           <ul className="mt-2 space-y-1 text-sm">
-            {data.metrics.hangingDecisions.map((d) => (
-              <li key={d.decisionId} className="flex items-start gap-2">
-                <span className="text-fg-tertiary">·</span>
-                <span className="flex-1">{d.statement}</span>
-                <span className="text-xs text-fg-secondary">
-                  возраст: {d.ageDays} дн.
-                </span>
-              </li>
-            ))}
+            {data.metrics.hangingDecisions.map((d) => {
+              const tone = hangingTone(d.ageDays);
+              return (
+                <li key={d.decisionId} className="flex items-start gap-2">
+                  <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
+                  <span className="flex-1">{d.statement}</span>
+                  <span className="text-xs text-fg-secondary">
+                    возраст: {d.ageDays} дн.
+                  </span>
+                  <OpenLink
+                    href={`/decisions/${encodeURIComponent(d.decisionId)}`}
+                  />
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -242,9 +232,11 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
         <p className="mt-1 text-xs text-fg-secondary">
           Связный текст автоматически собран по показателям выше.
         </p>
-        <pre className="mt-3 whitespace-pre-wrap font-sans text-sm leading-6 text-fg-primary">
-          {data.bodyMarkdown}
-        </pre>
+        <div className="prose prose-sm prose-invert mt-3 max-w-none text-fg-primary [&>*]:my-2">
+          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+            {data.bodyMarkdown}
+          </ReactMarkdown>
+        </div>
       </section>
 
       <p className="text-xs text-fg-tertiary">
@@ -292,6 +284,95 @@ function formatRu(dateLocal: string): string {
 function signedRu(v: number): string {
   if (v > 0) return `+${v}`;
   return String(v);
+}
+
+/**
+ * Маппинг ошибки SWR в человеческое сообщение. Сохраняет спец-кейсы
+ * `digest_not_found` (ещё не сгенерирован) и `forbidden_role` (нет доступа).
+ */
+function weeklyDigestErrorMessage(err: unknown): string | null {
+  if (!err) return null;
+  if (err instanceof ApiError) {
+    if (err.code === 'digest_not_found') {
+      return 'Дайджест за выбранную неделю ещё не сгенерирован. Он появится в понедельник утром по локальному времени организации.';
+    }
+    if (err.code === 'forbidden_role') {
+      return 'Нет доступа к недельной сводке (нужна роль coo / admin / owner).';
+    }
+    return err.message;
+  }
+  return err instanceof Error ? err.message : 'Не удалось загрузить недельную сводку';
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * ТЗ-C Фаза 5 R13 — светофор срочности для блоков проблем.
+ * Тон считаем по локальным визуальным порогам (это UI-логика, не данные).
+ * Парные токены: точка — `text-chip-{tone}-fg`; нейтраль — `text-fg-tertiary`.
+ * ────────────────────────────────────────────────────────────────────── */
+
+type UrgencyTone = 'danger' | 'warning' | 'neutral';
+
+// Висящие решения: чем старше — тем горячее.
+const HANGING_DANGER_DAYS = 14;
+const HANGING_WARNING_DAYS = 7;
+// Повторяющиеся блокеры: чем чаще упоминают — тем горячее.
+const BLOCKER_DANGER_COUNT = 5;
+const BLOCKER_WARNING_COUNT = 3;
+
+function hangingTone(ageDays: number): UrgencyTone {
+  if (ageDays >= HANGING_DANGER_DAYS) return 'danger';
+  if (ageDays >= HANGING_WARNING_DAYS) return 'warning';
+  return 'neutral';
+}
+
+function blockerTone(count: number): UrgencyTone {
+  if (count >= BLOCKER_DANGER_COUNT) return 'danger';
+  if (count >= BLOCKER_WARNING_COUNT) return 'warning';
+  return 'neutral';
+}
+
+/**
+ * Тон по динамике сигнала. Канон API: growing | stable | declining | spike.
+ * Внимания требуют только рост (`growing`) и всплеск (`spike`); остальное —
+ * нейтрально (`declining` для проблемного сигнала — это хорошо).
+ */
+function insightDynamicTone(dynamicLabel: string): UrgencyTone {
+  if (dynamicLabel === 'spike') return 'danger';
+  if (dynamicLabel === 'growing') return 'warning';
+  return 'neutral';
+}
+
+/** Точка-индикатор срочности (парные токены). */
+function UrgencyDot({ tone, title }: { tone: UrgencyTone; title: string }) {
+  const cls =
+    tone === 'danger'
+      ? 'text-chip-danger-fg'
+      : tone === 'warning'
+      ? 'text-chip-warning-fg'
+      : 'text-fg-tertiary';
+  return (
+    <span aria-hidden className={`text-base leading-none ${cls}`} title={title}>
+      ●
+    </span>
+  );
+}
+
+const URGENCY_TITLE: Record<UrgencyTone, string> = {
+  danger: 'горит',
+  warning: 'ждёт',
+  neutral: 'без срочности',
+};
+
+/** Компактная кнопка-ссылка «Открыть» (парные токены, ведёт на маршрут). */
+function OpenLink({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded border border-border-subtle px-2 py-0.5 text-xs text-fg-secondary hover:bg-bg-subtle"
+    >
+      Открыть
+    </Link>
+  );
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -343,7 +424,7 @@ function KpiDeltaCard({ k }: { k: WeeklyKpiDeltaApi }) {
       ? 'bg-chip-danger-bg text-chip-danger-fg'
       : 'bg-bg-subtle text-fg-secondary';
   const arrow = direction === 'up' ? '↑' : direction === 'down' ? '↓' : '·';
-  const unitSuffix = k.unit === '%' ? '%' : k.unit === 'pts' ? ' pts' : ' шт';
+  const unitSuffix = k.unit === '%' ? '%' : k.unit === 'pts' ? ' балл.' : ' шт';
   return (
     <div className="rounded-xl border border-border-subtle bg-bg-surface p-3 shadow-sm transition-shadow hover:shadow-md">
       <div className="text-[10px] uppercase tracking-wide text-fg-tertiary">
@@ -490,5 +571,24 @@ function forecastMetricLabel(
       return 'Висящие решения';
     default:
       return metric;
+  }
+}
+
+/**
+ * Русификация динамики сигнала. Канон API: growing | stable | declining |
+ * spike. Лейблы согласованы с фильтрами на странице `/insights`.
+ */
+function insightDynamicLabelRu(dynamicLabel: string): string {
+  switch (dynamicLabel) {
+    case 'spike':
+      return 'всплеск';
+    case 'growing':
+      return 'растёт';
+    case 'stable':
+      return 'стабильно';
+    case 'declining':
+      return 'снижается';
+    default:
+      return dynamicLabel;
   }
 }

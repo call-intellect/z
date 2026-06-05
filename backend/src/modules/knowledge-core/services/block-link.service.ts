@@ -8,7 +8,9 @@ import {
 } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import {
   LlmRouterService,
   maxDataClass,
@@ -86,6 +88,9 @@ export class BlockLinkService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -154,56 +159,68 @@ export class BlockLinkService {
 
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
-    try {
-      const out = await this.llm.call({
-        taskType: 'block-linker',
-        tenantId: args.tenantId,
-        systemPrompt: guardOn
-          ? withInjectionGuard(LINK_SYSTEM_PROMPT)
-          : LINK_SYSTEM_PROMPT,
-        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
-        responseFormat: {
-          type: 'json_schema',
-          name: 'BlockLinkerVerdict',
-          strict: true,
-          schema: LINK_JSON_SCHEMA,
-        },
-        sourceRef: { type: 'idea-block', id: args.fromBlock.id },
-        // Фаза 11: max(fromBlock, toBlock).dataClass.
-        dataClass: maxDataClass([
-          args.fromBlock.dataClass,
-          args.toBlock.dataClass,
-        ]),
-      });
-      const parsed = this.parseVerdict(out.text);
-      if (parsed) return parsed;
-      this.logger.warn(
-        { fromId: args.fromBlock.id, toId: args.toBlock.id },
-        'block-linker: invalid JSON LLM-арбитра — fallback на none',
-      );
-      return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
-    } catch (err) {
-      this.logger.warn(
-        {
-          fromId: args.fromBlock.id,
-          toId: args.toBlock.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'block-linker: LLM judge упал — fallback на none',
-      );
-      return { relationType: null, confidence: 0, explanation: 'LLM judge call failed' };
+
+    // Ретрай зеркалит block-ingest (block-extraction.service.ts): 2 попытки
+    // вызов+парсинг, чтобы один невалидный JSON арбитра не терял связь молча.
+    const fromId = args.fromBlock.id;
+    const toId = args.toBlock.id;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const out = await this.llm.call({
+          taskType: 'block-linker',
+          tenantId: args.tenantId,
+          systemPrompt: guardOn
+            ? withInjectionGuard(LINK_SYSTEM_PROMPT)
+            : LINK_SYSTEM_PROMPT,
+          userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
+          responseFormat: {
+            type: 'json_schema',
+            name: 'BlockLinkerVerdict',
+            strict: true,
+            schema: LINK_JSON_SCHEMA,
+          },
+          sourceRef: { type: 'idea-block', id: args.fromBlock.id },
+          // Фаза 11: max(fromBlock, toBlock).dataClass.
+          dataClass: maxDataClass([
+            args.fromBlock.dataClass,
+            args.toBlock.dataClass,
+          ]),
+        });
+        const parsed = this.parseVerdict(out.text);
+        if (parsed) return parsed;
+        this.logger.warn(
+          { fromId, toId, attempt },
+          'block-linker: invalid JSON LLM-арбитра — повтор',
+        );
+      } catch (err) {
+        this.logger.warn(
+          {
+            fromId,
+            toId,
+            attempt,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'block-linker: LLM judge упал — повтор',
+        );
+      }
     }
+
+    // После двух попыток — fallback на none + метрика молчаливой деградации.
+    this.metrics?.incKcBlockLinkerFallbackNone({ reason: 'exhausted' });
+    this.logger.warn(
+      { fromId, toId },
+      'block-linker: fallback на none после 2 попыток',
+    );
+    return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
   }
 
   // ─────────────────────────── helpers ─────────────────────────────────────
 
   private parseVerdict(text: string): LinkVerdict | null {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      return null;
-    }
+    // `tryParseJson` снимает ```json-обёртку и вытаскивает первый {…} из
+    // прозы/преамбулы; не бросает — на мусор вернёт `{ raw }`, который не
+    // пройдёт Zod-валидацию → null (без ложных null на fenced-ответах).
+    const raw = tryParseJson(text);
     const parsed = LinkResponseSchema.safeParse(raw);
     if (!parsed.success) return null;
     if (parsed.data.relationType === 'none') {

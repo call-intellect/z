@@ -39,6 +39,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── llm router fallback exhausted (Фаза A.4) ────────────────────────
   private coreLlmNoProviderTotal!: Counter<'task_type'>;
 
+  // ── block-linker fallback на none (молчаливая деградация графа) ──────
+  private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -1004,6 +1007,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_llm_no_provider_total',
       help: 'Фаза A.4 — ни один провайдер цепочки primary/secondary/tertiary не отработал для taskType. Должно быть = 0; > 0 → critical alert.',
       labelNames: ['task_type'] as const,
+    });
+
+    this.kcBlockLinkerFallbackNoneTotal = this.getOrCreateCounter({
+      name: 'kc_block_linker_fallback_none_total',
+      help: 'block-linker не смог распарсить вердикт арбитра после ретраев → связь не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
+      labelNames: ['reason'] as const,
     });
 
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
@@ -3603,6 +3612,15 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incCoreLlmNoProvider(args: { taskType: string }): void {
     this.coreLlmNoProviderTotal.inc({ task_type: args.taskType });
+  }
+
+  /**
+   * block-linker не смог распарсить вердикт LLM-арбитра после ретраев →
+   * связь между блоками не создана (молчаливая деградация графа знаний).
+   * Должно быть = 0; > 0 → проверь модель/формат ответа арбитра.
+   */
+  incKcBlockLinkerFallbackNone(args: { reason: string }): void {
+    this.kcBlockLinkerFallbackNoneTotal.inc({ reason: args.reason });
   }
 
   /**

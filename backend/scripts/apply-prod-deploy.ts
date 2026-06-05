@@ -462,7 +462,7 @@ async function autoBackup(): Promise<boolean> {
 
 /** Выполнить SQL-скаляр через psql, вернуть trimmed-строку результата (или null при ошибке). */
 async function psqlScalar(url: string, sql: string): Promise<string | null> {
-  const proc = Bun.spawn(['psql', url, '-tArc', sql], { stdout: 'pipe', stderr: 'pipe' });
+  const proc = Bun.spawn(['psql', url, '-tAc', sql], { stdout: 'pipe', stderr: 'pipe' });
   const out = await new Response(proc.stdout).text();
   if ((await proc.exited) !== 0) {
     const err = await new Response(proc.stderr).text();

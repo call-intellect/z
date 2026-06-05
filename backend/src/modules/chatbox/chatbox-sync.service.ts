@@ -271,7 +271,8 @@ export class ChatboxSyncService {
 
     const now = new Date();
     for (const m of members) {
-      // linkedPersonId / linkMode НЕ трогаем (Фаза 9).
+      // linkedPersonId / linkMode НЕ трогаем в upsert — автосвязка отдельным
+      // проходом ниже (Фаза 9), чтобы не перетереть ручную связку (manual).
       const data = {
         email: m.email ?? null,
         name: m.name ?? null,
@@ -285,7 +286,62 @@ export class ChatboxSyncService {
         update: data,
       });
     }
+
+    await this.autoLinkMembers(tenantId);
+
     return members.length;
+  }
+
+  /**
+   * Автосвязка членов ChatBox с Person Коры по email (case-insensitive),
+   * Фаза 9. Эффективно (батч, без N+1):
+   *   1) собрать членов с непустым email и linkMode != manual (ручную не трогаем);
+   *   2) один findMany Person по списку email → карта lowercase(email) → personId;
+   *   3) для совпавших проставить linkedPersonId + linkMode='auto'.
+   * Если Person не найден — оставляем как есть (не сбрасываем).
+   */
+  private async autoLinkMembers(tenantId: string): Promise<void> {
+    const candidates = await this.prisma.chatboxMember.findMany({
+      where: {
+        tenantId,
+        linkMode: { not: 'manual' },
+        email: { not: null },
+      },
+      select: { id: true, email: true, linkedPersonId: true },
+    });
+    if (candidates.length === 0) return;
+
+    const emails = [
+      ...new Set(
+        candidates
+          .map((c) => c.email?.trim())
+          .filter((e): e is string => !!e),
+      ),
+    ];
+    if (emails.length === 0) return;
+
+    const persons = await this.prisma.person.findMany({
+      where: { tenantId, email: { in: emails, mode: 'insensitive' } },
+      select: { id: true, email: true },
+    });
+    const personByEmail = new Map<string, string>();
+    for (const p of persons) {
+      // Первый выигрывает; lowercase-ключ для case-insensitive сопоставления.
+      const key = p.email.trim().toLowerCase();
+      if (!personByEmail.has(key)) personByEmail.set(key, p.id);
+    }
+
+    for (const c of candidates) {
+      const key = c.email?.trim().toLowerCase();
+      if (!key) continue;
+      const personId = personByEmail.get(key);
+      if (!personId) continue;
+      if (c.linkedPersonId === personId) continue; // уже связан корректно
+      await this.prisma.chatboxMember.update({
+        where: { id: c.id },
+        data: { linkedPersonId: personId, linkMode: 'auto' },
+      });
+    }
   }
 
   // ─────────────────────────── messages ────────────────────────────

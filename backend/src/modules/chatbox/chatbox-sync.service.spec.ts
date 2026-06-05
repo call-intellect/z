@@ -26,8 +26,13 @@ describe('ChatboxSyncService', () => {
     listMessages: ReturnType<typeof vi.fn>;
   };
   let prismaMock: {
-    chatboxMember: { upsert: ReturnType<typeof vi.fn> };
+    chatboxMember: {
+      upsert: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
     chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
+    person: { findMany: ReturnType<typeof vi.fn> };
   };
   let integrationMock: { getConfigForSync: ReturnType<typeof vi.fn> };
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
@@ -44,8 +49,13 @@ describe('ChatboxSyncService', () => {
       listMessages: vi.fn(),
     };
     prismaMock = {
-      chatboxMember: { upsert: vi.fn().mockResolvedValue({ id: 'mem1' }) },
+      chatboxMember: {
+        upsert: vi.fn().mockResolvedValue({ id: 'mem1' }),
+        findMany: vi.fn().mockResolvedValue([]),
+        update: vi.fn().mockResolvedValue({ id: 'mem1' }),
+      },
       chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
     };
     integrationMock = {
       getConfigForSync: vi.fn().mockResolvedValue(CFG),
@@ -96,9 +106,59 @@ describe('ChatboxSyncService', () => {
         role: 'MANAGER',
       }),
     );
-    // Фаза 9: linkedPersonId / linkMode НЕ синкаем.
+    // Фаза 9: linkedPersonId / linkMode НЕ синкаем в upsert (только автосвязкой).
     expect(firstCall.create).not.toHaveProperty('linkedPersonId');
     expect(firstCall.create).not.toHaveProperty('linkMode');
     expect(firstCall.update).not.toHaveProperty('linkedPersonId');
+  });
+
+  it('syncMembers: автосвязка — member с email и найденной Person → linkedPersonId + linkMode=auto', async () => {
+    clientMock.listMembers.mockResolvedValue({
+      members: [{ id: 'a', email: 'A@X.ru', name: 'A', role: 'MANAGER' }],
+      total: 1,
+    });
+    // Кандидат на автосвязку (linkMode != manual, email есть).
+    prismaMock.chatboxMember.findMany.mockResolvedValue([
+      { id: 'mem-a', email: 'A@X.ru', linkedPersonId: null },
+    ]);
+    // Person найден по email (case-insensitive).
+    prismaMock.person.findMany.mockResolvedValue([
+      { id: 'p1', email: 'a@x.ru' },
+    ]);
+
+    await service.syncMembers('t1');
+
+    // findMany Person — один батч-запрос (без N+1).
+    expect(prismaMock.person.findMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.chatboxMember.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'mem-a' },
+        data: { linkedPersonId: 'p1', linkMode: 'auto' },
+      }),
+    );
+  });
+
+  it('syncMembers: автосвязка НЕ перетирает ручную связку (manual исключён из кандидатов)', async () => {
+    clientMock.listMembers.mockResolvedValue({
+      members: [{ id: 'a', email: 'A@X.ru', name: 'A', role: 'MANAGER' }],
+      total: 1,
+    });
+    // manual-члены отфильтрованы запросом (linkMode: { not: 'manual' }) —
+    // кандидатов нет, значит update не вызывается.
+    prismaMock.chatboxMember.findMany.mockResolvedValue([]);
+
+    await service.syncMembers('t1');
+
+    // where кандидатов исключает manual.
+    expect(prismaMock.chatboxMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't1',
+          linkMode: { not: 'manual' },
+        }),
+      }),
+    );
+    expect(prismaMock.person.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
   });
 });

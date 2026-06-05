@@ -79,6 +79,17 @@ export class ConversationalController {
           direction: channel.direction,
           status: channel.status,
           maxDataClass: channel.maxDataClass,
+          // Б2 — только для бот-каналов; botToken НЕ отдаём, лишь факт его наличия.
+          ...(channel.kind === 'telegram_bot' || channel.kind === 'max_bot'
+            ? {
+                configured: Boolean(
+                  (channel.config as Record<string, unknown> | null)?.botToken,
+                ),
+                botUsername:
+                  ((channel.config as Record<string, unknown> | null)
+                    ?.botUsername as string | undefined) ?? null,
+              }
+            : {}),
         },
         binding: binding
           ? {

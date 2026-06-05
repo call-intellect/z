@@ -1421,6 +1421,16 @@ dataClassAudit  Json?   // снимок аудита класса данных (
 
 Поле добавлено в обе модели (раньше его не было — `tsc` молча пропускал лишний ключ в Prisma-`create`, см. [[code-pitfalls]]). Без поля cron `dataclass-audit-snapshot` падал; теперь снимок аудита класса данных кладётся сюда, а сам cron обёрнут в `to_regclass`-гард (не падает на свежей БД без таблицы).
 
+### `Regulation/Process/Policy/Idea.dataClassAudit` (2026-06-05, миграция `20260605114300_add_dataclass_audit_to_projections`)
+
+```prisma
+dataClassAudit  Json?   // тот же снимок аудита класса данных
+```
+
+Ф8 добавила `dataClassAudit` только Insight/Decision, но **писатели проекций уже клали его и в эти 4 модели**: `specialist-3-1-regulations.service.ts` (regulation/process/policy) и `specialist-3-6-ideas.service.ts` (idea) — безусловным `dataClassAudit:` в типизированном `upsert`. Из-за отсутствия колонки ветка не компилировалась (excess-property), а snapshot-cron каждые 30 мин ронял `count()` с `Unknown argument` (5 ERROR/прогон в `PrismaService`). Теперь колонка есть у всех писателей.
+
+Сам cron (`dataclass-audit-snapshot.cron.ts`) дополнительно защищён самолечащимся фильтром `modelKeysWithDataClassAudit()` из `Prisma.dmmf`: проекции без колонки `dataClassAudit` пропускаются до `count()`, поэтому будущий дрейф схемы больше не порождает ERROR. `skill_trait` из списка проекций убран (в `SkillTrait` аудит не пишется — по дизайну всегда `internal`).
+
 ### `MeetingStatus += ai_failed` (Фаза 11, коммиты `de46e1a9` backend + `daff5f50` frontend)
 
 ```prisma

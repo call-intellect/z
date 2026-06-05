@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Prisma } from '@prisma/client';
 import { Gauge, register } from 'prom-client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -23,12 +24,19 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 const METRIC_PRESENT_RATIO = 'kc_dataclass_audit_present_ratio';
 const METRIC_VERSION_DRIFT = 'kc_dataclass_policy_version_drift';
 
-/** Список (kind → имя prisma-делегата) для snapshot'а. */
+/**
+ * Список (kind → имя prisma-делегата) для snapshot'а.
+ *
+ * NB: `skill_trait` сюда НЕ входит — в `SkillTrait` `dataClassAudit` не пишет
+ * никто (по дизайну skill-trait всегда 'internal'), у модели нет такой колонки.
+ * Раньше он был в списке и каждые 30 мин ронял `count({where:{dataClassAudit}})`
+ * с `Unknown argument` (5 ERROR/прогон в PrismaService). Кроме явного изъятия,
+ * от этого класса дрейфа защищает рантайм-фильтр по DMMF (см. `modelKeysWithDataClassAudit`).
+ */
 const PROJECTIONS: Array<{ kind: string; modelKey: string }> = [
   { kind: 'insight', modelKey: 'insight' },
   { kind: 'decision', modelKey: 'decision' },
   { kind: 'card_rollup', modelKey: 'card' },
-  { kind: 'skill_trait', modelKey: 'skillTrait' },
   { kind: 'skill_profile', modelKey: 'skillProfile' },
   { kind: 'executable_persona', modelKey: 'executablePersona' },
   { kind: 'idea', modelKey: 'idea' },
@@ -40,11 +48,32 @@ const PROJECTIONS: Array<{ kind: string; modelKey: string }> = [
   { kind: 'probe_event', modelKey: 'probeEvent' },
 ];
 
+/**
+ * Множество prisma-делегатов (camelCase modelKey), у которых в схеме реально
+ * есть колонка `dataClassAudit`. Считается один раз из статического
+ * `Prisma.dmmf.datamodel.models` — самолечащийся гард против schema drift:
+ * если модель потеряла/не получила колонку, мы её просто не считаем и НЕ шлём
+ * невалидный `count({where:{dataClassAudit}})` (иначе PrismaService спамит ERROR).
+ * DMMF.model.name — PascalCase, делегат — camelCase, поэтому понижаем регистр
+ * первой буквы.
+ */
+export function modelKeysWithDataClassAudit(): Set<string> {
+  const keys = new Set<string>();
+  for (const model of Prisma.dmmf.datamodel.models) {
+    if (model.fields.some((f) => f.name === 'dataClassAudit')) {
+      keys.add(model.name.charAt(0).toLowerCase() + model.name.slice(1));
+    }
+  }
+  return keys;
+}
+
 @Injectable()
 export class DataClassAuditSnapshotCron {
   private readonly logger = new Logger(DataClassAuditSnapshotCron.name);
   private readonly presentRatio: Gauge<'kind'>;
   private readonly versionDrift: Gauge<'org_id'>;
+  /** modelKey'и, реально имеющие колонку `dataClassAudit` (из DMMF, см. выше). */
+  private readonly auditModelKeys = modelKeysWithDataClassAudit();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -74,6 +103,9 @@ export class DataClassAuditSnapshotCron {
    */
   async snapshotPresentRatio(): Promise<void> {
     for (const p of PROJECTIONS) {
+      // Гард от schema drift: модель без колонки `dataClassAudit` пропускаем,
+      // чтобы не слать невалидный count (иначе PrismaService логирует ERROR).
+      if (!this.auditModelKeys.has(p.modelKey)) continue;
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const delegate: any = (this.prisma as unknown as Record<string, unknown>)[

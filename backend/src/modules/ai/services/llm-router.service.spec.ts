@@ -195,7 +195,7 @@ describe('LlmRouterService', () => {
     expect(failedCall?.[0]).toMatchObject({ provider: 'minimax', status: 'failed' });
   });
 
-  it('нет route → используется дефолтная цепочка [deepseek, openai-via-proxy, ollama]', async () => {
+  it('нет route → используется дефолтная цепочка [deepseek, openai-via-proxy, kie:gemini-3.1-pro]', async () => {
     const ctx = build({ routes: [] });
     await ctx.router.refreshCache();
     const out = await ctx.router.call({

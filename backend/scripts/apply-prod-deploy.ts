@@ -386,6 +386,13 @@ interface ParsedArgs {
    * seed/backfill — нет (иначе один скрипт кладёт весь стек).
    */
   failOnSteps: boolean;
+  /**
+   * Подробный вывод: стримить полный stdout/stderr каждого шага. По умолчанию
+   * (false) — тихий режим: одна строка-итог на шаг (✓/✗ + summary), полный
+   * вывод печатается ТОЛЬКО для упавших шагов. Чистый лог на идемпотентном
+   * выкате. Включается `--verbose` или env `APPLY_PROD_DEPLOY_VERBOSE=1`.
+   */
+  verbose: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -394,6 +401,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let continueOnFail = false;
   let withSchema = false;
   let failOnSteps = true;
+  let verbose = process.env['APPLY_PROD_DEPLOY_VERBOSE'] === '1';
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') {
@@ -404,19 +412,22 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (a === '--continue-on-fail') continueOnFail = true;
     else if (a === '--with-schema') withSchema = true;
     else if (a === '--no-fail-on-steps') failOnSteps = false;
+    else if (a === '--verbose') verbose = true;
     else if (a === '--help' || a === '-h') {
       // eslint-disable-next-line no-console
       console.log(
-        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail] [--no-fail-on-steps]\n` +
+        `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail] [--no-fail-on-steps] [--verbose]\n` +
           `  --with-schema       авто-бэкап БД → dedupe → prisma migrate deploy → apply-postgres-init,\n` +
           `                      затем обычные seed/patch/backfill. Делает выкат одной командой.\n` +
           `  --no-fail-on-steps  не падать из-за упавших seed/backfill (schema-сбой всё равно = exit 1).\n` +
-          `                      Для migrate-контейнера: схема блокирует backend, осечка сида — нет.`,
+          `                      Для migrate-контейнера: схема блокирует backend, осечка сида — нет.\n` +
+          `  --verbose           полный вывод каждого шага (по умолчанию — тихо, 1 строка/шаг,\n` +
+          `                      полный лог только у упавших). Также env APPLY_PROD_DEPLOY_VERBOSE=1.`,
       );
       process.exit(0);
     }
   }
-  return { mode, dryRun, continueOnFail, withSchema, failOnSteps };
+  return { mode, dryRun, continueOnFail, withSchema, failOnSteps, verbose };
 }
 
 /**
@@ -618,7 +629,7 @@ async function ensureBaseline(): Promise<boolean> {
  * `_prisma_migrations` аддитивно подравнивает дрейф и помечает 0_init applied —
  * никаких ручных шагов. Дальше — всегда просто `migrate deploy`.
  */
-async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise<boolean> {
+async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean, verbose: boolean): Promise<boolean> {
   // eslint-disable-next-line no-console
   console.log('\n=== SCHEMA PHASE (--with-schema) ===');
   if (dryRun) {
@@ -640,7 +651,7 @@ async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise
     { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts' },
   ];
   for (const s of preDedupe) {
-    const r = await runOne(s, false);
+    const r = await runOne(s, false, verbose);
     if (!r.ok && !continueOnFail) return false;
   }
 
@@ -683,14 +694,69 @@ function filterSteps(steps: readonly Step[], mode: ParsedArgs['mode']): Step[] {
   });
 }
 
-async function runOne(step: Step, dryRun: boolean): Promise<{ ok: boolean; code: number }> {
+/**
+ * Вытащить из stdout одну информативную строку-итог (counts), чтобы показать её
+ * рядом с ✓ в тихом режиме. Берём ПОСЛЕДНюю строку с числами-итогами; служебные
+ * `=== … START/DONE ===`-обёртки пропускаем.
+ */
+function pickSummaryLine(out: string): string {
+  const lines = out.split('\n').map((l) => l.trim()).filter(Boolean);
+  const re = /(inserted|created|updated|skipped|applied|patched|scanned|deleted|backfilled|voided|protected)/i;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    if (/^===/.test(l) || /START/i.test(l)) continue;
+    if (re.test(l)) return l.length > 160 ? `${l.slice(0, 157)}…` : l;
+  }
+  return '';
+}
+
+async function runOne(
+  step: Step,
+  dryRun: boolean,
+  verbose: boolean,
+): Promise<{ ok: boolean; code: number }> {
   const cmd = ['bun', 'run', step.script, ...(step.args ?? [])];
-  // eslint-disable-next-line no-console
-  console.log(`\n>>> [${step.phase}] ${cmd.slice(2).join(' ')}${step.hint ? `   # ${step.hint}` : ''}`);
-  if (dryRun) return { ok: true, code: 0 };
-  const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit' });
+  const label = `[${step.phase}] ${cmd.slice(2).join(' ')}${step.hint ? `  # ${step.hint}` : ''}`;
+  if (dryRun) {
+    // eslint-disable-next-line no-console
+    console.log(`>>> ${label}`);
+    return { ok: true, code: 0 };
+  }
+
+  // Verbose — стримим как раньше (для отладки конкретного шага).
+  if (verbose) {
+    // eslint-disable-next-line no-console
+    console.log(`\n>>> ${label}`);
+    const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit' });
+    const code = await proc.exited;
+    return { ok: code === 0, code };
+  }
+
+  // Тихий режим (по умолчанию): захватываем вывод, печатаем 1 строку-итог.
+  const proc = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' });
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   const code = await proc.exited;
-  return { ok: code === 0, code };
+  if (code === 0) {
+    const summary = pickSummaryLine(out);
+    // eslint-disable-next-line no-console
+    console.log(`✓ ${label}${summary ? `  — ${summary}` : ''}`);
+    return { ok: true, code };
+  }
+  // Упал — печатаем полный вывод для отладки.
+  // eslint-disable-next-line no-console
+  console.error(`\n✗ ${label}  (exit ${code})`);
+  if (out.trim()) {
+    // eslint-disable-next-line no-console
+    console.error(out.trimEnd());
+  }
+  if (err.trim()) {
+    // eslint-disable-next-line no-console
+    console.error(err.trimEnd());
+  }
+  return { ok: false, code };
 }
 
 async function main(): Promise<void> {
@@ -704,7 +770,7 @@ async function main(): Promise<void> {
 
   // Schema-фаза (--with-schema) — ДО seed/patch/backfill: бэкап + push + init.
   if (args.withSchema) {
-    const ok = await runSchemaPhase(args.dryRun, args.continueOnFail);
+    const ok = await runSchemaPhase(args.dryRun, args.continueOnFail, args.verbose);
     if (!ok) {
       // eslint-disable-next-line no-console
       console.error('\n✗ SCHEMA PHASE упала (бэкап или push). Остановка — данные не тронуты.');
@@ -714,7 +780,7 @@ async function main(): Promise<void> {
 
   const results: { step: Step; ok: boolean; code: number }[] = [];
   for (const step of steps) {
-    const r = await runOne(step, args.dryRun);
+    const r = await runOne(step, args.dryRun, args.verbose);
     results.push({ step, ...r });
     if (!r.ok && !args.continueOnFail) {
       // eslint-disable-next-line no-console

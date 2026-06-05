@@ -34,6 +34,10 @@ distilled: false
 - Код+доки готовы. Прод-baseline и локальный `migrate dev` (shadow DB + pgvector) — за владельцем/после поднятия dev-БД (зафиксировано в `04_не-сделано`).
 - Сборку/typecheck гонять локально без БД ограниченно; верификация — `migrate status` после baseline на проде.
 
+## Итог по выкату
+
+После фикса `ag_catalog → public` + forced search_path выкат **прошёл успешно**: `migrate deploy` применил reconcile, postgres-init и все 116 seed/patch отработали идемпотентно, backend поднялся. Видео/создание встреч починены. Затем — чистка лога: `apply-prod-deploy.ts` переведён в тихий режим (1 строка-итог на шаг, полный вывод только у упавших; `--verbose`/`APPLY_PROD_DEPLOY_VERBOSE=1` для подробностей) — раньше идемпотентный выкат сыпал 600+ строк (один `seed-llm-default-primary-deepseek-pro` давал ~80 строк skip).
+
 ## Чему научился
 
 - **`db push --accept-data-loss` неатомарен** → при сбое оставляет частичное состояние (осиротевший enum + нет колонок). Это и есть аргумент за миграции. Prisma `db push` для уже существующего, но неиспользуемого enum-типа повторно генерит `CreateEnum` → «already exists» → тупик.

@@ -29,6 +29,8 @@ docker compose ps                  # z-migrate=Exited(0), backend/frontend=healt
 
 > **С 2026-06-05 — версионируемые миграции, НЕ `db push`.** Схема применяется файлами из `backend/prisma/migrations/` через `prisma migrate deploy` (транзакционно, только новые миграции). Это убрало класс частичных/дрейфующих состояний от `db push --accept-data-loss` (инцидент: осиротевший enum `ParticipantInvitationStatus`). **Одноразовый baseline существующего прода** — см. блок «🆕 Baseline миграций» в разделе «Накоплено к выкату». После baseline новые схемы просто доезжают через `migrate deploy` на каждом `up -d`.
 
+> **Тихий лог (с 2026-06-05).** seed/patch/backfill-шаги печатают по ОДНОЙ строке-итогу (`✓ [phase] script — inserted=…, skipped=…`); полный вывод шага — только если он упал. Идемпотентный выкат больше не засоряет лог сотнями строк. Нужен полный вывод всех шагов — `--verbose` или env `APPLY_PROD_DEPLOY_VERBOSE=1`. Schema-фаза (migrate deploy / postgres-init) печатается как есть.
+
 Семантика отказов (важно):
 - **Сбой схемы** (бэкап не сделался / migrate deploy упал) → `migrate` exit 1 → `backend` НЕ стартует. Это правильно: схема-mismatch фатален. Чини и `up -d` снова.
 - **Осечка отдельного seed/backfill** → залогирована в `=== SUMMARY ===`, но `migrate` выходит 0 → стек поднимается. Идемпотентные скрипты перезапусти руками: `docker compose exec backend bun run scripts/<имя>.ts`.

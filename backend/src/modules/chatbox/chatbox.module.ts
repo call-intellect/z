@@ -1,0 +1,26 @@
+import { Module } from '@nestjs/common';
+
+import { ChatboxApiClient } from './chatbox-api.client';
+import { ChatboxIntegrationController } from './chatbox-integration.controller';
+import { ChatboxIntegrationService } from './chatbox-integration.service';
+
+/**
+ * ChatboxModule — интеграция с ChatBox (app.agent-lia.ru / «Call Intellect:
+ * Чаты»). ТЗ: plans/tz/2026-06-05-chatbox-integration.md.
+ *
+ * Фаза 2: конфиг интеграции + типизированный API-клиент + выбор воркспейса.
+ * Фазы 3/4/6 (синк/webhook/отправка) добавят провайдеры в этот модуль.
+ *
+ * Зависимости (все @Global, в imports не нужны):
+ *   - PrismaModule — PrismaService.
+ *   - CryptoModule — CryptoService (шифрование токена).
+ *   - RbacModule — RbacService.
+ *   - EntitlementsModule — EntitlementService (гейтинг feature.chatbox).
+ *   - ConfigModule — TypedConfigService (CHATBOX_API_BASE_URL).
+ */
+@Module({
+  controllers: [ChatboxIntegrationController],
+  providers: [ChatboxApiClient, ChatboxIntegrationService],
+  exports: [ChatboxApiClient, ChatboxIntegrationService],
+})
+export class ChatboxModule {}

@@ -162,6 +162,9 @@ export const RESOURCE_TYPES = [
   // Table / TableProperty / TableRow. Views / Automations / AI — отдельные фазы.
   // ТЗ: plans/tz/2026-05-31-smart-tables.md.
   'table',
+  // ChatBox-интеграция (2026-06-05) — конфиг интеграции org с app.agent-lia.ru,
+  // зеркало клиентских чатов. ТЗ: plans/tz/2026-06-05-chatbox-integration.md.
+  'chatbox',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

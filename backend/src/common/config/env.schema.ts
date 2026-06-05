@@ -973,6 +973,12 @@ const MaxBotChannelSchema = z.object({
   BOT_VOICE_ENABLED: zBool(true),
   BOT_DOCUMENT_ENABLED: zBool(true),
   BOT_INTENT_CLASSIFIER_ENABLED: zBool(true),
+  // ChatBox integration (ТЗ 2026-06-05) — базовый URL Public API ChatBox
+  // (app.agent-lia.ru / «Call Intellect: Чаты»). Per-tenant токен лежит в
+  // ChatboxIntegration.tokenEnc (encrypted), не в ENV. Логически независим
+  // от MAX, но размещён в этой схеме чтобы не наращивать .merge()-цепочку
+  // EnvSchema (TS2589); геттер — cfg.chatbox.
+  CHATBOX_API_BASE_URL: z.string().url().default('https://app.agent-lia.ru'),
 });
 
 /**

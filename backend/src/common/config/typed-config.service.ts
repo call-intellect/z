@@ -1150,6 +1150,16 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── chatbox (ТЗ 2026-06-05) ───────────
+  /**
+   * ChatBox Public API (app.agent-lia.ru / «Call Intellect: Чаты»).
+   * Per-tenant Bearer-токен лежит в `ChatboxIntegration.tokenEnc` (encrypted),
+   * здесь — только базовый URL (без trailing slash).
+   */
+  get chatbox(): { apiBaseUrl: string } {
+    return { apiBaseUrl: this.get('CHATBOX_API_BASE_URL').replace(/\/+$/, '') };
+  }
+
   // ─────────────────────────── bot (SBA β-1 zero-button) ─────────
   /**
    * Master-flags zero-button inbound для Telegram/MAX-ботов.

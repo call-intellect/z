@@ -14,6 +14,8 @@ import {
 import { CountUp } from '@/ui/components/dashboard/charts';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
+import { WeeklyPerPersonWidget } from './WeeklyPerPersonWidget';
+
 /**
  * SBA β-8.1 — клиентский UI «Недельной сводки операционного директора».
  *
@@ -137,6 +139,12 @@ export function WeeklyDigestClient() {
       ) : data ? (
         <DigestView data={data} />
       ) : null}
+
+      {/* ТЗ-D Фаза 5 — недельный план-факт по людям. Грузит данные сам,
+          независимо от дайджеста (рендерится даже если дайджест 404). */}
+      <div className="mt-6">
+        <WeeklyPerPersonWidget weekStart={weekStart} />
+      </div>
     </div>
   );
 }

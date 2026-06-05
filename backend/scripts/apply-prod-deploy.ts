@@ -377,7 +377,7 @@ interface ParsedArgs {
   mode: 'bootstrap' | 'update' | 'all';
   dryRun: boolean;
   continueOnFail: boolean;
-  /** Прогнать schema-фазу: авто-бэкап → dedupe → prisma db push --accept-data-loss → apply-postgres-init. */
+  /** Прогнать schema-фазу: авто-бэкап → dedupe → prisma migrate deploy → apply-postgres-init. */
   withSchema: boolean;
   /**
    * Не падать (exit 1) из-за упавших STEP'ов в финале. Schema-фаза при сбое
@@ -408,7 +408,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       // eslint-disable-next-line no-console
       console.log(
         `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail] [--no-fail-on-steps]\n` +
-          `  --with-schema       авто-бэкап БД → dedupe → prisma db push --accept-data-loss → apply-postgres-init,\n` +
+          `  --with-schema       авто-бэкап БД → dedupe → prisma migrate deploy → apply-postgres-init,\n` +
           `                      затем обычные seed/patch/backfill. Делает выкат одной командой.\n` +
           `  --no-fail-on-steps  не падать из-за упавших seed/backfill (schema-сбой всё равно = exit 1).\n` +
           `                      Для migrate-контейнера: схема блокирует backend, осечка сида — нет.`,
@@ -420,23 +420,23 @@ function parseArgs(argv: string[]): ParsedArgs {
 }
 
 /**
- * Авто-бэкап БД через pg_dump ДО `prisma db push --accept-data-loss`.
+ * Авто-бэкап БД через pg_dump ДО `prisma migrate deploy`.
  * Пишет в /app/backups (docker-volume z-backups). Если бэкап не удался —
- * возвращает false, и schema-фаза НЕ выполняет push (data-loss без бэкапа
- * недопустим). Требует pg_dump в образе (postgresql16-client) и DATABASE_URL.
+ * возвращает false, и schema-фаза НЕ выполняет migrate (изменение схемы без
+ * бэкапа недопустимо). Требует pg_dump в образе (postgresql16-client) и DATABASE_URL.
  */
 async function autoBackup(): Promise<boolean> {
   const url = process.env['DATABASE_URL'];
   if (!url) {
     // eslint-disable-next-line no-console
-    console.error('[schema] autoBackup: DATABASE_URL не задан — бэкап невозможен, push отменён.');
+    console.error('[schema] autoBackup: DATABASE_URL не задан — бэкап невозможен, migrate отменён.');
     return false;
   }
   const dir = '/app/backups';
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const file = `${dir}/pre-deploy-${ts}.dump`;
   // eslint-disable-next-line no-console
-  console.log(`\n=== AUTO-BACKUP (перед --accept-data-loss) → ${file} ===`);
+  console.log(`\n=== AUTO-BACKUP (перед migrate deploy) → ${file} ===`);
   await Bun.spawn(['mkdir', '-p', dir], { stdout: 'inherit', stderr: 'inherit' }).exited;
   const proc = Bun.spawn(['pg_dump', url, '-Fc', '-f', file], {
     stdout: 'inherit',
@@ -446,7 +446,7 @@ async function autoBackup(): Promise<boolean> {
   if (code !== 0) {
     // eslint-disable-next-line no-console
     console.error(
-      `[schema] ✗ pg_dump упал (exit ${code}). --accept-data-loss НЕ выполняется без бэкапа. ` +
+      `[schema] ✗ pg_dump упал (exit ${code}). migrate deploy НЕ выполняется без бэкапа. ` +
         `Проверь, что pg_dump есть в образе (postgresql16-client) и postgres доступен.`,
     );
     return false;
@@ -460,10 +460,141 @@ async function autoBackup(): Promise<boolean> {
   return true;
 }
 
+/** Выполнить SQL-скаляр через psql, вернуть trimmed-строку результата (или null при ошибке). */
+async function psqlScalar(url: string, sql: string): Promise<string | null> {
+  const proc = Bun.spawn(['psql', url, '-tArc', sql], { stdout: 'pipe', stderr: 'pipe' });
+  const out = await new Response(proc.stdout).text();
+  if ((await proc.exited) !== 0) {
+    const err = await new Response(proc.stderr).text();
+    // eslint-disable-next-line no-console
+    console.error(`[schema] psqlScalar упал: ${err.slice(-500)}`);
+    return null;
+  }
+  return out.trim();
+}
+
 /**
- * Schema-фаза (--with-schema): авто-бэкап → pre-push dedupe (чтобы unique не
- * упали на дублях) → prisma db push --accept-data-loss → apply-postgres-init.
- * Возвращает false при фатальной ошибке (бэкап/push), чтобы main остановился.
+ * Авто-baseline: делает деплой hands-free для существующих БД, созданных старым
+ * `db push` (без таблицы `_prisma_migrations`). Идемпотентно и безопасно —
+ * срабатывает только ОДИН раз (после первого успешного прогона таблица миграций
+ * уже есть, и ветка существующей-БД больше не выполняется).
+ *
+ * Логика:
+ *   1. Есть `_prisma_migrations` → ничего не делаем (обычный `migrate deploy`).
+ *   2. Нет таблиц приложения (пустая БД) → ничего: `migrate deploy` создаст всё из 0_init.
+ *   3. Существующая БД без `_prisma_migrations` → baseline:
+ *      a. reconcile-дифф от реальной БД к schema.prisma (аддитивно подравнивает
+ *         дрейф, например частично применённый Ф0: добавит недостающие колонки,
+ *         используя уже существующий enum — без CreateEnum). **Гейт безопасности:**
+ *         если дифф содержит деструктив (DROP ...) — стоп, без авто-применения.
+ *      b. `migrate resolve --applied 0_init` — помечает init применённым (БД уже
+ *         в этом состоянии после reconcile), не выполняя его SQL.
+ *
+ * Требует psql (postgresql16-client) и DATABASE_URL.
+ */
+async function ensureBaseline(): Promise<boolean> {
+  const url = process.env['DATABASE_URL'];
+  if (!url) {
+    // eslint-disable-next-line no-console
+    console.error('[schema] ensureBaseline: DATABASE_URL не задан.');
+    return false;
+  }
+
+  const hasMigrations = await psqlScalar(url, "SELECT to_regclass('public._prisma_migrations') IS NOT NULL");
+  if (hasMigrations === null) return false;
+  if (hasMigrations === 't') {
+    // eslint-disable-next-line no-console
+    console.log('[schema] baseline не нужен (_prisma_migrations есть) → обычный migrate deploy.');
+    return true;
+  }
+
+  // Сентинел существующей схемы — таблица "User" (есть в любой непустой БД Z).
+  const hasTables = await psqlScalar(url, `SELECT to_regclass('public."User"') IS NOT NULL`);
+  if (hasTables === null) return false;
+  if (hasTables !== 't') {
+    // eslint-disable-next-line no-console
+    console.log('[schema] пустая БД — migrate deploy создаст схему с нуля (0_init).');
+    return true;
+  }
+
+  // Существующая БД без миграций → одноразовый baseline.
+  // eslint-disable-next-line no-console
+  console.log('\n>>> [schema] АВТО-BASELINE: существующая БД без _prisma_migrations.');
+
+  // a. reconcile-дифф (реальная БД → schema.prisma).
+  const diff = Bun.spawn(
+    ['bunx', 'prisma', 'migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--script'],
+    { stdout: 'pipe', stderr: 'pipe' },
+  );
+  const diffSql = await new Response(diff.stdout).text();
+  if ((await diff.exited) !== 0) {
+    const err = await new Response(diff.stderr).text();
+    // eslint-disable-next-line no-console
+    console.error(`[schema] ✗ migrate diff (reconcile) упал: ${err.slice(-800)}`);
+    return false;
+  }
+
+  const trimmed = diffSql.trim();
+  const isEmpty = trimmed.length === 0 || /This is an empty migration/i.test(trimmed);
+  if (isEmpty) {
+    // eslint-disable-next-line no-console
+    console.log('[schema] reconcile: дрейфа нет (БД уже совпадает со схемой).');
+  } else if (/\bDROP\s+(TABLE|COLUMN|TYPE|CONSTRAINT|INDEX|SCHEMA|VIEW)\b/i.test(trimmed)) {
+    // Деструктив в авто-режиме недопустим — требует ручного ревью.
+    // eslint-disable-next-line no-console
+    console.error(
+      '[schema] ✗ АВТО-BASELINE остановлен: reconcile-дифф содержит DROP. ' +
+        'Примени схему вручную после ревью (см. prod-deploy-log § Baseline), затем повтори деплой.\n' +
+        '----- reconcile.sql -----\n' + trimmed + '\n-------------------------',
+    );
+    return false;
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('[schema] reconcile (аддитивно) применяю:\n' + trimmed);
+    const exec = Bun.spawn(['bunx', 'prisma', 'db', 'execute', '--stdin'], {
+      stdin: new Blob([trimmed + '\n']),
+      stdout: 'inherit',
+      stderr: 'inherit',
+    });
+    if ((await exec.exited) !== 0) {
+      // eslint-disable-next-line no-console
+      console.error('[schema] ✗ применение reconcile упало.');
+      return false;
+    }
+  }
+
+  // b. пометить 0_init применённым (БД уже в этом состоянии).
+  // eslint-disable-next-line no-console
+  console.log('>>> [schema] bunx prisma migrate resolve --applied 0_init');
+  const resolve = Bun.spawn(['bunx', 'prisma', 'migrate', 'resolve', '--applied', '0_init'], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  if ((await resolve.exited) !== 0) {
+    // eslint-disable-next-line no-console
+    console.error('[schema] ✗ migrate resolve --applied 0_init упал.');
+    return false;
+  }
+  // eslint-disable-next-line no-console
+  console.log('[schema] ✓ авто-baseline завершён. Дальше — обычный migrate deploy.');
+  return true;
+}
+
+/**
+ * Schema-фаза (--with-schema): авто-бэкап → pre-migrate dedupe (чтобы unique не
+ * упали на дублях) → авто-baseline → prisma migrate deploy → apply-postgres-init.
+ * Возвращает false при фатальной ошибке (бэкап/migrate), чтобы main остановился.
+ *
+ * С 2026-06-05 схема применяется версионируемыми миграциями (`prisma migrate
+ * deploy`), а НЕ `db push`. `migrate deploy` применяет только новые файлы из
+ * `prisma/migrations/` транзакционно — без класса «частичных/дрейфующих»
+ * состояний, которые давал `db push --accept-data-loss`. Деструктивные шаги
+ * теперь ревьюятся в самом файле миграции.
+ *
+ * **Деплой полностью автоматический.** `ensureBaseline()` сам определяет
+ * состояние БД и при первом запуске на существующей (db-push'нутой) базе без
+ * `_prisma_migrations` аддитивно подравнивает дрейф и помечает 0_init applied —
+ * никаких ручных шагов. Дальше — всегда просто `migrate deploy`.
  */
 async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise<boolean> {
   // eslint-disable-next-line no-console
@@ -471,17 +602,17 @@ async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise
   if (dryRun) {
     // eslint-disable-next-line no-console
     console.log(
-      '>>> [schema] (dry-run) auto-backup + dedupe + prisma db push --accept-data-loss + apply-postgres-init',
+      '>>> [schema] (dry-run) auto-backup + dedupe + auto-baseline + prisma migrate deploy + apply-postgres-init',
     );
     return true;
   }
 
-  // 1. Авто-бэкап — обязателен перед data-loss. Не удался → не пушим.
+  // 1. Авто-бэкап — обязателен перед изменением схемы. Не удался → не мигрируем.
   if (!(await autoBackup())) return false;
 
-  // 2. Pre-push dedupe — ДО создания unique-констрейнтов (Б7), иначе push
+  // 2. Pre-migrate dedupe — ДО создания unique-констрейнтов (Б7), иначе migrate
   //    упадёт на существующих дублях. dateBucket-дедуп (Б8) идёт позже в
-  //    patch-фазе: его колонку создаёт сам push.
+  //    patch-фазе: его колонку создаёт сама миграция.
   const preDedupe: Step[] = [
     { phase: 'patch', script: 'scripts/patch-dedupe-billing-event-log.ts' },
     { phase: 'patch', script: 'scripts/patch-dedupe-referral-payout.ts' },
@@ -491,14 +622,20 @@ async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise
     if (!r.ok && !continueOnFail) return false;
   }
 
-  // 3. prisma db push --accept-data-loss (бэкап уже сделан выше).
+  // 2.5. Авто-baseline существующей БД (одноразово, идемпотентно). Делает деплой
+  //      hands-free: переводит db-push'нутую базу под управление миграций без
+  //      ручных команд. Подробности — в ensureBaseline().
+  if (!(await ensureBaseline())) return false;
+
+  // 3. prisma migrate deploy (бэкап уже сделан выше). Применяет только новые
+  //    миграции из prisma/migrations/. Идемпотентно: если новых нет — no-op.
   // eslint-disable-next-line no-console
-  console.log('\n>>> [schema] bunx prisma db push --accept-data-loss');
-  const push = Bun.spawn(['bunx', 'prisma', 'db', 'push', '--accept-data-loss'], {
+  console.log('\n>>> [schema] bunx prisma migrate deploy');
+  const push = Bun.spawn(['bunx', 'prisma', 'migrate', 'deploy'], {
     stdout: 'inherit',
     stderr: 'inherit',
   });
-  if ((await push.exited) !== 0) return false; // push критичен — всегда стоп
+  if ((await push.exited) !== 0) return false; // migrate критичен — всегда стоп
 
   // 4. postgres-init (HNSW/GIN/extensions/partial-unique).
   // eslint-disable-next-line no-console

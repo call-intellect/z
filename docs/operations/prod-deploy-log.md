@@ -25,13 +25,15 @@ docker compose ps                  # z-migrate=Exited(0), backend/frontend=healt
 ```
 
 `migrate` выполняет (через `apply-prod-deploy.ts --mode update --with-schema --continue-on-fail --no-fail-on-steps`):
-**авто-бэкап БД** (`pg_dump` → volume `z-backups`) → **dedupe** → **`prisma db push --accept-data-loss`** → **`apply-postgres-init`** → **все seed/patch/backfill**. Затем стартуют `backend` и `frontend`.
+**авто-бэкап БД** (`pg_dump` → volume `z-backups`) → **dedupe** → **`prisma migrate deploy`** → **`apply-postgres-init`** → **все seed/patch/backfill**. Затем стартуют `backend` и `frontend`.
+
+> **С 2026-06-05 — версионируемые миграции, НЕ `db push`.** Схема применяется файлами из `backend/prisma/migrations/` через `prisma migrate deploy` (транзакционно, только новые миграции). Это убрало класс частичных/дрейфующих состояний от `db push --accept-data-loss` (инцидент: осиротевший enum `ParticipantInvitationStatus`). **Одноразовый baseline существующего прода** — см. блок «🆕 Baseline миграций» в разделе «Накоплено к выкату». После baseline новые схемы просто доезжают через `migrate deploy` на каждом `up -d`.
 
 Семантика отказов (важно):
-- **Сбой схемы** (бэкап не сделался / push упал) → `migrate` exit 1 → `backend` НЕ стартует. Это правильно: схема-mismatch фатален. Чини и `up -d` снова.
+- **Сбой схемы** (бэкап не сделался / migrate deploy упал) → `migrate` exit 1 → `backend` НЕ стартует. Это правильно: схема-mismatch фатален. Чини и `up -d` снова.
 - **Осечка отдельного seed/backfill** → залогирована в `=== SUMMARY ===`, но `migrate` выходит 0 → стек поднимается. Идемпотентные скрипты перезапусти руками: `docker compose exec backend bun run scripts/<имя>.ts`.
 
-**Авто-бэкап обязателен** перед `--accept-data-loss`. Файл: `/app/backups/pre-deploy-<ts>.dump` в volume `z-backups`. Restore:
+**Авто-бэкап обязателен** перед `migrate deploy`. Файл: `/app/backups/pre-deploy-<ts>.dump` в volume `z-backups`. Restore:
 ```bash
 docker compose run --rm --no-deps backend \
   pg_restore --clean --if-exists -d "$DATABASE_URL" /app/backups/<file>.dump
@@ -42,7 +44,7 @@ docker compose run --rm --no-deps backend \
 >
 > **Ручной прогон** (например, доехать сиды без пересборки) — через работающий backend:
 > `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update --continue-on-fail`.
-> Прогон схемы вручную в обход migrate: `docker compose run --rm --no-deps backend bun run scripts/apply-prod-deploy.ts --mode update --with-schema`.
+> Прогон схемы вручную в обход migrate: `docker compose run --rm --no-deps backend bun run scripts/apply-prod-deploy.ts --mode update --with-schema` (внутри = `prisma migrate deploy`). Только миграции, без сидов: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate deploy'`; статус — `... sh -c 'bunx prisma migrate status'`.
 >
 > **Первый bootstrap с нуля** (пустая БД): замени `--mode update` на `--mode all` (добавит супер-админа и базовые сиды). Для существующего прода — всегда `--mode update`.
 
@@ -57,6 +59,40 @@ docker compose run --rm --no-deps backend \
 **Содержит:** ~80 prod-скриптов (patch/seed/migrate/backfill/setup) + ~175 новых Prisma-моделей + ~135 новых ENV (все опциональные) + 2 опасных schema-изменения + новый модуль биллинга (Tochka).
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
+
+---
+
+### 🆕 2026-06-05 — Переход на миграции (АВТОМАТИЧЕСКИ при обычном выкате)
+
+> Переход с `db push` на `prisma migrate deploy`. Прод сейчас в дрейфе (частично применённый Ф0 identity-фундамент: enum `ParticipantInvitationStatus` есть, колонки `Participant.{invitationStatus,inviteToken,invitedAt,deviceCount}` — нет → 500 на `POST /meetings` и на result-эндпоинте → плеер «бесконечно грузит»). Контракт: `plans/tz/2026-06-05-prisma-migrations-switch.md`.
+
+**Ничего вручную делать не нужно — просто обычный выкат:**
+```bash
+cd /home/docker/z && git pull origin dev
+docker compose build backend frontend
+docker compose up -d
+docker compose logs -f migrate     # увидишь блок ">>> [schema] АВТО-BASELINE ..."
+```
+
+`apply-prod-deploy.ts` → `ensureBaseline()` сам, ОДНОРАЗОВО, при первом запуске на существующей (db-push'нутой) БД без `_prisma_migrations`:
+1. авто-бэкап (`pg_dump`),
+2. **reconcile** — `migrate diff --from-config-datasource --to-schema` → аддитивный SQL (добавит недостающие колонки `Participant`, используя существующий enum; **гейт безопасности:** если в диффе есть `DROP ...` — деплой останавливается без авто-применения, см. фолбэк),
+3. `migrate resolve --applied 0_init`,
+4. дальше — обычный `migrate deploy`.
+
+После первого успешного прогона `_prisma_migrations` есть → ветка baseline больше не выполняется, каждый `up -d` просто докатывает новые миграции. Проверка: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → «up to date».
+
+**Фолбэк (только если авто-baseline остановился на DROP-гейте):** прогнать reconcile вручную после ревью —
+```bash
+docker compose run --rm --no-deps backend sh -c \
+  'bunx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script' > reconcile.sql
+# отревьюить reconcile.sql → применить → resolve → повторить выкат
+docker compose run --rm --no-deps backend sh -c 'psql "$DATABASE_URL" -f reconcile.sql'
+docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate resolve --applied 0_init'
+docker compose up -d
+```
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
 
 ---
 

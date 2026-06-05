@@ -105,7 +105,9 @@ export function ShareClipClient({ token }: { token: string }) {
       <div className="overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
         <MediaPlayer
           title={highlight.title}
-          src={videoUrl}
+          // Явный type: presigned S3-URL (`...mp4?X-Amz-...`) не определяется
+          // Vidstack по расширению из-за query → без type плеер виснет без запроса.
+          src={{ src: videoUrl, type: 'video/mp4' }}
           autoPlay
           playsInline
           className="aspect-video w-full"

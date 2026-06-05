@@ -25,11 +25,17 @@ import {
   type DirectorDashboardQuery,
 } from './dto/director-dashboard.dto';
 import {
+  PeopleAtRiskQuerySchema,
+  type PeopleAtRiskQuery,
+  type PeopleAtRiskResponse,
+} from './dto/people-at-risk.dto';
+import {
   PulsePatternsQuerySchema,
   type PulsePatternsDto,
   type PulsePatternsQuery,
 } from './dto/pulse-patterns.dto';
 import { DirectorDashboardService } from './services/director-dashboard.service';
+import { PeopleAtRiskService } from './services/people-at-risk.service';
 import { PulsePatternsService } from './services/pulse-patterns.service';
 import {
   TeamDetailService,
@@ -60,6 +66,8 @@ export class DirectorDashboardController {
     private readonly teamDetailSvc: TeamDetailService,
     @Inject(PulsePatternsService)
     private readonly pulsePatternsSvc: PulsePatternsService,
+    @Inject(PeopleAtRiskService)
+    private readonly peopleAtRiskSvc: PeopleAtRiskService,
   ) {}
 
   @Get('director')
@@ -223,5 +231,46 @@ export class DirectorDashboardController {
       tenantId,
       period: q.period,
     });
+  }
+
+  /**
+   * ТЗ-G Фаза 1 — «Сотрудники под риском» (топ-N) для главной директора.
+   *
+   * Серверное ранжирование по `pulseScore` (engagementScore − штрафы за
+   * просрочки обещаний и «красное» настроение). Возвращает только сотрудников
+   * под порогом риска, отсортированных по возрастанию pulseScore.
+   *
+   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
+   */
+  @Get('people-at-risk')
+  async peopleAtRisk(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(PeopleAtRiskQuerySchema)) q: PeopleAtRiskQuery,
+  ): Promise<PeopleAtRiskResponse> {
+    if (!tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'tenant_required', message: 'Не передан tenantId' },
+      });
+    }
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'no_user', message: 'Требуется авторизация' },
+      });
+    }
+    const allowed = await this.rbac.canViewDirectorDashboard(userId, tenantId);
+    if (!allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden_role',
+          message: 'Нет доступа к директорскому дашборду',
+        },
+      });
+    }
+    return this.peopleAtRiskSvc.getAtRisk({ tenantId, limit: q.limit });
   }
 }

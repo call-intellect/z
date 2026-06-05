@@ -10,7 +10,9 @@
  *   - person/team без scopeId → BadRequestException;
  *   - person/team scope передают правильный фильтр в Prisma;
  *   - кэш-hit и graceful fallback при ошибке Redis;
- *   - cancelled / superseded — игнорируются.
+ *   - cancelled / superseded — игнорируются;
+ *   - ТЗ-D: personMode='author' → фильтр/кэш-ключ по автору обещания,
+ *     default (recipient) — обратная совместимость.
  */
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -359,7 +361,7 @@ describe('CommitmentReliabilityService', () => {
       expect(dto.kept).toBe(1);
     });
 
-    it('cache-ключ включает scope+scopeId+windowDays', async () => {
+    it('cache-ключ включает scope+scopeId+windowDays (+recipient по умолчанию)', async () => {
       const { service, redisGet } = buildService({ rows: [] });
 
       await service.computeReliability(
@@ -368,7 +370,7 @@ describe('CommitmentReliabilityService', () => {
       );
 
       expect(redisGet).toHaveBeenCalledWith(
-        'commit_reliability:t-1:person:p-1:7',
+        'commit_reliability:t-1:person:p-1:7:recipient',
       );
     });
   });
@@ -405,6 +407,101 @@ describe('CommitmentReliabilityService', () => {
       expect(dto.overdue).toBe(0);
       expect(dto.pendingActive).toBe(0);
       expect(dto.reliabilityPercent).toBe(100);
+    });
+  });
+
+  // ТЗ-D Фаза 3 — расчёт надёжности по АВТОРУ обещания (кто обещал),
+  // не только по получателю. Приватные buildWhere/buildCacheKey — чистые
+  // (БД/redis не дёргают), тестируем напрямую через приведение типа.
+  describe('personMode (ТЗ-D — надёжность по автору)', () => {
+    interface BuildWhereFn {
+      buildWhere: (
+        a: {
+          tenantId: string;
+          scope: 'company' | 'team' | 'person';
+          scopeId?: string;
+          windowDays?: number;
+          personMode?: 'recipient' | 'author';
+        },
+        start: Date,
+        now: Date,
+      ) => Record<string, unknown>;
+    }
+    interface BuildCacheKeyFn {
+      buildCacheKey: (
+        tenantId: string,
+        scope: string,
+        scopeId: string | null,
+        windowDays: number,
+        personMode?: 'recipient' | 'author',
+      ) => string;
+    }
+
+    const START = daysFromNow(-84);
+
+    it('buildWhere person + personMode=author → commitmentAuthorPersonId, без recipient', () => {
+      const { service } = buildService();
+      const where = (
+        service as unknown as BuildWhereFn
+      ).buildWhere(
+        { scope: 'person', scopeId: 'P1', personMode: 'author', tenantId: 't1' },
+        START,
+        NOW,
+      );
+
+      expect(where.commitmentAuthorPersonId).toBe('P1');
+      expect(where.commitmentRecipientPersonId).toBeUndefined();
+    });
+
+    it('buildWhere person без personMode → commitmentRecipientPersonId (обратная совместимость)', () => {
+      const { service } = buildService();
+      const where = (
+        service as unknown as BuildWhereFn
+      ).buildWhere(
+        { scope: 'person', scopeId: 'P1', tenantId: 't1' },
+        START,
+        NOW,
+      );
+
+      expect(where.commitmentRecipientPersonId).toBe('P1');
+      expect(where.commitmentAuthorPersonId).toBeUndefined();
+    });
+
+    it('buildCacheKey: author-ключ отличается от recipient/undefined и содержит :author', () => {
+      const { service } = buildService();
+      const fn = (service as unknown as BuildCacheKeyFn).buildCacheKey.bind(
+        service,
+      );
+
+      const authorKey = fn('t1', 'person', 'P1', 14, 'author');
+      const recipientKey = fn('t1', 'person', 'P1', 14, 'recipient');
+      const defaultKey = fn('t1', 'person', 'P1', 14, undefined);
+
+      expect(authorKey).not.toBe(recipientKey);
+      expect(authorKey).not.toBe(defaultKey);
+      // undefined трактуется как recipient
+      expect(defaultKey).toBe(recipientKey);
+      expect(authorKey).toContain(':author');
+      expect(defaultKey).toContain(':recipient');
+    });
+
+    it('validateScope: person без scopeId всё ещё бросает BadRequestException(scope_id_required)', async () => {
+      const { service } = buildService();
+      await expect(
+        service.computeReliability({ tenantId: 't-1', scope: 'person' }, NOW),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('computeReliability person + author прокидывает фильтр в Prisma', async () => {
+      const { service, prisma } = buildService({ rows: [] });
+      await service.computeReliability(
+        { tenantId: 't-1', scope: 'person', scopeId: 'p-1', personMode: 'author' },
+        NOW,
+      );
+
+      const call = prisma.ideaBlock.findMany.mock.calls[0]![0];
+      expect(call.where.commitmentAuthorPersonId).toBe('p-1');
+      expect(call.where.commitmentRecipientPersonId).toBeUndefined();
     });
   });
 });

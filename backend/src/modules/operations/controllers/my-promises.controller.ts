@@ -6,6 +6,7 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -24,6 +25,8 @@ import {
   type ListMyPromisesQuery,
   MarkPromiseBodySchema,
   type MarkPromiseBody,
+  ReschedulePromiseBodySchema,
+  type ReschedulePromiseBody,
 } from '../dto/commitments.dto';
 import { CommitmentsService } from '../services/commitments.service';
 
@@ -108,6 +111,31 @@ export class MyPromisesController {
       userId: uid,
     });
     return this.svc.markMine({
+      tenantId: tenantId!,
+      selfPersonId: person.id,
+      blockId,
+      body,
+    });
+  }
+
+  @Patch(':blockId/reschedule')
+  @ApiOperation({
+    summary: 'Перенести срок моего обещания (статус остаётся open)',
+  })
+  async reschedule(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Param('blockId') blockId: string,
+    @Body(new ZodValidationPipe(ReschedulePromiseBodySchema))
+    body: ReschedulePromiseBody,
+  ): Promise<CommitmentDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    const person = await this.svc.resolveSelfPerson({
+      tenantId: tenantId!,
+      userId: uid,
+    });
+    return this.svc.rescheduleMine({
       tenantId: tenantId!,
       selfPersonId: person.id,
       blockId,

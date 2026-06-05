@@ -111,6 +111,25 @@ BEGIN
   END IF;
 END $$;
 
+-- 3c-bis. ТЗ-B (2026-06-05) — одна "главная цель" (isPrimary) на tenant.
+--     Prisma `@@unique` не поддерживает WHERE-условие, поэтому partial
+--     unique создаётся вручную. Идемпотентно через `IF NOT EXISTS`.
+--     См. plans/tz/2026-06-05-goal-vector-compass.md §Контракт-first.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'Goal'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS goal_primary_unique
+      ON "Goal" ("tenantId")
+      WHERE "isPrimary" = true
+    $sql$;
+  END IF;
+END $$;
+
 -- 3d. SBA α-3 (2026-05-21) — индексы для новых моделей категории A.
 --     Vendor и Event embedding не имеют (граф знаний даёт его через Entity,
 --     а Entity уже проиндексирован HNSW в шаге 3). Здесь — только полезные

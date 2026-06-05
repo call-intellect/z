@@ -65,7 +65,7 @@ export interface PersonPulseDto {
   departmentName: string | null;
   /** true если этот Person — глава своего primaryDepartment'а. */
   isHead: boolean;
-  /** Последний 1:1 — placeholder v1, заполнится при интеграции с calendar. */
+  /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
   lastOneOnOneAt: string | null;
   /** Engagement score 0..1 (Engagement-Scorer cron). null до первого прогона. */
   engagementScore: number | null;
@@ -116,8 +116,17 @@ export class PersonPulseService {
   async getPulse(args: {
     tenantId: string;
     personId: string;
+    /**
+     * ТЗ-E Фаза 2 (self-режим). true — карточку открыл сам сотрудник
+     * (`Person.userId === currentUser.id`). В self-режиме служебная аналитика
+     * руководителя (HR-резюме) не отдаётся — defense-in-depth поверх скрытия на
+     * UI. Кэш-ключ раздельный, чтобы self-вариант не перетёр manager-вариант.
+     */
+    forSelf?: boolean;
   }): Promise<PersonPulseDto> {
-    const cacheKey = `person_pulse:${args.tenantId}:${args.personId}`;
+    const cacheKey = `person_pulse:${args.tenantId}:${args.personId}:${
+      args.forSelf ? 'self' : 'mgr'
+    }`;
     const cached = await this.tryReadCache(cacheKey);
     if (cached) return cached;
 
@@ -179,8 +188,13 @@ export class PersonPulseService {
       qualityScore: c.qualityScore === null ? null : Number(c.qualityScore),
     }));
 
-    const { hrSuggestions, hrSuggestionsGeneratedAt } =
-      this.parseHrSuggestions(person.hrSuggestionsJson);
+    const parsedHr = this.parseHrSuggestions(person.hrSuggestionsJson);
+    // ТЗ-E Фаза 2: в self-режиме HR-резюме (служебная аналитика руководителя)
+    // не отдаём — defense-in-depth поверх скрытия секции на UI.
+    const hrSuggestions = args.forSelf ? null : parsedHr.hrSuggestions;
+    const hrSuggestionsGeneratedAt = args.forSelf
+      ? null
+      : parsedHr.hrSuggestionsGeneratedAt;
     const { riskFlags, riskFlagsGeneratedAt } = this.parseRiskFlags(
       person.riskFlagsJson,
     );
@@ -194,7 +208,8 @@ export class PersonPulseService {
       isHead:
         person.primaryDepartment !== null &&
         person.primaryDepartment.headPersonId === person.id,
-      lastOneOnOneAt: null, // v1 placeholder — интеграция с calendar отдельной фазой.
+      /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
+      lastOneOnOneAt: null,
       engagementScore:
         person.engagementScore === null ? null : Number(person.engagementScore),
       engagementScoreAt: person.engagementScoreAt?.toISOString() ?? null,

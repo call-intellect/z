@@ -6,6 +6,8 @@ type: architecture
 
 > Модель **по решению** (доку про финальное решение). Финальные миграции и Prisma/SQL-схема будут после ТЗ.
 
+> **⚙️ Применение схемы (с 2026-06-05).** Источник правды о схеме БД — версионируемые **файловые миграции Prisma** (`backend/prisma/migrations/`), на прод применяются через `prisma migrate deploy`. Упоминания «Применяется `prisma db push`» ниже по тексту — **исторические** (описывают прежний механизм); теперь любое изменение схемы оформляется миграцией (`prisma migrate dev`). Правила: skill `prisma-db-push-rules`; контракт перехода: [`plans/tz/2026-06-05-prisma-migrations-switch.md`](../../plans/tz/2026-06-05-prisma-migrations-switch.md).
+
 ## Сущности первой версии
 
 ### User (хост)
@@ -1261,6 +1263,23 @@ GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")
 ### Backfill
 
 `backend/scripts/backfill-goal-v2-defaults.ts` — legacy-целям проставляет `source='manual'`, `promotionState='active'`, `progressStatus='on_track'`, `recordedAt=createdAt`. Идемпотентен, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`).
+
+[[../index|← index]]
+
+## Пакет улучшений дашбордов (ТЗ B/D, 2026-06-05)
+
+Аддитивные расширения под компас целей (B) и недельный план-факт по людям (D). Контракты — `plans/tz/2026-06-05-goal-vector-compass.md`, `plans/tz/2026-06-05-weekly-per-person-plan-fact.md`. Полная карта сервисов — [[module-map]] §«Пакет улучшений дашбордов».
+
+### `Goal.isPrimary` (ТЗ-B)
+
+- **`Goal.isPrimary Boolean @default(false)`** + `@@index([tenantId, isPrimary])` — «главная цель компании» (одна на Org), вокруг которой строится компас на главной директора (`pulse-patterns.getGoalVector` отдаёт `primaryGoalId`).
+- **Partial unique вне schema.prisma** — `goal_primary_unique ON "Goal"("tenantId") WHERE "isPrimary" = true` (через `backend/scripts/postgres-init.sql`) — гарантирует не более одной главной цели на Org (Prisma не умеет partial-unique с `WHERE`).
+
+### `IdeaBlock.commitmentAuthorPersonId` (ТЗ-D)
+
+- **`IdeaBlock.commitmentAuthorPersonId String?`** — «кто пообещал» (автор обещания), отдельно от subject/получателя. Relation `commitmentAuthor → Person? @relation("CommitmentAuthor", onDelete: SetNull)` + обратка **`Person.commitmentsAuthored IdeaBlock[]`**.
+- Индексы: `@@index([tenantId, commitmentAuthorPersonId])` и `@@index([tenantId, signalType, commitmentAuthorPersonId, commitmentDueDate])` (для недельного план-факта: обещания человека за окно по сроку).
+- Заполнение: `block-ingest.worker.attributeCommitmentAuthor` (резолв через `EntityResolutionService.resolveSubjectPersonId`, под флагом `knowledge.commitmentAuthorAttributionEnabled`, code-fallback **true**). История — backfill `backend/scripts/backfill-commitment-author.ts` (идемпотентен, в `apply-prod-deploy.ts` STEPS `phase: backfill`).
 
 [[../index|← index]]
 

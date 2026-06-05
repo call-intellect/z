@@ -130,7 +130,9 @@ function SharedMeetingView({ data }: { data: PublicShareMeetingApi }) {
         <div className="mb-6 overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
           <MediaPlayer
             title={m.title}
-            src={data.videoUrl}
+            // Явный type: presigned S3-URL (`...mp4?X-Amz-...`) не определяется
+            // Vidstack по расширению из-за query → без type плеер виснет без запроса.
+            src={{ src: data.videoUrl, type: 'video/mp4' }}
             playsInline
             className="aspect-video w-full"
           >

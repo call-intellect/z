@@ -69,19 +69,35 @@ export interface PulsePatternBottleneckApi {
 }
 
 export interface PulsePatternGoalContributorApi {
+  personId: string;
   personName: string;
+  proScore: number;
+  contraScore: number;
+  netScore: number;
+}
+
+export interface PulsePatternGoalDepartmentApi {
+  departmentId: string | null;
+  departmentName: string;
+  proScore: number;
+  contraScore: number;
   netScore: number;
 }
 
 export interface PulsePatternGoalVectorItemApi {
   goalId: string;
   goalTitle: string;
+  isPrimary: boolean;
+  proScore: number;
+  contraScore: number;
   netScore: number;
   topContributors: PulsePatternGoalContributorApi[];
+  byDepartment: PulsePatternGoalDepartmentApi[];
 }
 
 export interface PulsePatternGoalVectorApi {
   goals: PulsePatternGoalVectorItemApi[];
+  primaryGoalId: string | null;
 }
 
 export interface PulsePatternKnowledgeVelocityResponderApi {

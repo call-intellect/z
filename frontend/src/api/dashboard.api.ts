@@ -4,6 +4,7 @@ import type {
   DirectorDashboardApi,
   DirectorDashboardPeriod,
 } from '@/domain/director-dashboard';
+import type { PeopleAtRiskResponseApi } from '@/domain/people-at-risk';
 import type { PulsePatternsApi } from '@/domain/pulse-patterns';
 import type { TeamDetailApi } from '@/domain/team-detail';
 import type { TeamHealthApi } from '@/domain/team-health';
@@ -54,6 +55,16 @@ export const dashboardApi = {
   getPulsePatterns: (orgId: string, period: 'week' | 'month') =>
     apiClient.get<PulsePatternsApi>(
       `/api/v1/dashboard/pulse-patterns?period=${encodeURIComponent(period)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+  /**
+   * ТЗ-G Фаза 1-2 — «Сотрудники под риском» (топ-N по pulseScore ASC).
+   * Серверное ранжирование, готовая фраза-действие `topReason` на каждого.
+   * Доступ: owner / admin / super_admin (canViewDirectorDashboard).
+   */
+  peopleAtRisk: (orgId: string, limit = 3) =>
+    apiClient.get<PeopleAtRiskResponseApi>(
+      `/api/v1/dashboard/people-at-risk?limit=${encodeURIComponent(limit)}`,
       { headers: orgHeaders(orgId) },
     ),
 };

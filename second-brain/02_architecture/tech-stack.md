@@ -62,6 +62,12 @@ type: architecture
     `FRONTEND_HOST_PORT`/`FRONTEND_PORT`);
   - медиа-стек (LiveKit+Egress) — ОТДЕЛЬНЫЙ compose `infra/livekit/docker-compose.yml`
     (network_mode host, Linux-only), принцип #6 «не на одной ноде».
+- **Схема БД (с 2026-06-05):** версионируемые **миграции Prisma** (`backend/prisma/migrations/`),
+  прод применяет `prisma migrate deploy` (внутри `apply-prod-deploy.ts --with-schema`). Раньше был
+  `db push --accept-data-loss` — отказались из-за частичных/дрейфующих состояний при сбоях. `db push`
+  остался только для черновых локальных проб. Baseline существующей БД: `migrate diff` →
+  `migrate resolve --applied 0_init`. Правила: skill `prisma-db-push-rules`; контракт:
+  [`plans/tz/2026-06-05-prisma-migrations-switch.md`](../../plans/tz/2026-06-05-prisma-migrations-switch.md).
 - **Версии (мажоры, после апгрейда 2026-05-20):** NestJS 11, Prisma **7** (driver adapter
   `@prisma/adapter-pg`, без Rust-движка; URL в `prisma.config.ts`, не в schema), zod 4,
   Next 16, React 19, Tailwind 4 (CSS-first, legacy-конфиг через `@config`), TypeScript 6,

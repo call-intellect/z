@@ -14,7 +14,6 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardList,
@@ -24,7 +23,6 @@ import {
   FolderKanban,
   Gauge,
   Gift,
-  HeartHandshake,
   Home,
   IdCard,
   Inbox,
@@ -40,6 +38,7 @@ import {
   Plus,
   Rocket,
   Scale,
+  Send,
   Settings,
   Settings2,
   Shapes,
@@ -270,15 +269,16 @@ const ME_GROUP: NavGroup = {
   label: 'Моё пространство',
   items: [
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
+    // ТЗ 2026-06-05 — единый канон привязки Telegram-каналов (/me/channels).
+    // Дубль личной привязки убран со страницы /settings/integrations (там
+    // остались только outbound-направления доставки, DestinationsClient).
+    { href: '/me/channels', label: 'Каналы', icon: Send, matchPrefix: '/me/channels' },
     // Action Center B1 — pending-подтверждения пользователя (виден всем).
     // badgeCount инжектится динамически в Sidebar (usePendingActionsCount).
     { href: '/actions', label: 'Подтверждения', icon: BellRing, matchPrefix: '/actions' },
-    // pulse-full Волна 3 — личная Pulse-карточка сотрудника.
-    { href: '/me/pulse', label: 'Мой пульс', icon: Activity, matchPrefix: '/me/pulse' },
-    { href: '/me/contributions', label: 'Мой вклад', icon: Sparkles, matchPrefix: '/me/contributions' },
-    { href: '/me/social-contribution', label: 'Мой вклад в команду', icon: HeartHandshake, matchPrefix: '/me/social-contribution' },
-    // SBA β-8.2 — «Мои обещания».
-    { href: '/me/promises', label: 'Мои обещания', icon: CheckCircle2, matchPrefix: '/me/promises' },
+    // ТЗ-E Фаза 1 (R11) — «Мой пульс», «Мой вклад», «Мой вклад в команду» и
+    // «Мои обещания» свёрнуты во вкладки кабинета «Я» (/me?tab=...). Здесь
+    // остаётся единый пункт «Я» выше.
     // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
     { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
     // 2026-05-28 referrals-sidebar — реферальная программа (20 000 ₽ с платежа).
@@ -384,6 +384,8 @@ const INTAKE_NAV_ITEM: NavItem = {
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
+  // /settings/integrations теперь = outbound-направления доставки (DestinationsClient).
+  // Личная привязка Telegram переехала в «Моё пространство» → «Каналы» (ТЗ 2026-06-05).
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
   { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
 ];

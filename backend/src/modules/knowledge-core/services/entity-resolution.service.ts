@@ -971,6 +971,60 @@ export class EntityResolutionService {
     return null;
   }
 
+  /**
+   * ТЗ-D (2026-06-05) — детерминированный резолв АВТОРА обещания в Person.id.
+   * Зеркало resolveSubjectEntityId, но возвращает person.id напрямую (поле
+   * IdeaBlock.commitmentAuthorPersonId ссылается на Person, не Entity).
+   * Приоритет: authorUserId → speakerParticipantId → speakerName. Все ветки
+   * tenant-scoped. NULL если identity не разрешилась (best-effort).
+   */
+  async resolveSubjectPersonId(
+    tenantId: string,
+    input: {
+      speakerParticipantId?: string | null;
+      speakerName?: string | null;
+      authorUserId?: string | null;
+    },
+  ): Promise<string | null> {
+    // 1. authorUserId — текстовые каналы.
+    if (input.authorUserId) {
+      const p = await this.prisma.person.findFirst({
+        where: { tenantId, userId: input.authorUserId, deletedAt: null },
+        select: { id: true },
+      });
+      if (p) return p.id;
+    }
+    // 2. speakerParticipantId — встречи.
+    if (input.speakerParticipantId) {
+      const part = await this.prisma.participant.findUnique({
+        where: { id: input.speakerParticipantId },
+        select: { personId: true, userId: true },
+      });
+      if (part) {
+        if (part.personId) {
+          const p = await this.prisma.person.findUnique({
+            where: { id: part.personId },
+            select: { id: true, deletedAt: true },
+          });
+          if (p && !p.deletedAt) return p.id;
+        }
+        if (part.userId) {
+          const p = await this.prisma.person.findFirst({
+            where: { tenantId, userId: part.userId, deletedAt: null },
+            select: { id: true },
+          });
+          if (p) return p.id;
+        }
+      }
+    }
+    // 3. speakerName — fallback по имени спикера.
+    if (input.speakerName) {
+      const pid = await this.resolvePersonByHint(tenantId, input.speakerName);
+      if (pid) return pid;
+    }
+    return null;
+  }
+
   // ─────────────────────────── SBA α-3: Vendor/Event helpers ──────────────
 
   /**

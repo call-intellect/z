@@ -7,6 +7,8 @@ import type {
   PulsePatternBottleneckDto,
   PulsePatternBottleneckTopPairDto,
   PulsePatternBusFactorDto,
+  PulsePatternGoalContributorDto,
+  PulsePatternGoalDepartmentDto,
   PulsePatternGoalVectorDto,
   PulsePatternGoalVectorItemDto,
   PulsePatternIrreversibleDecisionsDto,
@@ -342,21 +344,33 @@ export class PulsePatternsService {
     const grouped = await this.prisma.personGoalContribution.groupBy({
       by: ['goalId'],
       where: { tenantId, weekStart: { gte: since } },
-      _sum: { netScore: true },
+      _sum: { netScore: true, proScore: true, contraScore: true },
       orderBy: { _sum: { netScore: 'desc' } },
       take: PulsePatternsService.GOAL_TOP,
     });
 
     if (grouped.length === 0) {
-      return { goals: [] };
+      return { goals: [], primaryGoalId: null };
     }
 
     const goalIds = grouped.map((g) => g.goalId);
 
-    const [goals, contributions] = await Promise.all([
+    const [primary, goals, contributions] = await Promise.all([
+      // Главная цель ловится глобально по tenant (R4) — даже если она вне
+      // топ-5 активности и потому отсутствует в `grouped`/`goals`.
+      this.prisma.goal.findFirst({
+        where: { tenantId, isPrimary: true },
+        select: { id: true },
+      }),
       this.prisma.goal.findMany({
         where: { tenantId, id: { in: goalIds } },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          isPrimary: true,
+          weight: true,
+          createdAt: true,
+        },
       }),
       this.prisma.personGoalContribution.findMany({
         where: {
@@ -367,53 +381,170 @@ export class PulsePatternsService {
         select: {
           goalId: true,
           personId: true,
+          proScore: true,
+          contraScore: true,
           netScore: true,
-          person: { select: { name: true } },
+          person: { select: { name: true, primaryDepartmentId: true } },
         },
       }),
     ]);
 
-    const goalTitle = new Map(goals.map((g) => [g.id, g.name]));
+    // primaryGoalId: явная Goal.isPrimary, иначе fallback B-2 среди
+    // загруженной выборки (max weight → min createdAt).
+    let primaryGoalId: string | null;
+    if (primary) {
+      primaryGoalId = primary.id;
+    } else {
+      const sortedFallback = [...goals].sort((a, b) => {
+        const byWeight = Number(b.weight) - Number(a.weight);
+        if (byWeight !== 0) return byWeight;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+      primaryGoalId = sortedFallback[0]?.id ?? null;
+    }
 
-    // Sum netScore per (goalId, personId).
+    const goalMeta = new Map(
+      goals.map((g) => [g.id, { name: g.name, isPrimary: g.isPrimary }]),
+    );
+
+    // Агрегация per (goalId, personId): pro/contra/net + отдел человека.
     const sumByGoalPerson = new Map<
       string,
-      Map<string, { name: string; net: number }>
+      Map<
+        string,
+        {
+          name: string;
+          departmentId: string | null;
+          pro: number;
+          contra: number;
+          net: number;
+        }
+      >
     >();
     for (const c of contributions) {
       const inner =
         sumByGoalPerson.get(c.goalId) ??
-        new Map<string, { name: string; net: number }>();
-      const person = c.person as { name: string | null } | null;
+        new Map<
+          string,
+          {
+            name: string;
+            departmentId: string | null;
+            pro: number;
+            contra: number;
+            net: number;
+          }
+        >();
+      const person = c.person as
+        | { name: string | null; primaryDepartmentId: string | null }
+        | null;
       const prev = inner.get(c.personId) ?? {
         name: person?.name ?? 'Без имени',
+        departmentId: person?.primaryDepartmentId ?? null,
+        pro: 0,
+        contra: 0,
         net: 0,
       };
+      prev.pro += Number(c.proScore.toString());
+      prev.contra += Number(c.contraScore.toString());
       prev.net += Number(c.netScore.toString());
       inner.set(c.personId, prev);
       sumByGoalPerson.set(c.goalId, inner);
     }
 
+    // Имена отделов — одним запросом. Собираем все НЕ-null departmentId.
+    const deptIds = new Set<string>();
+    for (const inner of sumByGoalPerson.values()) {
+      for (const p of inner.values()) {
+        if (p.departmentId) deptIds.add(p.departmentId);
+      }
+    }
+    const deptNames = new Map<string, string>();
+    if (deptIds.size > 0) {
+      // Department имеет поле tenantId — фильтруем по нему (multi-tenancy).
+      const depts = await this.prisma.department.findMany({
+        where: { tenantId, id: { in: [...deptIds] } },
+        select: { id: true, name: true },
+      });
+      for (const d of depts) deptNames.set(d.id, d.name);
+    }
+
+    const NONE_KEY = '__none__';
+
     const goalsOut: PulsePatternGoalVectorItemDto[] = grouped.map((g) => {
       const personMap =
         sumByGoalPerson.get(g.goalId) ??
-        new Map<string, { name: string; net: number }>();
-      const topContributors = [...personMap.values()]
-        .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+        new Map<
+          string,
+          {
+            name: string;
+            departmentId: string | null;
+            pro: number;
+            contra: number;
+            net: number;
+          }
+        >();
+
+      const topContributors: PulsePatternGoalContributorDto[] = [
+        ...personMap.entries(),
+      ]
+        .sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net))
         .slice(0, PulsePatternsService.GOAL_CONTRIBUTORS_TOP)
-        .map((p) => ({
-          personName: p.name,
-          netScore: round3(p.net),
-        }));
+        .map(([personId, p]) => {
+          const pro = round3(p.pro);
+          const contra = round3(p.contra);
+          return {
+            personId,
+            personName: p.name,
+            proScore: pro,
+            contraScore: contra,
+            netScore: round3(pro - contra),
+          };
+        });
+
+      // Разрез по отделам: группируем вклады цели по departmentId.
+      const byDeptAcc = new Map<
+        string,
+        { pro: number; contra: number; net: number }
+      >();
+      for (const p of personMap.values()) {
+        const key = p.departmentId ?? NONE_KEY;
+        const acc = byDeptAcc.get(key) ?? { pro: 0, contra: 0, net: 0 };
+        acc.pro += p.pro;
+        acc.contra += p.contra;
+        acc.net += p.net;
+        byDeptAcc.set(key, acc);
+      }
+      const byDepartment: PulsePatternGoalDepartmentDto[] = [
+        ...byDeptAcc.entries(),
+      ].map(([key, acc]) => {
+        const pro = round3(acc.pro);
+        const contra = round3(acc.contra);
+        return {
+          departmentId: key === NONE_KEY ? null : key,
+          departmentName:
+            key === NONE_KEY ? 'Без отдела' : (deptNames.get(key) ?? 'Без отдела'),
+          proScore: pro,
+          contraScore: contra,
+          netScore: round3(pro - contra),
+        };
+      });
+
+      const meta = goalMeta.get(g.goalId);
+      const proSum = round3(Number(g._sum.proScore?.toString() ?? '0'));
+      const contraSum = round3(Number(g._sum.contraScore?.toString() ?? '0'));
       return {
         goalId: g.goalId,
-        goalTitle: goalTitle.get(g.goalId) ?? 'Без названия',
-        netScore: round3(Number(g._sum.netScore?.toString() ?? '0')),
+        goalTitle: meta?.name ?? 'Без названия',
+        isPrimary: meta?.isPrimary ?? false,
+        proScore: proSum,
+        contraScore: contraSum,
+        netScore: round3(proSum - contraSum),
         topContributors,
+        byDepartment,
       };
     });
 
-    return { goals: goalsOut };
+    return { goals: goalsOut, primaryGoalId };
   }
 
   // ─── §6.7 — Knowledge Velocity ───────────────────────────────────────────

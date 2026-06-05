@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
 import { ApiError } from '@/api/api-error';
@@ -11,12 +12,14 @@ import {
 import { toast } from 'sonner';
 
 /**
- * SBA β-8.2 — `/me/promises` (client).
+ * SBA β-8.2 + ТЗ-E — `/me/promises` (client).
  *
  * - Фильтр «Открытые / Только Asked / Все».
- * - Таблица: текст обещания, кому, срок, статус.
- * - Кнопки «Сделано», «Не сделано», «Отменить» — закрывают обещание через
- *   POST /:blockId/mark.
+ * - Таблица (desktop) / карточки (mobile): текст, откуда, кому, срок, статус.
+ * - «Откуда» — ссылка на встречу-источник (если обещание извлечено из встречи).
+ * - Просроченный срок (dueDate в прошлом + статус open/asked) подсвечен красным.
+ * - Кнопки «Сделано», «Не сделано», «Перенести срок» — закрывают / двигают
+ *   обещание через POST /:blockId/mark и PATCH /:blockId/reschedule.
  *
  * Видны ТОЛЬКО свои обещания — backend изолирует список через
  * `Person.userId === currentUserId`.
@@ -27,6 +30,9 @@ export function MyPromisesClient() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'open' | 'asked' | 'all'>('open');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // ТЗ-E — какое обещание сейчас переносим и на какую дату (YYYY-MM-DD).
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -63,7 +69,45 @@ export function MyPromisesClient() {
       await promisesApi.mark(blockId, { status });
       refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Не удалось закрыть обещание');
+      toast.error(
+        err instanceof Error ? err.message : 'Не удалось закрыть обещание',
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const openReschedule = (blockId: string) => {
+    setRescheduleId(blockId);
+    setRescheduleDate(defaultRescheduleDate());
+  };
+
+  const cancelReschedule = () => {
+    setRescheduleId(null);
+    setRescheduleDate('');
+  };
+
+  const submitReschedule = async (blockId: string) => {
+    if (!rescheduleDate) {
+      toast.error('Выберите новую дату');
+      return;
+    }
+    // Конец выбранного дня в локальной зоне → ISO (с offset Z). Гарантирует,
+    // что срок строго в будущем при выборе сегодня/завтра.
+    const due = new Date(`${rescheduleDate}T23:59:59`);
+    if (Number.isNaN(due.getTime())) {
+      toast.error('Некорректная дата');
+      return;
+    }
+    setBusyId(blockId);
+    try {
+      await promisesApi.reschedule(blockId, { dueDate: due.toISOString() });
+      cancelReschedule();
+      refresh();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Не удалось перенести срок',
+      );
     } finally {
       setBusyId(null);
     }
@@ -116,29 +160,116 @@ export function MyPromisesClient() {
             : 'Здесь пусто.'}
         </p>
       ) : (
-        <table className="w-full divide-y rounded border bg-bg-card text-sm">
-          <thead className="bg-bg-subtle text-xs text-fg-secondary">
-            <tr>
-              <th className="px-3 py-2 text-left">Обещание</th>
-              <th className="px-3 py-2 text-left">Кому</th>
-              <th className="px-3 py-2 text-left">Срок</th>
-              <th className="px-3 py-2 text-left">Статус</th>
-              <th className="px-3 py-2 text-right">Действия</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
+        <>
+          {/* Desktop — таблица (≥ sm). */}
+          <table className="hidden w-full divide-y rounded border bg-bg-card text-sm sm:table">
+            <thead className="bg-bg-subtle text-xs text-fg-secondary">
+              <tr>
+                <th className="px-3 py-2 text-left">Обещание</th>
+                <th className="px-3 py-2 text-left">Откуда</th>
+                <th className="px-3 py-2 text-left">Кому</th>
+                <th className="px-3 py-2 text-left">Срок</th>
+                <th className="px-3 py-2 text-left">Статус</th>
+                <th className="px-3 py-2 text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {items.map((c) => (
+                <tr key={c.id}>
+                  <td className="px-3 py-2">{c.text}</td>
+                  <td className="px-3 py-2 text-fg-secondary">
+                    <SourceLink commitment={c} />
+                  </td>
+                  <td className="px-3 py-2 text-fg-secondary">
+                    {c.recipientPersonName ?? '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    <DueDate commitment={c} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <StatusBadge status={c.status} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {rescheduleId === c.id ? (
+                      <RescheduleControls
+                        value={rescheduleDate}
+                        min={defaultRescheduleDate()}
+                        busy={busyId === c.id}
+                        onChange={setRescheduleDate}
+                        onSubmit={() => submitReschedule(c.id)}
+                        onCancel={cancelReschedule}
+                      />
+                    ) : (
+                      <div className="inline-flex flex-wrap justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => mark(c.id, 'fulfilled')}
+                          disabled={busyId === c.id}
+                          className="rounded bg-success px-2 py-1 text-xs text-success-fg disabled:opacity-50"
+                        >
+                          Сделано
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mark(c.id, 'missed')}
+                          disabled={busyId === c.id}
+                          className="rounded bg-danger px-2 py-1 text-xs text-danger-fg disabled:opacity-50"
+                        >
+                          Не сделано
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openReschedule(c.id)}
+                          disabled={busyId === c.id}
+                          className="rounded border px-2 py-1 text-xs text-fg-secondary disabled:opacity-50"
+                        >
+                          Перенести срок
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Mobile — карточки (< sm). */}
+          <div className="flex flex-col gap-3 sm:hidden">
             {items.map((c) => (
-              <tr key={c.id}>
-                <td className="px-3 py-2">{c.text}</td>
-                <td className="px-3 py-2 text-fg-secondary">
-                  {c.recipientPersonName ?? '—'}
-                </td>
-                <td className="px-3 py-2 text-fg-secondary">{formatDate(c.dueDate)}</td>
-                <td className="px-3 py-2">
-                  <StatusBadge status={c.status} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="inline-flex gap-1">
+              <div
+                key={c.id}
+                className="rounded border bg-bg-card p-3 text-sm"
+              >
+                <div className="mb-2 font-medium">{c.text}</div>
+                <dl className="mb-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                  <dt className="text-fg-secondary">Откуда</dt>
+                  <dd>
+                    <SourceLink commitment={c} />
+                  </dd>
+                  <dt className="text-fg-secondary">Кому</dt>
+                  <dd className="text-fg-secondary">
+                    {c.recipientPersonName ?? '—'}
+                  </dd>
+                  <dt className="text-fg-secondary">Срок</dt>
+                  <dd>
+                    <DueDate commitment={c} />
+                  </dd>
+                  <dt className="text-fg-secondary">Статус</dt>
+                  <dd>
+                    <StatusBadge status={c.status} />
+                  </dd>
+                </dl>
+                {rescheduleId === c.id ? (
+                  <RescheduleControls
+                    value={rescheduleDate}
+                    min={defaultRescheduleDate()}
+                    busy={busyId === c.id}
+                    onChange={setRescheduleDate}
+                    onSubmit={() => submitReschedule(c.id)}
+                    onCancel={cancelReschedule}
+                  />
+                ) : (
+                  <div className="flex flex-wrap gap-1">
                     <button
                       type="button"
                       onClick={() => mark(c.id, 'fulfilled')}
@@ -157,19 +288,93 @@ export function MyPromisesClient() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => mark(c.id, 'cancelled')}
+                      onClick={() => openReschedule(c.id)}
                       disabled={busyId === c.id}
                       className="rounded border px-2 py-1 text-xs text-fg-secondary disabled:opacity-50"
                     >
-                      Отменить
+                      Перенести срок
                     </button>
                   </div>
-                </td>
-              </tr>
+                )}
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+/** Ссылка на встречу-источник обещания, либо «—». */
+function SourceLink({ commitment }: { commitment: CommitmentApi }) {
+  if (!commitment.sourceMeetingId) {
+    return <span className="text-fg-tertiary">—</span>;
+  }
+  return (
+    <Link
+      href={`/meetings/${encodeURIComponent(commitment.sourceMeetingId)}/result`}
+      className="text-chip-info-fg underline-offset-2 hover:underline"
+    >
+      {commitment.sourceMeetingTitle ?? 'Встреча'}
+    </Link>
+  );
+}
+
+/** Срок обещания; просроченный (open/asked + дата в прошлом) — красным. */
+function DueDate({ commitment }: { commitment: CommitmentApi }) {
+  if (!commitment.dueDate) {
+    return <span className="text-fg-secondary">—</span>;
+  }
+  const overdue = isOverdue(commitment);
+  return (
+    <span className={overdue ? 'font-medium text-chip-danger-fg' : 'text-fg-secondary'}>
+      {formatDate(commitment.dueDate)}
+      {overdue ? ' · просрочено' : ''}
+    </span>
+  );
+}
+
+/** Инлайн-контролы переноса срока: дата + «Перенести» / «Отмена». */
+function RescheduleControls({
+  value,
+  min,
+  busy,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  value: string;
+  min: string;
+  busy: boolean;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="inline-flex flex-wrap items-center justify-end gap-1">
+      <input
+        type="date"
+        value={value}
+        min={min}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-border px-2 py-1 text-xs"
+      />
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={busy}
+        className="rounded bg-success px-2 py-1 text-xs text-success-fg disabled:opacity-50"
+      >
+        Перенести
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={busy}
+        className="rounded border px-2 py-1 text-xs text-fg-secondary disabled:opacity-50"
+      >
+        Отмена
+      </button>
     </div>
   );
 }
@@ -205,6 +410,20 @@ function StatusBadge({ status }: { status: CommitmentStatusApi | null }) {
       {label}
     </span>
   );
+}
+
+/** Обещание просрочено: срок в прошлом и оно ещё не закрыто. */
+function isOverdue(c: CommitmentApi): boolean {
+  if (!c.dueDate) return false;
+  if (c.status !== 'open' && c.status !== 'asked') return false;
+  return new Date(c.dueDate).getTime() < Date.now();
+}
+
+/** Дефолт для переноса — завтра (бэк требует строго будущую дату). */
+function defaultRescheduleDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function formatDate(iso: string | null): string {

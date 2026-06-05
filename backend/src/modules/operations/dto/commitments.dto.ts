@@ -37,6 +37,19 @@ export const MarkPromiseBodySchema = z
 
 export type MarkPromiseBody = z.infer<typeof MarkPromiseBodySchema>;
 
+/**
+ * ТЗ-E — перенос срока обещания. Статус остаётся `open` (не терминальный),
+ * меняется только `commitmentDueDate`. `note` дописывается в trustedAnswer.
+ */
+export const ReschedulePromiseBodySchema = z
+  .object({
+    dueDate: z.string().datetime({ offset: true }),
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+export type ReschedulePromiseBody = z.infer<typeof ReschedulePromiseBodySchema>;
+
 export const OpenCommitmentsQuerySchema = z
   .object({
     days: z.coerce.number().int().min(1).max(180).default(14),
@@ -73,6 +86,10 @@ export interface CommitmentDto {
   /** Имя автора (опц., только в `/open-commitments` и `/personal-relations/commitments`). */
   authorPersonId: string | null;
   authorPersonName: string | null;
+  /** ТЗ-E — id встречи-источника (derive: первое IdeaBlockEvidence sourceType='meeting' → RawEvent.sourceExternalId). null если не из встречи. */
+  sourceMeetingId: string | null;
+  /** ТЗ-E — заголовок встречи-источника (Meeting.title). null если не найден. */
+  sourceMeetingTitle: string | null;
   askedAt: string | null;
   escalatedAt: string | null;
   createdAt: string;

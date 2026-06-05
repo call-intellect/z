@@ -1,3 +1,4 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CommitmentsService } from './commitments.service';
@@ -30,8 +31,13 @@ describe('CommitmentsService', () => {
       commitmentEscalatedAt: Date | null;
       createdAt: Date;
       commitmentRecipient: { id: string; name: string } | null;
+      evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }>;
     }>;
     findFirstResult?: unknown;
+    /** ТЗ-E — что вернёт meeting.findMany (батч-резолв заголовков). */
+    meetingResults?: Array<{ id: string; title: string }>;
+    /** ТЗ-E — кастомный результат ideaBlock.update (по умолчанию = findFirstResult). */
+    updateResult?: unknown;
   }) {
     const prisma = {
       person: {
@@ -43,25 +49,49 @@ describe('CommitmentsService', () => {
         update: vi
           .fn()
           .mockResolvedValue(
-            overrides.findFirstResult ?? {
-              id: 'b1',
-              tenantId: 't1',
-              criticalQuestion: 'X',
-              trustedAnswer: 'Y',
-              commitmentStatus: 'fulfilled',
-              commitmentDueDate: null,
-              commitmentRecipientPersonId: null,
-              commitmentAskedAt: null,
-              commitmentEscalatedAt: null,
-              createdAt: new Date(),
-              commitmentRecipient: null,
-            },
+            overrides.updateResult ??
+              overrides.findFirstResult ?? {
+                id: 'b1',
+                tenantId: 't1',
+                criticalQuestion: 'X',
+                trustedAnswer: 'Y',
+                commitmentStatus: 'fulfilled',
+                commitmentDueDate: null,
+                commitmentRecipientPersonId: null,
+                commitmentAskedAt: null,
+                commitmentEscalatedAt: null,
+                createdAt: new Date(),
+                commitmentRecipient: null,
+                evidence: [],
+              },
           ),
         count: vi.fn().mockResolvedValue(0),
+      },
+      meeting: {
+        findMany: vi.fn().mockResolvedValue(overrides.meetingResults ?? []),
       },
     };
     const svc = new CommitmentsService(prisma as never);
     return { svc, prisma };
+  }
+
+  /** ТЗ-E — заготовка блока-обещания в форме commitmentSelect(). */
+  function makeBlock(over: Record<string, unknown> = {}) {
+    return {
+      id: 'b1',
+      tenantId: 't1',
+      criticalQuestion: 'Прислать отчёт',
+      trustedAnswer: 'Да, до пятницы',
+      commitmentStatus: 'open',
+      commitmentDueDate: new Date('2026-06-01T00:00:00Z'),
+      commitmentRecipientPersonId: null,
+      commitmentAskedAt: null,
+      commitmentEscalatedAt: null,
+      createdAt: new Date('2026-05-20T00:00:00Z'),
+      commitmentRecipient: null,
+      evidence: [] as Array<{ rawEvent: { sourceExternalId: string | null } }>,
+      ...over,
+    };
   }
 
   it('resolveSelfPerson: 403 если нет Person-записи', async () => {
@@ -181,5 +211,181 @@ describe('CommitmentsService', () => {
     };
     expect(call.where.commitmentStatus?.in).toEqual(['open', 'asked']);
     expect(call.where.createdAt?.gte).toBeInstanceOf(Date);
+  });
+
+  // ───────────────────── ТЗ-E: rescheduleMine ─────────────────────
+
+  it('rescheduleMine: open → срок обновлён, статус остаётся open + заметка', async () => {
+    const future = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const { svc, prisma } = build({
+      findFirstResult: makeBlock(),
+      updateResult: makeBlock({
+        commitmentDueDate: future,
+        commitmentStatus: 'open',
+      }),
+    });
+
+    const dto = await svc.rescheduleMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      blockId: 'b1',
+      body: { dueDate: future.toISOString() },
+    });
+
+    expect(prisma.ideaBlock.update).toHaveBeenCalledOnce();
+    const updateArg = prisma.ideaBlock.update.mock.calls[0]?.[0] as {
+      data: { commitmentStatus: string; commitmentDueDate: Date; trustedAnswer: string };
+    };
+    expect(updateArg.data.commitmentStatus).toBe('open');
+    expect(updateArg.data.commitmentDueDate).toBeInstanceOf(Date);
+    expect(updateArg.data.commitmentDueDate.getTime()).toBe(future.getTime());
+    expect(updateArg.data.trustedAnswer).toContain('[reschedule → ');
+    expect(dto.status).toBe('open');
+  });
+
+  it('rescheduleMine: note дописывается в trustedAnswer', async () => {
+    const future = new Date(Date.now() + 3 * 24 * 3600 * 1000);
+    const { svc, prisma } = build({ findFirstResult: makeBlock() });
+    prisma.ideaBlock.update.mockImplementationOnce(
+      async (arg: { data: Record<string, unknown> }) => makeBlock(arg.data),
+    );
+
+    await svc.rescheduleMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      blockId: 'b1',
+      body: { dueDate: future.toISOString(), note: 'жду данные от смежников' },
+    });
+
+    const updateArg = prisma.ideaBlock.update.mock.calls[0]?.[0] as {
+      data: { trustedAnswer: string };
+    };
+    expect(updateArg.data.trustedAnswer).toContain('жду данные от смежников');
+  });
+
+  it('rescheduleMine: дата в прошлом → due_date_in_past (400), update не вызван', async () => {
+    const past = new Date(Date.now() - 24 * 3600 * 1000);
+    const { svc, prisma } = build({ findFirstResult: makeBlock() });
+
+    await expect(
+      svc.rescheduleMine({
+        tenantId: 't1',
+        selfPersonId: 'p-self',
+        blockId: 'b1',
+        body: { dueDate: past.toISOString() },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.ideaBlock.update).not.toHaveBeenCalled();
+  });
+
+  it('rescheduleMine: терминальный статус (fulfilled) → commitment_terminal (400)', async () => {
+    const future = new Date(Date.now() + 5 * 24 * 3600 * 1000);
+    const { svc, prisma } = build({
+      findFirstResult: makeBlock({ commitmentStatus: 'fulfilled' }),
+    });
+
+    await expect(
+      svc.rescheduleMine({
+        tenantId: 't1',
+        selfPersonId: 'p-self',
+        blockId: 'b1',
+        body: { dueDate: future.toISOString() },
+      }),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'commitment_terminal' } },
+    });
+    expect(prisma.ideaBlock.update).not.toHaveBeenCalled();
+  });
+
+  it('rescheduleMine: статус asked можно перенести (не терминальный)', async () => {
+    const future = new Date(Date.now() + 5 * 24 * 3600 * 1000);
+    const { svc, prisma } = build({
+      findFirstResult: makeBlock({ commitmentStatus: 'asked' }),
+      updateResult: makeBlock({ commitmentStatus: 'open' }),
+    });
+
+    await expect(
+      svc.rescheduleMine({
+        tenantId: 't1',
+        selfPersonId: 'p-self',
+        blockId: 'b1',
+        body: { dueDate: future.toISOString() },
+      }),
+    ).resolves.toBeDefined();
+    expect(prisma.ideaBlock.update).toHaveBeenCalledOnce();
+  });
+
+  it('rescheduleMine: блок не найден → commitment_not_found (404)', async () => {
+    const future = new Date(Date.now() + 5 * 24 * 3600 * 1000);
+    const { svc, prisma } = build({ findFirstResult: null });
+
+    await expect(
+      svc.rescheduleMine({
+        tenantId: 't1',
+        selfPersonId: 'p-self',
+        blockId: 'missing',
+        body: { dueDate: future.toISOString() },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.ideaBlock.update).not.toHaveBeenCalled();
+  });
+
+  // ───────────────────── ТЗ-E: derive источника ─────────────────────
+
+  it('listMine: derive источника — evidence из встречи → sourceMeetingId/Title (1 батч)', async () => {
+    const { svc, prisma } = build({
+      findManyResults: [
+        makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-42' } }] }),
+      ],
+      meetingResults: [{ id: 'mtg-42', title: 'Планёрка' }],
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'open', limit: 50 },
+    });
+
+    // Один батч на встречи — без N+1.
+    expect(prisma.meeting.findMany).toHaveBeenCalledOnce();
+    expect(prisma.meeting.findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { id: { in: ['mtg-42'] }, tenantId: 't1' },
+    });
+    expect(res.items[0]!.sourceMeetingId).toBe('mtg-42');
+    expect(res.items[0]!.sourceMeetingTitle).toBe('Планёрка');
+  });
+
+  it('listMine: без evidence → sourceMeetingId/Title = null, встречи не запрашиваются', async () => {
+    const { svc, prisma } = build({
+      findManyResults: [makeBlock({ evidence: [] })],
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'open', limit: 50 },
+    });
+
+    expect(prisma.meeting.findMany).not.toHaveBeenCalled();
+    expect(res.items[0]!.sourceMeetingId).toBeNull();
+    expect(res.items[0]!.sourceMeetingTitle).toBeNull();
+  });
+
+  it('listMine: meetingId есть, но встреча чужого tenant (не найдена) → title null', async () => {
+    const { svc } = build({
+      findManyResults: [
+        makeBlock({ evidence: [{ rawEvent: { sourceExternalId: 'mtg-x' } }] }),
+      ],
+      meetingResults: [], // findMany по tenantId вернул пусто
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'open', limit: 50 },
+    });
+
+    expect(res.items[0]!.sourceMeetingId).toBe('mtg-x');
+    expect(res.items[0]!.sourceMeetingTitle).toBeNull();
   });
 });

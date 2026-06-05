@@ -3914,6 +3914,12 @@ model Goal {
   /// Фаза 0a §11.6 — горизонт цели для декомпозиции strategic→annual→…→sprint.
   /// Default quarterly — типичная цель компании в delivery/03-frame.md.
   horizon                 GoalHorizon @default(quarterly)
+  /// ТЗ-B (2026-06-05) — флаг «главная цель компании» = «север» компаса Вектора.
+  /// Одна primary на tenant гарантируется PARTIAL UNIQUE index в
+  /// postgres-init.sql (`goal_primary_unique` WHERE "isPrimary" = true) —
+  /// Prisma `@@unique` не поддерживает WHERE. Снятие/выставление флага —
+  /// в UI целей (ТЗ-F). Default false. Якорь Вектора цели (решение Р1).
+  isPrimary               Boolean     @default(false)
   /// Фаза 0a §11.6 — декомпозиция целей. Self-relation; UI появится в Фазе γ.
   parentGoalId            String?
   parent                  Goal?       @relation("GoalDecomposition", fields: [parentGoalId], references: [id], onDelete: SetNull)
@@ -3982,6 +3988,8 @@ model Goal {
   @@index([tenantId, parentGoalId])
   @@index([tenantId, promotionState])
   @@index([tenantId, validUntil])
+  /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
+  @@index([tenantId, isPrimary])
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;

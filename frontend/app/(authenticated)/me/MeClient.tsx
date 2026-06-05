@@ -19,6 +19,8 @@ import {
   AdminForbidden,
 } from '@app/(admin)/admin/AdminStateViews';
 
+import { MyTelegramCard } from './MyTelegramCard';
+
 const BLOCK_TITLES: Record<string, string> = {
   responsibilities: 'Обязанности',
   skills: 'Навыки',
@@ -91,6 +93,8 @@ function Content({
       />
 
       <RoleProfileBlock loading={profileSwr.isLoading} profile={profile ?? null} />
+
+      <MyTelegramCard orgId={orgId} />
 
       <MyDocumentsBlock orgId={orgId} />
 

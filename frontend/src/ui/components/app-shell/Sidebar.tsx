@@ -40,6 +40,7 @@ import {
   Plus,
   Rocket,
   Scale,
+  Send,
   Settings,
   Settings2,
   Shapes,
@@ -270,6 +271,10 @@ const ME_GROUP: NavGroup = {
   label: 'Моё пространство',
   items: [
     { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
+    // ТЗ 2026-06-05 — единый канон привязки Telegram-каналов (/me/channels).
+    // Дубль личной привязки убран со страницы /settings/integrations (там
+    // остались только outbound-направления доставки, DestinationsClient).
+    { href: '/me/channels', label: 'Каналы', icon: Send, matchPrefix: '/me/channels' },
     // Action Center B1 — pending-подтверждения пользователя (виден всем).
     // badgeCount инжектится динамически в Sidebar (usePendingActionsCount).
     { href: '/actions', label: 'Подтверждения', icon: BellRing, matchPrefix: '/actions' },
@@ -384,6 +389,8 @@ const INTAKE_NAV_ITEM: NavItem = {
 
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
+  // /settings/integrations теперь = outbound-направления доставки (DestinationsClient).
+  // Личная привязка Telegram переехала в «Моё пространство» → «Каналы» (ТЗ 2026-06-05).
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
   { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
 ];

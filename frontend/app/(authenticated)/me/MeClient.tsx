@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import useSWR from 'swr';
-import { Calendar, FileText, IdCard, Users } from 'lucide-react';
+import { Calendar, FileText, IdCard, Sparkles, Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
+import { listMyChannels } from '@/api/conversational.api';
 import { documentsApi } from '@/api/documents.api';
 import { meetingsApi } from '@/api/meetings.api';
 import { meProfileApi, type MyProfileApi } from '@/api/structure.api';
+import { mapTelegramChannelEntry } from '@/domain/me-channels';
 import { useAuth } from '@/contexts/auth-context';
 import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -55,6 +57,16 @@ function Content({
     meProfileApi.get(orgId),
   );
 
+  // Тот же SWR-ключ и фетчер, что в MyTelegramCard — SWR дедуплицирует запрос.
+  const channelsSwr = useSWR(['me-channels', orgId], async () => {
+    const res = await listMyChannels(orgId);
+    for (const entry of res.items) {
+      const view = mapTelegramChannelEntry(entry);
+      if (view) return view;
+    }
+    return null;
+  });
+
   if (profileSwr.error) {
     if (
       profileSwr.error instanceof ApiError &&
@@ -85,8 +97,20 @@ function Content({
 
   const profile = profileSwr.data;
 
+  const tgLinked = channelsSwr.data?.status === 'linked';
+  const needPosition = !profileSwr.isLoading && profile?.role == null;
+  const needTelegram = !channelsSwr.isLoading && !channelsSwr.error && !tgLinked;
+  const showNudge = needPosition || needTelegram;
+
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8">
+      {showNudge && (
+        <ProfileNudgeBanner
+          needPosition={needPosition}
+          needTelegram={needTelegram}
+        />
+      )}
+
       <ProfileHeader
         loading={profileSwr.isLoading}
         profile={profile ?? null}
@@ -102,6 +126,48 @@ function Content({
       <MyDocumentsBlock orgId={orgId} />
 
       <MyMeetingsBlock />
+    </div>
+  );
+}
+
+function ProfileNudgeBanner({
+  needPosition,
+  needTelegram,
+}: {
+  needPosition: boolean;
+  needTelegram: boolean;
+}) {
+  return (
+    <div className="mb-6 flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="flex items-start gap-2 text-sm text-fg-secondary">
+        <Sparkles size={16} className="mt-0.5 shrink-0 text-accent" />
+        <span>
+          Заполните профиль, чтобы Кора работала точнее
+          {needPosition && needTelegram
+            ? ': укажите должность и подключите Telegram.'
+            : needPosition
+              ? ': укажите свою должность.'
+              : ': подключите Telegram для уведомлений.'}
+        </span>
+      </p>
+      <div className="flex flex-wrap gap-3 text-sm">
+        {needPosition && (
+          <Link
+            href="#me-card-position"
+            className="font-medium text-accent hover:underline"
+          >
+            Указать должность
+          </Link>
+        )}
+        {needTelegram && (
+          <Link
+            href="#me-card-telegram"
+            className="font-medium text-accent hover:underline"
+          >
+            Подключить Telegram
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

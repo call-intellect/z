@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { ChatboxSyncWorker } from '../chatbox/chatbox-sync.worker';
+import { ChatboxModule } from '../chatbox/chatbox.module';
 import { CurationModule } from '../curation/curation.module';
 // Pulse Wave 6 §6.3/§6.8 — DashboardModule экспортит DashboardQueueService,
 // который @Optional()-инжектится в AnalyzeWorker (для enqueueMeetingRoi после
@@ -120,6 +122,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // мог инжектить его через DI. Specialist38HelpfulnessWorker экспортируется из
     // @Global Specialist38HelpfulnessModule — отдельный import не нужен.
     RoleMapModule,
+    // ChatBox Фаза 3 — ChatboxSyncWorker инжектит ChatboxSyncService из
+    // ChatboxModule (он экспортируется). Воркер очереди `chatbox.sync`
+    // крутится in-process.
+    ChatboxModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
@@ -288,6 +294,11 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // `meeting.ai_ready` извлекает факты из транскрипта и патчит ПУСТЫЕ ячейки
     // sync-таблиц; спорное — в очередь подтверждений.
     TableEnrichWorker,
+
+    // ChatBox Фаза 3 — consumer `chatbox.sync`. Делегирует в ChatboxSyncService
+    // (syncByScope / incrementalSync). Producer — ChatboxSyncQueueService
+    // (ручной триггер из `POST /chatbox/integration/sync`).
+    ChatboxSyncWorker,
   ],
 })
 export class WorkersModule {}

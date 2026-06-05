@@ -15,6 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -28,12 +29,15 @@ import { RbacService } from '../rbac/rbac.service';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import {
   ChatboxIntegrationUpsertSchema,
+  ChatboxSyncRequestSchema,
   ChatboxWorkspacesProbeSchema,
   type ChatboxIntegrationResponseDto,
   type ChatboxIntegrationUpsertDto,
+  type ChatboxSyncRequestDto,
   type ChatboxWorkspaceDto,
   type ChatboxWorkspacesProbeDto,
 } from './dto/chatbox-integration.dto';
+import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
 /**
  * REST API ChatBox-интеграции org (ТЗ 2026-06-05, Фаза 2).
@@ -56,6 +60,9 @@ export class ChatboxIntegrationController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(EntitlementService)
     private readonly entitlements: EntitlementService,
+    @Inject(ChatboxSyncQueueService)
+    private readonly syncQueue: ChatboxSyncQueueService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -122,6 +129,65 @@ export class ChatboxIntegrationController {
     const t = this.requireTenant(tenantId);
     await this.requireDelete(user.id, t);
     return this.service.remove(t);
+  }
+
+  @Post('sync')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Ручной триггер синка ChatBox по scope' })
+  async sync(
+    @Body(new ZodValidationPipe(ChatboxSyncRequestSchema))
+    body: ChatboxSyncRequestDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; jobId: string }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    const { jobId } = await this.syncQueue.enqueue(t, body.scope);
+    return { ok: true, jobId };
+  }
+
+  @Get('sync/status')
+  @ApiOperation({ summary: 'Статус синка ChatBox (даты, ошибки, счётчики)' })
+  async syncStatus(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+
+    const integration = await this.prisma.chatboxIntegration.findUnique({
+      where: { tenantId: t },
+      select: {
+        status: true,
+        lastError: true,
+        lastFullSyncAt: true,
+        lastIncrementalSyncAt: true,
+      },
+    });
+    if (!integration) {
+      return { configured: false };
+    }
+
+    const where = { tenantId: t };
+    const [chats, messages, customers, channelClients, members, sessions] =
+      await Promise.all([
+        this.prisma.chatboxChat.count({ where }),
+        this.prisma.chatboxMessage.count({ where }),
+        this.prisma.chatboxCustomer.count({ where }),
+        this.prisma.chatboxChannelClient.count({ where }),
+        this.prisma.chatboxMember.count({ where }),
+        this.prisma.chatboxChatSession.count({ where }),
+      ]);
+
+    return {
+      configured: true,
+      status: integration.status,
+      lastError: integration.lastError,
+      lastFullSyncAt: integration.lastFullSyncAt?.toISOString() ?? null,
+      lastIncrementalSyncAt:
+        integration.lastIncrementalSyncAt?.toISOString() ?? null,
+      counts: { chats, messages, customers, channelClients, members, sessions },
+    };
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

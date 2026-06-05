@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 import { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxIntegrationController } from './chatbox-integration.controller';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
+import { ChatboxSessionService } from './chatbox-session.service';
+import { ChatboxSyncService } from './chatbox-sync.service';
+import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
 /**
  * ChatboxModule — интеграция с ChatBox (app.agent-lia.ru / «Call Intellect:
@@ -20,7 +23,19 @@ import { ChatboxIntegrationService } from './chatbox-integration.service';
  */
 @Module({
   controllers: [ChatboxIntegrationController],
-  providers: [ChatboxApiClient, ChatboxIntegrationService],
-  exports: [ChatboxApiClient, ChatboxIntegrationService],
+  providers: [
+    ChatboxApiClient,
+    ChatboxIntegrationService,
+    ChatboxSessionService,
+    ChatboxSyncService,
+    ChatboxSyncQueueService,
+  ],
+  exports: [
+    ChatboxApiClient,
+    ChatboxIntegrationService,
+    ChatboxSessionService,
+    ChatboxSyncService,
+    ChatboxSyncQueueService,
+  ],
 })
 export class ChatboxModule {}

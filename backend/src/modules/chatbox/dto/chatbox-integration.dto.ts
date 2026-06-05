@@ -32,6 +32,15 @@ export type ChatboxIntegrationUpsertDto = z.infer<
   typeof ChatboxIntegrationUpsertSchema
 >;
 
+/**
+ * Тело `POST /chatbox/integration/sync` — ручной триггер синка по scope.
+ * `scope` — какую часть данных синкать ('all' — полный синк).
+ */
+export const ChatboxSyncRequestSchema = z.object({
+  scope: z.enum(['all', 'customers', 'managers', 'chats']),
+});
+export type ChatboxSyncRequestDto = z.infer<typeof ChatboxSyncRequestSchema>;
+
 /** Один воркспейс в ответе пробы (без чужих секретов). */
 export interface ChatboxWorkspaceDto {
   id: string;

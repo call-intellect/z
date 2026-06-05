@@ -168,6 +168,27 @@ export class ChatboxIntegrationService {
     return row ? this.crypto.decrypt(row.tokenEnc) : null;
   }
 
+  /**
+   * Конфиг для синка (Фаза 3): workspaceId + расшифрованный токен +
+   * integrationId. null — интеграция не настроена. НЕ для read-ответов API
+   * (содержит plain-токен).
+   */
+  async getConfigForSync(tenantId: string): Promise<{
+    workspaceId: string;
+    token: string;
+    integrationId: string;
+  } | null> {
+    const row = await this.prisma.chatboxIntegration.findUnique({
+      where: { tenantId },
+    });
+    if (!row) return null;
+    return {
+      workspaceId: row.workspaceId,
+      token: this.crypto.decrypt(row.tokenEnc),
+      integrationId: row.id,
+    };
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private sanitize(row: ChatboxIntegration): ChatboxIntegrationResponseDto {

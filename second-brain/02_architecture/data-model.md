@@ -1411,4 +1411,33 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 
 Влияние на FSM-блок выше (§«Статусы встречи»): ветка `ai_processing` теперь ветвится на `ai_ready | ai_failed`, общий `failed` — только для отсутствия записи/аудио.
 
+## ChatBox-интеграция (2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]], модули — [[module-map]] §«ChatBox-интеграция». Миграция `20260605120000_chatbox_integration` (8 таблиц + 7 enum + `SourceType.chatbox`), применяется авто через `migrate deploy`.
+
+### `SourceType += chatbox`
+
+```prisma
+enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox }
+```
+
+Сессия клиентского чата → `RawEvent(sourceType='chatbox', sourceExternalId=<sessionId>, dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений).
+
+### 8 моделей домена (все tenant-scoped, upsert по `@@unique([tenantId, externalId])`)
+
+- **`ChatboxIntegration`** — конфиг org, **один на org** (`@@unique([tenantId])`): `tokenEnc` (AES-256-GCM, никогда не plain), `workspaceId`/`workspaceName`, `syncMode` (enum), `status` (enum), `webhookExternalId`/`webhookSecret`, `lastFullSyncAt`/`lastIncrementalSyncAt`/`lastError`. Relation `org → Org` (Cascade).
+- **`ChatboxChannel`** — канал/мессенджер воркспейса: `channelType` (**String**, не enum — ChatBox добавляет типы без релиза), `title`, `isActive`, `raw Json?`.
+- **`ChatboxCustomer`** — унифицированный контакт: `name/phone/email/externalCrmId`, `raw`. Relation `clients ChatboxChannelClient[]` — ключ **мультимессенджер-объединения клиента**.
+- **`ChatboxChannelClient`** — identity клиента в конкретном мессенджере: `customerId?` (FK → `ChatboxCustomer`, `onDelete: SetNull`), `channelType`, `messengerUserId`, контакты, `isBlocked`. `@@index([tenantId, customerId])`.
+- **`ChatboxMember`** — менеджер воркспейса: `email/name/role`, `linkedPersonId?` (FK на `Person`, в `Person` не пишем), `linkMode` (enum auto/manual/none). `@@index([tenantId, linkedPersonId])`.
+- **`ChatboxChat`** — чат (тред), зеркало 1:1: денорм `channelType`/`customerExternalId`/`responsibleExternalId`, `status` (enum active/closed), `externalCreatedAt/UpdatedAt`, `lastMessageAt`, `messageCount`. Relations `sessions`/`messages`. Индексы по `customerExternalId`/`lastMessageAt`/`status`.
+- **`ChatboxChatSession`** — сессия-сегмент для LLM: `chatId` (FK), `seq`, `previousSessionId?` (self), `startedAt`/`endedAt?` (null = открытая), `analysisStatus` (enum), `summary`, `rawEventId`. `@@unique([tenantId, chatId, seq])`, `@@index([tenantId, analysisStatus])`.
+- **`ChatboxMessage`** — сообщение, зеркало: `chatId` (FK), `sessionId?`, `senderType` (enum), `contentType` (enum, дефолт TEXT), `text`, `*Url` медиа (без скачивания), `isOutboundFromKora` (ответ из Коры). Индексы по `(chatId, externalCreatedAt)` и `sessionId`.
+
+### 7 enum'ов
+
+`ChatboxSyncMode` (hourly/daily/realtime), `ChatboxIntegrationStatus` (connected/error/disconnected), `ChatboxChatStatus` (active/closed), `ChatboxSenderType` (CLIENT/USER/ASSISTANT/QUALITY_CONTROL), `ChatboxContentType` (TEXT/IMAGE/AUDIO/VIDEO/VIDEO_NOTE/FILE/VOICE/COMMAND), `ChatboxSessionAnalysisStatus` (pending/analyzing/done/failed), `ChatboxMemberLinkMode` (auto/manual/none).
+
+К `model Org` добавлена обратная связь `chatboxIntegration ChatboxIntegration?`. HNSW/GIN не требуются (полнотекст по сообщениям — vNext).
+
 [[../index|← index]]

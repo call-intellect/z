@@ -467,6 +467,28 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 **Новый conversational `eventType 'meeting.invite'`** (Ф3) — политика каналов `telegram → email → in_app` (`EVENT_TYPE_CHANNEL_POLICY`), payload-схема в `event-payload.registry.ts`; обрабатывается в `telegram-bot.adapter` / `max-bot.adapter`. Для **внешних** адресатов (email без аккаунта) приглашение идёт через `mail.sendMeetingInvite`, не через conversational (см. [[../02_architecture/code-pitfalls]] §«два движка email»).
 
+## ChatBox-интеграция (2026-06-05)
+
+ТЗ — [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Модуль `chatbox`. Все (кроме webhook) под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `chatbox`. Профильная заметка — [[chatbox-integration]], фронт — [[frontend-pages]] §«Чаты».
+
+| Метод | Путь | Назначение | RBAC act |
+|---|---|---|---|
+| GET | `/api/v1/chatbox/integration` | текущая интеграция org (без plain-токена) | read |
+| POST | `/api/v1/chatbox/integration/workspaces` | по введённому токену вернуть список воркспейсов ChatBox | manage |
+| PUT | `/api/v1/chatbox/integration` | создать/обновить `{token?, workspaceId, syncMode}` | manage |
+| DELETE | `/api/v1/chatbox/integration` | отключить (снять webhook, status→disconnected) | delete |
+| POST | `/api/v1/chatbox/integration/sync` | ручной синк `{scope:'all'\|'customers'\|'managers'\|'chats'}` → BullMQ job | manage |
+| GET | `/api/v1/chatbox/integration/sync/status` | статус последних синков | read |
+| GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, пагинация) | read |
+| GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии | read |
+| GET | `/api/v1/chatbox/chats/:id/messages` | сообщения чата | read |
+| POST | `/api/v1/chatbox/chats/:id/messages` | отправить ответ от менеджера `{text}` → ChatBox API | write |
+| GET | `/api/v1/chatbox/members` | менеджеры + текущая связка с Person | read |
+| PUT | `/api/v1/chatbox/members/:id/link` | ручной маппинг `{personId\|null}` | manage |
+| POST | `/api/v1/webhooks/chatbox/:tenantId/:secret` | **inbound webhook ChatBox** (`@ApiExcludeController`, без cookie-auth, `timingSafeEqual`, всегда 200) | — |
+
+**Privacy-инвариант:** super_admin **не** получает bypass на чтение текста переписки (`ChatboxMessage.text`). Коды ошибок machine-readable: `chatbox_token_invalid`, `chatbox_workspace_not_found`, `chatbox_not_configured`, `chatbox_chat_not_found`, `chatbox_send_failed`, `chatbox_member_not_found`, `person_not_found`. Swagger-тег `chatbox`.
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.
@@ -479,5 +501,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-02 (Goals OKR v2):** добавлен раздел «Goals OKR v2 — Граф целей» — KR-эндпоинты `POST/PATCH/DELETE /goals/:id/key-results[/:krId]`, `POST /goals/:id/supersede`, расширенный `PATCH /goals/:id` (parentGoalId/progressStatus/promotionState), `POST /ideas/:id/goal`, расширенный `PATCH /cycles/:id` (primaryGoalId), дашборд `goalsTree`/`goalsPulse`. Новый RBAC-ресурс `goal_key_result`. См. [plans/tz/2026-06-02-goals-okr-v2.md](../../plans/tz/2026-06-02-goals-okr-v2.md).
 - **2026-06-04 (Команда + доступы):** добавлен раздел «Команда + персональные доступы сотрудников» — `GET /orgs/:id/team-roster`, capabilities CRUD `GET/PUT/DELETE /orgs/:id/members/:userId/capabilities[/:capability]`, `GET /orgs/:id/effective-access`; `POST /persons` расширен `linkUserId`, приглашение — `personId`. Новая модель `EmployeeCapabilityOverride`. См. [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md).
 - **2026-06-05 (МТЗ №1 meeting-identity):** добавлен раздел «Meetings — приглашение сотрудников + задачи встречи» — POST создания встречи принимает `invitees[]`; `GET /meetings/:id/tasks` стал gate-coupled на `knowledge.meetingTasksToTrackerOnly` (контракт при дефолте сохранён); новый conversational `eventType 'meeting.invite'`. См. [plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md).
+- **2026-06-05 (ChatBox-интеграция):** добавлен раздел «ChatBox-интеграция» — `/chatbox/integration(+workspaces,sync,sync/status)`, `/chatbox/chats(+/:id,/messages,POST send)`, `/chatbox/members(+/:id/link)`, inbound webhook `/webhooks/chatbox/:tenantId/:secret`. Новый RBAC-ресурс `chatbox`, privacy-инвариант (super_admin без bypass на текст переписки). См. [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md).
 
 [[../index|← index]]

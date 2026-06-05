@@ -33,6 +33,9 @@ function build(opts: { canView?: boolean } = {}) {
   const pulsePatternsSvc = {
     getPulsePatterns: vi.fn(async () => ({}) as never),
   } as unknown as import('./services/pulse-patterns.service').PulsePatternsService;
+  const peopleAtRiskSvc = {
+    getAtRisk: vi.fn(async () => ({ items: [], totalAtRisk: 0, generatedAt: '' }) as never),
+  } as unknown as import('./services/people-at-risk.service').PeopleAtRiskService;
   return {
     ctrl: new DirectorDashboardController(
       svc,
@@ -40,6 +43,7 @@ function build(opts: { canView?: boolean } = {}) {
       teamHealthSvc,
       teamDetailSvc,
       pulsePatternsSvc,
+      peopleAtRiskSvc,
     ),
     svc,
     rbac,

@@ -39,7 +39,7 @@ import { DailyDigestService } from '../services/daily-digest.service';
  *     Доступ: те же роли.
  *
  *   POST /generate?date=YYYY-MM-DD — принудительная (пере)генерация.
- *     Доступ: admin / super_admin (через role-check в `loadContext`).
+ *     Доступ: owner / admin / super_admin (через role-check в `loadContext`).
  */
 @ApiTags('dashboard-operations-daily')
 @Controller('api/v1/dashboard/operations/daily-digest')
@@ -103,7 +103,7 @@ export class DailyDigestController {
   @Post('generate')
   @ApiOperation({
     summary:
-      'Принудительно пересобрать ежедневный дайджест (admin/super_admin; для отладки)',
+      'Принудительно пересобрать ежедневный дайджест (owner/admin/super_admin)',
   })
   async generate(
     @CurrentOrg() tenantId: string | undefined,
@@ -157,9 +157,10 @@ export class DailyDigestController {
     userId: string,
     tenantId: string,
   ): Promise<void> {
-    // Принудительная регенерация — только admin / super_admin
-    // (по ТЗ §1.5 — admin only; owner НЕ дублируется здесь, в отличие
-    // от weekly, чтобы не размывать «технический» характер регенерации).
+    // Принудительная регенерация — owner / admin / super_admin.
+    // ТЗ-C Ф4 (2026-06-05, R8): выравнивание прав с фронтом
+    // (DailyDigestClient.tsx:79 — isSuperAdmin || admin || owner). Владелец
+    // компании должен иметь возможность пересобрать «вчерашний отчёт» сам.
     const ctx = await this.rbac.loadContext(userId, tenantId);
     if (!ctx) {
       throw new ForbiddenException({
@@ -168,12 +169,14 @@ export class DailyDigestController {
       });
     }
     if (ctx.isSuperAdmin) return;
+    if (ctx.role === 'owner') return;
     if (ctx.role === 'admin') return;
     throw new ForbiddenException({
       ok: false,
       error: {
         code: 'forbidden_role',
-        message: 'Только admin / super_admin может пересобрать ежедневный отчёт',
+        message:
+          'Только владелец / администратор может пересобрать ежедневный отчёт',
       },
     });
   }

@@ -317,7 +317,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
                 <span className="text-fg-tertiary">·</span>
                 <span className="flex-1">{b.name}</span>
                 <span className="text-xs text-fg-tertiary">
-                  conf {Math.round(b.confidence * 100)}%
+                  уверенность {Math.round(b.confidence * 100)}%
                 </span>
               </li>
             ))}

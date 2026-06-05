@@ -27,6 +27,7 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
     personGoalContributionGroupBy: vi.fn(async () => []),
     personGoalContributionFindMany: vi.fn(async () => []),
     goalFindMany: vi.fn(async () => []),
+    goalFindFirst: vi.fn(async () => null),
     knowledgeVelocitySnapshotFindFirst: vi.fn(async () => null),
     decisionFindMany: vi.fn(async () => []),
     ...overrides,
@@ -44,7 +45,7 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
       groupBy: mocks.personGoalContributionGroupBy,
       findMany: mocks.personGoalContributionFindMany,
     },
-    goal: { findMany: mocks.goalFindMany },
+    goal: { findMany: mocks.goalFindMany, findFirst: mocks.goalFindFirst },
     knowledgeVelocitySnapshot: {
       findFirst: mocks.knowledgeVelocitySnapshotFindFirst,
     },
@@ -78,7 +79,7 @@ describe('PulsePatternsService', () => {
       departments: [],
       topPairs: [],
     });
-    expect(res.goalVector).toEqual({ goals: [] });
+    expect(res.goalVector).toEqual({ goals: [], primaryGoalId: null });
     expect(res.knowledgeVelocity).toEqual({
       medianHours: null,
       resolvedGapsCount: 0,
@@ -158,23 +159,41 @@ describe('PulsePatternsService', () => {
         },
       ]),
       personGoalContributionGroupBy: vi.fn(async () => [
-        { goalId: 'g-1', _sum: { netScore: new Prisma.Decimal('15.000') } },
+        {
+          goalId: 'g-1',
+          _sum: {
+            netScore: new Prisma.Decimal('15.000'),
+            proScore: new Prisma.Decimal('18.000'),
+            contraScore: new Prisma.Decimal('3.000'),
+          },
+        },
       ]),
       goalFindMany: vi.fn(async () => [
-        { id: 'g-1', name: 'Запустить продукт в Q4' },
+        {
+          id: 'g-1',
+          name: 'Запустить продукт в Q4',
+          isPrimary: true,
+          weight: new Prisma.Decimal('1.0'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
       ]),
+      goalFindFirst: vi.fn(async () => ({ id: 'g-1' })),
       personGoalContributionFindMany: vi.fn(async () => [
         {
           goalId: 'g-1',
           personId: 'p-1',
+          proScore: new Prisma.Decimal('12.000'),
+          contraScore: new Prisma.Decimal('2.000'),
           netScore: new Prisma.Decimal('10.000'),
-          person: { name: 'Сергей' },
+          person: { name: 'Сергей', primaryDepartmentId: 'd-1' },
         },
         {
           goalId: 'g-1',
           personId: 'p-2',
+          proScore: new Prisma.Decimal('6.000'),
+          contraScore: new Prisma.Decimal('1.000'),
           netScore: new Prisma.Decimal('5.000'),
-          person: { name: 'Анна' },
+          person: { name: 'Анна', primaryDepartmentId: null },
         },
       ]),
       knowledgeVelocitySnapshotFindFirst: vi.fn(async () => ({
@@ -244,16 +263,49 @@ describe('PulsePatternsService', () => {
       severity: 3,
     });
 
+    expect(res.goalVector.primaryGoalId).toBe('g-1');
     expect(res.goalVector.goals).toHaveLength(1);
     expect(res.goalVector.goals[0]).toMatchObject({
       goalId: 'g-1',
       goalTitle: 'Запустить продукт в Q4',
+      isPrimary: true,
+      proScore: 18,
+      contraScore: 3,
       netScore: 15,
     });
     expect(res.goalVector.goals[0]?.topContributors).toEqual([
-      { personName: 'Сергей', netScore: 10 },
-      { personName: 'Анна', netScore: 5 },
+      {
+        personId: 'p-1',
+        personName: 'Сергей',
+        proScore: 12,
+        contraScore: 2,
+        netScore: 10,
+      },
+      {
+        personId: 'p-2',
+        personName: 'Анна',
+        proScore: 6,
+        contraScore: 1,
+        netScore: 5,
+      },
     ]);
+    // byDepartment: p-1 → 'd-1' (Маркетинг), p-2 → null (Без отдела).
+    const byDept = res.goalVector.goals[0]?.byDepartment ?? [];
+    expect(byDept).toHaveLength(2);
+    const marketing = byDept.find((d) => d.departmentId === 'd-1');
+    expect(marketing).toMatchObject({
+      departmentName: 'Маркетинг',
+      proScore: 12,
+      contraScore: 2,
+      netScore: 10,
+    });
+    const noDept = byDept.find((d) => d.departmentId === null);
+    expect(noDept).toMatchObject({
+      departmentName: 'Без отдела',
+      proScore: 6,
+      contraScore: 1,
+      netScore: 5,
+    });
 
     expect(res.knowledgeVelocity).toEqual({
       medianHours: 18.5,
@@ -298,5 +350,316 @@ describe('PulsePatternsService', () => {
     const weeksAgo = (Date.now() - gte.getTime()) / (7 * 24 * 3600 * 1000);
     expect(weeksAgo).toBeGreaterThanOrEqual(11.5);
     expect(weeksAgo).toBeLessThanOrEqual(12.5);
+  });
+
+  // ─── §6.6 — getGoalVector (компас): прямые юнит-тесты приватного метода ──────
+
+  /** Приведение типа для вызова private-метода `getGoalVector` напрямую. */
+  type GoalVectorAccess = {
+    getGoalVector: (
+      tenantId: string,
+      periodDays: number,
+      now: Date,
+    ) => Promise<{
+      goals: Array<{
+        goalId: string;
+        goalTitle: string;
+        isPrimary: boolean;
+        proScore: number;
+        contraScore: number;
+        netScore: number;
+        topContributors: Array<{
+          personId: string;
+          personName: string;
+          proScore: number;
+          contraScore: number;
+          netScore: number;
+        }>;
+        byDepartment: Array<{
+          departmentId: string | null;
+          departmentName: string;
+          proScore: number;
+          contraScore: number;
+          netScore: number;
+        }>;
+      }>;
+      primaryGoalId: string | null;
+    }>;
+  };
+
+  const FIXED_NOW = new Date('2026-06-05T00:00:00Z');
+
+  function callGoalVector(
+    service: PulsePatternsService,
+    tenantId = 't1',
+    periodDays = 7,
+  ): ReturnType<GoalVectorAccess['getGoalVector']> {
+    return (service as unknown as GoalVectorAccess).getGoalVector(
+      tenantId,
+      periodDays,
+      FIXED_NOW,
+    );
+  }
+
+  it('главная цель + разрез по 2 отделам + проброс pro/contra', async () => {
+    const { service, mocks } = buildService({
+      personGoalContributionGroupBy: vi.fn(async () => [
+        {
+          goalId: 'goalA',
+          _sum: {
+            netScore: new Prisma.Decimal('20.000'),
+            proScore: new Prisma.Decimal('25.000'),
+            contraScore: new Prisma.Decimal('5.000'),
+          },
+        },
+        {
+          goalId: 'goalB',
+          _sum: {
+            netScore: new Prisma.Decimal('8.000'),
+            proScore: new Prisma.Decimal('10.000'),
+            contraScore: new Prisma.Decimal('2.000'),
+          },
+        },
+      ]),
+      goalFindFirst: vi.fn(async () => ({ id: 'goalA' })),
+      goalFindMany: vi.fn(async () => [
+        {
+          id: 'goalA',
+          name: 'Главная цель',
+          isPrimary: true,
+          weight: new Prisma.Decimal('1.0'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+        {
+          id: 'goalB',
+          name: 'Вторая цель',
+          isPrimary: false,
+          weight: new Prisma.Decimal('2.0'),
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        },
+      ]),
+      personGoalContributionFindMany: vi.fn(async () => [
+        // goalA: два отдела + один без отдела.
+        {
+          goalId: 'goalA',
+          personId: 'p1',
+          proScore: new Prisma.Decimal('15.000'),
+          contraScore: new Prisma.Decimal('3.000'),
+          netScore: new Prisma.Decimal('12.000'),
+          person: { name: 'Иван', primaryDepartmentId: 'dep1' },
+        },
+        {
+          goalId: 'goalA',
+          personId: 'p2',
+          proScore: new Prisma.Decimal('7.000'),
+          contraScore: new Prisma.Decimal('2.000'),
+          netScore: new Prisma.Decimal('5.000'),
+          person: { name: 'Пётр', primaryDepartmentId: 'dep2' },
+        },
+        {
+          goalId: 'goalA',
+          personId: 'p3',
+          proScore: new Prisma.Decimal('3.000'),
+          contraScore: new Prisma.Decimal('0.000'),
+          netScore: new Prisma.Decimal('3.000'),
+          person: { name: 'Без отдела', primaryDepartmentId: null },
+        },
+        // goalB: только один отдел.
+        {
+          goalId: 'goalB',
+          personId: 'p1',
+          proScore: new Prisma.Decimal('10.000'),
+          contraScore: new Prisma.Decimal('2.000'),
+          netScore: new Prisma.Decimal('8.000'),
+          person: { name: 'Иван', primaryDepartmentId: 'dep1' },
+        },
+      ]),
+      departmentFindMany: vi.fn(async () => [
+        { id: 'dep1', name: 'Маркетинг' },
+        { id: 'dep2', name: 'Продажи' },
+      ]),
+    });
+
+    const res = await callGoalVector(service);
+
+    expect(res.primaryGoalId).toBe('goalA');
+    expect(res.goals).toHaveLength(2);
+
+    // department.findMany должен фильтроваться по tenantId (multi-tenancy).
+    expect(mocks.departmentFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 't1' }),
+      }),
+    );
+
+    const goalA = res.goals.find((g) => g.goalId === 'goalA')!;
+    expect(goalA.isPrimary).toBe(true);
+    // pro/contra проброшены наружу (> 0) и net = round3(pro - contra).
+    expect(goalA.proScore).toBeGreaterThan(0);
+    expect(goalA.contraScore).toBeGreaterThan(0);
+    expect(goalA.netScore).toBeCloseTo(goalA.proScore - goalA.contraScore, 3);
+    // 3 человека в трёх разных отделах (dep1, dep2, null) → byDepartment=3.
+    expect(goalA.byDepartment).toHaveLength(3);
+    const none = goalA.byDepartment.find((d) => d.departmentId === null)!;
+    expect(none.departmentName).toBe('Без отдела');
+    expect(none.proScore).toBeCloseTo(3, 3);
+
+    const goalB = res.goals.find((g) => g.goalId === 'goalB')!;
+    expect(goalB.isPrimary).toBe(false);
+    // goalB: только один отдел dep1.
+    expect(goalB.byDepartment).toHaveLength(1);
+    expect(goalB.byDepartment[0]?.departmentId).toBe('dep1');
+  });
+
+  it('пустой набор — { goals: [], primaryGoalId: null } без обращения к isPrimary', async () => {
+    const { service, mocks } = buildService({
+      personGoalContributionGroupBy: vi.fn(async () => []),
+      // даже если findFirst вернул бы цель — метод возвращает раньше.
+      goalFindFirst: vi.fn(async () => ({ id: 'goalA' })),
+    });
+
+    const res = await callGoalVector(service);
+
+    expect(res).toEqual({ goals: [], primaryGoalId: null });
+    // ранний выход: goal.findFirst/findMany и contributions НЕ дёргаются.
+    expect(mocks.goalFindFirst).not.toHaveBeenCalled();
+    expect(mocks.goalFindMany).not.toHaveBeenCalled();
+    expect(mocks.personGoalContributionFindMany).not.toHaveBeenCalled();
+  });
+
+  it('нет isPrimary → fallback по weight, при равном weight — min createdAt', async () => {
+    const { service } = buildService({
+      personGoalContributionGroupBy: vi.fn(async () => [
+        {
+          goalId: 'goalX',
+          _sum: {
+            netScore: new Prisma.Decimal('1.000'),
+            proScore: new Prisma.Decimal('1.000'),
+            contraScore: new Prisma.Decimal('0.000'),
+          },
+        },
+        {
+          goalId: 'goalY',
+          _sum: {
+            netScore: new Prisma.Decimal('1.000'),
+            proScore: new Prisma.Decimal('1.000'),
+            contraScore: new Prisma.Decimal('0.000'),
+          },
+        },
+        {
+          goalId: 'goalZ',
+          _sum: {
+            netScore: new Prisma.Decimal('1.000'),
+            proScore: new Prisma.Decimal('1.000'),
+            contraScore: new Prisma.Decimal('0.000'),
+          },
+        },
+      ]),
+      goalFindFirst: vi.fn(async () => null),
+      goalFindMany: vi.fn(async () => [
+        {
+          id: 'goalX',
+          name: 'X',
+          isPrimary: false,
+          weight: new Prisma.Decimal('2.0'),
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        },
+        {
+          id: 'goalY',
+          name: 'Y',
+          isPrimary: false,
+          weight: new Prisma.Decimal('2.0'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+        {
+          id: 'goalZ',
+          name: 'Z',
+          isPrimary: false,
+          weight: new Prisma.Decimal('1.0'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]),
+      personGoalContributionFindMany: vi.fn(async () => []),
+    });
+
+    const res = await callGoalVector(service);
+
+    // goalX и goalY оба weight=2 (максимум), но goalY раньше по createdAt.
+    expect(res.primaryGoalId).toBe('goalY');
+  });
+
+  it('topContributors: personId/pro/contra/net, отсортированы по убыванию |net|', async () => {
+    const { service } = buildService({
+      personGoalContributionGroupBy: vi.fn(async () => [
+        {
+          goalId: 'g1',
+          _sum: {
+            netScore: new Prisma.Decimal('0.000'),
+            proScore: new Prisma.Decimal('20.000'),
+            contraScore: new Prisma.Decimal('20.000'),
+          },
+        },
+      ]),
+      goalFindFirst: vi.fn(async () => null),
+      goalFindMany: vi.fn(async () => [
+        {
+          id: 'g1',
+          name: 'Цель',
+          isPrimary: false,
+          weight: new Prisma.Decimal('1.0'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]),
+      personGoalContributionFindMany: vi.fn(async () => [
+        // |net| = 2
+        {
+          goalId: 'g1',
+          personId: 'small',
+          proScore: new Prisma.Decimal('3.000'),
+          contraScore: new Prisma.Decimal('1.000'),
+          netScore: new Prisma.Decimal('2.000'),
+          person: { name: 'Малый', primaryDepartmentId: null },
+        },
+        // |net| = 9 (самый большой по модулю)
+        {
+          goalId: 'g1',
+          personId: 'big',
+          proScore: new Prisma.Decimal('12.000'),
+          contraScore: new Prisma.Decimal('3.000'),
+          netScore: new Prisma.Decimal('9.000'),
+          person: { name: 'Большой', primaryDepartmentId: null },
+        },
+        // |net| = 5 (отрицательный — abs всё равно учитывается)
+        {
+          goalId: 'g1',
+          personId: 'neg',
+          proScore: new Prisma.Decimal('1.000'),
+          contraScore: new Prisma.Decimal('6.000'),
+          netScore: new Prisma.Decimal('-5.000'),
+          person: { name: 'Минус', primaryDepartmentId: null },
+        },
+      ]),
+    });
+
+    const res = await callGoalVector(service);
+
+    const top = res.goals[0]!.topContributors;
+    expect(top).toHaveLength(3);
+    // Сортировка по убыванию |net|: big(9) → neg(5) → small(2).
+    expect(top.map((c) => c.personId)).toEqual(['big', 'neg', 'small']);
+    // Каждый contributor содержит personId + pro/contra/net.
+    expect(top[0]).toEqual({
+      personId: 'big',
+      personName: 'Большой',
+      proScore: 12,
+      contraScore: 3,
+      netScore: 9,
+    });
+    expect(top[1]).toMatchObject({
+      personId: 'neg',
+      proScore: 1,
+      contraScore: 6,
+      netScore: -5,
+    });
   });
 });

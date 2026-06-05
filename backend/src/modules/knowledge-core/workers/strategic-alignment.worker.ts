@@ -320,6 +320,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
           cachedAlignmentAt: created.createdAt,
           cachedAlignmentDelta: delta,
           cachedSnapshotId: created.id,
+          cachedBlocksCount: blocks.length,
         },
       });
       return created;

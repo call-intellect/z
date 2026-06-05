@@ -1,11 +1,5 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
-import { MyDashboardClient } from './MyDashboardClient';
-
-export const metadata: Metadata = {
-  title: 'Личный дашборд — Z',
-};
-
-export default function MyDashboardPage() {
-  return <MyDashboardClient />;
+export default function MeDashboardRedirectPage() {
+  redirect('/me');
 }

@@ -585,6 +585,9 @@ export class DailyDigestService {
       highInsights,
       redCheckIns,
       brokenCommits,
+      recognitionsToday,
+      helpfulnessToday,
+      keptCommits,
       persons,
     ] = await Promise.all([
       // События дня: встречи завершились вчера (Meeting.endedAt, не completedAt).
@@ -688,16 +691,66 @@ export class DailyDigestService {
         },
         take: 10,
       }),
+      // Shined: благодарности/признания, полученные вчера (Recognition.createdAt
+      // в окне). Группируются по получателю toUserId → Person.
+      this.prisma.recognition.findMany({
+        where: {
+          tenantId: args.tenantId,
+          createdAt: { gte: dayStart, lt: dayEnd },
+        },
+        select: { toUserId: true, type: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      // Shined: «полезные действия» — HelpfulnessSpotlight, чей период пересекает
+      // вчерашний день ИЛИ запись создана вчера. helperUserId → Person.
+      this.prisma.helpfulnessSpotlight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          OR: [
+            { periodFrom: { lte: dayEnd }, periodTo: { gte: dayStart } },
+            { createdAt: { gte: dayStart, lt: dayEnd } },
+          ],
+        },
+        select: { helperUserId: true, helpCount: true },
+        orderBy: { helpCount: 'desc' },
+        take: 20,
+      }),
+      // Shined: сдержанные обещания — commitment со статусом 'fulfilled',
+      // updatedAt в окне вчерашнего дня. Автор — commitmentAuthorPersonId
+      // (ДЕТЕРМИНИРОВАННАЯ атрибуция по identity, НЕ получатель).
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'commitment',
+          commitmentStatus: 'fulfilled',
+          updatedAt: { gte: dayStart, lt: dayEnd },
+          commitmentAuthorPersonId: { not: null },
+        },
+        select: {
+          id: true,
+          name: true,
+          commitmentAuthorPersonId: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
       // Person-map для безопасного отображения имени.
       this.prisma.person.findMany({
         where: { tenantId: args.tenantId, deletedAt: null },
-        select: { id: true, name: true },
+        select: { id: true, name: true, userId: true },
       }),
     ]);
 
     const personById = new Map<string, string>(
       persons.map((p) => [p.id, p.name]),
     );
+    // userId → Person (для атрибуции Recognition.toUserId и
+    // HelpfulnessSpotlight.helperUserId, которые ссылаются на User, не Person).
+    const personByUserId = new Map<string, { id: string; name: string }>();
+    for (const p of persons) {
+      if (p.userId && p.name) personByUserId.set(p.userId, { id: p.id, name: p.name });
+    }
 
     // ============== eventsToday ==============
     const eventsToday: DailyDigestEventDto[] = [];
@@ -774,15 +827,110 @@ export class DailyDigestService {
         id: i.id,
         title: (i.statement ?? '').slice(0, 100),
         link: `/insights?id=${encodeURIComponent(i.id)}`,
-        badge: 'high',
+        badge: 'важный сигнал',
         urgency: 'medium',
       });
     }
 
     // ============== whoShined ==============
-    // V1: пусто. Полная реализация — Фаза 2.2/2.3 (recognition events,
-    // helpful acts, kept commitments) — отдельная инфраструктура.
-    const whoShined: DailyDigestPersonShinedDto[] = [];
+    // ТЗ-C Ф4 (2026-06-05, R6) — позитивная секция «Кто выделился».
+    // Дедуп по personId с приоритетом причин:
+    //   recognition_received > helpful_acts > commitments_kept.
+    // Источники собираются в этом порядке; запись с более высоким приоритетом
+    // не перезаписывается более низким (см. `map.has(...) continue`).
+    // Person без имени / без привязки userId — ПРОПУСКАЕМ (в позитивной
+    // секции «Без имени» недопустим).
+    const shinedMap = new Map<string, DailyDigestPersonShinedDto>();
+
+    // 1) recognition_received — благодарности по получателю (toUserId → Person).
+    const recognitionByUser = new Map<
+      string,
+      { count: number; lastType: string | null }
+    >();
+    for (const rec of recognitionsToday) {
+      if (!rec.toUserId) continue;
+      const prev = recognitionByUser.get(rec.toUserId);
+      if (prev) {
+        prev.count += 1;
+        // recognitionsToday отсортирован по createdAt desc → первый встреченный
+        // type и есть последний по времени; не перезаписываем.
+      } else {
+        recognitionByUser.set(rec.toUserId, {
+          count: 1,
+          lastType: rec.type ?? null,
+        });
+      }
+    }
+    for (const [userId, agg] of recognitionByUser) {
+      const person = personByUserId.get(userId);
+      if (!person) continue;
+      if (shinedMap.has(person.id)) continue;
+      shinedMap.set(person.id, {
+        personId: person.id,
+        personName: person.name,
+        reason: 'recognition_received',
+        detail: this.buildRecognitionDetail(agg.count, agg.lastType),
+        link: `/persons/${encodeURIComponent(person.id)}`,
+      });
+    }
+
+    // 2) helpful_acts — HelpfulnessSpotlight по helperUserId → Person.
+    const helpCountByUser = new Map<string, number>();
+    for (const h of helpfulnessToday) {
+      if (!h.helperUserId) continue;
+      helpCountByUser.set(
+        h.helperUserId,
+        (helpCountByUser.get(h.helperUserId) ?? 0) + (h.helpCount ?? 0),
+      );
+    }
+    for (const [userId, helpCount] of helpCountByUser) {
+      const person = personByUserId.get(userId);
+      if (!person) continue;
+      if (shinedMap.has(person.id)) continue;
+      const n = Math.max(1, helpCount);
+      shinedMap.set(person.id, {
+        personId: person.id,
+        personName: person.name,
+        reason: 'helpful_acts',
+        detail: `помог ${n} ${pluralizeRaz(n)}`,
+        link: `/persons/${encodeURIComponent(person.id)}`,
+      });
+    }
+
+    // 3) commitments_kept — сдержанные обещания по commitmentAuthorPersonId.
+    // Атрибуция ТОЛЬКО по автору (commitmentAuthorPersonId), не получателю.
+    const keptByAuthor = new Map<string, { count: number; lastName: string }>();
+    for (const c of keptCommits) {
+      const authorId = c.commitmentAuthorPersonId;
+      if (!authorId) continue;
+      const prev = keptByAuthor.get(authorId);
+      if (prev) {
+        prev.count += 1;
+      } else {
+        keptByAuthor.set(authorId, {
+          count: 1,
+          lastName: (c.name ?? '').trim(),
+        });
+      }
+    }
+    for (const [personId, agg] of keptByAuthor) {
+      const name = personById.get(personId);
+      if (!name) continue;
+      if (shinedMap.has(personId)) continue;
+      const detail =
+        agg.count === 1 && agg.lastName
+          ? `сдержал обещание: ${agg.lastName.slice(0, 80)}`
+          : `закрыл ${agg.count} ${pluralizeObeshchanie(agg.count)}`;
+      shinedMap.set(personId, {
+        personId,
+        personName: name,
+        reason: 'commitments_kept',
+        detail,
+        link: `/persons/${encodeURIComponent(personId)}`,
+      });
+    }
+
+    const whoShined = Array.from(shinedMap.values()).slice(0, 8);
 
     // ============== whoStruggled ==============
     // Дедуп по personId: первая причина выигрывает (red_checkin > broken_commitment).
@@ -815,6 +963,18 @@ export class DailyDigestService {
     const whoStruggled = Array.from(struggledMap.values()).slice(0, 8);
 
     return { eventsToday, urgentItems, whoShined, whoStruggled };
+  }
+
+  /**
+   * Человеческий русский текст для detail причины `recognition_received`.
+   * ТЗ-C Ф4 (R6) — ограничение DTO `detail` ≤ 120 символов соблюдается
+   * с запасом.
+   */
+  private buildRecognitionDetail(count: number, lastType: string | null): string {
+    const base = `${count} ${pluralizeBlagodarnost(count)}`;
+    const human = lastType ? recognitionTypeRu(lastType) : null;
+    if (human) return `${base} — ${human}`.slice(0, 120);
+    return base.slice(0, 120);
   }
 
   /**
@@ -882,4 +1042,57 @@ function endOfDayUtc(d: Date): Date {
   const c = new Date(d);
   c.setUTCHours(23, 59, 59, 999);
   return c;
+}
+
+/**
+ * Русское склонение по числу: возвращает форму для «1 / 2–4 / 5+».
+ * Для русских числительных учитываем особенность 11–14 (всегда «много»).
+ */
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs >= 11 && abs <= 14) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function pluralizeRaz(n: number): string {
+  // 1 раз / 2 раза / 5 раз.
+  return pluralRu(n, 'раз', 'раза', 'раз');
+}
+
+function pluralizeBlagodarnost(n: number): string {
+  // 1 благодарность / 2 благодарности / 5 благодарностей.
+  return pluralRu(n, 'благодарность', 'благодарности', 'благодарностей');
+}
+
+function pluralizeObeshchanie(n: number): string {
+  // 1 обещание / 2 обещания / 5 обещаний.
+  return pluralRu(n, 'обещание', 'обещания', 'обещаний');
+}
+
+/**
+ * Человекочитаемое русское название типа благодарности (Recognition.type).
+ * Источник типов — schema.prisma `Recognition` (thanks_comment, thanks_helpfulness,
+ * mention_helped, idea_shipped, streak_milestone, weekly_summary). Неизвестный
+ * тип → null (тогда detail остаётся без уточнения).
+ */
+function recognitionTypeRu(type: string): string | null {
+  switch (type) {
+    case 'thanks_comment':
+      return 'спасибо за комментарий';
+    case 'thanks_helpfulness':
+      return 'спасибо за помощь';
+    case 'mention_helped':
+      return 'отметили, что помог';
+    case 'idea_shipped':
+      return 'идея пошла в дело';
+    case 'streak_milestone':
+      return 'серия активности';
+    case 'weekly_summary':
+      return 'итоги недели';
+    default:
+      return null;
+  }
 }

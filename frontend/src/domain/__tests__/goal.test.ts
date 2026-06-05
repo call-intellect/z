@@ -11,10 +11,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildTree,
+  confidenceLevel,
   goalFromApi,
   goalKeyResultFromApi,
   goalSourceLabel,
   krProgressBarColor,
+  movementVerdict,
   progressStatusChipClasses,
   progressStatusTone,
   type GoalKeyResultApi,
@@ -110,6 +112,9 @@ const baseGoal: GoalListItemApi = {
   promotionState: 'suggested',
   progressStatus: 'at_risk',
   parentGoalId: 'goal_root',
+  ownerPersonId: null,
+  ownerPersonName: null,
+  blocksCount: null,
 };
 
 describe('goalFromApi (Goals OKR v2 поля)', () => {
@@ -237,4 +242,26 @@ describe('buildTree (Фаза 4 — сборка дерева из плоско�
   it('пустой список → пустое дерево', () => {
     expect(buildTree([])).toEqual([]);
   });
+});
+
+describe('movementVerdict', () => {
+  it('on_track + высокий балл → Уверенно движемся', () =>
+    expect(movementVerdict(80, 'on_track').label).toBe('Уверенно движемся'));
+  it('on_track + низкий балл → tone warning', () =>
+    expect(movementVerdict(30, 'on_track').tone).toBe('warning'));
+  it('статус важнее балла: stalled при высоком балле → Застряла', () =>
+    expect(movementVerdict(90, 'stalled').label).toBe('Застряла'));
+  it('achieved при null-балле → Достигнута', () =>
+    expect(movementVerdict(null, 'achieved').label).toBe('Достигнута'));
+});
+
+describe('confidenceLevel', () => {
+  it('0 тем → low', () => expect(confidenceLevel(0, null)).toBe('low'));
+  it('1 тема, 3 блока → low', () => expect(confidenceLevel(1, 3)).toBe('low'));
+  it('2 темы, 12 блоков → medium', () =>
+    expect(confidenceLevel(2, 12)).toBe('medium'));
+  it('4 темы, 25 блоков → high', () =>
+    expect(confidenceLevel(4, 25)).toBe('high'));
+  it('blocksCount=null оценивается по темам', () =>
+    expect(confidenceLevel(5, null)).toBe('high')); // 5*5=25 ≥20 и тем≥3
 });

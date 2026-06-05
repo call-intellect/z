@@ -28,6 +28,8 @@ export interface CommitmentApi {
   recipientPersonName: string | null;
   authorPersonId: string | null;
   authorPersonName: string | null;
+  sourceMeetingId: string | null;
+  sourceMeetingTitle: string | null;
   askedAt: string | null;
   escalatedAt: string | null;
   createdAt: string;
@@ -50,4 +52,9 @@ export const promisesApi = {
   },
   mark: (blockId: string, body: MarkPromiseBody) =>
     apiClient.post<CommitmentApi>(`/api/v1/me/promises/${blockId}/mark`, body),
+  reschedule: (blockId: string, body: { dueDate: string; note?: string }) =>
+    apiClient.patch<CommitmentApi>(
+      `/api/v1/me/promises/${encodeURIComponent(blockId)}/reschedule`,
+      body,
+    ),
 };

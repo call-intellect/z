@@ -193,18 +193,32 @@ export function ChannelsClient() {
                     Класс данных (канал): до уровня <strong>{ch.maxDataClass}</strong> ·
                     направление: {ch.direction === 'bidirectional' ? 'двустороннее' : ch.direction}
                   </div>
-                  {ch.binding && (
-                    <MaxDataClassRadio
-                      bindingId={ch.binding.id}
-                      current={
-                        ch.binding.maxDataClass === 'private'
-                          ? 'sensitive'
-                          : ch.binding.maxDataClass
-                      }
-                      onChanged={() => mutate(swrKey)}
-                    />
+                  {ch.binding && ch.kind !== 'in_app' && (
+                    <details className="rounded-md border bg-muted/30 p-3 text-sm">
+                      <summary className="cursor-pointer select-none font-medium text-muted-foreground">
+                        Дополнительно: какие данные можно слать в этот канал
+                      </summary>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Обычно менять не нужно — по умолчанию приходят рабочие данные.
+                      </p>
+                      <div className="mt-2">
+                        <MaxDataClassRadio
+                          bindingId={ch.binding.id}
+                          current={
+                            ch.binding.maxDataClass === 'private'
+                              ? 'sensitive'
+                              : ch.binding.maxDataClass
+                          }
+                          onChanged={() => mutate(swrKey)}
+                        />
+                      </div>
+                    </details>
                   )}
-                  {ch.binding ? (
+                  {ch.kind === 'in_app' ? (
+                    <div className="text-xs text-muted-foreground">
+                      Работает автоматически — отдельной настройки не требует.
+                    </div>
+                  ) : ch.binding ? (
                     <div className="flex items-center justify-between">
                       <div>
                         Привязан: <code className="font-mono">{ch.binding.externalId}</code>
@@ -214,25 +228,19 @@ export function ChannelsClient() {
                           </span>
                         )}
                       </div>
-                      {ch.kind !== 'in_app' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleUnlink(ch.binding!.id)}
-                          disabled={unlinkBusy === ch.binding.id}
-                        >
-                          {unlinkBusy === ch.binding.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="mr-2 h-4 w-4" />
-                          )}
-                          Отвязать
-                        </Button>
-                      )}
-                    </div>
-                  ) : ch.kind === 'in_app' ? (
-                    <div className="text-xs text-muted-foreground">
-                      Канал работает автоматически — отдельной привязки не требует.
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleUnlink(ch.binding!.id)}
+                        disabled={unlinkBusy === ch.binding.id}
+                      >
+                        {unlinkBusy === ch.binding.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-2 h-4 w-4" />
+                        )}
+                        Отвязать
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between">

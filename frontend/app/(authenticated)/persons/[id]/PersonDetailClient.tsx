@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { Activity, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -176,6 +177,21 @@ function PersonDetailContent({
       </header>
 
       <PersonSubpagesNav entityId={entityId} />
+
+      {isPerson && canSeePersonCommitments(orgRole, isSuperAdmin) ? (
+        <Link
+          href={`/persons/${encodeURIComponent(entityId)}/pulse`}
+          className="mt-4 flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-accent-fg transition-colors hover:bg-accent/15"
+        >
+          <Activity size={18} className="shrink-0" />
+          <span className="flex-1 text-sm font-medium">
+            Открыть Пульс сотрудника
+          </span>
+          <span className="text-xs text-fg-tertiary">
+            настроение · надёжность · риск-сигналы
+          </span>
+        </Link>
+      ) : null}
 
       <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
         <h2 className="mb-3 text-base font-medium">Связанные блоки знаний</h2>

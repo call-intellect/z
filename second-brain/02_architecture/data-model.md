@@ -1164,11 +1164,18 @@ supersedeChain    Goal[]  @relation("GoalSupersedes")
 keyResults        GoalKeyResult[]
 linkedIdeas       Idea[]  @relation("IdeaGoal")
 linkedCycles      Cycle[] @relation("CyclePrimaryGoal")
+// ТЗ-F 2026-06-05 — ответственный + читаемость списка:
+ownerPersonId     String?                               // ответственный человек за цель (nullable)
+ownerPerson       Person? @relation("GoalOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+cachedBlocksCount Int?                                  // кэш числа блоков последнего snapshot — «светофор уверенности» в списке без JOIN; пишет strategic-alignment.worker
 @@index([tenantId, promotionState])
 @@index([tenantId, validUntil])
+@@index([tenantId, ownerPersonId])                      // ТЗ-F 2026-06-05
 ```
 
 > `progressStatus` — самостоятельная ось «движение для пульса», `status` (GoalStatus) остаётся жизненным циклом. Их не путать.
+>
+> **ТЗ-F 2026-06-05** ([`plans/tz/2026-06-05-goals-improvements.md`](../../plans/tz/2026-06-05-goals-improvements.md), ветка `feature/goals-improvements`): `ownerPersonId` — relation `GoalOwnerPerson` на `Person` с `onDelete: SetNull` и индексом `[tenantId, ownerPersonId]`; back-relation `Person.ownedGoals Goal[] @relation("GoalOwnerPerson")` (рядом с `ownedProcesses`/`ownedRegulations`). `cachedBlocksCount Int?` — кэш числа блоков последнего snapshot, чтобы «светофор уверенности» в списке считался без JOIN; обновляется `strategic-alignment.worker` тем же `tx.goal.update`. Поля `cachedAlignment`/`progressStatus` НЕ менялись.
 
 ### `model GoalKeyResult` (новая) — измеримый ориентир, 0..N на цель
 
@@ -1256,6 +1263,23 @@ GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")
 ### Backfill
 
 `backend/scripts/backfill-goal-v2-defaults.ts` — legacy-целям проставляет `source='manual'`, `promotionState='active'`, `progressStatus='on_track'`, `recordedAt=createdAt`. Идемпотентен, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`).
+
+[[../index|← index]]
+
+## Пакет улучшений дашбордов (ТЗ B/D, 2026-06-05)
+
+Аддитивные расширения под компас целей (B) и недельный план-факт по людям (D). Контракты — `plans/tz/2026-06-05-goal-vector-compass.md`, `plans/tz/2026-06-05-weekly-per-person-plan-fact.md`. Полная карта сервисов — [[module-map]] §«Пакет улучшений дашбордов».
+
+### `Goal.isPrimary` (ТЗ-B)
+
+- **`Goal.isPrimary Boolean @default(false)`** + `@@index([tenantId, isPrimary])` — «главная цель компании» (одна на Org), вокруг которой строится компас на главной директора (`pulse-patterns.getGoalVector` отдаёт `primaryGoalId`).
+- **Partial unique вне schema.prisma** — `goal_primary_unique ON "Goal"("tenantId") WHERE "isPrimary" = true` (через `backend/scripts/postgres-init.sql`) — гарантирует не более одной главной цели на Org (Prisma не умеет partial-unique с `WHERE`).
+
+### `IdeaBlock.commitmentAuthorPersonId` (ТЗ-D)
+
+- **`IdeaBlock.commitmentAuthorPersonId String?`** — «кто пообещал» (автор обещания), отдельно от subject/получателя. Relation `commitmentAuthor → Person? @relation("CommitmentAuthor", onDelete: SetNull)` + обратка **`Person.commitmentsAuthored IdeaBlock[]`**.
+- Индексы: `@@index([tenantId, commitmentAuthorPersonId])` и `@@index([tenantId, signalType, commitmentAuthorPersonId, commitmentDueDate])` (для недельного план-факта: обещания человека за окно по сроку).
+- Заполнение: `block-ingest.worker.attributeCommitmentAuthor` (резолв через `EntityResolutionService.resolveSubjectPersonId`, под флагом `knowledge.commitmentAuthorAttributionEnabled`, code-fallback **true**). История — backfill `backend/scripts/backfill-commitment-author.ts` (идемпотентен, в `apply-prod-deploy.ts` STEPS `phase: backfill`).
 
 [[../index|← index]]
 
@@ -1396,6 +1420,16 @@ dataClassAudit  Json?   // снимок аудита класса данных (
 ```
 
 Поле добавлено в обе модели (раньше его не было — `tsc` молча пропускал лишний ключ в Prisma-`create`, см. [[code-pitfalls]]). Без поля cron `dataclass-audit-snapshot` падал; теперь снимок аудита класса данных кладётся сюда, а сам cron обёрнут в `to_regclass`-гард (не падает на свежей БД без таблицы).
+
+### `Regulation/Process/Policy/Idea.dataClassAudit` (2026-06-05, миграция `20260605114300_add_dataclass_audit_to_projections`)
+
+```prisma
+dataClassAudit  Json?   // тот же снимок аудита класса данных
+```
+
+Ф8 добавила `dataClassAudit` только Insight/Decision, но **писатели проекций уже клали его и в эти 4 модели**: `specialist-3-1-regulations.service.ts` (regulation/process/policy) и `specialist-3-6-ideas.service.ts` (idea) — безусловным `dataClassAudit:` в типизированном `upsert`. Из-за отсутствия колонки ветка не компилировалась (excess-property), а snapshot-cron каждые 30 мин ронял `count()` с `Unknown argument` (5 ERROR/прогон в `PrismaService`). Теперь колонка есть у всех писателей.
+
+Сам cron (`dataclass-audit-snapshot.cron.ts`) дополнительно защищён самолечащимся фильтром `modelKeysWithDataClassAudit()` из `Prisma.dmmf`: проекции без колонки `dataClassAudit` пропускаются до `count()`, поэтому будущий дрейф схемы больше не порождает ERROR. `skill_trait` из списка проекций убран (в `SkillTrait` аудит не пишется — по дизайну всегда `internal`).
 
 ### `MeetingStatus += ai_failed` (Фаза 11, коммиты `de46e1a9` backend + `daff5f50` frontend)
 

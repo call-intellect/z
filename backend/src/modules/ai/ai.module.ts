@@ -4,10 +4,12 @@ import { EmbeddingsModule } from '../embeddings/embeddings.module';
 import { S3Service } from '../recordings/s3.service';
 
 import { AiQueueService } from './ai-queue.service';
+import { AiUsageLogCleanupService } from './services/ai-usage-log-cleanup.service';
 import { AiUsageLogService } from './services/ai-usage-log.service';
 import { AnthropicService } from './services/anthropic.service';
 import { BehaviorLlmRefineService } from './services/behavior-llm-refine';
 import { BehaviorMetricsCalculator } from './services/behavior-metrics-calculator';
+import { BudgetGuardService } from './services/budget-guard.service';
 import { CardRollupService } from './services/card-rollup.service';
 import { ChapterExtractionService } from './services/chapter-extraction.service';
 import { DeepSeekService } from './services/deepseek.service';
@@ -61,6 +63,10 @@ import { VoxService } from './services/vox.service';
   providers: [
     AiQueueService,
     AiUsageLogService,
+    // ТЗ LLM cost-safety Ф3 — two-tier ретеншен AiUsageLog (Tier-1 гасит
+    // 8КБ-превью рано, Tier-2 удаляет строки поздно, сохраняя историю
+    // стоимости). Self-scheduling (setInterval), как LogCleanupService.
+    AiUsageLogCleanupService,
     RetryService,
     // Провайдеры — нужны для LlmRouter в HTTP-side.
     AnthropicService,
@@ -75,6 +81,9 @@ import { VoxService } from './services/vox.service';
     GrsaiService,
     // Маршрутизация и регенерация.
     LlmRouterService,
+    // ТЗ LLM cost-safety Ф2 — pre-dispatch budget gate для LlmRouter.
+    // В одном DI-скоупе с LlmRouterService (export не нужен).
+    BudgetGuardService,
     // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
     // Используется Specialist33Service.supersedeDetect под флагом
     // MULTI_AGENT_DEBATE_ENABLED. Optional-injection — на воркер-side и в

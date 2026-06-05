@@ -38,6 +38,8 @@ export interface SocialContributionProfileApi {
   proactiveHintCount: number;
   mentoringCount: number;
   emotionalSupportCount: number;
+  /** Конструктивная обратная связь — считается на бэке из traits на лету. */
+  constructiveFeedbackCount: number;
   expertiseTopics: string[];
   socialRoles: string[];
   lastWeekHelpCount: number;
@@ -148,6 +150,15 @@ export interface PersonProfileResponseApi {
   publicTraits: HelpfulnessTraitApi[];
 }
 
+// ─────────────────────────── SocialContribution opt-out ─────────────────────
+
+export interface SocialContributionOptOutApi {
+  /** true → пользователь скрыл свой вклад публично. */
+  optedOut: boolean;
+  /** ISO 8601 — момент последнего изменения; null, если ни разу не менялось. */
+  updatedAt: string | null;
+}
+
 // ─────────────────────────── helpers ────────────────────────────────────────
 
 function buildSpotlightsQuery(req?: ListSpotlightsRequest): string {
@@ -171,6 +182,18 @@ export const helpfulnessApi = {
   getPersonSocialContribution: (personId: string) =>
     apiClient.get<PersonProfileResponseApi>(
       `/api/v1/persons/${encodeURIComponent(personId)}/social-contribution`,
+    ),
+
+  // ─── Opt-out социального вклада (ТЗ-E Ф4) ───
+  getMyOptOut: () =>
+    apiClient.get<SocialContributionOptOutApi>(
+      '/api/v1/me/social-contribution/opt-out',
+    ),
+
+  setMyOptOut: (optedOut: boolean) =>
+    apiClient.post<SocialContributionOptOutApi>(
+      '/api/v1/me/social-contribution/opt-out',
+      { optedOut },
     ),
 
   // ─── Spotlights feed ───

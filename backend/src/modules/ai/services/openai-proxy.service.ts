@@ -11,6 +11,13 @@ import type {
 import { LlmError } from './llm.types';
 import { toOpenAiStrictSchema } from './strict-json-schema.util';
 
+/** OpenAI Responses API требует слово 'json' в инструкциях при text.format json_object/json_schema.
+ *  Добавляем стабильный константный суффикс, только если его ещё нет (cache-friendly). */
+export function ensureJsonHint(instructions: string): string {
+  if (/json/i.test(instructions)) return instructions;
+  return `${instructions}\n\nВажно: верни ответ строго в виде валидного JSON.`;
+}
+
 /**
  * OpenAI Responses API через `proxy.agent-lia.ru`.
  * Используется как последний fallback, если Anthropic и MiniMax недоступны.
@@ -79,8 +86,10 @@ export class OpenAiProxyService {
     const fmt = input.responseFormat;
     if (fmt) {
       if (fmt.type === 'json_object') {
+        params['instructions'] = ensureJsonHint(String(params['instructions'] ?? ''));
         params['text'] = { format: { type: 'json_object' } };
       } else if (fmt.type === 'json_schema') {
+        params['instructions'] = ensureJsonHint(String(params['instructions'] ?? ''));
         params['text'] = {
           format: {
             type: 'json_schema',

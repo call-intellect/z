@@ -15,6 +15,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AiUsageLogService } from './ai-usage-log.service';
 import { AnthropicService } from './anthropic.service';
+import { BudgetGuardService } from './budget-guard.service';
 import { DeepSeekService } from './deepseek.service';
 import { GrsaiService } from './grsai.service';
 import { KieService } from './kie.service';
@@ -694,6 +695,16 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'goals-pulse-summarize',
   // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
   'chatbox-summary',
+  // Закрытие дыры реестра (2026-06-05): объявлены в типе LlmTaskType, но
+  // отсутствовали в этом массиве → не попадали в /admin/ai-models и в сиды,
+  // ехали по аварийному DEFAULT_FALLBACK_CHAIN. См. ТЗ 2026-06-05-llm-router-resilience.
+  'knowledge-specialists-combined',
+  'dialog-multi-query-clone',
+  'checkin-sentiment-batch',
+  // Дыра оказалась шире (найдено при реализации 2026-06-05): Specialist 3.9
+  // тоже не был зарегистрирован.
+  'experiment-extract',
+  'experiment-summarize-lessons',
 ] as const;
 
 /**
@@ -743,8 +754,10 @@ const PROVIDER_CAPABILITY: Record<
   deepseek: { maxDataClass: 'internal', localOnly: false },
   ollama: { maxDataClass: 'private', localOnly: true },
   // KIE / GRSAI — внешние мульти-провайдер прокси (Claude/GPT/Gemini).
-  // Пропускаем только internal-данные; sensitive/private — никогда.
-  kie: { maxDataClass: 'internal', localOnly: false },
+  // grsai пропускает только internal-данные; sensitive — никогда.
+  // kie поднят до private (2026-06-05), т.к. стал универсальным tertiary;
+  // приватность сейчас в деприоритете — решение владельца.
+  kie: { maxDataClass: 'private', localOnly: false },
   grsai: { maxDataClass: 'internal', localOnly: false },
 };
 
@@ -789,7 +802,7 @@ export function maxDataClass(
 const DEFAULT_FALLBACK_CHAIN: ProviderEntry[] = [
   { provider: 'deepseek', tier: 'primary' },
   { provider: 'openai-via-proxy', tier: 'secondary' },
-  { provider: 'ollama', tier: 'tertiary' },
+  { provider: 'kie', model: 'gemini-3.1-pro', tier: 'tertiary' },
 ];
 
 /**
@@ -962,6 +975,25 @@ export class NoEligibleProviderError extends Error {
 }
 
 /**
+ * ТЗ LLM cost-safety Ф2: hard-cap бюджета тенанта превышен и enforce включён.
+ * Бросается ДО dispatch к любому провайдеру. При observe (флаг выключен)
+ * не бросается — только метрика + warn-лог.
+ */
+export class LlmBudgetExceededError extends Error {
+  readonly code = 'llm_budget_exceeded';
+  constructor(
+    readonly tenantId: string | null,
+    readonly mtdRub: number,
+    readonly capRub: number | null,
+  ) {
+    super(
+      `LlmRouter: бюджет тенанта превышен (MTD=${mtdRub}₽ ≥ cap=${capRub}₽), вызов заблокирован.`,
+    );
+    this.name = 'LlmBudgetExceededError';
+  }
+}
+
+/**
  * Маршрутизатор LLM-вызовов по `LlmTaskRoute` записям из БД.
  *
  * - При старте подгружает все routes в in-memory кэш.
@@ -998,10 +1030,10 @@ export class LlmRouterService implements OnModuleInit {
 
   /**
    * audit С30 (2026-05-29): timeout на один dispatch к провайдеру в ms.
-   * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 30000.
+   * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 300000.
    */
   private get dispatchTimeoutMs(): number {
-    return this.cfg?.llmRouter?.dispatchTimeoutMs ?? 30_000;
+    return this.cfg?.llmRouter?.dispatchTimeoutMs ?? 300_000;
   }
 
   constructor(
@@ -1034,6 +1066,11 @@ export class LlmRouterService implements OnModuleInit {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
+    // ТЗ LLM cost-safety Ф2 — pre-dispatch budget gate. @Optional — тесты и
+    // воркер-side без BudgetGuard в DI продолжают работать (gate тихо пропускается).
+    @Optional()
+    @Inject(BudgetGuardService)
+    private readonly budgetGuard?: BudgetGuardService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -1297,6 +1334,22 @@ export class LlmRouterService implements OnModuleInit {
         params.taskType,
         effectiveDataClass,
         providers.map((p) => p.provider),
+      );
+    }
+
+    // Pre-dispatch budget gate (ТЗ cost-safety Ф2). Best-effort, observe по умолчанию.
+    const bev = await this.budgetGuard?.evaluate(params.tenantId).catch(() => null);
+    if (bev?.over) {
+      const enforce =
+        (await this.cfg?.getDynamic<boolean>('llm.budget.enforce_enabled', undefined, false)) ??
+        false;
+      this.metrics?.incLlmBudgetExceeded({ mode: enforce ? 'enforce' : 'observe' });
+      if (enforce) {
+        throw new LlmBudgetExceededError(params.tenantId, bev.mtdRub, bev.capRub);
+      }
+      this.logger.warn(
+        { tenantId: params.tenantId, mtdRub: bev.mtdRub, capRub: bev.capRub },
+        'LlmRouter: бюджет превышен, но enforce выключен — пропускаю (observe)',
       );
     }
 
@@ -1698,9 +1751,10 @@ export class LlmRouterService implements OnModuleInit {
 
     // Fallback на статическую карту в коде.
     if (!(model in MODEL_PRICES)) {
-      this.logger.debug(
-        `computeCostUsd: цена для ${key} не найдена ни в БД, ни в коде → 0`,
+      this.logger.warn(
+        `computeCostUsd: цена для ${key} не найдена ни в БД, ни в коде → costUsd=0 (заполни в админке)`,
       );
+      this.metrics?.incLlmCostUnpriced({ provider, model });
     }
     return calcCostUsd(model, inputTokens, outputTokens, cachedTokens);
   }

@@ -109,7 +109,10 @@ export class GoalsService {
         where,
         orderBy: { createdAt: 'desc' },
         take: args.limit,
-        include: { _count: { select: { themes: true } } },
+        include: {
+          _count: { select: { themes: true } },
+          ownerPerson: { select: { id: true, name: true } },
+        },
       }),
       this.prisma.goal.count({ where }),
     ]);
@@ -132,6 +135,7 @@ export class GoalsService {
         },
         keyResults: { orderBy: { createdAt: 'asc' } },
         _count: { select: { themes: true } },
+        ownerPerson: { select: { id: true, name: true } },
       },
     });
     if (!goal || goal.tenantId !== args.tenantId) {
@@ -164,6 +168,7 @@ export class GoalsService {
 
     return {
       ...this.mapList(goal, goal._count.themes),
+      blocksCount: latestSnapshot?.blocksCount ?? goal.cachedBlocksCount ?? null,
       themes,
       latestSnapshot,
       timeline,
@@ -190,6 +195,9 @@ export class GoalsService {
     if (body.parentGoalId) {
       await this.assertParentExists(tenantId, body.parentGoalId);
     }
+    if (body.ownerPersonId) {
+      await this.assertOwnerPersonExists(tenantId, body.ownerPersonId);
+    }
     const created = await this.prisma.goal.create({
       data: {
         tenantId,
@@ -201,9 +209,13 @@ export class GoalsService {
           : {}),
         ...(body.horizon !== undefined ? { horizon: body.horizon } : {}),
         ...(body.parentGoalId ? { parentGoalId: body.parentGoalId } : {}),
+        ...(body.ownerPersonId ? { ownerPersonId: body.ownerPersonId } : {}),
         createdById: userId,
       },
-      include: { _count: { select: { themes: true } } },
+      include: {
+        _count: { select: { themes: true } },
+        ownerPerson: { select: { id: true, name: true } },
+      },
     });
     void this.audit.log({
       userId,
@@ -264,6 +276,14 @@ export class GoalsService {
         data.parent = { disconnect: true };
       }
     }
+    if (body.ownerPersonId !== undefined) {
+      if (body.ownerPersonId) {
+        await this.assertOwnerPersonExists(tenantId, body.ownerPersonId);
+        data.ownerPerson = { connect: { id: body.ownerPersonId } };
+      } else {
+        data.ownerPerson = { disconnect: true };
+      }
+    }
 
     // M0: имена всех правленых полей «прибиваются» руками — AI их не перетрёт.
     data.manualOverride = this.mergeManualOverride(
@@ -274,7 +294,10 @@ export class GoalsService {
     const updated = await this.prisma.goal.update({
       where: { id: goalId },
       data,
-      include: { _count: { select: { themes: true } } },
+      include: {
+        _count: { select: { themes: true } },
+        ownerPerson: { select: { id: true, name: true } },
+      },
     });
 
     void this.audit.log({
@@ -574,6 +597,26 @@ export class GoalsService {
     }
   }
 
+  /** Проверить, что Person (ответственный) существует и принадлежит тому же tenant'у. */
+  private async assertOwnerPersonExists(
+    tenantId: string,
+    ownerPersonId: string,
+  ): Promise<void> {
+    const person = await this.prisma.person.findUnique({
+      where: { id: ownerPersonId },
+      select: { id: true, tenantId: true },
+    });
+    if (!person || person.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'owner_person_not_found',
+          message: 'Ответственный не найден',
+        },
+      });
+    }
+  }
+
   /**
    * Защита от цикла при перепривязке (`parentGoalId`):
    *   - newParentId === goalId → цель не может быть родителем самой себя.
@@ -663,6 +706,9 @@ export class GoalsService {
         | 'achieved'
         | 'dropped';
       parentGoalId: string | null;
+      ownerPersonId: string | null;
+      ownerPerson: { name: string } | null;
+      cachedBlocksCount: number | null;
     },
     themesCount: number,
   ): GoalListItemDto {
@@ -686,6 +732,9 @@ export class GoalsService {
       promotionState: g.promotionState,
       progressStatus: g.progressStatus,
       parentGoalId: g.parentGoalId,
+      ownerPersonId: g.ownerPersonId ?? null,
+      ownerPersonName: g.ownerPerson?.name ?? null,
+      blocksCount: g.cachedBlocksCount ?? null,
     };
   }
 

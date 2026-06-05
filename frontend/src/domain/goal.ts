@@ -281,6 +281,10 @@ export type GoalListItemApi = {
   promotionState: 'suggested' | 'active' | 'dismissed';
   progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
   parentGoalId: string | null;
+  // ── ТЗ-F (2026-06-05) ──
+  ownerPersonId: string | null;
+  ownerPersonName: string | null;
+  blocksCount: number | null;
 };
 
 export type GoalDetailApi = GoalListItemApi & {
@@ -357,6 +361,10 @@ export type GoalDomain = {
   promotionState: GoalPromotionState;
   progressStatus: GoalProgressStatus;
   parentGoalId: string | null;
+  // ── ТЗ-F (2026-06-05) ──
+  ownerPersonId: string | null;
+  ownerPersonName: string | null;
+  blocksCount: number | null;
 };
 
 export type GoalDetailDomain = GoalDomain & {
@@ -445,6 +453,9 @@ export function goalFromApi(api: GoalListItemApi): GoalDomain {
     promotionState: parsePromotionState(api.promotionState),
     progressStatus: parseProgressStatus(api.progressStatus),
     parentGoalId: api.parentGoalId,
+    ownerPersonId: api.ownerPersonId ?? null,
+    ownerPersonName: api.ownerPersonName ?? null,
+    blocksCount: api.blocksCount ?? null,
   };
 }
 
@@ -480,6 +491,95 @@ export function alignmentBarColor(score: number | null): string {
   if (score < 40) return 'bg-danger';
   if (score < 70) return 'bg-warning';
   return 'bg-success';
+}
+
+// ── Светофор уверенности (ТЗ-F Ф2) ──
+export type ConfidenceLevel = 'low' | 'medium' | 'high';
+
+export const CONFIDENCE_LEVEL_LABELS: Record<ConfidenceLevel, string> = {
+  low: 'Мало данных',
+  medium: 'Достаточно данных',
+  high: 'Много данных',
+};
+
+/**
+ * Светофор уверенности (derive, C-1). themesCount/blocksCount → уровень.
+ * blocksCount=null (в списке без snapshot) → оценка по числу тем.
+ */
+export function confidenceLevel(
+  themesCount: number,
+  blocksCount: number | null,
+): ConfidenceLevel {
+  if (themesCount === 0) return 'low';
+  const blocks = blocksCount ?? themesCount * 5; // оценка для списка, где blocksCount нет
+  if (themesCount >= 3 && blocks >= 20) return 'high';
+  if (blocks < 5) return 'low';
+  return 'medium';
+}
+
+/** Парные токены чипа светофора (правило bg-{c}+text-{c}-fg). */
+export function confidenceChipClasses(level: ConfidenceLevel): {
+  bg: string;
+  fg: string;
+} {
+  switch (level) {
+    case 'low':
+      return { bg: 'bg-chip-danger-bg', fg: 'text-chip-danger-fg' };
+    case 'medium':
+      return { bg: 'bg-chip-warning-bg', fg: 'text-chip-warning-fg' };
+    case 'high':
+      return { bg: 'bg-chip-success-bg', fg: 'text-chip-success-fg' };
+  }
+}
+
+// ── Склейка движения в один вердикт (ТЗ-F Ф3) ──
+export type MovementVerdict = {
+  label: string;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+};
+
+/**
+ * Один понятный вердикт из cachedAlignment(0-100) + progressStatus.
+ * progressStatus (явное состояние) приоритетнее балла; балл уточняет on_track.
+ * Поля БД не меняем — это чистая презентационная склейка (C-2).
+ */
+export function movementVerdict(
+  alignment: number | null,
+  progress: GoalProgressStatus,
+): MovementVerdict {
+  switch (progress) {
+    case 'achieved':
+      return { label: 'Достигнута', tone: 'success' };
+    case 'dropped':
+      return { label: 'Выпала из работы', tone: 'neutral' };
+    case 'stalled':
+      return { label: 'Застряла', tone: 'danger' };
+    case 'at_risk':
+      return { label: 'Под риском', tone: 'warning' };
+    case 'on_track': {
+      if (alignment !== null && alignment >= 70)
+        return { label: 'Уверенно движемся', tone: 'success' };
+      if (alignment !== null && alignment >= 40)
+        return { label: 'Движемся', tone: 'success' };
+      return { label: 'Движемся, но согласованность низкая', tone: 'warning' };
+    }
+  }
+}
+
+/** Парные токены чипа вердикта движения. */
+export function movementVerdictChipClasses(
+  tone: MovementVerdict['tone'],
+): { bg: string; fg: string } {
+  switch (tone) {
+    case 'success':
+      return { bg: 'bg-chip-success-bg', fg: 'text-chip-success-fg' };
+    case 'warning':
+      return { bg: 'bg-chip-warning-bg', fg: 'text-chip-warning-fg' };
+    case 'danger':
+      return { bg: 'bg-chip-danger-bg', fg: 'text-chip-danger-fg' };
+    case 'neutral':
+      return { bg: 'bg-bg-overlay', fg: 'text-fg-secondary' };
+  }
 }
 
 /**

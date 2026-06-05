@@ -32,10 +32,15 @@ export {
  * Сгенерировать deep-link на Telegram-бота, который сразу при `/start`
  * прожжёт `linkCode`. Username берётся из ENV; по умолчанию `kora_bot`.
  */
-export function buildTelegramDeepLink(linkCode: string): string {
+export function buildTelegramDeepLink(
+  linkCode: string,
+  botUsername?: string | null,
+): string {
   const username = (
-    process.env.NEXT_PUBLIC_KORA_BOT_USERNAME?.replace(/^@/, '') ?? 'kora_bot'
-  ).trim();
+    botUsername || process.env.NEXT_PUBLIC_KORA_BOT_USERNAME || 'kora_bot'
+  )
+    .replace(/^@/, '')
+    .trim();
   return `https://t.me/${username}?start=${encodeURIComponent(linkCode)}`;
 }
 

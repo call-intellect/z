@@ -111,12 +111,12 @@ const AnthropicSchema = z.object({
  * Не отдельный провайдер — только cross-cutting параметры роутера.
  */
 const LlmRouterSchema = z.object({
-  /** Hard-timeout на один dispatch к LLM-провайдеру (Promise.race). */
+  /** Hard-timeout на один dispatch к LLM-провайдеру (Promise.race). default 300000/300с. */
   LLM_ROUTER_DISPATCH_TIMEOUT_MS: z.coerce
     .number()
     .int()
     .positive()
-    .default(30_000),
+    .default(300_000),
 });
 
 const VoxSchema = z.object({

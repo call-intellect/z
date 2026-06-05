@@ -37,19 +37,25 @@ import {
   GOAL_HORIZON_LABELS,
   GOAL_HORIZON_VALUES,
   GOAL_KR_SOURCE_KIND_LABELS,
+  CONFIDENCE_LEVEL_LABELS,
   GOAL_KR_SOURCE_KIND_VALUES,
   GOAL_STATUS_LABELS,
   GOAL_THEME_SOURCE_LABELS,
   alignmentBarColor,
   alignmentTextColor,
+  confidenceChipClasses,
+  confidenceLevel,
   daysUntil,
   deltaTone,
   formatAlignment,
   formatDelta,
   goalDetailFromApi,
   krProgressBarColor,
+  movementVerdict,
+  movementVerdictChipClasses,
   statusBadgeVariant,
   targetDateLabel,
+  type ConfidenceLevel,
   type GoalAlignmentSnapshotDomain,
   type GoalDetailDomain,
   type GoalHorizon,
@@ -150,6 +156,13 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     goal.cachedAlignment === null
       ? null
       : Math.max(0, Math.min(100, goal.cachedAlignment));
+  const confLevel: ConfidenceLevel = confidenceLevel(
+    goal.latestSnapshot?.themesCount ?? 0,
+    goal.latestSnapshot?.blocksCount ?? goal.blocksCount,
+  );
+  const confChip = confidenceChipClasses(confLevel);
+  const verdict = movementVerdict(goal.cachedAlignment, goal.progressStatus);
+  const verdictChip = movementVerdictChipClasses(verdict.tone);
 
   async function handleRecompute() {
     if (!currentOrgId || recomputing) return;
@@ -418,6 +431,15 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                 {formatAlignment(alignmentClamped)}
               </div>
               <DeltaPill delta={goal.cachedAlignmentDelta} />
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  verdictChip.bg,
+                  verdictChip.fg,
+                )}
+              >
+                {verdict.label}
+              </span>
               <div className="flex-1 min-w-[160px]">
                 <div className="h-2 w-full overflow-hidden rounded-full bg-bg-overlay">
                   {alignmentClamped !== null && (
@@ -430,15 +452,24 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                     />
                   )}
                 </div>
-                <p className="mt-1 text-[11px] text-fg-tertiary">
-                  AI-индикатор движения, точность ±10 пунктов.
+                <p className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-tertiary">
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      confChip.bg,
+                      confChip.fg,
+                    )}
+                  >
+                    {CONFIDENCE_LEVEL_LABELS[confLevel]}
+                  </span>
+                  <span>AI-индикатор движения, точность ±10 пунктов.</span>
                 </p>
               </div>
             </div>
             {alignmentClamped === null && (
               <p className="mt-3 text-sm text-fg-tertiary">
-                Согласованность ещё не рассчитана. Дождитесь cron&apos;а
-                04:00 или нажмите «Пересчитать сейчас».
+                Согласованность ещё не рассчитана. Кора рассчитывает оценку
+                каждую ночь, можно нажать «Пересчитать сейчас».
               </p>
             )}
             {goal.latestSnapshot?.explanation && (
@@ -476,20 +507,20 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
           {/* Timeline */}
           <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
             <h2 className="mb-3 text-sm font-medium text-fg-tertiary">
-              Timeline согласованности
+              История движения к цели
             </h2>
             {goal.timeline.length >= 3 ? (
               <TimelineChart snapshots={goal.timeline} />
             ) : (
               <p className="text-xs text-fg-tertiary">
-                Недостаточно данных, нужно ≥3 snapshots.
+                Недостаточно данных, нужно хотя бы 3 замера.
               </p>
             )}
 
             {goal.timeline.length > 0 && (
               <div className="mt-4">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-                  История snapshots ({goal.timeline.length})
+                  Замеры ({goal.timeline.length})
                 </h3>
                 <ul className="flex flex-col divide-y divide-border-subtle">
                   {goal.timeline.slice(0, 30).map((s) => (
@@ -831,7 +862,7 @@ function KeyResultDialog({
               maxLength={50}
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="встреч, %, ₽"
+              placeholder="встреч, задач, %"
             />
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -1198,7 +1229,7 @@ function DeltaPill({ delta }: { delta: number | null }) {
         tone === 'down' && 'bg-danger/15 text-danger',
         tone === 'flat' && 'bg-bg-overlay text-fg-tertiary',
       )}
-      title="Изменение относительно предыдущего snapshot"
+      title="Изменение по сравнению с прошлым замером"
     >
       {tone === 'up' && <ArrowUpRight size={12} />}
       {tone === 'down' && <ArrowDownRight size={12} />}

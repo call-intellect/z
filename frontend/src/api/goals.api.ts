@@ -28,6 +28,8 @@ export type CreateGoalRequest = {
   description: string;
   targetDate?: string | null;
   weight?: number;
+  /** ТЗ-F — ответственный (Person.id). Опустить/null = без ответственного. */
+  ownerPersonId?: string | null;
 };
 
 export type UpdateGoalRequest = {
@@ -41,6 +43,8 @@ export type UpdateGoalRequest = {
   horizon?: GoalHorizon;
   progressStatus?: string;
   promotionState?: 'suggested' | 'active' | 'dismissed';
+  /** ТЗ-F — ответственный (Person.id). null = снять ответственного. */
+  ownerPersonId?: string | null;
 };
 
 export type AddThemesRequest = { themeIds: string[] };

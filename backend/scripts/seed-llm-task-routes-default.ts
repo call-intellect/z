@@ -45,8 +45,9 @@ interface TaskRouteSeed {
 }
 
 // Цепочки выровнены под playbook §2.1. Согласно §11 — Anthropic в дефолтных
-// цепочках НЕ присутствует (super_admin может добавить вручную). qwen3.5:9b
-// — наш Ollama tertiary по факту (см. правки в начале playbook).
+// цепочках НЕ присутствует (super_admin может добавить вручную). Tertiary с
+// 2026-06-05 — kie:gemini-3.1-pro (универсальный fallback); ollama убран из
+// дефолтных кодовых цепочек (остаётся опц. локальный safety-net через UI/БД).
 const ROUTES: TaskRouteSeed[] = [
   // ─── AI-pipeline встреч (legacy taskType'ы) ───
   {
@@ -56,7 +57,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -66,7 +67,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -76,7 +77,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -86,7 +87,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -96,7 +97,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -106,7 +107,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -116,7 +117,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -126,7 +127,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -136,7 +137,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -146,7 +147,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
 
@@ -158,7 +159,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -168,7 +169,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -178,7 +179,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -188,7 +189,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -198,7 +199,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -208,7 +209,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -218,7 +219,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -228,7 +229,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -238,7 +239,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -248,7 +249,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -258,7 +259,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -268,7 +269,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -278,7 +279,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -288,7 +289,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -298,7 +299,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -308,7 +309,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
 
@@ -323,7 +324,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -333,7 +334,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
   {
@@ -343,7 +344,7 @@ const ROUTES: TaskRouteSeed[] = [
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-5.4-nano' },
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
-      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
 ];

@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import Link from 'next/link';
+import { useState } from 'react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
@@ -14,21 +13,16 @@ import {
   type OperationsTeamTemperatureApi,
   type OperationsTeamTemperatureSummaryApi,
 } from '@/api/operations-dashboard.api';
-import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
-import {
-  fromDailyDigestApi,
-  type DailyDigestDomain,
-} from '@/domain/operations-daily-digest';
 import {
   fromOperationsOverviewApi,
   type OperationsOverviewDomain,
 } from '@/domain/operations-dashboard';
 import { useAuth } from '@/contexts/auth-context';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
-import { CountUp } from '@/ui/components/dashboard/charts';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
+import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
 
@@ -48,22 +42,35 @@ import { MaturityWidget } from './widgets/MaturityWidget';
  */
 export function OperationsDashboardClient() {
   const { currentOrgId } = useAuth();
-  const [data, setData] = useState<OperationsOverviewDomain | null>(null);
-  const [commitments, setCommitments] =
-    useState<OpenCommitmentsListApi | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  // SBA β-8.3 Wave 1 — блок «Вчерашний отчёт». Через SWR независимо от
-  // основного overview, чтобы провал ежедневного отчёта не валил весь дашборд.
-  const dailyDigestSwr = useSWR(
-    ['operations-daily-digest-latest'],
-    async () => operationsDailyDigestApi.getLatest(),
+  // R2 — overview и open-commitments через SWR (раньше императивная загрузка
+  // через Promise.all). Каждый запрос независим: провал commitments не валит
+  // overview.
+  const overviewSwr = useSWR(
+    ['operations-overview'],
+    () => operationsDashboardApi.getOverview(),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
-  const dailyDigestDomain: DailyDigestDomain | null = dailyDigestSwr.data
-    ? fromDailyDigestApi(dailyDigestSwr.data)
+  const commitmentsSwr = useSWR(
+    ['operations-open-commitments', 14, 100],
+    () => commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  const data: OperationsOverviewDomain | null = overviewSwr.data
+    ? fromOperationsOverviewApi(overviewSwr.data)
     : null;
+  const commitments: OpenCommitmentsListApi | null = commitmentsSwr.data ?? null;
+  const loading = overviewSwr.isLoading;
+  // Сохраняем спец-обработку forbidden → понятный текст про роль.
+  const error = (() => {
+    const err = overviewSwr.error;
+    if (!err) return null;
+    if (err instanceof ApiError && err.code === 'forbidden') {
+      return 'Нет доступа к COO-дашборду (нужна роль coo / admin / owner).';
+    }
+    return err instanceof Error ? err.message : 'Не удалось загрузить дашборд';
+  })();
 
   // Pulse Wave 2.3 — данные для расширенных виджетов. Каждый — независимый
   // SWR, чтобы провал одного не валил весь дашборд.
@@ -82,37 +89,6 @@ export function OperationsDashboardClient() {
     async () => operationsDashboardApi.getStaleIssues({ staleDays: 5, limit: 20 }),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      operationsDashboardApi.getOverview(),
-      commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
-    ])
-      .then(([overview, openCommitments]) => {
-        if (cancelled) return;
-        setData(fromOperationsOverviewApi(overview));
-        setCommitments(openCommitments);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.code === 'forbidden') {
-          setError('Нет доступа к COO-дашборду (нужна роль coo / admin / owner).');
-        } else {
-          setError(
-            err instanceof Error ? err.message : 'Не удалось загрузить дашборд',
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (loading) {
     return <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>;
@@ -151,55 +127,71 @@ export function OperationsDashboardClient() {
         <RequiresActionBanner orgId={currentOrgId} />
       </div>
 
-      <YesterdayDigestCard
-        loading={dailyDigestSwr.isLoading}
-        digest={dailyDigestDomain}
-      />
+      {/* §5.3/§5.4 — KPI разбиты на смысловые зоны (R1). Карточки — KpiHero
+          c threshold-тоном вместо локального Card. Временных рядов в
+          overview-API нет — sparkline не выдумываем. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards lg:grid-cols-3">
+        {/* Зона «Люди» — кто в команде под нагрузкой/в конфликте. */}
+        <section className="lg:col-span-1">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Люди
+          </h2>
+          <KpiHero
+            label="Конфликты в команде"
+            value={data.teamFrictionCount}
+            numericValue={data.teamFrictionCount}
+            threshold={{ green: 0, yellow: 3, inverted: true }}
+          />
+        </section>
 
-      <div className="mt-6">
-        <MaturityWidget maturity={data.maturity} />
+        {/* Зона «Исполнение» — блокеры, цели, загрузка. */}
+        <section className="lg:col-span-2">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Исполнение
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KpiHero
+              label="Активные блокеры"
+              value={data.blockersCount}
+              numericValue={data.blockersCount}
+              threshold={{ green: 0, yellow: 5, inverted: true }}
+              href="/dashboard/operations/weekly"
+            />
+            <KpiHero
+              label="Провалившиеся цели"
+              value={data.missedGoalsCount}
+              numericValue={data.missedGoalsCount}
+              threshold={{ green: 0, yellow: 2, inverted: true }}
+            />
+            {commitments === null ? (
+              // Запрос упал — нейтральный KPI без threshold-тона, экран не падает.
+              <KpiHero
+                label="Открытые обещания"
+                value={0}
+                numericValue={0}
+              />
+            ) : (
+              <KpiHero
+                label="Открытые обещания"
+                value={commitments.total}
+                numericValue={commitments.total}
+                threshold={{ green: 5, yellow: 15, inverted: true }}
+                href="/dashboard/operations/weekly"
+              />
+            )}
+          </div>
+        </section>
       </div>
 
-      {/* §5.3/§5.4 — Hero-strip главных KPI с CountUp и hover-эффектом.
-          Временных рядов в overview-API нет — sparkline не выдумываем. */}
-      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:grid-cols-2 lg:grid-cols-4">
-        <Card
-          title="Активные блокеры"
-          value={data.blockersCount}
-          accent={data.blockersBySeverity.high > 0 ? 'red' : 'amber'}
-          subtitle={`high: ${data.blockersBySeverity.high}, medium: ${data.blockersBySeverity.medium}, low: ${data.blockersBySeverity.low}`}
-        />
-        <Card
-          title="Провалившиеся цели"
-          value={data.missedGoalsCount}
-          accent={data.missedGoalsCount > 0 ? 'red' : 'green'}
-          subtitle={`каскад: ${data.cascadeMissedCount}`}
-        />
-        <Card
-          title="Конфликты в команде"
-          value={data.teamFrictionCount}
-          accent={data.teamFrictionCount > 0 ? 'amber' : 'green'}
-          subtitle="EntityLink relationType=conflicted_with"
-        />
-        <Card
-          title="Средняя загрузка"
-          value={data.capacityAvgPercent}
-          suffix="%"
-          accent={data.capacityOverloadedCount > 0 ? 'amber' : 'green'}
-          subtitle={`перегружены: ${data.capacityOverloadedCount}`}
-        />
-      </div>
-
-      <TeamTemperatureWidget summary={data.teamTemperature} />
-
-      <TeamTemperatureHeatmapCard
-        loading={temperatureSwr.isLoading}
-        error={
+      <TeamTemperatureSection
+        summary={data.teamTemperature}
+        heatmapLoading={temperatureSwr.isLoading}
+        heatmapError={
           temperatureSwr.error instanceof Error
             ? temperatureSwr.error.message
             : null
         }
-        temperature={temperatureSwr.data ?? null}
+        heatmap={temperatureSwr.data ?? null}
       />
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -232,11 +224,18 @@ export function OperationsDashboardClient() {
         />
       </div>
 
-      <div className="mt-6">
-        <CauseCategoryMapWidget
-          insightsByCauseCategory={data.insightsByCauseCategory}
-        />
-      </div>
+      {/* Зона «Сигналы» — зрелость данных + карта первопричин (R1). */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+          Сигналы
+        </h2>
+        <div className="space-y-6">
+          <MaturityWidget maturity={data.maturity} />
+          <CauseCategoryMapWidget
+            insightsByCauseCategory={data.insightsByCauseCategory}
+          />
+        </div>
+      </section>
 
       {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
@@ -290,42 +289,72 @@ export function OperationsDashboardClient() {
   );
 }
 
-function Card(props: {
-  title: string;
-  value: number | string;
-  /** Доп. суффикс к числу (`%`, ` шт`, и т.п.). Используется только для number. */
-  suffix?: string;
-  accent: 'green' | 'amber' | 'red';
-  subtitle?: string;
+/**
+ * ТЗ-C Ф3 (R4) — единый блок «Температура команды» с переключателем
+ * «Общая / По людям». Один визуальный `<section>` с общим заголовком; внутри —
+ * либо `TeamTemperatureOverallBody` (полоса green/yellow/red), либо
+ * `TeamTemperatureByPersonBody` (heatmap по людям). Каждый body сохраняет свои
+ * empty/loading/error-состояния.
+ */
+function TeamTemperatureSection(props: {
+  summary: OperationsTeamTemperatureSummaryApi;
+  heatmapLoading: boolean;
+  heatmapError: string | null;
+  heatmap: OperationsTeamTemperatureApi | null;
 }) {
-  const colour =
-    props.accent === 'red'
-      ? 'border-chip-danger-bg bg-chip-danger-bg'
-      : props.accent === 'amber'
-        ? 'border-chip-warning-bg bg-chip-warning-bg'
-        : 'border-chip-success-bg bg-chip-success-bg';
-  const isNumeric = typeof props.value === 'number';
+  const [mode, setMode] = useState<'overall' | 'byPerson'>('overall');
   return (
-    <div
-      className={`rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md ${colour}`}
-    >
-      <div className="text-xs uppercase tracking-wide text-fg-secondary">
-        {props.title}
+    <section className="mt-8 rounded border bg-bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Температура команды
+        </h2>
+        <div className="inline-flex gap-1 rounded-lg bg-bg-subtle p-1">
+          <button
+            type="button"
+            onClick={() => setMode('overall')}
+            aria-pressed={mode === 'overall'}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              mode === 'overall'
+                ? 'bg-accent/15 text-accent-fg'
+                : 'text-fg-secondary hover:bg-bg-subtle'
+            }`}
+          >
+            Общая
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('byPerson')}
+            aria-pressed={mode === 'byPerson'}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              mode === 'byPerson'
+                ? 'bg-accent/15 text-accent-fg'
+                : 'text-fg-secondary hover:bg-bg-subtle'
+            }`}
+          >
+            По людям
+          </button>
+        </div>
       </div>
-      <div className="mt-1 text-3xl font-bold">
-        {isNumeric ? <CountUp to={props.value as number} /> : props.value}
-        {props.suffix ? (
-          <span className="ml-0.5 text-2xl font-semibold">{props.suffix}</span>
-        ) : null}
-      </div>
-      {props.subtitle ? (
-        <div className="mt-1 text-xs text-fg-secondary">{props.subtitle}</div>
-      ) : null}
-    </div>
+      {mode === 'overall' ? (
+        <TeamTemperatureOverallBody summary={props.summary} />
+      ) : (
+        <TeamTemperatureByPersonBody
+          loading={props.heatmapLoading}
+          error={props.heatmapError}
+          temperature={props.heatmap}
+        />
+      )}
+    </section>
   );
 }
 
-function TeamTemperatureWidget(props: {
+/**
+ * ТЗ-C Ф3 — режим «Общая»: полоса зелёный/жёлтый/красный + легенда.
+ * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
+ * Empty-state при нуле чек-инов сохранён.
+ */
+function TeamTemperatureOverallBody(props: {
   summary: OperationsTeamTemperatureSummaryApi;
 }) {
   const s = props.summary;
@@ -342,12 +371,60 @@ function TeamTemperatureWidget(props: {
     return `красных ${delta}% к прошлой неделе`;
   })();
 
+  if (s.totalCheckIns === 0) {
+    return (
+      <p className="text-sm text-fg-secondary">
+        За последние {s.days} дней нет чек-инов с проанализированным
+        настроением. Когда сотрудники начнут отвечать на вечерние чек-ины —
+        здесь появится распределение зелёный / жёлтый / красный.
+      </p>
+    );
+  }
+
   return (
-    <section className="mt-8 rounded border bg-bg-card p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">
-          Температура команды (последние {s.days} дн.)
-        </h2>
+    <>
+      <p className="text-sm text-fg-secondary">
+        Последние {s.days} дн. · всего чек-инов: {s.totalCheckIns}
+        {deltaLabel ? `; ${deltaLabel}.` : '.'}
+      </p>
+      <div className="mt-3 flex h-6 overflow-hidden rounded border">
+        {greenW > 0 ? (
+          <div
+            className="bg-success"
+            style={{ width: `${greenW}%` }}
+            title={`зелёных ${pct(s.greenShare)}`}
+          />
+        ) : null}
+        {yellowW > 0 ? (
+          <div
+            className="bg-warning"
+            style={{ width: `${yellowW}%` }}
+            title={`жёлтых ${pct(s.yellowShare)}`}
+          />
+        ) : null}
+        {redW > 0 ? (
+          <div
+            className="bg-danger"
+            style={{ width: `${redW}%` }}
+            title={`красных ${pct(s.redShare)}`}
+          />
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-3 text-xs text-fg-secondary">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-success" />
+            зелёных {pct(s.greenShare)}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-warning" />
+            жёлтых {pct(s.yellowShare)}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-danger" />
+            красных {pct(s.redShare)}
+          </span>
+        </div>
         <Link
           href="/dashboard/operations/weekly"
           className="text-xs text-info hover:underline"
@@ -355,58 +432,7 @@ function TeamTemperatureWidget(props: {
           Открыть недельную сводку →
         </Link>
       </div>
-      {s.totalCheckIns === 0 ? (
-        <p className="mt-2 text-sm text-fg-secondary">
-          За последние {s.days} дней нет чек-инов с проанализированным
-          настроением. Когда сотрудники начнут отвечать на вечерние чек-ины
-          — здесь появится распределение зелёный / жёлтый / красный.
-        </p>
-      ) : (
-        <>
-          <p className="mt-1 text-sm text-fg-secondary">
-            Всего чек-инов: {s.totalCheckIns}
-            {deltaLabel ? `; ${deltaLabel}.` : '.'}
-          </p>
-          <div className="mt-3 flex h-6 overflow-hidden rounded border">
-            {greenW > 0 ? (
-              <div
-                className="bg-success"
-                style={{ width: `${greenW}%` }}
-                title={`зелёных ${pct(s.greenShare)}`}
-              />
-            ) : null}
-            {yellowW > 0 ? (
-              <div
-                className="bg-warning"
-                style={{ width: `${yellowW}%` }}
-                title={`жёлтых ${pct(s.yellowShare)}`}
-              />
-            ) : null}
-            {redW > 0 ? (
-              <div
-                className="bg-danger"
-                style={{ width: `${redW}%` }}
-                title={`красных ${pct(s.redShare)}`}
-              />
-            ) : null}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-fg-secondary">
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-success" />
-              зелёных {pct(s.greenShare)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-warning" />
-              жёлтых {pct(s.yellowShare)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-danger" />
-              красных {pct(s.redShare)}
-            </span>
-          </div>
-        </>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -506,101 +532,30 @@ function SeverityBadge(props: {
 }
 
 /**
- * SBA β-8.3 Wave 1 — карточка «Вчерашний отчёт» на главной COO-дашборда.
- *
- * Берёт latest daily-digest (через SWR в родителе). Поля: дата отчёта (формат
- * DD.MM.YYYY), короткая выжимка (max 3-4 строки), ссылка на полную страницу.
- *
- * Empty state — когда отчёта ещё нет (новый tenant / cron не отработал).
+ * ТЗ-C Ф3 — режим «По людям»: heatmap из `TeamTemperatureHeatmap`.
+ * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
+ * Состояния loading/error/empty сохранены. `byPerson` уже отсортирован на бэке
+ * по `red DESC`.
  */
-function YesterdayDigestCard(props: {
-  loading: boolean;
-  digest: DailyDigestDomain | null;
-}) {
-  if (props.loading) {
-    return (
-      <section className="rounded border border-border-subtle bg-bg-surface p-4 text-sm text-fg-secondary">
-        Загрузка ежедневного отчёта…
-      </section>
-    );
-  }
-  if (!props.digest) {
-    return (
-      <section className="rounded border border-border-subtle bg-bg-surface p-4">
-        <h2 className="text-lg font-semibold text-fg-primary">
-          Ежедневный отчёт
-        </h2>
-        <p className="mt-1 text-sm text-fg-secondary">
-          Отчёт ещё не сгенерирован, проверьте после 01:00 МСК.
-        </p>
-        <Link
-          href="/dashboard/operations/daily"
-          className="mt-2 inline-block text-xs text-accent hover:underline"
-        >
-          Открыть страницу ежедневного отчёта →
-        </Link>
-      </section>
-    );
-  }
-
-  const d = props.digest;
-  const [y, m, dd] = d.dateLocal.split('-');
-  const dateLabel = y && m && dd ? `${dd}.${m}.${y}` : d.dateLocal;
-  return (
-    <section className="rounded border border-accent/30 bg-accent/5 p-4">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-fg-primary">
-          Вчерашний отчёт ·{' '}
-          <span className="text-fg-secondary">{dateLabel}</span>
-        </h2>
-        <Link
-          href={`/dashboard/operations/daily?date=${d.dateLocal}`}
-          className="text-xs text-accent hover:underline"
-        >
-          Открыть полный отчёт →
-        </Link>
-      </div>
-      {d.shortSummary ? (
-        <p className="line-clamp-4 text-sm text-fg-primary">{d.shortSummary}</p>
-      ) : (
-        <p className="text-sm text-fg-secondary">
-          Связный текст не собран. Откройте полный отчёт, чтобы увидеть
-          структурированные показатели.
-        </p>
-      )}
-    </section>
-  );
-}
-
-/**
- * Pulse Wave 2.3 — карточка «Температура команды по людям» (heatmap).
- *
- * Тонкая обёртка над `TeamTemperatureHeatmap`: title + skeleton/error/empty.
- * `byPerson` уже отсортирован на бэке по `red DESC`.
- */
-function TeamTemperatureHeatmapCard(props: {
+function TeamTemperatureByPersonBody(props: {
   loading: boolean;
   error: string | null;
   temperature: OperationsTeamTemperatureApi | null;
 }) {
-  return (
-    <section className="mt-6 rounded border bg-bg-card p-4">
-      <h2 className="mb-3 text-lg font-semibold">
-        Температура команды по людям
-      </h2>
-      {props.loading ? (
-        <p className="text-sm text-fg-secondary">Загрузка…</p>
-      ) : props.error ? (
-        <p className="text-sm text-chip-danger-fg">{props.error}</p>
-      ) : !props.temperature || props.temperature.byPerson.length === 0 ? (
-        <p className="text-sm text-fg-tertiary">
-          Чек-инов с проанализированным настроением пока нет.
-        </p>
-      ) : (
-        <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />
-      )}
-    </section>
-  );
+  if (props.loading) {
+    return <p className="text-sm text-fg-secondary">Загрузка…</p>;
+  }
+  if (props.error) {
+    return <p className="text-sm text-chip-danger-fg">{props.error}</p>;
+  }
+  if (!props.temperature || props.temperature.byPerson.length === 0) {
+    return (
+      <p className="text-sm text-fg-tertiary">
+        Чек-инов с проанализированным настроением пока нет.
+      </p>
+    );
+  }
+  return <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />;
 }
 
 /**

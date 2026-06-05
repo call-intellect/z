@@ -14,6 +14,12 @@ export const SocialContributionProfileDtoSchema = z.object({
   proactiveHintCount: z.number().int().nonnegative(),
   mentoringCount: z.number().int().nonnegative(),
   emotionalSupportCount: z.number().int().nonnegative(),
+  /**
+   * Конструктивная обратная связь — на бэке нет отдельной колонки в
+   * SocialContributionProfile, поэтому считается на лету из HelpfulnessTrait
+   * (traitType='constructive_feedback', status='active').
+   */
+  constructiveFeedbackCount: z.number().int().nonnegative(),
   expertiseTopics: z.array(z.string()),
   socialRoles: z.array(z.string()),
   lastWeekHelpCount: z.number().int().nonnegative(),
@@ -116,3 +122,23 @@ export const UnansweredQuestionRowSchema = z.object({
   lastObservedAt: z.string(),
 });
 export type UnansweredQuestionRow = z.infer<typeof UnansweredQuestionRowSchema>;
+
+// ─────────────────────────── SocialContribution opt-out ─────────────────────
+
+/**
+ * ТЗ-E Ф4 — opt-out социального вклада. `optedOut=true` → пользователь
+ * скрывает свой вклад публично (намерение хранится в Redis, см.
+ * SocialContributionPreferenceService).
+ */
+export const SocialContributionOptOutBodySchema = z
+  .object({ optedOut: z.boolean() })
+  .strict();
+export type SocialContributionOptOutBody = z.infer<
+  typeof SocialContributionOptOutBodySchema
+>;
+
+export interface SocialContributionOptOutDto {
+  optedOut: boolean;
+  /** ISO 8601 — момент последнего изменения; null, если ни разу не менялось. */
+  updatedAt: string | null;
+}

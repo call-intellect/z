@@ -46,7 +46,7 @@ export function MyPulseClient() {
   }, [currentOrgId]);
 
   if (state === 'ready' && personId) {
-    return <PersonPulseClient personId={personId} />;
+    return <PersonPulseClient personId={personId} mode="self" />;
   }
 
   if (state === 'loading') {

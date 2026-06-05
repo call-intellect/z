@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowRight,
   Brain,
+  Compass,
   HelpCircle,
   LayoutDashboard,
   Lightbulb,
@@ -63,8 +64,8 @@ import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
 // Pulse Wave 6 — 7 виджетов паттернов на главной директора.
 import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
+import { CompassWidget } from '@/ui/components/dashboard/CompassWidget';
 import { DashboardTabs } from '@/ui/components/dashboard/DashboardTabs';
-import { GoalVectorWidget } from '@/ui/components/dashboard/GoalVectorWidget';
 import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
 import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
 import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
@@ -354,7 +355,7 @@ export function DirectorDashboardClient() {
               delta={data?.kpiCommitmentReliability?.delta}
               deltaLabel="за 14 дней"
               threshold={{ green: 80, yellow: 60 }}
-              href="/me/promises"
+              href="/me?tab=promises"
             />
             <KpiHero
               label="Висящие решения"
@@ -395,6 +396,15 @@ export function DirectorDashboardClient() {
             onPaywallTrigger={showPaywallModal}
           />
         </div>
+      </div>
+
+      {/* === ТЗ-B: Компас «Вектор движения» — под Hero, выше Структуры (R9) === */}
+      <div className="mb-6">
+        <CompassWidget
+          data={pulse?.goalVector ?? null}
+          loading={pulseLoading}
+          error={pulseError}
+        />
       </div>
 
       {/* === Узкая sticky-полоса под Hero: структура + «Спросите Кору» === */}
@@ -579,11 +589,11 @@ function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
           />
         </div>
       </div>
-      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Пока endpoint
-          /dashboard/people-at-risk не реализован — items=null → виджет скрыт.
-          См. dashboards-registry §4.4 «Открытые хвосты». */}
+      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Endpoint
+          /dashboard/people-at-risk реализован (ТЗ-G Ф1) — виджет тянет данные
+          сам (self-fetch через SWR + currentOrgId), проп items не нужен. */}
       <div className="mb-6">
-        <PeopleAtRiskWidget items={null} />
+        <PeopleAtRiskWidget />
       </div>
       <TabBottomLink href="/teams" label="Открыть /teams →" />
     </StaggerSection>
@@ -689,11 +699,15 @@ function GoalsTab({
     <StaggerSection delayMs={0}>
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <GoalVectorWidget
-            data={pulse?.goalVector ?? null}
-            loading={pulseLoading}
-            error={pulseError}
-          />
+          <Card>
+            <CardContent className="flex h-full items-center gap-3 p-4 text-sm text-fg-secondary">
+              <Compass size={18} className="shrink-0 text-accent" aria-hidden />
+              <span>
+                «Вектор движения» теперь в шапке главной — над вкладками. Здесь
+                остаются встречи и решения.
+              </span>
+            </CardContent>
+          </Card>
         </div>
         <div className="lg:col-span-1">
           <LowRoiMeetingsWidget

@@ -108,8 +108,27 @@ const STEPS: Step[] = [
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
   })),
 
+  // 2026-06-05 — сид «потерянных» taskType: 5 шт. (knowledge-specialists-combined /
+  // dialog-multi-query-clone / checkin-sentiment-batch / experiment-extract /
+  // experiment-summarize-lessons) зарегистрированы в ALL_LLM_TASK_TYPES, но не
+  // покрыты ни одним seed → 0 маршрутов. Цепочка deepseek → openai → kie. Идемпотентен.
+  {
+    phase: 'seed-llm-routes',
+    script: 'scripts/seed-llm-task-routes-missing-registry.ts',
+    hint: '5 потерянных taskType (specialists-combined/dialog-mq-clone/checkin-batch/experiment-*)',
+  },
+
   // === Глобальный default: DeepSeek-V4-Pro primary на все taskType ===
   { phase: 'seed-llm-default', script: 'scripts/seed-llm-default-primary-deepseek-pro.ts' },
+  // 2026-06-05 — нормализация всех глобальных цепочек к стандарту
+  // deepseek → openai(gpt) → kie + вывод устаревшей gpt-4o. БЕЗ --force
+  // (steady-state уважает editedByAdmin); разовый --force владелец гоняет
+  // вручную при выкате. Идемпотентен.
+  {
+    phase: 'seed-llm-default',
+    script: 'scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts',
+    hint: 'нормализация к deepseek→openai→kie, вывод gpt-4o (БЕЗ --force: steady-state)',
+  },
 
   // === Patch-скрипты (только для UPDATE — на чистой БД пропускаем) ===
   { phase: 'patch', script: 'scripts/patch-rename-client-to-customer.ts', skipBootstrap: true },
@@ -366,6 +385,12 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-subject-attribution.ts',
     hint: 'role=subject для исторических reasoning-блоков + rebuild клонов (Ф1.3)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-commitment-author.ts',
+    hint: 'ТЗ-D: заполнение commitmentAuthorPersonId для исторических обещаний',
     skipBootstrap: true,
   },
 

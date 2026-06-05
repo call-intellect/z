@@ -631,7 +631,13 @@ export class ConversationalService {
     }>
   > {
     const channels = await this.prisma.channel.findMany({
-      where: { tenantId: args.tenantId, status: 'active' },
+      where: {
+        status: 'active',
+        OR: [
+          { tenantId: args.tenantId },
+          { tenantId: null, kind: { in: ['telegram_bot', 'max_bot'] } },
+        ],
+      },
       orderBy: { kind: 'asc' },
     });
     const bindings = await this.prisma.channelBinding.findMany({
@@ -891,7 +897,13 @@ export class ConversationalService {
       where: {
         userId: args.userId,
         verifiedAt: { not: null },
-        channel: { tenantId: args.tenantId, status: 'active' },
+        channel: {
+          status: 'active',
+          OR: [
+            { tenantId: args.tenantId },
+            { tenantId: null, kind: { in: ['telegram_bot', 'max_bot'] } },
+          ],
+        },
       },
       include: { channel: true },
     });

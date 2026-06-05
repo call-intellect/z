@@ -6,7 +6,7 @@
  * извлекает все taskType + tier'ы через regex и валидирует структуру:
  *   1) ≥28 taskType'ов.
  *   2) У каждого ровно по 3 tier'а (primary/secondary/tertiary).
- *   3) Tertiary всегда qwen3.5:9b через ollama.
+ *   3) Tertiary всегда gemini-3.1-pro через kie (2026-06-05; ollama убран).
  *   4) Дубликатов taskType нет.
  *
  * Это дешевле, чем вытаскивать `ROUTES` в отдельный файл. При желании в Фазе
@@ -66,12 +66,12 @@ describe('seed-llm-task-routes-default — структура цепочек', (
     }
   });
 
-  it('tertiary всегда qwen3.5:9b через ollama', () => {
+  it('tertiary всегда gemini-3.1-pro через kie', () => {
     for (const seed of seeds) {
       const tertiary = seed.tiers.find((t) => t.tier === 'tertiary');
       expect(tertiary, `taskType=${seed.taskType} без tertiary`).toBeDefined();
-      expect(tertiary?.providerName).toBe('ollama');
-      expect(tertiary?.model).toBe('qwen3.5:9b');
+      expect(tertiary?.providerName).toBe('kie');
+      expect(tertiary?.model).toBe('gemini-3.1-pro');
     }
   });
 

@@ -50,6 +50,13 @@ export interface CommitmentReliabilityArgs {
   scopeId?: string;
   /** Окно агрегации в днях. Default — 14. */
   windowDays?: number;
+  /**
+   * ТЗ-D — для scope='person': по кому считать надёжность.
+   * 'recipient' (default, обратная совместимость) — обещания, данные ЭТОМУ
+   * человеку; 'author' — обещания, ДАННЫЕ этим человеком (по
+   * commitmentAuthorPersonId). Для team/company игнорируется.
+   */
+  personMode?: 'recipient' | 'author';
 }
 
 /** Минимальная проекция IdeaBlock для расчёта reliability. */
@@ -106,7 +113,7 @@ export class CommitmentReliabilityService {
     this.validateScope(args);
 
     const scopeIdForKey = args.scope === 'company' ? null : (args.scopeId ?? null);
-    const cacheKey = this.buildCacheKey(args.tenantId, args.scope, scopeIdForKey, windowDays);
+    const cacheKey = this.buildCacheKey(args.tenantId, args.scope, scopeIdForKey, windowDays, args.personMode);
 
     const cached = await this.tryReadCache(cacheKey);
     if (cached) {
@@ -137,8 +144,9 @@ export class CommitmentReliabilityService {
     scope: string,
     scopeId: string | null,
     windowDays: number,
+    personMode?: 'recipient' | 'author',
   ): string {
-    return `commit_reliability:${tenantId}:${scope}:${scopeId ?? 'all'}:${windowDays}`;
+    return `commit_reliability:${tenantId}:${scope}:${scopeId ?? 'all'}:${windowDays}:${personMode ?? 'recipient'}`;
   }
 
   private async tryReadCache(
@@ -176,10 +184,10 @@ export class CommitmentReliabilityService {
    *   - предыдущее окно [now - 2*windowDays, now - windowDays]
    *   - 12 недельных bucket'ов от старой к новой
    *
-   * В v1 'team' и 'person' фильтр идёт по `commitmentRecipientPersonId`
-   * (адресат обещания), не по автору. Полноценный фильтр по автору
-   * (через IdeaBlockEntity role='subject') — отдельная задача,
-   * см. ТЗ Фазы 6.5 Promise Network.
+   * 'team' фильтрует по `commitmentRecipientPersonId` (адресат). Для 'person'
+   * по умолчанию тоже получатель; ТЗ-D (2026-06-05) добавил opt-in
+   * `personMode='author'` — тогда фильтр по `commitmentAuthorPersonId`
+   * (обещания, ДАННЫЕ человеком). Обе ветки — в `buildWhere`.
    */
   private async computeFromDb(
     args: CommitmentReliabilityArgs,
@@ -248,6 +256,9 @@ export class CommitmentReliabilityService {
     };
 
     if (args.scope === 'person') {
+      if (args.personMode === 'author') {
+        return { ...base, commitmentAuthorPersonId: args.scopeId };
+      }
       return { ...base, commitmentRecipientPersonId: args.scopeId };
     }
     if (args.scope === 'team') {

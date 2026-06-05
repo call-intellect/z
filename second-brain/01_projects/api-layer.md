@@ -137,6 +137,8 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 > RBAC: новый ресурс `goal_key_result` (owner r/w/d, admin/manager r). Доставка пульса — не REST, а `ConversationalService` eventType `goals.pulse` (см. [[workers-queues]] cron `goals-pulse`).
 
+**Компас целей (ТЗ-B, дашборды 2026-06-05):** `GET /api/v1/dashboard/pulse-patterns` (`getGoalVector` в `pulse-patterns.service`) теперь отдаёт блок `goalVector` с `primaryGoalId` (главная цель компании — `Goal.isPrimary`), `proScore` / `contraScore` (что двигает к цели / от неё) и `byDepartment`. На главной директора список целей заменён SVG-виджетом `CompassWidget`. Модель — [[../02_architecture/data-model]] §«Пакет улучшений дашбордов» (`Goal.isPrimary`).
+
 ## Recognition + Gamification
 
 | Метод | Путь | Назначение | T |
@@ -154,8 +156,9 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 | Метод | Путь | Назначение | T |
 |---|---|---|---|
-| GET | `/api/v1/me/social-contribution` | Мой социальный профиль (5 публичных traits) | Wave 2 (UI — T2) |
+| GET | `/api/v1/me/social-contribution` | Мой социальный профиль (5 публичных traits + `constructiveFeedbackCount`) | Wave 2 (UI — T2); поле `constructiveFeedbackCount` — дашборды 2026-06-05 (E) |
 | GET | `/api/v1/persons/:id/social-contribution` | Профиль коллеги (privacy filter) | Wave 2 (UI — T2) |
+| **GET / POST** | `/api/v1/me/social-contribution/opt-out` | Прочитать / выставить отписку от соцвклада. Redis-preference `helpfulness:optout:<tenant>:<user>` (НЕ AdminSetting). `SocialContributionPreferenceService`. | self · **дашборды 2026-06-05 (E)** |
 | GET | `/api/v1/feed/spotlights` | HelpfulnessSpotlight список | Wave 2 |
 | POST | `/api/v1/spotlights/:id/approve` | Manager approve | Wave 2 |
 | POST | `/api/v1/spotlights/:id/hide` | Manager hide | Wave 2 |
@@ -262,11 +265,14 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | **GET** | `/api/v1/dashboard/operations/daily-digest/latest` | Последний сгенерированный отчёт (для блока «Вчерашний отчёт» на `/dashboard/operations`) | `coo` `owner` `admin` | **β-8.3** |
 | **POST** | `/api/v1/dashboard/operations/daily-digest/generate?date=YYYY-MM-DD` | Принудительная перегенерация (двухстадийная сборка) | `admin` `super_admin` | **β-8.3** |
 | **GET** | `/api/v1/dashboard/operations/open-commitments?days=14` | Висящие обещания в команде с именами | `coo` `owner` `admin` | **β-8.2** |
+| **GET** | `/api/v1/dashboard/operations/weekly-per-person` | Недельный план-факт по людям: обещано/закрыто/просрочено per Person (по `IdeaBlock.commitmentAuthorPersonId`). `WeeklyPerPersonService`. Виджет в «Недельной сводке». | `coo` `owner` `admin` | **дашборды 2026-06-05 (D)** |
+| **GET** | `/api/v1/dashboard/people-at-risk` | Сотрудники под риском: `pulseScore` на лету + `topReason`. Пороги из `AdminSetting peopleAtRisk.*` (code-fallback). `PeopleAtRiskService`. Виджет self-fetch + CTA «Открыть Пульс». | `coo` `owner` `admin` | **дашборды 2026-06-05 (G)** |
 | GET | `/api/v1/me/check-ins?date=&kind=` | Свои чек-ины (`sentiment*` поля **всегда скрыты**, даже если у юзера есть роль `coo`) | self | β-8 / β-8.1 |
 | POST | `/api/v1/me/check-ins` | Manual upsert | self | β-8 |
 | GET | `/api/v1/me/check-ins/history?days=30` | Окно истории | self | β-8 |
 | **GET** | `/api/v1/me/promises?status=open\|asked\|all&limit=50` | Свои обещания (изоляция через JOIN `entities.entity.persons.some.id`) | self | **β-8.2** |
 | **POST** | `/api/v1/me/promises/:blockId/mark` | Ручное закрытие (`fulfilled`/`missed`/`cancelled` + note) | self | **β-8.2** |
+| **PATCH** | `/api/v1/me/promises/:blockId/reschedule` | Перенос срока своего обещания (`commitmentDueDate`). Только своё (`403` на чужое). | self | **дашборды 2026-06-05 (E)** |
 | GET | `/api/v1/personal-relations?personId=&relationType=` | EntityLink-связи человека | `admin` `coo` | β-8 |
 | **GET** | `/api/v1/personal-relations/commitments?personId=` или `?entityId=` | Исходящие + входящие обещания человека. Принимает `Person.id` или `Entity.id` (тип `person`) — взаимоисключающе. | `admin` `coo` `owner` `super_admin` | **β-8.2** |
 
@@ -502,5 +508,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-04 (Команда + доступы):** добавлен раздел «Команда + персональные доступы сотрудников» — `GET /orgs/:id/team-roster`, capabilities CRUD `GET/PUT/DELETE /orgs/:id/members/:userId/capabilities[/:capability]`, `GET /orgs/:id/effective-access`; `POST /persons` расширен `linkUserId`, приглашение — `personId`. Новая модель `EmployeeCapabilityOverride`. См. [plans/tz/2026-06-03-team-section-and-employee-access.md](../../plans/tz/2026-06-03-team-section-and-employee-access.md).
 - **2026-06-05 (МТЗ №1 meeting-identity):** добавлен раздел «Meetings — приглашение сотрудников + задачи встречи» — POST создания встречи принимает `invitees[]`; `GET /meetings/:id/tasks` стал gate-coupled на `knowledge.meetingTasksToTrackerOnly` (контракт при дефолте сохранён); новый conversational `eventType 'meeting.invite'`. См. [plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md](../../plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md).
 - **2026-06-05 (ChatBox-интеграция):** добавлен раздел «ChatBox-интеграция» — `/chatbox/integration(+workspaces,sync,sync/status)`, `/chatbox/chats(+/:id,/messages,POST send)`, `/chatbox/members(+/:id/link)`, inbound webhook `/webhooks/chatbox/:tenantId/:secret`. Новый RBAC-ресурс `chatbox`, privacy-инвариант (super_admin без bypass на текст переписки). См. [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md).
+- **2026-06-05 (пакет улучшений дашбордов B/D/G/E):** новые эндпоинты `GET /dashboard/operations/weekly-per-person` (D, план-факт по людям), `GET /dashboard/people-at-risk` (G, люди под риском), `PATCH /me/promises/:blockId/reschedule` (E, перенос срока обещания), `GET|POST /me/social-contribution/opt-out` (E, Redis-preference); `GET /dashboard/pulse-patterns` дополнен `goalVector.primaryGoalId/proScore/contraScore/byDepartment` (B, компас); `GET /me/social-contribution` дополнен `constructiveFeedbackCount` (E). Сервисы — [[../02_architecture/module-map]] §«Пакет улучшений дашбордов». Контракты — `plans/tz/2026-06-05-{goal-vector-compass,weekly-per-person-plan-fact,employee-pulse-and-people-at-risk,personal-cabinet-me}.md`.
 
 [[../index|← index]]

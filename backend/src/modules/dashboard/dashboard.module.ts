@@ -29,6 +29,9 @@ import { DashboardQueueService } from './services/dashboard-queue.service';
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { HangingDecisionsService } from './services/hanging-decisions.service';
 import { NarrativeCitationsParserService } from './services/narrative-citations-parser.service';
+// ТЗ-G Фаза 1 — серверное ранжирование «Сотрудники под риском»
+// (`GET /api/v1/dashboard/people-at-risk`). Использует CommitmentReliabilityService.
+import { PeopleAtRiskService } from './services/people-at-risk.service';
 // Pulse Wave 6 — единый агрегатор паттернов для главной директора
 // (`GET /api/v1/dashboard/pulse-patterns`).
 import { PulsePatternsService } from './services/pulse-patterns.service';
@@ -70,6 +73,8 @@ import { TeamHealthService } from './services/team-health.service';
     TeamDetailService,
     // Pulse Wave 6 — единый агрегатор 7 паттернов для главной директора.
     PulsePatternsService,
+    // ТЗ-G Фаза 1 — «Сотрудники под риском» (топ-N по pulseScore).
+    PeopleAtRiskService,
     // Pulse Wave 3 §3.1 / §3.3 / §3.7 — 3 cron-агента дашборда.
     // - TeamHealthAnalyzerCron: ежедневный LLM-анализ 5-факторов отдела.
     // - EngagementScorerCron: ежедневный сводный engagement-score per person.

@@ -20,13 +20,15 @@ export type TelegramChannelStatus =
   | 'linked'
   | 'not_linked'
   | 'bot_blocked'
-  | 'channel_disabled';
+  | 'channel_disabled'
+  | 'channel_not_configured';
 
 const STATUS_LABELS: Record<TelegramChannelStatus, string> = {
   linked: 'Привязан',
   not_linked: 'Не привязан',
   bot_blocked: 'Бот заблокирован',
   channel_disabled: 'Канал выключен',
+  channel_not_configured: 'Не настроен',
 };
 
 export function telegramStatusLabel(s: TelegramChannelStatus): string {
@@ -47,6 +49,8 @@ export type TelegramChannelView = {
     verifiedAt: Date | null;
     preferences: TelegramChannelPreferences;
   } | null;
+  /** Username бота для deep-link (из Channel.config); `null` если не задан. */
+  botUsername: string | null;
 };
 
 export function mapTelegramChannelEntry(
@@ -60,7 +64,9 @@ export function mapTelegramChannelEntry(
   const verified = binding?.verifiedAt != null;
 
   let status: TelegramChannelStatus;
-  if (channelDisabled) status = 'channel_disabled';
+  // configured===false → глобальный бот без токена (админ не настроил)
+  if (api.channel.configured === false) status = 'channel_not_configured';
+  else if (channelDisabled) status = 'channel_disabled';
   else if (!binding || !verified) status = 'not_linked';
   else if (isBindingBotBlocked(binding)) status = 'bot_blocked';
   else status = 'linked';
@@ -69,6 +75,7 @@ export function mapTelegramChannelEntry(
     channelId: api.channel.id,
     status,
     statusLabel: telegramStatusLabel(status),
+    botUsername: api.channel.botUsername ?? null,
     binding: binding
       ? {
           id: binding.id,

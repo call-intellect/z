@@ -17,6 +17,10 @@ export type ChannelApi = {
   direction: 'inbound_only' | 'outbound_only' | 'bidirectional';
   status: 'active' | 'disabled' | 'broken';
   maxDataClass: DataClassApi;
+  /** Б2 (2026-06-05) — только для бот-каналов: настроен ли токен. */
+  configured?: boolean;
+  /** Б2 — username бота для deep-link (из Channel.config). */
+  botUsername?: string | null;
 };
 
 export type ChannelBindingApi = {

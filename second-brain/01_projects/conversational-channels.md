@@ -85,8 +85,10 @@ Enum'ы: `ChannelKind`, `ChannelDirection`, `ChannelStatus`, `NotificationStatus
 ### `ConversationalIngestAdapter`
 - `ingestFreeNote({tenantId, userId, text, metadata})` — создаёт `RawEvent(Source.type='conversational')` через `IngestService`.
 
+> **2026-06-05 (telegram-channel-reachability-fix):** `listMyChannels` И `resolveBindings` (путь доставки) раньше фильтровали только по `tenantId` Org и **не видели глобальный Telegram-бот** (`tenantId=NULL`) → карточка не появлялась на `/me/channels` и уведомления не доставлялись. Оба запроса расширены: `OR: [{ tenantId }, { tenantId: null, kind: { in: ['telegram_bot','max_bot'] } }]`. Контроллер `GET /me/channels` теперь отдаёт для бот-каналов производные `configured: boolean` (есть ли `config.botToken`) и `botUsername` — **токен наружу не отдаётся**. Фронт: статус `channel_not_configured` (честное «бот не настроен администратором», без CTA в тупик); deep-link строится из `botUsername`. UX: in_app больше не показывает «Привязан: id», «потолок чувствительности» свёрнут. ТЗ: [plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md](../../plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md).
+
 ### REST API (`/api/v1/me/...`)
-- `GET /me/channels` — список Org-каналов + моя привязка.
+- `GET /me/channels` — список Org-каналов **+ глобальные бот-каналы** + моя привязка (для бот-каналов также `configured`/`botUsername`).
 - `POST /me/channels/:kind/link-code` — одноразовый код (TTL 10 мин).
 - `PATCH /me/channels/bindings/:bindingId/preferences` — настройки.
 - `DELETE /me/channels/bindings/:bindingId` — отвязать.

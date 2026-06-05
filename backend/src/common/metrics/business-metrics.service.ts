@@ -39,6 +39,12 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── llm router fallback exhausted (Фаза A.4) ────────────────────────
   private coreLlmNoProviderTotal!: Counter<'task_type'>;
 
+  // ── llm cost unpriced (модель без цены → costUsd молча = 0) ──────────
+  private llmCostUnpricedTotal!: Counter<'provider' | 'model'>;
+
+  // ── block-linker fallback на none (молчаливая деградация графа) ──────
+  private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -145,6 +151,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private coreRetentionDeletedTotal!: Counter<'kind'>;
   private corePersonalDataErasuresTotal!: Counter<string>;
   private coreDataClassViolationsTotal!: Counter<'task_type' | 'attempted_class'>;
+  private llmBudgetExceededTotal!: Counter<'mode'>;
 
   // ── extraction (Фаза 0b) ──────────────────────────────────────────
   private extractionEntitiesTotal!: Counter<'type'>;
@@ -1006,6 +1013,18 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['task_type'] as const,
     });
 
+    this.llmCostUnpricedTotal = this.getOrCreateCounter({
+      name: 'llm_cost_unpriced_total',
+      help: 'LLM-вызов модели без цены (нет ни в LlmModelPrice, ни в MODEL_PRICES) → costUsd молча = 0, расход невидим. > 0 → заполни цену в админке.',
+      labelNames: ['provider', 'model'] as const,
+    });
+
+    this.kcBlockLinkerFallbackNoneTotal = this.getOrCreateCounter({
+      name: 'kc_block_linker_fallback_none_total',
+      help: 'block-linker не смог распарсить вердикт арбитра после ретраев → связь не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
+      labelNames: ['reason'] as const,
+    });
+
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
     // объём токенов, экономящихся за счёт кеша Anthropic (cache_read ≈ 0.1×
     // input price, cache_creation ≈ 1.25× для 5min-TTL). Алёрт: cache_hit
@@ -1229,6 +1248,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_data_class_violations_total',
       help: 'Попытки отправить sensitive/private данные в неподходящий LLM-провайдер. Должно быть = 0.',
       labelNames: ['task_type', 'attempted_class'] as const,
+    });
+    this.llmBudgetExceededTotal = this.getOrCreateCounter({
+      name: 'llm_budget_exceeded_total',
+      help: 'LLM-вызов при превышенном hard-cap бюджета; mode=observe (не блокировали) | enforce (заблокировали).',
+      labelNames: ['mode'] as const,
     });
 
     // ── extraction (Фаза 0b) ──────────────────────────────────────
@@ -3606,6 +3630,24 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   /**
+   * LLM-вызов модели без цены — нет ни в `LlmModelPrice` (БД), ни в
+   * статической `MODEL_PRICES`. costUsd молча считается = 0, расход
+   * становится невидимым. > 0 → заполни цену модели в админке.
+   */
+  incLlmCostUnpriced(args: { provider: string; model: string }): void {
+    this.llmCostUnpricedTotal.inc({ provider: args.provider, model: args.model });
+  }
+
+  /**
+   * block-linker не смог распарсить вердикт LLM-арбитра после ретраев →
+   * связь между блоками не создана (молчаливая деградация графа знаний).
+   * Должно быть = 0; > 0 → проверь модель/формат ответа арбитра.
+   */
+  incKcBlockLinkerFallbackNone(args: { reason: string }): void {
+    this.kcBlockLinkerFallbackNoneTotal.inc({ reason: args.reason });
+  }
+
+  /**
    * Фаза A.4 — изменение цепочки моделей в /admin/ai-models. changeType:
    * 'switched_primary' | 'added_provider' | 'removed_provider' | 'started_ab' |
    * 'stopped_ab' | 'reset_to_default'.
@@ -3722,6 +3764,15 @@ export class BusinessMetricsService implements OnModuleInit {
       task_type: args.taskType,
       attempted_class: args.attemptedClass,
     });
+  }
+
+  /**
+   * ТЗ LLM cost-safety Ф2 — LLM-вызов при превышенном hard-cap бюджета.
+   * `mode='observe'` — флаг enforce выключен, вызов пропущен; `mode='enforce'`
+   * — вызов заблокирован (`LlmBudgetExceededError`).
+   */
+  incLlmBudgetExceeded(args: { mode: string }): void {
+    this.llmBudgetExceededTotal.inc({ mode: args.mode });
   }
 
   /**

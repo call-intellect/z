@@ -5,7 +5,10 @@ import useSWR from 'swr';
 import { Send } from 'lucide-react';
 
 import { listMyChannels } from '@/api/conversational.api';
-import { mapTelegramChannelEntry } from '@/domain/me-channels';
+import {
+  mapTelegramChannelEntry,
+  type TelegramChannelStatus,
+} from '@/domain/me-channels';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -52,12 +55,9 @@ export function MyTelegramCard({ orgId }: { orgId: string }) {
   );
 }
 
-function TelegramStatus({
-  status,
-}: {
-  status: 'linked' | 'not_linked' | 'bot_blocked' | 'channel_disabled';
-}) {
+function TelegramStatus({ status }: { status: TelegramChannelStatus }) {
   const linked = status === 'linked';
+  const notConfigured = status === 'channel_not_configured';
 
   const badgeVariant: 'success' | 'secondary' | 'warning' | 'danger' =
     status === 'linked'
@@ -75,7 +75,9 @@ function TelegramStatus({
         ? 'Бот заблокирован'
         : status === 'channel_disabled'
           ? 'Канал выключен'
-          : 'Не подключён';
+          : status === 'channel_not_configured'
+            ? 'Не настроен'
+            : 'Не подключён';
 
   const hint = linked
     ? 'Кора может присылать вам задачи, короткие вопросы и упоминания в Telegram.'
@@ -83,7 +85,9 @@ function TelegramStatus({
       ? 'Похоже, бот заблокирован у вас в Telegram. Уведомления туда не доходят.'
       : status === 'channel_disabled'
         ? 'Канал Telegram временно выключен главным администратором Коры.'
-        : 'Подключите Telegram, чтобы получать задачи, короткие вопросы и упоминания.';
+        : status === 'channel_not_configured'
+          ? 'Telegram пока не настроен администратором компании. Подключение станет доступно, когда будет задан бот.'
+          : 'Подключите Telegram, чтобы получать задачи, короткие вопросы и упоминания.';
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -91,11 +95,13 @@ function TelegramStatus({
         <Badge variant={badgeVariant}>{badgeLabel}</Badge>
         <p className="text-sm text-fg-secondary">{hint}</p>
       </div>
-      <Button asChild variant={linked ? 'outline' : 'default'} size="sm">
-        <Link href="/me/channels">
-          {linked ? 'Управлять' : 'Подключить Telegram'}
-        </Link>
-      </Button>
+      {!notConfigured && (
+        <Button asChild variant={linked ? 'outline' : 'default'} size="sm">
+          <Link href="/me/channels">
+            {linked ? 'Управлять' : 'Подключить Telegram'}
+          </Link>
+        </Button>
+      )}
     </div>
   );
 }

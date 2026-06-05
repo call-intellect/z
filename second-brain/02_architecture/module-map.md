@@ -2202,3 +2202,26 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - ENV `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`); webhook использует существующий `PUBLIC_HOST_URL`, токен — `CRYPTO_MASTER_KEY`.
 
 [[../index|← index]]
+
+## Пакет улучшений дашбордов (ТЗ B/D/C/G/E, 2026-06-05)
+
+**Источник:** `plans/tz/2026-06-05-{goal-vector-compass,weekly-per-person-plan-fact,operations-dashboards-redesign,employee-pulse-and-people-at-risk,personal-cabinet-me}.md`. Ветка `feature/dashboards-improvements`. Схема — [[data-model]] §«Пакет улучшений дашбордов» (`Goal.isPrimary`, `IdeaBlock.commitmentAuthorPersonId`), эндпоинты — [[../01_projects/api-layer]].
+
+### Новые сервисы
+
+- **`backend/src/modules/operations/` — `WeeklyPerPersonService`** (ТЗ-D) — недельный план-факт по людям: обещано / закрыто / просрочено per `Person` за неделю (агрегат по `IdeaBlock.commitmentAuthorPersonId`). Питает `GET /api/v1/dashboard/operations/weekly-per-person` и виджет «Недельной сводки». `commitment-reliability` (read-провайдер обещаний) получил `personMode: 'author' | 'recipient'` — считать по автору обещания или по получателю.
+- **`backend/src/modules/dashboard/` — `PeopleAtRiskService`** (ТЗ-G) — «люди под риском»: считает `pulseScore` на лету + `topReason` (главная причина риска). Пороги — `AdminSetting peopleAtRisk.*` (`resolveSync`, code-fallback: `overduePenaltyPerItem`=8, `overduePenaltyCap`=30, `redMoodShareThreshold`=0.34, `redMoodPenalty`=15, `riskThreshold`=60). Питает `GET /api/v1/dashboard/people-at-risk`. Схему не трогает (`lastOneOnOneAt` помечен `@deprecated`).
+- **`backend/src/modules/specialist-3-8-helpfulness/` — `SocialContributionPreferenceService`** (ТЗ-E) — отписка от соцвклада через **Redis-preference** `helpfulness:optout:<tenant>:<user>` (по образцу `recognition-preference.service`, НЕ AdminSetting). Питает `GET|POST /api/v1/me/social-contribution/opt-out`.
+
+### Прочие правки модулей
+
+- **`knowledge-core` — `block-ingest.worker.attributeCommitmentAuthor`** (ТЗ-D) — резолвит автора обещания через `EntityResolutionService.resolveSubjectPersonId` и пишет `IdeaBlock.commitmentAuthorPersonId` (под флагом `knowledge.commitmentAuthorAttributionEnabled`, code-fallback true). История — backfill `backend/scripts/backfill-commitment-author.ts` (в `apply-prod-deploy.ts` STEPS, `phase: backfill`, `skipBootstrap`).
+- **`pulse-patterns.service.getGoalVector`** (ТЗ-B) — отдаёт `proScore` / `contraScore` / `byDepartment` / `primaryGoalId` (по `Goal.isPrimary`) для компаса.
+- **`operations` / `dashboard` (ТЗ-C)** — «Панель операций»: `KpiHero` + 3 зоны + SWR; KPI «Открытые обещания» вместо «Средней загрузки»; единый блок температуры с переключателем. Ежедневный дайджест: реализован `whoShined` (Recognition / HelpfulnessSpotlight / закрытые обещания по `commitmentAuthorPersonId`), badge `'high' → 'важный сигнал'`. Недельный: ReactMarkdown + SWR.
+- **`operations` / `me` Pulse (ТЗ-E)** — self-режим: `getPulse forSelf` → `hrSuggestions=null`, раздельный кэш. `CommitmentDto.sourceMeetingId` / `sourceMeetingTitle` — derive из evidence (без новой колонки).
+
+### Frontend
+
+- `CompassWidget` (SVG-компас) на главной директора вместо списка целей (B); виджет недельного план-факта по людям (D); виджет «люди под риском» self-fetch + CTA «Открыть Пульс» (G); кабинет «Я» с вкладками + редиректы старых `/me/*` URL, удалена мёртвая `/me/dashboard` (E).
+
+[[../index|← index]]

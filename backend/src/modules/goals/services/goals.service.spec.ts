@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -34,6 +34,7 @@ interface PrismaStub {
     create: Fn;
     update: Fn;
   };
+  person?: { findUnique: Fn };
   goalAlignmentSnapshot: { findMany: Fn };
   $transaction: Fn;
 }
@@ -79,6 +80,10 @@ function baseGoalRow(over: Record<string, unknown> = {}): Record<string, unknown
     confidence: null,
     validUntil: null,
     manualOverride: {},
+    // ── ТЗ-F (2026-06-05) — поля ответственного/кэша, читаемые mapList ──
+    ownerPersonId: null,
+    ownerPerson: null,
+    cachedBlocksCount: null,
     _count: { themes: 0 },
     themes: [],
     keyResults: [],
@@ -264,5 +269,121 @@ describe('GoalsService.update — manualOverride', () => {
     const arg = firstArg<{ data: { manualOverride: Record<string, true> } }>(updateFn);
     // прежний override (description) сохранён + добавлено name.
     expect(arg.data.manualOverride).toEqual({ description: true, name: true });
+  });
+});
+
+// ─────────────────── ТЗ-F (2026-06-05) — ownerPersonId ──────────────────
+describe('GoalsService — ownerPersonId (ТЗ-F)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('create с валидным ownerPersonId — отдаёт ownerPersonId/ownerPersonName', async () => {
+    const createdRow = baseGoalRow({
+      id: 'gNew',
+      ownerPersonId: 'p1',
+      ownerPerson: { id: 'p1', name: 'Иван' },
+      cachedBlocksCount: null,
+    });
+    const personFindUnique = vi.fn(async () => ({ id: 'p1', tenantId: 't1' }));
+    const goalCreate = vi.fn(async () => createdRow);
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        create: goalCreate,
+        update: vi.fn(),
+      },
+      person: { findUnique: personFindUnique },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc } = makeService(prisma);
+    const res = await svc.create({
+      tenantId: 't1',
+      userId: 'u1',
+      body: {
+        name: 'Новая цель',
+        description: 'desc',
+        targetDate: undefined,
+        ownerPersonId: 'p1',
+      },
+    });
+
+    expect(personFindUnique).toHaveBeenCalledTimes(1);
+    expect(res.ownerPersonId).toBe('p1');
+    expect(res.ownerPersonName).toBe('Иван');
+    // в data create передан скалярный ownerPersonId.
+    const createArg = firstArg<{ data: Record<string, unknown> }>(goalCreate);
+    expect(createArg.data.ownerPersonId).toBe('p1');
+  });
+
+  it('update с ownerPersonId чужого tenant — бросает owner_person_not_found', async () => {
+    const existing = baseGoalRow({ id: 'g1', tenantId: 't1' });
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => existing),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(async () => baseGoalRow()),
+      },
+      person: {
+        findUnique: vi.fn(async () => ({ id: 'p9', tenantId: 'OTHER' })),
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc } = makeService(prisma);
+    await expect(
+      svc.update({
+        tenantId: 't1',
+        userId: 'u1',
+        goalId: 'g1',
+        body: { ownerPersonId: 'p9' },
+      }),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'owner_person_not_found' } },
+    });
+    await expect(
+      svc.update({
+        tenantId: 't1',
+        userId: 'u1',
+        goalId: 'g1',
+        body: { ownerPersonId: 'p9' },
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('update с ownerPersonId=null — снимает ответственного (disconnect)', async () => {
+    const existing = baseGoalRow({ id: 'g1', tenantId: 't1' });
+    const updatedRow = baseGoalRow({
+      id: 'g1',
+      ownerPersonId: null,
+      ownerPerson: null,
+    });
+    const updateFn = vi.fn(async () => updatedRow);
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => existing),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: updateFn,
+      },
+      person: { findUnique: vi.fn() },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc } = makeService(prisma);
+    const res = await svc.update({
+      tenantId: 't1',
+      userId: 'u1',
+      goalId: 'g1',
+      body: { ownerPersonId: null },
+    });
+
+    expect(res.ownerPersonId).toBeNull();
+    expect(res.ownerPersonName).toBeNull();
+    const arg = firstArg<{ data: Record<string, unknown> }>(updateFn);
+    expect(arg.data).toEqual(
+      expect.objectContaining({ ownerPerson: { disconnect: true } }),
+    );
   });
 });

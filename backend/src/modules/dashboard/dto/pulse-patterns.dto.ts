@@ -100,23 +100,49 @@ export interface PulsePatternBottleneckDto {
   topPairs: PulsePatternBottleneckTopPairDto[];
 }
 
-// ─── §6.6 — Goal Vector ─────────────────────────────────────────────────────
+// ─── §6.6 — Goal Vector (компас) ─────────────────────────────────────────────
 
 export interface PulsePatternGoalContributorDto {
+  /** personId — для drill-down и мини-стрелки человека на фронте. */
+  personId: string;
   personName: string;
+  proScore: number;
+  contraScore: number;
+  netScore: number;
+}
+
+/** Разрез одной цели по отделу (для мини-стрелок «по отделам»). */
+export interface PulsePatternGoalDepartmentDto {
+  /** NULL = «Без отдела» (Person.primaryDepartmentId IS NULL). */
+  departmentId: string | null;
+  departmentName: string;
+  proScore: number;
+  contraScore: number;
   netScore: number;
 }
 
 export interface PulsePatternGoalVectorItemDto {
   goalId: string;
   goalTitle: string;
-  /** Суммарный netScore за окно (`personGoalContribution.netScore`). */
+  /** Главная цель компании (Goal.isPrimary) — «север» общего компаса. */
+  isPrimary: boolean;
+  proScore: number;
+  contraScore: number;
+  /** = proScore - contraScore (для обратной совместимости фронта). */
   netScore: number;
   topContributors: PulsePatternGoalContributorDto[];
+  /** Разрез по отделам (агрегат по Person.primaryDepartmentId). */
+  byDepartment: PulsePatternGoalDepartmentDto[];
 }
 
 export interface PulsePatternGoalVectorDto {
   goals: PulsePatternGoalVectorItemDto[];
+  /**
+   * goalId главной цели компании: Goal.isPrimary=true, иначе fallback
+   * (max weight → min createdAt). NULL если целей нет. Фронт строит по
+   * нему общую стрелку компании.
+   */
+  primaryGoalId: string | null;
 }
 
 // ─── §6.7 — Knowledge Velocity ──────────────────────────────────────────────

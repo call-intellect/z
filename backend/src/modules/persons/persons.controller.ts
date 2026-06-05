@@ -129,7 +129,14 @@ export class PersonsController {
     if (!allowed) {
       throw this.forbidden('Нет доступа к карточке сотрудника');
     }
-    return this.personPulseSvc.getPulse({ tenantId: t, personId: id });
+    // ТЗ-E Фаза 2: self-режим — карточку открыл сам сотрудник. В этом случае
+    // служебная аналитика руководителя (HR-резюме) не отдаётся (см. getPulse).
+    const isSelf = await this.isSelfPerson(user.id, t, id);
+    return this.personPulseSvc.getPulse({
+      tenantId: t,
+      personId: id,
+      forSelf: isSelf,
+    });
   }
 
   @Post()
@@ -261,6 +268,23 @@ export class PersonsController {
       employeePersonId: personId,
       tenantId,
     });
+  }
+
+  /**
+   * ТЗ-E Фаза 2 (self-режим): true если эту карточку открыл сам сотрудник —
+   * `Person.userId === currentUser.id`. Используется только для выбора
+   * self-варианта Pulse-DTO (без HR-резюме); RBAC выше уже разрешил доступ.
+   */
+  private async isSelfPerson(
+    userId: string,
+    tenantId: string,
+    personId: string,
+  ): Promise<boolean> {
+    const person = await this.prisma.person.findFirst({
+      where: { id: personId, tenantId },
+      select: { userId: true },
+    });
+    return person?.userId === userId;
   }
 
   private forbidden(message: string): ForbiddenException {

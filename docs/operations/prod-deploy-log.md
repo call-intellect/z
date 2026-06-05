@@ -64,6 +64,87 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🛡️ 2026-06-05 — Надёжность LLM-роутера + нормализация цепочек (deepseek → openai → kie)
+
+> Контракт: `plans/tz/2026-06-05-llm-router-resilience-and-chain-normalization.md`. Ветка `sergdev`. Коммиты: Ф1 `025714d3`, Ф3 `caf69f13`, Ф4 `b68554fb`, Ф2a `c21c9e15`, Ф2b `cb820a69`.
+>
+> **Зачем.** Аудит прод-маршрутов 2026-06-05 показал: у большинства агентов работал только PRIMARY. SECONDARY (`openai-via-proxy`) падал `400 "messages must contain the word 'json'"` на всех JSON-задачах; TERTIARY (`ollama:qwen3.5:9b`) — `401 Invalid API key format` везде. 5 pro-агентов вообще без fallback, граф (`block-linker`) молча терял связи, таймаут 30с убивал thinking-модели. Цель — стандартная цепочка везде `deepseek → openai-via-proxy(gpt) → kie:gemini-3.1-pro`, ollama выведен из всех боевых цепочек, `gpt-4o` выведен полностью.
+
+- **Шаг 1 — ENV** — **1 новый (опциональный, дефолт уже поднят в коде)**: `LLM_ROUTER_DISPATCH_TIMEOUT_MS=300000` — таймаут одного dispatch модели (per-attempt). Был `30000`, поднят до `300_000`, чтобы thinking-модели (`deepseek-v4-pro`) успевали на объёмном входе. Можно не выставлять (code-fallback теперь `300_000`); если в проде стоит руками старое `30000` — **поднять до `300000`**. ⚠️ Это заменяет старую запись «`LLM_ROUTER_DISPATCH_TIMEOUT_MS=30000` (С30)» в архивном блоке аудита 2026-05-29 — там был дефолт 30с, теперь 300с.
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась).
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts` — нормализует все цепочки `LlmTaskRoute` (tenantId=null) к стандарту `deepseek → openai-via-proxy(gpt) → kie:gemini-3.1-pro`; выводит `ollama` из primary/secondary и `gpt-4o` из проекта (4 агента: `orchestrator-plan`/`orchestrator-synthesize`/`brand-voice-extract` → `deepseek-v4-pro`, `concierge-respond` → `gpt-5-mini`); openai-primary исключения (классификаторы на nano + `debate`-diversity) сохраняются. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'seed-llm-routes'`, `skipBootstrap: true`) **БЕЗ `--force`** — steady-state уважает `editedByAdmin`-правки.
+  - ⚠️ **РАЗОВО при ЭТОМ выкате — гнать с `--force`** (решение владельца Р-A): нужно перетереть легаси `ollama`/`gpt-4o`, в т.ч. в маршрутах с `editedByAdmin=true`. Порядок обязателен: сначала `--dry-run` (глазами просмотреть строки с `editedByAdmin=true` — что именно перетираем), затем `--force`:
+    ```bash
+    docker compose exec backend bun run scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts --dry-run
+    docker compose exec backend bun run scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts --force
+    ```
+  - На последующих выкатах `--force` НЕ нужен — агрегатор гонит без него (steady-state, не клобберит будущие админ-правки).
+- **Шаг 7 — Seed** — **1 новый, идемпотентный**: `scripts/seed-llm-task-routes-missing-registry.ts` — заводит дефолтные цепочки для 5 ранее не зарегистрированных taskType (`knowledge-specialists-combined`, `dialog-multi-query-clone`, `checkin-sentiment-batch`, `experiment-extract`, `experiment-summarize-lessons`) — закрытая дыра реестра (они теперь в `ALL_LLM_TASK_TYPES`). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'seed-llm-default'`). Также code-сиды (`seed-llm-task-routes-default.ts`) и `DEFAULT_FALLBACK_CHAIN` обновлены: tertiary `ollama:qwen3.5:9b` → `kie:gemini-3.1-pro`. Прогон: `docker compose exec backend bun run scripts/seed-llm-task-routes-missing-registry.ts`.
+- **Агрегатором (рекомендуется)** — оба скрипта входят в `apply-prod-deploy.ts --mode update` (`docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`). **НО** разовый `--force` для нормализации агрегатор не делает — его гнать **вручную** командой выше, до/после агрегатора.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `env.schema.ts` дефолт таймаута, `OpenAiProxyService.ensureJsonHint` (Ф3 — чинит secondary на JSON-задачах), `block-linker` retry + общий lenient-парсер `json-extract.util.ts` (Ф4), `kie.maxDataClass internal→private`, регистрация 5 taskType): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - карта маршрутов после прогона (read-only): `docker compose exec backend bun run scripts/diag-routes.ts` → (а) `ollama` нет ни в одной строке боевых LLM-цепочек, (б) tertiary везде `kie:gemini-3.1-pro`, (в) `gpt-4o` (без `-mini`) отсутствует, (г) 5 ранее потерянных taskType присутствуют.
+  - новая метрика молчаливой деградации графа: `curl -s localhost:3000/metrics | grep kc_block_linker_fallback_none_total` (растёт `{reason=...}` только при реальной потере связи — повесить алерт).
+  - secondary на JSON-задачах больше не 400: после тест-встречи `bun run --env-file=.env scripts/diag.ts trace --meeting <id>` → `reportFast` не failed, в логах нет `messages must contain the word 'json'`.
+
+#### 💰 2026-06-05 — Безопасность стоимости LLM + retention телеметрии (поверх блока надёжности роутера)
+
+> Контракт: `plans/tz/2026-06-05-llm-cost-safety-and-telemetry-retention.md`. Ветка `sergdev`. Закрывает риски #4 (бюджет LLM не enforce-ится, `costUsd=0` молча) и #5 (`AiUsageLog` без retention) техаудита. Реализовано целиком (3 фазы).
+>
+> **Зачем.** До фикса: взбесившийся воркер/тенант выжигал месячный лимит за часы (бюджет только наблюдался алертом раз в 2ч, `LlmRouter.call` его не проверял); модели вне прайс-карты молча давали `costUsd=0` (только `logger.debug` — расход невидим); телеметрия `AiUsageLog` (строка + 2 TEXT-превью до 8 КБ) росла append-only без retention.
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; `OrgBudgetCap.capKind 'soft'|'hard'` уже был в схеме; превью `AiUsageLog` уже nullable).
+- **Шаг 7 — Seed / AdminSetting** — **не требуется**. Все новые ключи читаются через `getDynamic` с code-fallback → дефолты применяются лениво, выкат БЕЗ сидов безопасен. Ключи (дефолты): `llm.budget.enforce_enabled`(bool, **false**), `llm.budget.mtd_cache_ttl_sec`(int, 60), `llm.usage_log.scrub_previews_after_days`(int, 30), `llm.usage_log.delete_after_days`(int, 365). Опционально настраиваются через админку настроек под super_admin.
+- **Прод-операций по схеме/сидам НЕТ.** Достаточно деплоя кода: `docker compose up -d --build backend` (+ перезапуск worker-процесса — там self-scheduling retention-сервис `AiUsageLogCleanupService`, раз в час).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `llm-router.service.ts` pre-dispatch budget-gate + WARN на unpriced; новый `budget-guard.service.ts`; новый `ai-usage-log-cleanup.service.ts`; `business-metrics.service.ts` — 2 новые метрики): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - новые метрики в `/metrics`: `curl -s localhost:3000/metrics | grep -E 'llm_cost_unpriced_total|llm_budget_exceeded_total'` → счётчики присутствуют. `llm_cost_unpriced_total{provider,model}` растёт при вызове модели вне прайс-карты (видимость `costUsd=0`); `llm_budget_exceeded_total{mode}` (`mode=observe`|`enforce`) — при превышении hard-cap.
+  - retention (через ≥1ч после старта worker): в логах worker строка о прогоне `AiUsageLogCleanupService` (Tier-1 scrub превью / Tier-2 delete), без ERROR.
+- **⚠️ ВАЖНО — `llm.budget.enforce_enabled` оставить OFF** до решения владельца по поведению enforcement (развилка Р-1 в ТЗ: block / degrade / alert-only). До включения — чистый observe: бюджет считается, метрится, логируется «would block», но НЕ блокирует. Включать только после явного подтверждения владельца А/B/C.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🎯 2026-06-05 — ТЗ-F Цели: ответственный (ownerPersonId) + кэш blocksCount + UI-полировка
+
+> Ветка `feature/goals-improvements`. Контракт: `plans/tz/2026-06-05-goals-improvements.md` (Ф1–Ф4; Ф5 голос — vNext). Коммиты: Ф1 `afe344b2`+`2701cff2`, Ф2 `62febeec`, Ф3 `158ac9df`, Ф4 `184bce07`.
+
+- **Шаг 4 — Prisma миграция** — **обязательно** (аддитивно, без data-loss). После мержа `dev` (переход на миграции) изменения едут **файлом миграции `20260605130000_goal_owner_person_and_blocks_cache`**, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Никакого `db push`. Содержимое: `Goal += ownerPersonId String?` (relation `ownerPerson` GoalOwnerPerson, FK `→ persons(id) ON DELETE SET NULL`) + `cachedBlocksCount Int?` + `@@index([tenantId, ownerPersonId])`; `Person += ownedGoals Goal[] @relation("GoalOwnerPerson")`. Проверка применения: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 1 — ENV/AdminSetting** — новых ENV/флагов нет. Пороги «светофора уверенности» — code-fallback в `frontend/src/domain/goal.ts` (`confidenceLevel`); вынос в AdminSetting → vNext.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `goals.service` ownerPerson + `strategic-alignment.worker` пишет `cachedBlocksCount`; frontend: пикер ответственного + светофор уверенности + вердикт движения + русификация): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Swagger `/api/docs` → `GoalListItemDto` содержит `ownerPersonId`/`ownerPersonName`/`blocksCount`.
+  - `POST /api/v1/goals { …, ownerPersonId:"<Person.id>" }` → 201 с `ownerPersonName`; `ownerPersonId` чужого tenant → 404 `owner_person_not_found`.
+  - после ночного прогона `strategic-alignment` у целей заполняется `Goal.cachedBlocksCount` (светофор в списке без JOIN).
+- Новых очередей/cron нет (используется существующий `strategic-alignment.worker`, +1 поле `cachedBlocksCount` в его `tx.goal.update`).
+
+---
+
+### 📊 2026-06-05 — Пакет улучшений дашбордов (ТЗ B/D/C/G/E: компас целей · план-факт по людям · операции · люди под риском · кабинет «Я»)
+
+> Контракты: `plans/tz/2026-06-05-goal-vector-compass.md` (B), `…-weekly-per-person-plan-fact.md` (D), `…-operations-dashboards-redesign.md` (C), `…-employee-pulse-and-people-at-risk.md` (G), `…-personal-cabinet-me.md` (E). Ветка `feature/dashboards-improvements`. Изменения схемы **аддитивны** (2 новых nullable-колонки + индексы, опасных нет). C/E содержат только backend-сервисы и фронт (схему не трогают).
+
+- **Шаг 4 — Prisma миграция** — **обязательно** (аддитивно, без data-loss). После мержа `dev` (переход на миграции) изменения едут **файлом миграции `20260605120000_dashboards_goal_primary_commitment_author`**, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Никакого `db push`. Содержимое миграции:
+  - **ТЗ-B:** `Goal.isPrimary Boolean @default(false)` + `@@index([tenantId, isPrimary])` — главная цель компании (для компаса на главной директора).
+  - **ТЗ-D:** `IdeaBlock.commitmentAuthorPersonId String?` + relation `CommitmentAuthor → Person?` (обратка `Person.commitmentsAuthored`) + FK `→ persons(id) ON DELETE SET NULL` + `@@index([tenantId, commitmentAuthorPersonId])` + `@@index([tenantId, signalType, commitmentAuthorPersonId, commitmentDueDate])` — автор обещания (кто пообещал), для недельного план-факта по людям.
+  - Проверка применения: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 5 — postgres-init.sql — partial unique** — новый: `goal_primary_unique ON "Goal"("tenantId") WHERE "isPrimary" = true` — гарантирует не более одной главной цели на Org. Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE UNIQUE INDEX IF NOT EXISTS`).
+- **Шаг 1 — ENV/AdminSetting** — **новых ENV нет.**
+  - **ТЗ-G:** 5 порогов «люди под риском» через `AdminSetting` (super_admin, code-fallback в коде; отдельный сид на первом этапе не обязателен — работают на дефолтах): `peopleAtRisk.overduePenaltyPerItem`=**8**, `peopleAtRisk.overduePenaltyCap`=**30**, `peopleAtRisk.redMoodShareThreshold`=**0.34**, `peopleAtRisk.redMoodPenalty`=**15**, `peopleAtRisk.riskThreshold`=**60**. Менять в админке настроек.
+  - **ТЗ-D:** флаг атрибуции автора обещания `knowledge.commitmentAuthorAttributionEnabled` (**default TRUE**, code-fallback через `TypedConfigService.getDynamic`). `false` = `attributeCommitmentAuthor` в `block-ingest` не проставляет `commitmentAuthorPersonId`.
+  - **ТЗ-E:** отписка от соцвклада — **Redis-preference** (`helpfulness:optout:<tenant>:<user>`), не AdminSetting и не ENV. Доп. действий нет — Redis уже есть.
+- **Шаг 8 — Backfill** — **обязательно** (ТЗ-D): `scripts/backfill-commitment-author.ts` — заполняет `IdeaBlock.commitmentAuthorPersonId` для истории обещаний (резолв автора через `EntityResolutionService.resolveSubjectPersonId`). Идемпотентен, зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: backfill`, `skipBootstrap: true`). Сначала dry-run, затем применение: `docker compose exec backend bun run scripts/backfill-commitment-author.ts --dry-run` → `… backfill-commitment-author.ts`. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `WeeklyPerPersonService`, `PeopleAtRiskService`, `SocialContributionPreferenceService`, self-режимы Pulse, новые эндпоинты; frontend: `CompassWidget`, виджеты план-факта/людей под риском, кабинет «Я» с вкладками): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - **Новые REST** (Swagger `/api/docs`): `GET /api/v1/dashboard/operations/weekly-per-person`, `GET /api/v1/dashboard/people-at-risk`, `PATCH /api/v1/me/promises/:blockId/reschedule`, `GET|POST /api/v1/me/social-contribution/opt-out` → 200 под нужной ролью.
+  - **Компас (B):** `GET /api/v1/dashboard/pulse-patterns` отдаёт `goalVector` с `primaryGoalId` / `proScore` / `contraScore` / `byDepartment`; на главной директора виджет «Компас» (SVG) вместо списка целей.
+  - **whoShined (C):** `GET /api/v1/dashboard/operations/daily-digest/latest` (ежедневный) содержит непустой `whoShined` (Recognition / HelpfulnessSpotlight / закрытые обещания по `commitmentAuthorPersonId`), когда есть данные.
+  - **Атрибуция автора (D):** после прохода встречи у блоков-обещаний появляется `commitmentAuthorPersonId`: `docker compose exec backend bun -e "import {createPrismaClient} from './scripts/_lib/prisma'; const p=createPrismaClient(); p.ideaBlock.count({where:{commitmentAuthorPersonId:{not:null}}}).then(n=>{console.log('commitments with author:',n);return p.\$disconnect();});"` → > 0.
+  - **Главная цель (B):** попытка пометить вторую цель как главную при уже существующей — конфликт `goal_primary_unique` (на Org остаётся ровно одна `isPrimary=true`).
+
+---
+
 ### 🆕 2026-06-05 — Переход на миграции (АВТОМАТИЧЕСКИ при обычном выкате)
 
 > Переход с `db push` на `prisma migrate deploy`. Прод сейчас в дрейфе (частично применённый Ф0 identity-фундамент: enum `ParticipantInvitationStatus` есть, колонки `Participant.{invitationStatus,inviteToken,invitedAt,deviceCount}` — нет → 500 на `POST /meetings` и на result-эндпоинте → плеер «бесконечно грузит»). Контракт: `plans/tz/2026-06-05-prisma-migrations-switch.md`.
@@ -107,6 +188,21 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
   - inbound webhook: `docker compose exec backend grep -n "webhooks/chatbox/:tenantId/:secret" src/modules/chatbox/chatbox-webhook.controller.ts` (всегда 200, `timingSafeEqual`).
   - Swagger-тег `chatbox` виден в `/api/docs`; `POST /api/v1/chatbox/integration/workspaces` с валидным токеном → непустой список воркспейсов; после `POST .../sync {scope:'all'}` в БД ≥1 `ChatboxChat`/`ChatboxMessage`/`ChatboxChatSession`; одна сессия → `analysisStatus='done'` + `RawEvent(sourceType='chatbox')`.
   - privacy: под super_admin текст чужой переписки (`ChatboxMessage.text`) не читается.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🆕 2026-06-05 — Колонка `dataClassAudit` в 4 проекции (миграция, АВТО при выкате)
+
+> Контракт: `plans/tz/2026-06-05-dataclass-audit-schema-drift-fix.md`. Чинит schema drift: писатели specialist-3-1/3-6 кладут `dataClassAudit` в Regulation/Process/Policy/Idea, а колонки в схеме не было → ветка не компилировалась + snapshot-cron спамил 5 ERROR/30мин (`Unknown argument`).
+
+- **Шаг 4 — Prisma миграция** — **обязательно, но автоматически** (аддитивно, без data-loss): новая миграция `20260605114300_add_dataclass_audit_to_projections` = 4× `ALTER TABLE {processes,regulations,policies,ideas} ADD COLUMN "dataClassAudit" JSONB`. Применяется штатным `prisma migrate deploy` в `migrate`-контейнере при обычном `docker compose up -d`. Отдельной ручной команды нет.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: правка `dataclass-audit-snapshot.cron.ts` — убран `skill_trait` + DMMF-гард): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (через ≥30 мин после выката): `bun run --env-file=… backend/scripts/diag.ts logs --level ERROR --from <дата>` → нет `Invalid prisma.{policy,process,regulation,idea,skillTrait}.count()`.
+- **Бэкап** перед `migrate deploy` делается авто (`pg_dump` → z-backups).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
 
 ---
 

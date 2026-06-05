@@ -19,6 +19,7 @@ import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
 import { ApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
+import { usePersons } from '@/hooks/usePersons';
 import { useAuth } from '@/contexts/auth-context';
 import {
   GOAL_STATUS_LABELS,
@@ -377,6 +378,13 @@ function GoalCard({
         )}
       </div>
 
+      {goal.ownerPersonName && (
+        <div className="flex items-center gap-1 text-xs text-fg-tertiary">
+          <span className="text-fg-tertiary">Ответственный:</span>
+          <span className="font-medium text-fg-secondary">{goal.ownerPersonName}</span>
+        </div>
+      )}
+
       <div className="mt-auto flex items-center justify-between text-xs text-fg-tertiary">
         <span>
           {goal.themesCount} {pluralizeRu(goal.themesCount, ['тема', 'темы', 'тем'])}
@@ -442,13 +450,16 @@ function CreateGoalDialog({
   const [description, setDescription] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [weight, setWeight] = useState('1');
+  const [ownerPersonId, setOwnerPersonId] = useState('__none__');
   const [submitting, setSubmitting] = useState(false);
+  const { persons } = usePersons(orgId);
 
   function reset() {
     setName('');
     setDescription('');
     setTargetDate('');
     setWeight('1');
+    setOwnerPersonId('__none__');
   }
 
   function handleOpenChange(v: boolean) {
@@ -478,6 +489,7 @@ function CreateGoalDialog({
         description: description.trim(),
         ...(targetIso ? { targetDate: targetIso } : {}),
         weight: w,
+        ...(ownerPersonId !== '__none__' ? { ownerPersonId } : {}),
       });
       toast.success('Цель создана');
       onOpenChange(false);
@@ -546,6 +558,22 @@ function CreateGoalDialog({
               />
             </div>
           </div>
+          <div>
+            <Label htmlFor="goal-create-owner">Ответственный (опц.)</Label>
+            <Select value={ownerPersonId} onValueChange={setOwnerPersonId}>
+              <SelectTrigger id="goal-create-owner">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Не назначен</SelectItem>
+                {persons.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.fullName || 'Без имени'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter className="mt-2">
             <Button
               type="button"
@@ -589,9 +617,13 @@ function EditGoalDialog({
   );
   const [status, setStatus] = useState<GoalStatus>(goal.status);
   const [weight, setWeight] = useState(String(goal.weight));
+  const [ownerPersonId, setOwnerPersonId] = useState(
+    goal.ownerPersonId ?? '__none__',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+  const { persons } = usePersons(orgId);
 
   // Сброс на текущие значения при открытии.
   const lastGoalIdRef = useRef<string | null>(null);
@@ -603,6 +635,7 @@ function EditGoalDialog({
       setTargetDate(goal.targetDate ? formatDateInput(goal.targetDate) : '');
       setStatus(goal.status);
       setWeight(String(goal.weight));
+      setOwnerPersonId(goal.ownerPersonId ?? '__none__');
     }
   }, [open, goal]);
 
@@ -629,6 +662,7 @@ function EditGoalDialog({
         targetDate: targetIso,
         weight: w,
         status,
+        ownerPersonId: ownerPersonId === '__none__' ? null : ownerPersonId,
       });
       toast.success('Цель обновлена');
       onUpdated();
@@ -729,6 +763,22 @@ function EditGoalDialog({
                 {GOAL_STATUS_VALUES.map((s) => (
                   <SelectItem key={s} value={s}>
                     {GOAL_STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="goal-edit-owner">Ответственный (опц.)</Label>
+            <Select value={ownerPersonId} onValueChange={setOwnerPersonId}>
+              <SelectTrigger id="goal-edit-owner">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Не назначен</SelectItem>
+                {persons.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.fullName || 'Без имени'}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -110,6 +110,9 @@ const baseGoal: GoalListItemApi = {
   promotionState: 'suggested',
   progressStatus: 'at_risk',
   parentGoalId: 'goal_root',
+  ownerPersonId: null,
+  ownerPersonName: null,
+  blocksCount: null,
 };
 
 describe('goalFromApi (Goals OKR v2 поля)', () => {

@@ -39,6 +39,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── llm router fallback exhausted (Фаза A.4) ────────────────────────
   private coreLlmNoProviderTotal!: Counter<'task_type'>;
 
+  // ── llm cost unpriced (модель без цены → costUsd молча = 0) ──────────
+  private llmCostUnpricedTotal!: Counter<'provider' | 'model'>;
+
   // ── block-linker fallback на none (молчаливая деградация графа) ──────
   private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
 
@@ -1007,6 +1010,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_llm_no_provider_total',
       help: 'Фаза A.4 — ни один провайдер цепочки primary/secondary/tertiary не отработал для taskType. Должно быть = 0; > 0 → critical alert.',
       labelNames: ['task_type'] as const,
+    });
+
+    this.llmCostUnpricedTotal = this.getOrCreateCounter({
+      name: 'llm_cost_unpriced_total',
+      help: 'LLM-вызов модели без цены (нет ни в LlmModelPrice, ни в MODEL_PRICES) → costUsd молча = 0, расход невидим. > 0 → заполни цену в админке.',
+      labelNames: ['provider', 'model'] as const,
     });
 
     this.kcBlockLinkerFallbackNoneTotal = this.getOrCreateCounter({
@@ -3612,6 +3621,15 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incCoreLlmNoProvider(args: { taskType: string }): void {
     this.coreLlmNoProviderTotal.inc({ task_type: args.taskType });
+  }
+
+  /**
+   * LLM-вызов модели без цены — нет ни в `LlmModelPrice` (БД), ни в
+   * статической `MODEL_PRICES`. costUsd молча считается = 0, расход
+   * становится невидимым. > 0 → заполни цену модели в админке.
+   */
+  incLlmCostUnpriced(args: { provider: string; model: string }): void {
+    this.llmCostUnpricedTotal.inc({ provider: args.provider, model: args.model });
   }
 
   /**

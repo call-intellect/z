@@ -1706,9 +1706,10 @@ export class LlmRouterService implements OnModuleInit {
 
     // Fallback на статическую карту в коде.
     if (!(model in MODEL_PRICES)) {
-      this.logger.debug(
-        `computeCostUsd: цена для ${key} не найдена ни в БД, ни в коде → 0`,
+      this.logger.warn(
+        `computeCostUsd: цена для ${key} не найдена ни в БД, ни в коде → costUsd=0 (заполни в админке)`,
       );
+      this.metrics?.incLlmCostUnpriced({ provider, model });
     }
     return calcCostUsd(model, inputTokens, outputTokens, cachedTokens);
   }

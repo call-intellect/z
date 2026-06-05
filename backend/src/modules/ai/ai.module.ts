@@ -8,6 +8,7 @@ import { AiUsageLogService } from './services/ai-usage-log.service';
 import { AnthropicService } from './services/anthropic.service';
 import { BehaviorLlmRefineService } from './services/behavior-llm-refine';
 import { BehaviorMetricsCalculator } from './services/behavior-metrics-calculator';
+import { BudgetGuardService } from './services/budget-guard.service';
 import { CardRollupService } from './services/card-rollup.service';
 import { ChapterExtractionService } from './services/chapter-extraction.service';
 import { DeepSeekService } from './services/deepseek.service';
@@ -75,6 +76,9 @@ import { VoxService } from './services/vox.service';
     GrsaiService,
     // Маршрутизация и регенерация.
     LlmRouterService,
+    // ТЗ LLM cost-safety Ф2 — pre-dispatch budget gate для LlmRouter.
+    // В одном DI-скоупе с LlmRouterService (export не нужен).
+    BudgetGuardService,
     // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
     // Используется Specialist33Service.supersedeDetect под флагом
     // MULTI_AGENT_DEBATE_ENABLED. Optional-injection — на воркер-side и в

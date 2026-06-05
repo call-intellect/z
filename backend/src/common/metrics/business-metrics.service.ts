@@ -151,6 +151,7 @@ export class BusinessMetricsService implements OnModuleInit {
   private coreRetentionDeletedTotal!: Counter<'kind'>;
   private corePersonalDataErasuresTotal!: Counter<string>;
   private coreDataClassViolationsTotal!: Counter<'task_type' | 'attempted_class'>;
+  private llmBudgetExceededTotal!: Counter<'mode'>;
 
   // ── extraction (Фаза 0b) ──────────────────────────────────────────
   private extractionEntitiesTotal!: Counter<'type'>;
@@ -1247,6 +1248,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'core_data_class_violations_total',
       help: 'Попытки отправить sensitive/private данные в неподходящий LLM-провайдер. Должно быть = 0.',
       labelNames: ['task_type', 'attempted_class'] as const,
+    });
+    this.llmBudgetExceededTotal = this.getOrCreateCounter({
+      name: 'llm_budget_exceeded_total',
+      help: 'LLM-вызов при превышенном hard-cap бюджета; mode=observe (не блокировали) | enforce (заблокировали).',
+      labelNames: ['mode'] as const,
     });
 
     // ── extraction (Фаза 0b) ──────────────────────────────────────
@@ -3758,6 +3764,15 @@ export class BusinessMetricsService implements OnModuleInit {
       task_type: args.taskType,
       attempted_class: args.attemptedClass,
     });
+  }
+
+  /**
+   * ТЗ LLM cost-safety Ф2 — LLM-вызов при превышенном hard-cap бюджета.
+   * `mode='observe'` — флаг enforce выключен, вызов пропущен; `mode='enforce'`
+   * — вызов заблокирован (`LlmBudgetExceededError`).
+   */
+  incLlmBudgetExceeded(args: { mode: string }): void {
+    this.llmBudgetExceededTotal.inc({ mode: args.mode });
   }
 
   /**

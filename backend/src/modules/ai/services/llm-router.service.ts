@@ -15,6 +15,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AiUsageLogService } from './ai-usage-log.service';
 import { AnthropicService } from './anthropic.service';
+import { BudgetGuardService } from './budget-guard.service';
 import { DeepSeekService } from './deepseek.service';
 import { GrsaiService } from './grsai.service';
 import { KieService } from './kie.service';
@@ -970,6 +971,25 @@ export class NoEligibleProviderError extends Error {
 }
 
 /**
+ * ТЗ LLM cost-safety Ф2: hard-cap бюджета тенанта превышен и enforce включён.
+ * Бросается ДО dispatch к любому провайдеру. При observe (флаг выключен)
+ * не бросается — только метрика + warn-лог.
+ */
+export class LlmBudgetExceededError extends Error {
+  readonly code = 'llm_budget_exceeded';
+  constructor(
+    readonly tenantId: string | null,
+    readonly mtdRub: number,
+    readonly capRub: number | null,
+  ) {
+    super(
+      `LlmRouter: бюджет тенанта превышен (MTD=${mtdRub}₽ ≥ cap=${capRub}₽), вызов заблокирован.`,
+    );
+    this.name = 'LlmBudgetExceededError';
+  }
+}
+
+/**
  * Маршрутизатор LLM-вызовов по `LlmTaskRoute` записям из БД.
  *
  * - При старте подгружает все routes в in-memory кэш.
@@ -1042,6 +1062,11 @@ export class LlmRouterService implements OnModuleInit {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
+    // ТЗ LLM cost-safety Ф2 — pre-dispatch budget gate. @Optional — тесты и
+    // воркер-side без BudgetGuard в DI продолжают работать (gate тихо пропускается).
+    @Optional()
+    @Inject(BudgetGuardService)
+    private readonly budgetGuard?: BudgetGuardService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -1305,6 +1330,22 @@ export class LlmRouterService implements OnModuleInit {
         params.taskType,
         effectiveDataClass,
         providers.map((p) => p.provider),
+      );
+    }
+
+    // Pre-dispatch budget gate (ТЗ cost-safety Ф2). Best-effort, observe по умолчанию.
+    const bev = await this.budgetGuard?.evaluate(params.tenantId).catch(() => null);
+    if (bev?.over) {
+      const enforce =
+        (await this.cfg?.getDynamic<boolean>('llm.budget.enforce_enabled', undefined, false)) ??
+        false;
+      this.metrics?.incLlmBudgetExceeded({ mode: enforce ? 'enforce' : 'observe' });
+      if (enforce) {
+        throw new LlmBudgetExceededError(params.tenantId, bev.mtdRub, bev.capRub);
+      }
+      this.logger.warn(
+        { tenantId: params.tenantId, mtdRub: bev.mtdRub, capRub: bev.capRub },
+        'LlmRouter: бюджет превышен, но enforce выключен — пропускаю (observe)',
       );
     }
 

@@ -87,6 +87,21 @@ docker compose run --rm --no-deps backend \
   - новая метрика молчаливой деградации графа: `curl -s localhost:3000/metrics | grep kc_block_linker_fallback_none_total` (растёт `{reason=...}` только при реальной потере связи — повесить алерт).
   - secondary на JSON-задачах больше не 400: после тест-встречи `bun run --env-file=.env scripts/diag.ts trace --meeting <id>` → `reportFast` не failed, в логах нет `messages must contain the word 'json'`.
 
+#### 💰 2026-06-05 — Безопасность стоимости LLM + retention телеметрии (поверх блока надёжности роутера)
+
+> Контракт: `plans/tz/2026-06-05-llm-cost-safety-and-telemetry-retention.md`. Ветка `sergdev`. Закрывает риски #4 (бюджет LLM не enforce-ится, `costUsd=0` молча) и #5 (`AiUsageLog` без retention) техаудита. Реализовано целиком (3 фазы).
+>
+> **Зачем.** До фикса: взбесившийся воркер/тенант выжигал месячный лимит за часы (бюджет только наблюдался алертом раз в 2ч, `LlmRouter.call` его не проверял); модели вне прайс-карты молча давали `costUsd=0` (только `logger.debug` — расход невидим); телеметрия `AiUsageLog` (строка + 2 TEXT-превью до 8 КБ) росла append-only без retention.
+
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; `OrgBudgetCap.capKind 'soft'|'hard'` уже был в схеме; превью `AiUsageLog` уже nullable).
+- **Шаг 7 — Seed / AdminSetting** — **не требуется**. Все новые ключи читаются через `getDynamic` с code-fallback → дефолты применяются лениво, выкат БЕЗ сидов безопасен. Ключи (дефолты): `llm.budget.enforce_enabled`(bool, **false**), `llm.budget.mtd_cache_ttl_sec`(int, 60), `llm.usage_log.scrub_previews_after_days`(int, 30), `llm.usage_log.delete_after_days`(int, 365). Опционально настраиваются через админку настроек под super_admin.
+- **Прод-операций по схеме/сидам НЕТ.** Достаточно деплоя кода: `docker compose up -d --build backend` (+ перезапуск worker-процесса — там self-scheduling retention-сервис `AiUsageLogCleanupService`, раз в час).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `llm-router.service.ts` pre-dispatch budget-gate + WARN на unpriced; новый `budget-guard.service.ts`; новый `ai-usage-log-cleanup.service.ts`; `business-metrics.service.ts` — 2 новые метрики): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke**:
+  - новые метрики в `/metrics`: `curl -s localhost:3000/metrics | grep -E 'llm_cost_unpriced_total|llm_budget_exceeded_total'` → счётчики присутствуют. `llm_cost_unpriced_total{provider,model}` растёт при вызове модели вне прайс-карты (видимость `costUsd=0`); `llm_budget_exceeded_total{mode}` (`mode=observe`|`enforce`) — при превышении hard-cap.
+  - retention (через ≥1ч после старта worker): в логах worker строка о прогоне `AiUsageLogCleanupService` (Tier-1 scrub превью / Tier-2 delete), без ERROR.
+- **⚠️ ВАЖНО — `llm.budget.enforce_enabled` оставить OFF** до решения владельца по поведению enforcement (развилка Р-1 в ТЗ: block / degrade / alert-only). До включения — чистый observe: бюджет считается, метрится, логируется «would block», но НЕ блокирует. Включать только после явного подтверждения владельца А/B/C.
+
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 
 ---

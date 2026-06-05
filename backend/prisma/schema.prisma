@@ -243,6 +243,8 @@ enum SourceType {
   /// создаётся лениво при первом событии. См.
   /// plans/tz/2026-05-23-tracker-phase-1-models-api.md раздел "Ingest".
   tracker_event
+  /// ChatBox-интеграция: сессия клиентского чата → RawEvent → knowledge-core.
+  chatbox
 }
 
 enum DataClass {
@@ -250,6 +252,61 @@ enum DataClass {
   internal
   sensitive
   private
+}
+
+/// ChatBox-интеграция — режим синхронизации.
+enum ChatboxSyncMode {
+  hourly
+  daily
+  realtime // webhook + редкий поллинг-фолбэк
+}
+
+/// ChatBox-интеграция — состояние подключения.
+enum ChatboxIntegrationStatus {
+  connected
+  error
+  disconnected
+}
+
+/// Зеркало ChatBox Chat.status.
+enum ChatboxChatStatus {
+  active
+  closed
+}
+
+/// Зеркало ChatBox Message.sender.type.
+enum ChatboxSenderType {
+  CLIENT
+  USER
+  ASSISTANT
+  QUALITY_CONTROL
+}
+
+/// Зеркало ChatBox Message.content.type.
+enum ChatboxContentType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  VIDEO_NOTE
+  FILE
+  VOICE
+  COMMAND
+}
+
+/// Статус LLM-анализа сессии чата.
+enum ChatboxSessionAnalysisStatus {
+  pending
+  analyzing
+  done
+  failed
+}
+
+/// Способ связи менеджера ChatBox с Person Коры.
+enum ChatboxMemberLinkMode {
+  auto   // совпал email
+  manual // выбрано вручную
+  none   // не связан
 }
 
 /// Фаза A.1 — Prompt Registry (sub-TZ 2026-05-21-phase-A-prompt-registry-admin §4.1).
@@ -2519,6 +2576,16 @@ model Org {
 
   // ── Smart Tables (см. plans/tz/2026-05-31-smart-tables.md Фаза 0) ──
   tables Table[]
+
+  // ── ChatBox-интеграция (plans/tz/2026-06-05-chatbox-integration.md Фаза 1) ──
+  chatboxIntegration    ChatboxIntegration?
+  chatboxChannels       ChatboxChannel[]
+  chatboxCustomers      ChatboxCustomer[]
+  chatboxChannelClients ChatboxChannelClient[]
+  chatboxMembers        ChatboxMember[]
+  chatboxChats          ChatboxChat[]
+  chatboxChatSessions   ChatboxChatSession[]
+  chatboxMessages       ChatboxMessage[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -10287,4 +10354,197 @@ model PlatformSetting {
   updatedBy String?
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
+}
+
+/// ChatBox: конфиг интеграции org с app.agent-lia.ru. Один на org.
+model ChatboxIntegration {
+  id                String                   @id @default(cuid())
+  tenantId          String                   @unique
+  /// AES-256-GCM (CryptoService). Никогда не возвращается plain в API.
+  tokenEnc          String                   @db.Text
+  workspaceId       String
+  workspaceName     String?
+  syncMode          ChatboxSyncMode          @default(daily)
+  status            ChatboxIntegrationStatus @default(connected)
+  lastError         String?                  @db.Text
+  webhookExternalId String?
+  webhookSecret     String?
+  lastFullSyncAt        DateTime?
+  lastIncrementalSyncAt DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// ChatBox: канал (мессенджер) воркспейса.
+model ChatboxChannel {
+  id          String   @id @default(cuid())
+  tenantId    String
+  externalId  String
+  channelType String
+  title       String
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  raw         Json?
+  syncedAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
+}
+
+/// ChatBox: унифицированный контакт (Customer). Ключ объединения клиента по мессенджерам.
+model ChatboxCustomer {
+  id            String   @id @default(cuid())
+  tenantId      String
+  externalId    String
+  name          String?
+  phone         String?
+  email         String?
+  externalCrmId String?
+  raw           Json?
+  syncedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org     Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clients ChatboxChannelClient[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
+}
+
+/// ChatBox: identity клиента в конкретном мессенджере (ChannelClient).
+model ChatboxChannelClient {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  externalId         String
+  customerExternalId String?
+  customerId         String?
+  channelType        String
+  channelExternalId  String?
+  messengerUserId    String?
+  name               String?
+  phone              String?
+  email              String?
+  avatarUrl          String?  @db.Text
+  isBlocked          Boolean  @default(false)
+  raw                Json?
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  org      Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer ChatboxCustomer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, customerId])
+}
+
+/// ChatBox: менеджер (Member воркспейса). Связь с Person Коры.
+model ChatboxMember {
+  id             String                @id @default(cuid())
+  tenantId       String
+  externalId     String
+  email          String?
+  name           String?
+  role           String?
+  linkedPersonId String?
+  linkMode       ChatboxMemberLinkMode @default(none)
+  raw            Json?
+  syncedAt       DateTime              @default(now())
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, linkedPersonId])
+}
+
+/// ChatBox: чат (тред). Зеркало 1:1.
+model ChatboxChat {
+  id                    String            @id @default(cuid())
+  tenantId              String
+  externalId            String
+  channelExternalId     String
+  channelType           String
+  clientExternalId      String?
+  customerExternalId    String?
+  responsibleExternalId String?
+  status                ChatboxChatStatus @default(active)
+  externalCreatedAt     DateTime
+  externalUpdatedAt     DateTime
+  lastMessageAt         DateTime?
+  messageCount          Int               @default(0)
+  raw                   Json?
+  syncedAt              DateTime          @default(now())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  org      Org                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions ChatboxChatSession[]
+  messages ChatboxMessage[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, customerExternalId])
+  @@index([tenantId, lastMessageAt])
+  @@index([tenantId, status])
+}
+
+/// ChatBox: сессия-сегмент чата для LLM-анализа.
+model ChatboxChatSession {
+  id                String                       @id @default(cuid())
+  tenantId          String
+  chatId            String
+  seq               Int
+  previousSessionId String?
+  startedAt         DateTime
+  endedAt           DateTime?
+  messageCount      Int                          @default(0)
+  analysisStatus    ChatboxSessionAnalysisStatus @default(pending)
+  summary           String?                      @db.Text
+  rawEventId        String?
+  analyzedAt        DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  org  Org         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chat ChatboxChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, chatId, seq])
+  @@index([tenantId, analysisStatus])
+}
+
+/// ChatBox: сообщение. Зеркало.
+model ChatboxMessage {
+  id                 String             @id @default(cuid())
+  tenantId           String
+  chatId             String
+  sessionId          String?
+  externalId         String
+  senderType         ChatboxSenderType
+  senderExternalId   String?
+  senderName         String?
+  contentType        ChatboxContentType @default(TEXT)
+  text               String?            @db.Text
+  imageUrl           String?            @db.Text
+  fileUrl            String?            @db.Text
+  audioUrl           String?            @db.Text
+  videoUrl           String?            @db.Text
+  externalCreatedAt  DateTime
+  isOutboundFromKora Boolean            @default(false)
+  raw                Json?
+  createdAt          DateTime           @default(now())
+
+  org  Org         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chat ChatboxChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, chatId, externalCreatedAt])
+  @@index([tenantId, sessionId])
 }

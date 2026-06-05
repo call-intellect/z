@@ -2170,6 +2170,39 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 [[../index|← index]]
 
+## ChatBox-интеграция (2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md) (10 фаз). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]]. Схема — [[data-model]] §«ChatBox», AI/очереди — [[../01_projects/ai-jobs]] / [[../01_projects/workers-queues]], REST — [[../01_projects/api-layer]], фронт — [[../01_projects/frontend-pages]].
+
+Новый backend-домен **`backend/src/modules/chatbox/`** — зеркалит (read-mostly) клиентские переписки из внешнего ChatBox (`app.agent-lia.ru`) в типизированные таблицы Коры, режет на сессии и скармливает существующему `IngestService.ingest` (точка входа AI не меняется). Образец модуля — `sources` (per-tenant config + AES-GCM шифрование секрета).
+
+### Контроллеры
+- `chatbox-integration.controller.ts` — `GET/PUT/DELETE /chatbox/integration`, `POST .../workspaces`, `POST .../sync`, `GET .../sync/status` (RBAC `chatbox`, `CookieAuthGuard + TenantGuard`).
+- `chatbox-chats.controller.ts` — `GET /chatbox/chats`, `GET /:id`, `GET /:id/messages`, `POST /:id/messages` (исходящая отправка).
+- `chatbox-members.controller.ts` — `GET /chatbox/members`, `PUT /:id/link` (маппинг менеджера на `Person`).
+- `chatbox-webhook.controller.ts` — `@ApiExcludeController`, `POST /webhooks/chatbox/:tenantId/:secret` (без cookie-auth, `timingSafeEqual`, всегда 200 — образец `max-webhooks.controller.ts`).
+
+### Сервисы
+- `chatbox-api.client.ts` — типизированный клиент ChatBox (Bearer-токен, `listWorkspaces/listChannels/listChats/getChat/listMessages/sendMessage/listChannelClients/listCustomers/listMembers/createWebhook/deleteWebhook`, backoff, маппинг 401→`chatbox_token_invalid`).
+- `chatbox-integration.service.ts` — шифрование токена, выбор воркспейса, регистрация/снятие webhook.
+- `chatbox-sync.service.ts` — upsert ChatBox→Кора по `@@unique([tenantId, externalId])` (идемпотентно), автосвязка менеджеров по email; `chatbox-session.service.ts` — сегментация сообщений на сессии (idle-gap из `AdminSetting`).
+- `chatbox-chats.service.ts` — чтение чатов/сообщений + исходящая отправка (privacy: без super_admin bypass на текст переписки).
+- `chatbox-members.service.ts` — автосвязка/ручной маппинг `linkedPersonId`.
+- `chatbox-ingest.service.ts` — строит payload сессии, лениво создаёт `Source(type='chatbox')`, вызывает `ingest` → `RawEvent(sourceType='chatbox', dataClass='sensitive')`.
+
+### Воркеры / cron (in-process, `WorkersModule`)
+- Очереди `chatbox.sync` (синк-job'ы) + `chatbox.analyze` (`chatbox-analyze.worker.ts` — закрытая сессия → LLM-summary → `done`/`failed` + `rawEventId`).
+- `chatbox-sync.cron.ts` — раскладывает incremental-sync по org согласно `syncMode` (hourly/daily) + поллинг-фолбэк для realtime.
+- `chatbox-analyze.cron.ts` — каждые 5 мин подбирает сессии `analysisStatus='pending'` с `endedAt!=null`.
+- Оба cron'а уважают kill-switch `AdminSetting chatbox.enabled`.
+
+### Прочее
+- RBAC-ресурс `chatbox` в `policy.csv` (owner: r/w/d/manage; admin: r/w/manage; manager: read).
+- Feature-flag тарифа `feature.chatbox` (`tier-config.ts`, дефолт OFF).
+- ENV `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`); webhook использует существующий `PUBLIC_HOST_URL`, токен — `CRYPTO_MASTER_KEY`.
+
+[[../index|← index]]
+
 ## Пакет улучшений дашбордов (ТЗ B/D/C/G/E, 2026-06-05)
 
 **Источник:** `plans/tz/2026-06-05-{goal-vector-compass,weekly-per-person-plan-fact,operations-dashboards-redesign,employee-pulse-and-people-at-risk,personal-cabinet-me}.md`. Ветка `feature/dashboards-improvements`. Схема — [[data-model]] §«Пакет улучшений дашбордов» (`Goal.isPrimary`, `IdeaBlock.commitmentAuthorPersonId`), эндпоинты — [[../01_projects/api-layer]].

@@ -131,6 +131,17 @@ p, admin, *, *, source, write
 p, admin, *, *, source, manage
 p, manager, *, *, source, read
 
+# ChatBox-интеграция (ТЗ 2026-06-05) — ресурс chatbox. owner — full;
+# admin — read/write/manage; manager — read. super_admin — bypass.
+p, owner, *, *, chatbox, read
+p, owner, *, *, chatbox, write
+p, owner, *, *, chatbox, delete
+p, owner, *, *, chatbox, manage
+p, admin, *, *, chatbox, read
+p, admin, *, *, chatbox, write
+p, admin, *, *, chatbox, manage
+p, manager, *, *, chatbox, read
+
 # knowledge-core (Фаза 11) — person.erase. 152-ФЗ «право на удаление
 # личных данных»: только owner Org может инициировать. super_admin —
 # bypass через RbacService. admin / manager не получают это право.

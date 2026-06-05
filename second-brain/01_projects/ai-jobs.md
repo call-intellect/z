@@ -238,3 +238,12 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 `meeting-extract-actions.service` резолвит исполнителя через `TaskAssigneeResolverService` против **участников встречи** (приватный substring-резолв `resolveAssigneeId` удалён). `intake-auto-triage` для `source='meeting'` теперь берёт upstream identity-резолвнутый `suggestedAssigneeId`, а не угадывает по тексту.
 
 [[../index|← index]]
+
+## ChatBox-интеграция — summary сессий чата (2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md) (Фаза 5). Профильная заметка — [[chatbox-integration]], очереди — [[workers-queues]], схема — [[../02_architecture/data-model]] §«ChatBox».
+
+- **taskType `chatbox-summary`** — LLM-summary закрытой сессии клиентского чата. Cheap-цепочка (DeepSeek-flash → OpenAI via proxy → Ollama; **без anthropic** — не закупаем). SYSTEM стабилен, переменная переписка в конце USER (prompt-caching-friendly). Маршрут регистрируется через seed/admin (логика `llm-router` не меняется).
+- **`chatbox-analyze.worker`** (очередь `chatbox.analyze`, cron `ChatboxAnalyzeCron` каждые 5 мин) — берёт сессии `analysisStatus='pending'` с `endedAt!=null`, генерит summary, подмешивает summary **предыдущей** сессии (`previousSessionId`), ставит `done`/`failed`, проставляет `rawEventId`. Сессия → `IngestService.ingest` → `RawEvent(sourceType='chatbox', dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений). Идемпотентно: повторный анализ той же сессии не плодит `RawEvent` (стабильный `idempotencyKey` по `sourceExternalId=sessionId`).
+
+[[../index|← index]]

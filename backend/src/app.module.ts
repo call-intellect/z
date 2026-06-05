@@ -35,6 +35,7 @@ import { CardsModule } from './modules/cards/cards.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ChatV2Module } from './modules/chat-v2/chat-v2.module';
+import { ChatboxModule } from './modules/chatbox/chatbox.module';
 // Phase 0a — структура компании (группа А) + дополнительные эндпоинты.
 import { ClonesModule } from './modules/clones/clones.module';
 import { CompanyFoundationModule } from './modules/company-foundation/company-foundation.module';
@@ -334,6 +335,10 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // Зависит от @Global модулей: Crypto, Audit, Rbac, Ingest (TelegramAdapterService),
     // и от IngestEmailModule (для smoke-test IMAP).
     SourcesModule,
+
+    // ChatBox-интеграция (ТЗ 2026-06-05) — конфиг + API-клиент + выбор воркспейса.
+    // Зависит от @Global: Crypto, Rbac, Entitlements, Config.
+    ChatboxModule,
 
     // AI/knowledge-core воркеры и cron'ы — IN-PROCESS (отдельного worker-процесса
     // больше нет). Должен идти ПОСЛЕ всех @Global-модулей, чьи сервисы инжектят воркеры.

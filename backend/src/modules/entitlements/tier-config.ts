@@ -64,7 +64,13 @@ export type FeatureKey =
    * ТЗ 2026-05-26-memory-section-ui §6 — открыть просмотр раздела
    * «Сущности» для роли `member`. По умолчанию выключено.
    */
-  | 'feature.memory_entities_for_members';
+  | 'feature.memory_entities_for_members'
+  /**
+   * ТЗ 2026-06-05-chatbox-integration — интеграция с ChatBox
+   * (app.agent-lia.ru): зеркало клиентских чатов → knowledge-core.
+   * Core-фича памяти компании, включена на всех тарифах.
+   */
+  | 'feature.chatbox';
 
 /** Все quota-ключи.
  *
@@ -117,6 +123,7 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   // ТЗ 2026-05-26 §6 — memory section per-role overrides.
   'feature.memory_regulations_for_members',
   'feature.memory_entities_for_members',
+  'feature.chatbox',
 ] as const;
 
 /** Полный список квот. */
@@ -197,6 +204,9 @@ const BASIC_FEATURES: Record<FeatureKey, boolean> = {
   'feature.card_rollup': true,
   'feature.chat_per_meeting': true,
   'feature.adapter_web_form': true,
+  // ChatBox-интеграция — core-фича памяти компании, включена на всех тарифах
+  // (PRO/ENTERPRISE/STANDARD наследуют через spread BASIC_FEATURES).
+  'feature.chatbox': true,
   // ── всё остальное на basic — выключено ──
   'feature.theme': false,
   'feature.graph': false,

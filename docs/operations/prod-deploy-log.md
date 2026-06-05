@@ -171,6 +171,28 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 
 ---
 
+### 💬 2026-06-05 — ChatBox-интеграция (клиентские переписки в память компании)
+
+> Контракт: `plans/tz/2026-06-05-chatbox-integration.md`. Новый домен `backend/src/modules/chatbox/` — зеркалит чаты из внешнего ChatBox (`app.agent-lia.ru`). **За feature-flag тарифа `feature.chatbox` (дефолт OFF)** — до включения тарифа поведение прода не меняется. Профильная заметка — `second-brain/01_projects/chatbox-integration.md`.
+
+- **Шаг 4 — Prisma (schema)** — **обязательно** (аддитивно, без data-loss): миграция **`20260605120000_chatbox_integration`** — 8 таблиц `Chatbox*` (`ChatboxIntegration/Channel/Customer/ChannelClient/Member/Chat/ChatSession/Message`) + 7 enum (`ChatboxSyncMode/IntegrationStatus/ChatStatus/SenderType/ContentType/SessionAnalysisStatus/MemberLinkMode`) + значение `SourceType.chatbox` + обратная связь `Org.chatboxIntegration`. Применяется **автоматически** через `prisma migrate deploy` (migrate-контейнер) на `docker compose up -d`. Вручную: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → должна числиться applied.
+- **Шаг 1 — ENV / AdminSetting**:
+  - `CHATBOX_API_BASE_URL` — **опциональна**, дефолт `https://app.agent-lia.ru` (можно не задавать). Только через `TypedConfigService`.
+  - ⚠️ realtime-webhook требует корректный **`PUBLIC_HOST_URL`** (внешний адрес backend) — он уже есть; webhook регистрируется как `${PUBLIC_HOST_URL}/api/v1/webhooks/chatbox/:tenantId/:secret`. Токен шифруется существующим `CRYPTO_MASTER_KEY`.
+  - **Kill-switch** `AdminSetting chatbox.enabled` (дефолт **true**; `false` → синк-кроны и webhook молча no-op). Засеивается Шагом 7.
+- **Шаг 7 — Seed** — `docker compose exec backend bun run scripts/seed-admin-setting-chatbox.ts` — идемпотентно: `chatbox.session.idle_gap_hours=12` (порог сегментации сессий) + `chatbox.enabled=true`. **Уже в агрегаторе** `apply-prod-deploy.ts` STEPS (phase `seed-base`): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый backend-модуль `chatbox` + фронт-страницы `/chats*`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - очереди BullMQ: `docker compose exec backend grep -rl "chatbox.sync\|chatbox.analyze" src/modules/chatbox/queue` → найдены обе очереди.
+  - cron'ы: `docker compose exec backend grep -l "@Cron" src/modules/chatbox/chatbox-sync.cron.ts src/modules/chatbox/chatbox-analyze.cron.ts` (ChatboxSyncCron hourly/daily, ChatboxAnalyzeCron `*/5`).
+  - inbound webhook: `docker compose exec backend grep -n "webhooks/chatbox/:tenantId/:secret" src/modules/chatbox/chatbox-webhook.controller.ts` (всегда 200, `timingSafeEqual`).
+  - Swagger-тег `chatbox` виден в `/api/docs`; `POST /api/v1/chatbox/integration/workspaces` с валидным токеном → непустой список воркспейсов; после `POST .../sync {scope:'all'}` в БД ≥1 `ChatboxChat`/`ChatboxMessage`/`ChatboxChatSession`; одна сессия → `analysisStatus='done'` + `RawEvent(sourceType='chatbox')`.
+  - privacy: под super_admin текст чужой переписки (`ChatboxMessage.text`) не читается.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🆕 2026-06-05 — Колонка `dataClassAudit` в 4 проекции (миграция, АВТО при выкате)
 
 > Контракт: `plans/tz/2026-06-05-dataclass-audit-schema-drift-fix.md`. Чинит schema drift: писатели specialist-3-1/3-6 кладут `dataClassAudit` в Regulation/Process/Policy/Idea, а колонки в схеме не было → ветка не компилировалась + snapshot-cron спамил 5 ERROR/30мин (`Unknown argument`).

@@ -1,6 +1,6 @@
 # ТЗ — Надёжность LLM-роутера + нормализация цепочек (deepseek → gpt → kie)
 
-> Статус: **ФИНАЛ, готов к реализации.** Все развилки закрыты (Р-A/Р-B/Р-C — решения внутри). Ждёт команды «начинай реализацию».
+> Статус: **РЕАЛИЗОВАНО (2026-06-05, ветка sergdev).** Все фазы `[x]`. Ждёт прод-выката (см. Итог).
 > Дата: 2026-06-05. Автор-постановщик: владелец (sergrv80). Контекст найден аудитом LLM-агентов 2026-06-05.
 > Источник правды по моделям — таблица БД `LlmTaskRoute` (не код). Код = сид + аварийный `DEFAULT_FALLBACK_CHAIN`.
 
@@ -37,7 +37,7 @@
 
 ---
 
-## Фаза 1 — Таймаут диспетчера 300с `[ ]`
+## Фаза 1 — Таймаут диспетчера 300с `[x]`
 
 **Что:** `LLM_ROUTER_DISPATCH_TIMEOUT_MS` дефолт `30_000 → 300_000`.
 
@@ -52,12 +52,12 @@
 
 ---
 
-## Фаза 2 — Нормализация цепочек + kie private + закрытие дыры `[ ]`
+## Фаза 2 — Нормализация цепочек + kie private + закрытие дыры `[x]`
 
-### 2.1. kie → private `[ ]`
+### 2.1. kie → private `[x]`
 [llm-router.service.ts:743](../../backend/src/modules/ai/services/llm-router.service.ts#L743): `kie: { maxDataClass: 'internal', localOnly: false }` → `maxDataClass: 'private'`. (Опционально симметрично `grsai`, если планируем его в цепочки — сейчас не нужно.)
 
-### 2.2. Регистрация 3 потерянных taskType `[ ]`
+### 2.2. Регистрация 3 потерянных taskType `[x]`
 В `ALL_LLM_TASK_TYPES` ([llm-router.service.ts:523](../../backend/src/modules/ai/services/llm-router.service.ts#L523)) добавить (в типе они уже есть):
 - `knowledge-specialists-combined`
 - `dialog-multi-query-clone`
@@ -65,7 +65,7 @@
 
 Unit-тест `seed-llm-task-routes-default.spec.ts` и любые `satisfies`-проверки числа taskType — обновить (ожидаемое количество 124 → 127).
 
-### 2.3. Новый патч-скрипт нормализации `[ ]`
+### 2.3. Новый патч-скрипт нормализации `[x]`
 Создать `backend/scripts/patch-normalize-llm-chains-deepseek-openai-kie.ts` (по образцу `patch-rollback-to-deepseek-flash.ts`, через `createPrismaClient()` из `_lib/prisma`). Алгоритм для каждого `taskType ∈ ALL_LLM_TASK_TYPES` (tenantId=null), идемпотентно:
 
 1. **primary:** если `providerName='ollama'` → `deepseek` / `deepseek-v4-flash`. Иначе НЕ трогать модель (сохраняем тюнинг pro/flash и openai-primary исключения по Р-B).
@@ -80,12 +80,12 @@ Unit-тест `seed-llm-task-routes-default.spec.ts` и любые `satisfies`-�
 - `dialog-multi-query-clone`: `deepseek:deepseek-v4-pro → openai-via-proxy:gpt-5.4-mini → kie:gemini-3.1-pro`
 - `checkin-sentiment-batch`: `deepseek:deepseek-v4-pro → openai-via-proxy:gpt-5.4-mini → kie:gemini-3.1-pro`
 
-### 2.4. Обновить код-сиды (источник истины для bootstrap) `[ ]`
+### 2.4. Обновить код-сиды (источник истины для bootstrap) `[x]`
 Чтобы новая прод-инсталляция получала верные дефолты:
 - `seed-llm-task-routes-default.ts` и профильные сиды: tertiary `ollama:qwen3.5:9b` → `kie:gemini-3.1-pro`; в `DEFAULT_FALLBACK_CHAIN` ([llm-router.service.ts:785](../../backend/src/modules/ai/services/llm-router.service.ts#L785)) tertiary `ollama` → `kie:gemini-3.1-pro`.
 - Зарегистрировать новый патч в `backend/scripts/apply-prod-deploy.ts` (`STEPS`, `phase` = update, `skipBootstrap=true`).
 
-### 2.5. Вывод `gpt-4o` из проекта (4 агента) `[ ]`
+### 2.5. Вывод `gpt-4o` из проекта (4 агента) `[x]`
 `gpt-4o` — устаревший и дорогой; убираем полностью. Переназначение primary (в том же патче нормализации или соседней строкой):
 
 | Агент | Было | Стало (primary) | Полная цепочка | Почему |
@@ -106,7 +106,7 @@ Unit-тест `seed-llm-task-routes-default.spec.ts` и любые `satisfies`-�
 
 ---
 
-## Фаза 3 — Фикс JSON-mode в OpenAiProxyService (P0) `[ ]`
+## Фаза 3 — Фикс JSON-mode в OpenAiProxyService (P0) `[x]`
 
 **Проблема:** при `responseFormat.type='json_object'` ([openai-proxy.service.ts:81-82](../../backend/src/modules/ai/services/openai-proxy.service.ts#L81)) OpenAI Responses API требует слово «json» в `instructions`/`input`, иначе `400`. Промпты Коры его не содержат → secondary падает у каждой JSON-задачи.
 
@@ -118,7 +118,7 @@ Unit-тест `seed-llm-task-routes-default.spec.ts` и любые `satisfies`-�
 
 ---
 
-## Фаза 4 — Граф: устойчивый парсинг JSON от LLM (P1, корень найден) `[ ]`
+## Фаза 4 — Граф: устойчивый парсинг JSON от LLM (P1, корень найден) `[x]`
 
 **Исследование (проведено 2026-06-05, код + прод-логи):**
 
@@ -164,6 +164,12 @@ Unit-тест `seed-llm-task-routes-default.spec.ts` и любые `satisfies`-�
 - **`--force` перетрёт ручные правки** владельца в админке — согласовано (Р-A).
 
 ## Итог
-Реализовано: ☐ целиком ☐ частично. Что осталось: _(заполнить после реализации)_.
+**Реализовано ЦЕЛИКОМ (2026-06-05, ветка sergdev).** Коммиты: `025714d3` Ф1 (таймаут 300с) · `caf69f13` Ф3 (openai JSON-mode) · `b68554fb` Ф4 (block-linker retry + lenient parser + метрика) · `c21c9e15` Ф2a (kie→private, tertiary→kie, реестр) · `cb820a69` Ф2b (patch-normalize + seed + apply-prod-deploy).
+
+Отклонение от плана (в плюс): **дыра реестра оказалась шире — закрыто 5 taskType, а не 3** (по ходу найдены `experiment-extract`, `experiment-summarize-lessons`; строгий дифф union↔массив теперь пуст).
+
+Каждая фаза: typecheck/lint(0 errors)/build/тесты — зелёные. Прод-скрипты (`patch-normalize`, `seed-missing-registry`) проверены статикой + юнит-тестами `computeDesiredChain` (8 кейсов); **БД-прогон не делался — на проде обязателен `--dry-run` перед `--force`**.
+
+**Осталось (прод-выкат):** ENV `LLM_ROUTER_DISPATCH_TIMEOUT_MS=300000` · `apply-prod-deploy --mode update` · разовый `patch-normalize ... --force` (после `--dry-run`) · боевой smoke (`diag.ts trace` тестовой встречи). Push веток — по подтверждению владельца.
 
 Связано: [[project_llm_tasktypes_missing_from_registry]], [[project_meeting_report_fast_broken_chain]].

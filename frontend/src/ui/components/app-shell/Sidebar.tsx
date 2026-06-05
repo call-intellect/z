@@ -33,6 +33,7 @@ import {
   Lock,
   LogOut,
   MessageCircle,
+  MessagesSquare,
   Network,
   Newspaper,
   Palette,
@@ -292,6 +293,40 @@ const ME_GROUP: NavGroup = {
 };
 
 /**
+ * Чаты (ТЗ 2026-06-05 chatbox-integration, Фаза 7) — раздел внешних чат-
+ * источников. Пункт «Чаты» + collapsible-подгруппа «Интеграции» с настройкой
+ * интеграции «Чат бокс». Гейтится на `feature.chatbox`.
+ */
+const CHATS_GROUP: NavGroup = {
+  label: 'Чаты',
+  items: [
+    {
+      href: '/chats',
+      label: 'Чаты',
+      icon: MessagesSquare,
+      matchPrefix: '/chats',
+      gateFeature: 'feature.chatbox',
+    },
+  ],
+  collapsibleSubgroups: [
+    {
+      label: 'Интеграции',
+      defaultCollapsed: true,
+      storageKey: 'sidebar.chats.integrations.open',
+      items: [
+        {
+          href: '/chats/integrations/chatbox',
+          label: 'Чат бокс',
+          icon: Plug,
+          matchPrefix: '/chats/integrations/chatbox',
+          gateFeature: 'feature.chatbox',
+        },
+      ],
+    },
+  ],
+};
+
+/**
  * Память компании — это то, что Кора извлекла из встреч и разговоров.
  * Раньше была подгруппой внутри «Компании»; в ТЗ 2026-05-27 поднята на
  * верхний уровень — это отдельный, самостоятельный пласт продукта.
@@ -528,6 +563,7 @@ export function Sidebar({
   const groups: NavGroup[] = [
     dailyGroup,
     meGroup,
+    CHATS_GROUP,
     memoryGroup,
     ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
     referenceGroup,

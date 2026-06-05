@@ -35,6 +35,8 @@ import {
   formatAlignment,
   formatDelta,
   goalFromApi,
+  movementVerdict,
+  movementVerdictChipClasses,
   statusBadgeVariant,
   targetDateLabel,
   type ConfidenceLevel,
@@ -312,6 +314,8 @@ function GoalCard({
     goal.blocksCount,
   );
   const confChip = confidenceChipClasses(confLevel);
+  const verdict = movementVerdict(goal.cachedAlignment, goal.progressStatus);
+  const verdictChip = movementVerdictChipClasses(verdict.tone);
 
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elevated p-4 transition-colors hover:border-accent/60">
@@ -340,6 +344,18 @@ function GoalCard({
             : goal.description}
         </p>
       )}
+
+      <div>
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+            verdictChip.bg,
+            verdictChip.fg,
+          )}
+        >
+          {verdict.label}
+        </span>
+      </div>
 
       {/* Alignment progress */}
       <div className="space-y-1.5">

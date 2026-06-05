@@ -532,6 +532,56 @@ export function confidenceChipClasses(level: ConfidenceLevel): {
   }
 }
 
+// ── Склейка движения в один вердикт (ТЗ-F Ф3) ──
+export type MovementVerdict = {
+  label: string;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
+};
+
+/**
+ * Один понятный вердикт из cachedAlignment(0-100) + progressStatus.
+ * progressStatus (явное состояние) приоритетнее балла; балл уточняет on_track.
+ * Поля БД не меняем — это чистая презентационная склейка (C-2).
+ */
+export function movementVerdict(
+  alignment: number | null,
+  progress: GoalProgressStatus,
+): MovementVerdict {
+  switch (progress) {
+    case 'achieved':
+      return { label: 'Достигнута', tone: 'success' };
+    case 'dropped':
+      return { label: 'Выпала из работы', tone: 'neutral' };
+    case 'stalled':
+      return { label: 'Застряла', tone: 'danger' };
+    case 'at_risk':
+      return { label: 'Под риском', tone: 'warning' };
+    case 'on_track': {
+      if (alignment !== null && alignment >= 70)
+        return { label: 'Уверенно движемся', tone: 'success' };
+      if (alignment !== null && alignment >= 40)
+        return { label: 'Движемся', tone: 'success' };
+      return { label: 'Движемся, но согласованность низкая', tone: 'warning' };
+    }
+  }
+}
+
+/** Парные токены чипа вердикта движения. */
+export function movementVerdictChipClasses(
+  tone: MovementVerdict['tone'],
+): { bg: string; fg: string } {
+  switch (tone) {
+    case 'success':
+      return { bg: 'bg-chip-success-bg', fg: 'text-chip-success-fg' };
+    case 'warning':
+      return { bg: 'bg-chip-warning-bg', fg: 'text-chip-warning-fg' };
+    case 'danger':
+      return { bg: 'bg-chip-danger-bg', fg: 'text-chip-danger-fg' };
+    case 'neutral':
+      return { bg: 'bg-bg-overlay', fg: 'text-fg-secondary' };
+  }
+}
+
 /**
  * Goals OKR v2 — цвет прогресс-бара Key Result по проценту выполнения.
  * Только semantic-токены: пока не достигнуто — `bg-info`, при 100% — `bg-success`.

@@ -51,6 +51,8 @@ import {
   formatDelta,
   goalDetailFromApi,
   krProgressBarColor,
+  movementVerdict,
+  movementVerdictChipClasses,
   statusBadgeVariant,
   targetDateLabel,
   type ConfidenceLevel,
@@ -159,6 +161,8 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     goal.latestSnapshot?.blocksCount ?? goal.blocksCount,
   );
   const confChip = confidenceChipClasses(confLevel);
+  const verdict = movementVerdict(goal.cachedAlignment, goal.progressStatus);
+  const verdictChip = movementVerdictChipClasses(verdict.tone);
 
   async function handleRecompute() {
     if (!currentOrgId || recomputing) return;
@@ -427,6 +431,15 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                 {formatAlignment(alignmentClamped)}
               </div>
               <DeltaPill delta={goal.cachedAlignmentDelta} />
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  verdictChip.bg,
+                  verdictChip.fg,
+                )}
+              >
+                {verdict.label}
+              </span>
               <div className="flex-1 min-w-[160px]">
                 <div className="h-2 w-full overflow-hidden rounded-full bg-bg-overlay">
                   {alignmentClamped !== null && (

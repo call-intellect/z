@@ -16,6 +16,7 @@ import {
   goalKeyResultFromApi,
   goalSourceLabel,
   krProgressBarColor,
+  movementVerdict,
   progressStatusChipClasses,
   progressStatusTone,
   type GoalKeyResultApi,
@@ -241,6 +242,17 @@ describe('buildTree (Фаза 4 — сборка дерева из плоско�
   it('пустой список → пустое дерево', () => {
     expect(buildTree([])).toEqual([]);
   });
+});
+
+describe('movementVerdict', () => {
+  it('on_track + высокий балл → Уверенно движемся', () =>
+    expect(movementVerdict(80, 'on_track').label).toBe('Уверенно движемся'));
+  it('on_track + низкий балл → tone warning', () =>
+    expect(movementVerdict(30, 'on_track').tone).toBe('warning'));
+  it('статус важнее балла: stalled при высоком балле → Застряла', () =>
+    expect(movementVerdict(90, 'stalled').label).toBe('Застряла'));
+  it('achieved при null-балле → Достигнута', () =>
+    expect(movementVerdict(null, 'achieved').label).toBe('Достигнута'));
 });
 
 describe('confidenceLevel', () => {

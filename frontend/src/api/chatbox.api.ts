@@ -61,6 +61,106 @@ export type SaveChatboxIntegrationRequest = {
   syncMode: ChatboxSyncMode;
 };
 
+// --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
+
+export type ChatboxChatStatusApi = 'active' | 'closed';
+
+export type ChatboxPartyApi = {
+  externalId: string;
+  name: string;
+};
+
+export type ChatboxChatApi = {
+  id: string;
+  externalId: string;
+  channelType: string;
+  status: ChatboxChatStatusApi;
+  customer: ChatboxPartyApi | null;
+  clientName: string;
+  responsible: ChatboxPartyApi | null;
+  lastMessageAt: string | null;
+  messageCount: number;
+  externalCreatedAt: string | null;
+};
+
+export type MessengerIdentityApi = {
+  channelType: string;
+  externalId: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export type ChatboxSessionApi = {
+  id: string;
+  seq: number;
+  startedAt: string | null;
+  endedAt: string | null;
+  summary: string | null;
+  analysisStatus: string;
+  previousSessionId: string | null;
+};
+
+export type ChatboxChatDetailApi = ChatboxChatApi & {
+  externalUpdatedAt: string | null;
+  sessions: ChatboxSessionApi[];
+  messengerIdentities: MessengerIdentityApi[];
+};
+
+export type ChatboxSenderTypeApi =
+  | 'CLIENT'
+  | 'USER'
+  | 'ASSISTANT'
+  | 'QUALITY_CONTROL';
+
+export type ChatboxContentTypeApi =
+  | 'TEXT'
+  | 'IMAGE'
+  | 'AUDIO'
+  | 'VIDEO'
+  | 'VIDEO_NOTE'
+  | 'FILE'
+  | 'VOICE'
+  | 'COMMAND';
+
+export type ChatboxMessageApi = {
+  id: string;
+  senderType: ChatboxSenderTypeApi;
+  senderName: string;
+  contentType: ChatboxContentTypeApi;
+  text: string | null;
+  imageUrl: string | null;
+  fileUrl: string | null;
+  audioUrl: string | null;
+  videoUrl: string | null;
+  externalCreatedAt: string | null;
+  isOutboundFromKora: boolean;
+  sessionId: string | null;
+};
+
+export type ListChatsQuery = {
+  status?: ChatboxChatStatusApi;
+  channelType?: string;
+  customerExternalId?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type ListMessagesQuery = {
+  limit?: number;
+  offset?: number;
+};
+
+function buildQuery(q?: Record<string, string | number | undefined>): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(q)) {
+    if (value === undefined || value === '') continue;
+    params.set(key, String(value));
+  }
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
 export const chatboxApi = {
   getIntegration: () =>
     apiClient.get<ChatboxIntegrationApi | null>('/api/v1/chatbox/integration'),
@@ -85,4 +185,27 @@ export const chatboxApi = {
 
   syncStatus: () =>
     apiClient.get<ChatboxSyncStatusApi>('/api/v1/chatbox/integration/sync/status'),
+
+  // --- Просмотр чатов (Фаза 8) ---
+
+  listChats: (q?: ListChatsQuery) =>
+    apiClient.get<{ items: ChatboxChatApi[]; total: number }>(
+      '/api/v1/chatbox/chats' + buildQuery(q),
+    ),
+
+  getChat: (id: string) =>
+    apiClient.get<ChatboxChatDetailApi>(
+      '/api/v1/chatbox/chats/' + encodeURIComponent(id),
+    ),
+
+  listMessages: (id: string, q?: ListMessagesQuery) =>
+    apiClient.get<{ items: ChatboxMessageApi[]; total: number }>(
+      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/messages' + buildQuery(q),
+    ),
+
+  sendMessage: (id: string, text: string) =>
+    apiClient.post<{ ok: true; id: string }>(
+      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/messages',
+      { text },
+    ),
 };

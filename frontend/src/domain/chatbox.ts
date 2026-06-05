@@ -8,9 +8,16 @@
  */
 
 import type {
+  ChatboxChatApi,
+  ChatboxChatDetailApi,
+  ChatboxChatStatusApi,
   ChatboxIntegrationApi,
+  ChatboxMessageApi,
+  ChatboxSenderTypeApi,
+  ChatboxSessionApi,
   ChatboxStatus,
   ChatboxSyncMode,
+  MessengerIdentityApi,
 } from '@/api/chatbox.api';
 
 const STATUS_LABELS: Record<ChatboxStatus, string> = {
@@ -83,5 +90,220 @@ export function mapIntegration(
     hasToken: api.hasToken,
     createdAt: toDate(api.createdAt),
     updatedAt: toDate(api.updatedAt),
+  };
+}
+
+// --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
+
+/**
+ * Человекочитаемое имя мессенджера по техническому `channelType`.
+ * Чат бокс присылает разные варианты одного канала (например
+ * `TELEGRAM` и `TELEGRAM_PRIVATE`) — схлопываем их в один лейбл.
+ */
+export function chatboxChannelTypeLabel(type: string): string {
+  switch (type) {
+    case 'TELEGRAM':
+    case 'TELEGRAM_PRIVATE':
+      return 'Telegram';
+    case 'WHATSAPP':
+    case 'WHATSAPP_BUSINESS':
+    case 'WHATSAPP_WHAPI':
+    case 'EXT_WHATSAPP':
+      return 'WhatsApp';
+    case 'MAX':
+    case 'EXT_MAX':
+      return 'MAX';
+    case 'CHAT_WIDGET':
+      return 'Виджет';
+    case 'AVITO':
+      return 'Avito';
+    case 'VK':
+      return 'VK';
+    case 'CIAN':
+      return 'Циан';
+    case 'EMAIL_CLIENT':
+      return 'Email';
+    default:
+      return 'Другое';
+  }
+}
+
+/**
+ * Пара токен-классов для бейджа мессенджера. Только дизайн-токены,
+ * без hex/text-white.
+ */
+export function chatboxChannelTypeBadgeClass(type: string): string {
+  const label = chatboxChannelTypeLabel(type);
+  switch (label) {
+    case 'Telegram':
+      return 'bg-info/10 text-info';
+    case 'WhatsApp':
+      return 'bg-success/10 text-success';
+    case 'MAX':
+      return 'bg-accent-muted text-accent-fg';
+    default:
+      return 'bg-bg-subtle text-fg-secondary';
+  }
+}
+
+const CHAT_STATUS_LABELS: Record<ChatboxChatStatusApi, string> = {
+  active: 'Активен',
+  closed: 'Закрыт',
+};
+
+export function chatboxChatStatusLabel(status: ChatboxChatStatusApi): string {
+  return CHAT_STATUS_LABELS[status] ?? status;
+}
+
+const ANALYSIS_STATUS_LABELS: Record<string, string> = {
+  pending: 'В очереди',
+  analyzing: 'Анализ',
+  done: 'Готово',
+  failed: 'Ошибка',
+};
+
+export function chatboxAnalysisStatusLabel(status: string): string {
+  return ANALYSIS_STATUS_LABELS[status] ?? status;
+}
+
+/** Роль отправителя сообщения: клиент слева, менеджер/бот справа. */
+export type ChatboxSenderRole = 'client' | 'manager';
+
+export function senderRoleOf(type: ChatboxSenderTypeApi): ChatboxSenderRole {
+  return type === 'CLIENT' ? 'client' : 'manager';
+}
+
+export type MessengerIdentityView = {
+  channelType: string;
+  channelLabel: string;
+  externalId: string;
+  name: string;
+  avatarUrl: string | null;
+};
+
+export type ChatboxChatView = {
+  id: string;
+  externalId: string;
+  channelType: string;
+  channelLabel: string;
+  status: ChatboxChatStatusApi;
+  statusLabel: string;
+  clientName: string;
+  responsibleName: string | null;
+  customerExternalId: string | null;
+  responsibleExternalId: string | null;
+  lastMessageAt: Date | null;
+  messageCount: number;
+  externalCreatedAt: Date | null;
+};
+
+export type ChatboxSessionView = {
+  id: string;
+  seq: number;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  summary: string | null;
+  analysisStatus: string;
+  analysisStatusLabel: string;
+  previousSessionId: string | null;
+};
+
+export type ChatboxChatDetailView = ChatboxChatView & {
+  externalUpdatedAt: Date | null;
+  sessions: ChatboxSessionView[];
+  messengerIdentities: MessengerIdentityView[];
+};
+
+export type ChatboxMessageView = {
+  id: string;
+  senderType: ChatboxSenderTypeApi;
+  senderRole: ChatboxSenderRole;
+  senderName: string;
+  contentType: ChatboxMessageApi['contentType'];
+  text: string | null;
+  imageUrl: string | null;
+  fileUrl: string | null;
+  audioUrl: string | null;
+  videoUrl: string | null;
+  externalCreatedAt: Date | null;
+  isOutboundFromKora: boolean;
+  sessionId: string | null;
+};
+
+function clientNameOf(api: ChatboxChatApi): string {
+  return api.customer?.name ?? api.clientName;
+}
+
+export function mapChat(api: ChatboxChatApi): ChatboxChatView {
+  return {
+    id: api.id,
+    externalId: api.externalId,
+    channelType: api.channelType,
+    channelLabel: chatboxChannelTypeLabel(api.channelType),
+    status: api.status,
+    statusLabel: chatboxChatStatusLabel(api.status),
+    clientName: clientNameOf(api),
+    responsibleName: api.responsible?.name ?? null,
+    customerExternalId: api.customer?.externalId ?? null,
+    responsibleExternalId: api.responsible?.externalId ?? null,
+    lastMessageAt: toDate(api.lastMessageAt),
+    messageCount: api.messageCount,
+    externalCreatedAt: toDate(api.externalCreatedAt),
+  };
+}
+
+function mapSession(api: ChatboxSessionApi): ChatboxSessionView {
+  return {
+    id: api.id,
+    seq: api.seq,
+    startedAt: toDate(api.startedAt),
+    endedAt: toDate(api.endedAt),
+    summary: api.summary ?? null,
+    analysisStatus: api.analysisStatus,
+    analysisStatusLabel: chatboxAnalysisStatusLabel(api.analysisStatus),
+    previousSessionId: api.previousSessionId ?? null,
+  };
+}
+
+function mapMessengerIdentity(
+  api: MessengerIdentityApi,
+): MessengerIdentityView {
+  return {
+    channelType: api.channelType,
+    channelLabel: chatboxChannelTypeLabel(api.channelType),
+    externalId: api.externalId,
+    name: api.name,
+    avatarUrl: api.avatarUrl ?? null,
+  };
+}
+
+export function mapChatDetail(
+  api: ChatboxChatDetailApi,
+): ChatboxChatDetailView {
+  return {
+    ...mapChat(api),
+    externalUpdatedAt: toDate(api.externalUpdatedAt),
+    sessions: (api.sessions ?? []).map(mapSession),
+    messengerIdentities: (api.messengerIdentities ?? []).map(
+      mapMessengerIdentity,
+    ),
+  };
+}
+
+export function mapMessage(api: ChatboxMessageApi): ChatboxMessageView {
+  return {
+    id: api.id,
+    senderType: api.senderType,
+    senderRole: senderRoleOf(api.senderType),
+    senderName: api.senderName,
+    contentType: api.contentType,
+    text: api.text ?? null,
+    imageUrl: api.imageUrl ?? null,
+    fileUrl: api.fileUrl ?? null,
+    audioUrl: api.audioUrl ?? null,
+    videoUrl: api.videoUrl ?? null,
+    externalCreatedAt: toDate(api.externalCreatedAt),
+    isOutboundFromKora: api.isOutboundFromKora,
+    sessionId: api.sessionId ?? null,
   };
 }

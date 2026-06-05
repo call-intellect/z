@@ -61,8 +61,22 @@ import {
  * Frontend только рендерит — без дополнительных fetch'ей.
  *
  * UX-состояния (frontend-rules): loading / forbidden / not-found / error / data.
+ *
+ * `mode` (ТЗ-E Фаза 2):
+ *   - `manager` (default) — полный вид для руководителя (все секции). НЕ менять.
+ *   - `self` — личный вид сотрудника на `/me/pulse`: без служебных блоков
+ *     руководителя (HR-резюме, вопросы AI, сигналы 1:1, roadmap), тексты от
+ *     первого лица. Backend дополнительно зануляет hrSuggestions при self.
  */
-export function PersonPulseClient({ personId }: { personId: string }) {
+export type PersonPulseMode = 'manager' | 'self';
+
+export function PersonPulseClient({
+  personId,
+  mode = 'manager',
+}: {
+  personId: string;
+  mode?: PersonPulseMode;
+}) {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
   if (authLoading) return <AdminLoading rows={6} />;
@@ -75,7 +89,9 @@ export function PersonPulseClient({ personId }: { personId: string }) {
     );
   }
 
-  return <PersonPulseContent personId={personId} orgId={currentOrgId} />;
+  return (
+    <PersonPulseContent personId={personId} orgId={currentOrgId} mode={mode} />
+  );
 }
 
 // ────────────────────────── content ──────────────────────────────────────
@@ -83,10 +99,13 @@ export function PersonPulseClient({ personId }: { personId: string }) {
 function PersonPulseContent({
   personId,
   orgId,
+  mode,
 }: {
   personId: string;
   orgId: string;
+  mode: PersonPulseMode;
 }) {
+  const isSelf = mode === 'self';
   const [data, setData] = useState<PersonPulse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,32 +173,45 @@ function PersonPulseContent({
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
-      <BackLink personId={personId} />
+      {/* Навигация «назад к карточке» — служебная, только для руководителя. */}
+      {!isSelf && <BackLink personId={personId} />}
       <StaggerSection delayMs={0}>
-        <HeaderBlock data={data} personId={personId} />
+        <HeaderBlock data={data} personId={personId} isSelf={isSelf} />
       </StaggerSection>
       <PersonSubpagesNav entityId={personId} />
-      <StaggerSection delayMs={60}>
-        <SectionHeading icon={Activity} label="Активность" />
-        <HrResumeSection data={data} />
-      </StaggerSection>
+      {/* «Активность» = AI-резюме для HR — служебный блок руководителя. */}
+      {!isSelf && (
+        <StaggerSection delayMs={60}>
+          <SectionHeading icon={Activity} label="Активность" />
+          <HrResumeSection data={data} />
+        </StaggerSection>
+      )}
       <StaggerSection delayMs={120}>
-        <SectionHeading icon={Heart} label="Здоровье и настроение" />
+        <SectionHeading
+          icon={Heart}
+          label={isSelf ? 'Моё здоровье и настроение' : 'Здоровье и настроение'}
+        />
         <div className="grid gap-4 md:grid-cols-2">
-          <MoodTrendCard data={data} />
+          <MoodTrendCard data={data} isSelf={isSelf} />
           <CheckInsCard data={data} />
         </div>
       </StaggerSection>
       <StaggerSection delayMs={180}>
-        <PromisesCard data={data} />
+        <PromisesCard data={data} isSelf={isSelf} />
       </StaggerSection>
-      <StaggerSection delayMs={240}>
-        <RiskFlagsSection data={data} />
-        <PersonProbeQuestionsSection viewedUserId={data.viewedUserId} />
-      </StaggerSection>
-      <StaggerSection delayMs={300}>
-        <ComingSoonSection />
-      </StaggerSection>
+      {/* Сигналы 1:1 и вопросы AI — служебные блоки руководителя. */}
+      {!isSelf && (
+        <StaggerSection delayMs={240}>
+          <RiskFlagsSection data={data} />
+          <PersonProbeQuestionsSection viewedUserId={data.viewedUserId} />
+        </StaggerSection>
+      )}
+      {/* Roadmap «скоро появится» — служебный, только для руководителя. */}
+      {!isSelf && (
+        <StaggerSection delayMs={300}>
+          <ComingSoonSection />
+        </StaggerSection>
+      )}
     </div>
   );
 }
@@ -242,9 +274,11 @@ function BackLink({ personId }: { personId: string }) {
 function HeaderBlock({
   data,
   personId,
+  isSelf,
 }: {
   data: PersonPulse;
   personId: string;
+  isSelf: boolean;
 }) {
   const pulse = useMemo(() => computePulseScore(data), [data]);
   const initials = getInitials(data.personName);
@@ -260,7 +294,7 @@ function HeaderBlock({
         </div>
         <div className="min-w-0 space-y-1.5">
           <p className="text-[11px] uppercase tracking-[0.08em] text-fg-tertiary">
-            Pulse · карточка сотрудника
+            {isSelf ? 'Мой пульс' : 'Pulse · карточка сотрудника'}
           </p>
           <h1 className="truncate text-3xl font-semibold leading-tight text-fg-primary">
             {data.personName}
@@ -283,13 +317,16 @@ function HeaderBlock({
               </span>
             )}
           </div>
-          <Link
-            href={`/persons/${personId}`}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-bg-overlay/70 px-3 py-1 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
-          >
-            <UserRound size={13} strokeWidth={1.75} />
-            Открыть полный профиль
-          </Link>
+          {/* Ссылка «полный профиль» — служебная навигация руководителя. */}
+          {!isSelf && (
+            <Link
+              href={`/persons/${personId}`}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-bg-overlay/70 px-3 py-1 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            >
+              <UserRound size={13} strokeWidth={1.75} />
+              Открыть полный профиль
+            </Link>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -301,10 +338,13 @@ function HeaderBlock({
         <EngagementChip data={data} />
       </div>
     </header>
-    <p className="mt-2 px-1 text-xs text-fg-tertiary">
-      Эти данные видны руководителям организации; расширенная аналитика по
-      сотрудникам без согласия — только HR-партнёрам.
-    </p>
+    {/* Текст приватности — про видимость руководителям; в self-виде не нужен. */}
+    {!isSelf && (
+      <p className="mt-2 px-1 text-xs text-fg-tertiary">
+        Эти данные видны руководителям организации; расширенная аналитика по
+        сотрудникам без согласия — только HR-партнёрам.
+      </p>
+    )}
     </>
   );
 }
@@ -566,7 +606,13 @@ const HR_TYPE_META: Record<
 
 // ────────────────────────── Mood trend ───────────────────────────────────
 
-function MoodTrendCard({ data }: { data: PersonPulse }) {
+function MoodTrendCard({
+  data,
+  isSelf,
+}: {
+  data: PersonPulse;
+  isSelf: boolean;
+}) {
   const points = data.moodTrend30d;
   const counts = useMemo(() => countSentiments(points), [points]);
   const trendSeries = useMemo(() => moodTrendSeries(points), [points]);
@@ -576,7 +622,7 @@ function MoodTrendCard({ data }: { data: PersonPulse }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Heart size={16} className="text-accent" />
-          Настроение за 30 дней
+          {isSelf ? 'Моё настроение за 30 дней' : 'Настроение за 30 дней'}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -793,7 +839,13 @@ function CheckInsCard({ data }: { data: PersonPulse }) {
 
 // ────────────────────────── Promises ─────────────────────────────────────
 
-function PromisesCard({ data }: { data: PersonPulse }) {
+function PromisesCard({
+  data,
+  isSelf,
+}: {
+  data: PersonPulse;
+  isSelf: boolean;
+}) {
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardHeader>

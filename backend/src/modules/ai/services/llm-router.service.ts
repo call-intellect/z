@@ -994,10 +994,10 @@ export class LlmRouterService implements OnModuleInit {
 
   /**
    * audit С30 (2026-05-29): timeout на один dispatch к провайдеру в ms.
-   * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 30000.
+   * Из ENV LLM_ROUTER_DISPATCH_TIMEOUT_MS, default 300000.
    */
   private get dispatchTimeoutMs(): number {
-    return this.cfg?.llmRouter?.dispatchTimeoutMs ?? 30_000;
+    return this.cfg?.llmRouter?.dispatchTimeoutMs ?? 300_000;
   }
 
   constructor(

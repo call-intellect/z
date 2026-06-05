@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 
+import { ChatboxAnalyzeCron } from './chatbox-analyze.cron';
 import { ChatboxApiClient } from './chatbox-api.client';
+import { ChatboxIngestService } from './chatbox-ingest.service';
 import { ChatboxIntegrationController } from './chatbox-integration.controller';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncCron } from './chatbox-sync.cron';
 import { ChatboxSyncService } from './chatbox-sync.service';
 import { ChatboxWebhookController } from './chatbox-webhook.controller';
+import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
 /**
@@ -22,6 +25,8 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
  *   - RbacModule — RbacService.
  *   - EntitlementsModule — EntitlementService (гейтинг feature.chatbox).
  *   - ConfigModule — TypedConfigService (CHATBOX_API_BASE_URL).
+ *   - IngestModule — IngestService (Ф5: мост сессии → RawEvent, @Global).
+ *   - AiModule — LlmRouterService (Ф5: LLM-summary сессии, @Global).
  */
 @Module({
   controllers: [ChatboxIntegrationController, ChatboxWebhookController],
@@ -32,6 +37,9 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxSyncService,
     ChatboxSyncQueueService,
     ChatboxSyncCron,
+    ChatboxIngestService,
+    ChatboxAnalyzeQueueService,
+    ChatboxAnalyzeCron,
   ],
   exports: [
     ChatboxApiClient,
@@ -39,6 +47,8 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxSessionService,
     ChatboxSyncService,
     ChatboxSyncQueueService,
+    ChatboxIngestService,
+    ChatboxAnalyzeQueueService,
   ],
 })
 export class ChatboxModule {}

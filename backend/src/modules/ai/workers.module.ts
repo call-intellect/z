@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ChatboxAnalyzeWorker } from '../chatbox/chatbox-analyze.worker';
 import { ChatboxSyncWorker } from '../chatbox/chatbox-sync.worker';
 import { ChatboxModule } from '../chatbox/chatbox.module';
 import { CurationModule } from '../curation/curation.module';
@@ -299,6 +300,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // (syncByScope / incrementalSync). Producer — ChatboxSyncQueueService
     // (ручной триггер из `POST /chatbox/integration/sync`).
     ChatboxSyncWorker,
+    // ChatBox Фаза 5 — consumer `chatbox.analyze`. Анализирует закрытую сессию:
+    // LLM-summary + мост в knowledge-core (RawEvent). Producer'ы —
+    // ChatboxAnalyzeQueueService (cron-sweeper + webhook/синк при закрытии).
+    ChatboxAnalyzeWorker,
   ],
 })
 export class WorkersModule {}

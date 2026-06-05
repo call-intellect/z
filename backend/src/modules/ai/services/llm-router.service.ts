@@ -512,7 +512,9 @@ export type LlmTaskType =
   //     Как operations-daily-digest.
   | 'goal-extract'
   | 'goal-hierarchy-link'
-  | 'goals-pulse-summarize';
+  | 'goals-pulse-summarize'
+  // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
+  | 'chatbox-summary';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -690,6 +692,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'goal-extract',
   'goal-hierarchy-link',
   'goals-pulse-summarize',
+  // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
+  'chatbox-summary',
 ] as const;
 
 /**

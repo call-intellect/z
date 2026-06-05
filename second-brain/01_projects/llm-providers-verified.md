@@ -2,7 +2,7 @@
 title: LLM-провайдеры и модели — verified
 status: actual
 verified_at: 2026-05-24
-updated: 2026-05-25
+updated: 2026-06-05
 ---
 
 # LLM-провайдеры Z — verified карта
@@ -45,10 +45,10 @@ updated: 2026-05-25
 | **openai-via-proxy** | `gpt-5-mini` | ✓ verified | ✓ | ~0.9s | ✅ 99.8% (мин 1024 ток, −90%) | Лёгкий быстрый канал, legacy дефолт `OpenAiProxyService` |
 | **openai-via-proxy** | `gpt-4.1-mini` | ✓ verified | ✓ | ~3.4s | ✅ (по аналогии с gpt-5*) | Не-reasoning fallback (нужен `temperature`) |
 | **openai-via-proxy** | `gpt-4o-mini` | ✓ verified | ✓ | ~1.7s | ✅ (по аналогии) | Не-reasoning fallback (нужен `temperature`) |
-| **openai-via-proxy** | `gpt-4o` | ✓ verified | ✓ | ~2.5s | ✅ (по аналогии) | concierge-respond, brand-voice-extract, orchestrator-plan/synthesize. ⚠ нет в `MODEL_PRICES` — стоимость считается как 0 |
+| **openai-via-proxy** | `gpt-4o` | ⚠ выведена (2026-06-05) | — | ~2.5s | ✅ (по аналогии) | **Не использовать.** Выведена из проекта (устаревшая, дорогая, нет в `MODEL_PRICES`). 4 агента переназначены: concierge-respond→`gpt-5-mini`; brand-voice-extract/orchestrator-plan/orchestrator-synthesize→`deepseek-v4-pro`. См. секцию «Нормализация цепочек 2026-06-05» ниже. |
 | **minimax** | `MiniMax-M2.5` | ✓ verified | ✗ (seed нет) | ~1.8s | ✅ 100% (требует явный `cache_control: 'ephemeral'`) | Anthropic-совместимый fallback, A/B-кандидат на summary-v2 |
 | **minimax** | `MiniMax-M2.7` | ✓ verified | ✓ | ~2.9s | ✅ (по аналогии с M2.5) | Свежая M2.7, A/B-кандидат на summary-v2 |
-| **ollama** (`ollama.agent-lia.ru`) | `qwen3.5:9b` | ✓ verified | ✓ | ~8.0s | ❌ prompt cache на уровне API не предусмотрен | Self-hosted secondary fallback; единственная chat-модель, реально установленная на нашем Ollama |
+| **ollama** (`ollama.agent-lia.ru`) | `qwen3.5:9b` | ⚠ выведена из боевых LLM-цепочек (2026-06-05) | — | ~8.0s | ❌ prompt cache на уровне API не предусмотрен | **Не использовать как chat-fallback.** На проде ключ даёт `401 Invalid API key format` → tertiary был мёртв везде. 2026-06-05 выведена из ВСЕХ боевых цепочек (primary/secondary/tertiary), tertiary везде → `kie:gemini-3.1-pro`. Остаётся только как технически-установленная модель; chat-задачи на неё не маршрутизировать. Эмбеддинги — отдельный pipeline (`bge-m3` физически нет, см. ниже). |
 | **kie** | `claude-opus-4-7` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed-default-llm-providers-and-models.ts) | ~20s | ❌ `cache_read_input_tokens=0` даже с `cache_control` | A/B-кандидат на summary-v2 / goal-alignment. Цена $15/$75 в `MODEL_PRICES`. |
 | **kie** | `gpt-5-4` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~3s | ⚠ нестабильно (S1=0%, S2 parallel=47%) | Через `/codex/v1/responses`. ⚠ цена TBD в `MODEL_PRICES` — пока 0. |
 | **kie** | `gemini-3-pro` | ✓ verified (2026-05-24) | ✓ (admin-UI с 2026-05-25; нужен seed) | ~9s | ❌ 0% | A/B-кандидат на summary-v2. Цена $0.5/$3.5. |
@@ -74,6 +74,32 @@ updated: 2026-05-25
 | **kie-gemini** | `proxy.agent-lia.ru/kie/${model}/v1/chat/completions` | `gemini-3-pro` | ⚠ unstable (timeout 60s, раньше ~9s) | TBD | ❌ (по аналогии) |
 
 Latency для KIE-каналов — TBD (зависит от прогона); внести после следующего полного smoke-запуска (`bun scripts/smoke-llm-providers.ts --only=kie-claude,kie-gpt,kie-gemini-direct,kie-gemini,grsai-gemini`).
+
+## Нормализация цепочек и стандартный fallback (2026-06-05)
+
+> Реализовано ТЗ `plans/tz/2026-06-05-llm-router-resilience-and-chain-normalization.md` (ветка `sergdev`). Аудит прод-маршрутов вскрыл, что у большинства агентов работал только PRIMARY: secondary `openai-via-proxy` падал `400 "messages must contain the word 'json'"` на JSON-задачах, tertiary `ollama` — `401 Invalid API key format`. Ниже — целевое состояние дефолтов после нормализации.
+
+**Стандартная цепочка по умолчанию (инвариант):**
+
+```
+deepseek (primary) → openai-via-proxy/gpt (secondary) → kie:gemini-3.1-pro (tertiary)
+```
+
+- **`ollama` (`qwen3.5:9b`, `qwen3:30b`) выведен из ВСЕХ боевых LLM-цепочек** (primary/secondary/tertiary). На проде ключ давал `401` → нижний уровень обороны был мёртв у всех агентов. Остаётся только эмбеддинговый pipeline `bge-m3` — но он физически не установлен (см. таблицу «НЕ работают» ниже), эмбеддинги идут через `text-embedding-3-small`. То есть на практике ollama в боевых LLM-вызовах больше нет вообще.
+- **`kie.maxDataClass`: `internal → private`** (`llm-router.service.ts`). Решение владельца: kie становится универсальным tertiary для всех задач, включая `private`; приватность сейчас в депри­оритете (отдельное политическое решение, при возврате приоритета — откатить и вернуть локальный провайдер на private-задачи). Точка отказа нижнего уровня смещается на kie/прокси `agent-lia.ru`, но primary deepseek + secondary openai остаются основными — tertiary лишь safety-net.
+- **`gpt-4o` выведен полностью** (устаревшая, дорогая, нет в `MODEL_PRICES`). 4 агента переназначены:
+  - `orchestrator-plan`, `orchestrator-synthesize`, `brand-voice-extract` (фоновые, async) → primary `deepseek-v4-pro` (сильнее и дешевле 4o, латентность неважна);
+  - `concierge-respond` (интерактивный, цикл до 5 LLM-вызовов) → primary `gpt-5-mini` — нужна быстрая модель, не thinking-pro; mini надёжнее nano для выбора инструмента. Остаётся openai-primary как осознанное исключение.
+- **openai-primary исключения сохранены** (под стандарт приводим только их tier-2/3): классификаторы на nano (`clip-title`, `theme-classify`, `meeting-quality-score`) и `debate`-diversity (саппортер↔критик) — дёшево / нужна провайдер-диверсификация.
+- **Таймаут одного dispatch: `30с → 300с`** (`LLM_ROUTER_DISPATCH_TIMEOUT_MS`, per-attempt). Старый 30с убивал thinking-модели (`deepseek-v4-pro`) на объёмном входе (`LLM dispatch timeout > 30000ms`). До 900с worst-case на тройном таймауте — приемлемо для оффлайн-воркеров; для онлайн-путей свои короткие потолки на уровне контроллера.
+- **Дыра реестра закрыта.** 5 ранее не зарегистрированных taskType добавлены в `ALL_LLM_TASK_TYPES` (раньше ехали по аварийному `DEFAULT_FALLBACK_CHAIN`, отсутствовали в админке): `knowledge-specialists-combined`, `dialog-multi-query-clone`, `checkin-sentiment-batch`, `experiment-extract`, `experiment-summarize-lessons`. Им засеяны дефолтные цепочки (`seed-llm-task-routes-missing-registry.ts`). Дыра нашлась строгим диффом union ↔ массива (оценка аудита была 3, факт — 5).
+- **Граф: устойчивый парсинг.** `block-linker` получил retry (паритет с `block-ingest`) + общий lenient-парсер `tryParseJson`/`stripCodeFence` (вынесен в `backend/src/modules/ai/services/json-extract.util.ts`) + метрику `kc_block_linker_fallback_none_total{reason}` (раньше связи между блоками молча терялись). Это отдельный корень от фикса secondary: проблема в парсинге успешного (200) ответа, а не в провайдере.
+
+**Источники правды:**
+- Реальная карта прод-маршрутов (read-only дамп): `bun run scripts/diag-routes.ts` (или `docker compose exec backend bun run scripts/diag-routes.ts` на проде).
+- Прод применяет нормализацию через `apply-prod-deploy.ts --mode update` + **разовый ручной `--force`** для `patch-normalize-llm-chains-deepseek-openai-kie.ts` (перетереть легаси ollama/gpt-4o, в т.ч. `editedByAdmin`-правки; в агрегаторе он зарегистрирован БЕЗ `--force` — steady-state уважает админ-правки). Подробности — `docs/operations/prod-deploy-log.md`.
+
+> **Примечание к verified-таблице выше:** строки `gpt-4o` и `ollama:qwen3.5:9b` помечены ⚠ «выведена» по итогам этой нормализации. Сами каналы технически живы (smoke проходит), но в дефолтные `LlmTaskRoute.providers` их закладывать нельзя.
 
 ## Каналы, которые НЕ работают / не используем
 

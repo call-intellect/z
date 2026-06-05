@@ -48,7 +48,7 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
  * из α-1.
  */
 export function ChannelsClient() {
-  const { currentOrgId, isLoading } = useAuth();
+  const { currentOrgId, currentOrgRole, isLoading } = useAuth();
   const swrKey = currentOrgId ? ['my-channels', currentOrgId] : null;
   const { data, error, isLoading: loadingList } = useSWR(
     swrKey,
@@ -63,6 +63,7 @@ export function ChannelsClient() {
     code: string;
     ttlSec: number;
     requestedAt: number;
+    botUsername: string | null;
   } | null>(null);
   const [linkBusy, setLinkBusy] = useState<LinkCodeKindApi | null>(null);
   const [unlinkBusy, setUnlinkBusy] = useState<string | null>(null);
@@ -85,7 +86,12 @@ export function ChannelsClient() {
     setLinkBusy(kind);
     try {
       const result = await generateLinkCode(kind);
-      setCode({ kind, ...result, requestedAt: Date.now() });
+      const botUsername =
+        kind === 'telegram_bot'
+          ? (entries.find((e) => e.channel.kind === 'telegram_bot')?.channel
+              .botUsername ?? null)
+          : null;
+      setCode({ kind, ...result, requestedAt: Date.now(), botUsername });
     } catch (e) {
       if (e instanceof ApiError) {
         toast.error(`Не удалось сгенерировать код: ${e.message}`);
@@ -159,6 +165,9 @@ export function ChannelsClient() {
                   onChanged={() => mutate(swrKey)}
                   linkBusy={linkBusy === 'telegram_bot'}
                   unlinkBusy={unlinkBusy}
+                  isOrgAdmin={
+                    currentOrgRole === 'owner' || currentOrgRole === 'admin'
+                  }
                 />
               </li>
             );
@@ -305,6 +314,7 @@ function TelegramCard({
   onChanged,
   linkBusy,
   unlinkBusy,
+  isOrgAdmin,
 }: {
   entry: ChannelEntryApi;
   onLink: () => void;
@@ -312,11 +322,14 @@ function TelegramCard({
   onChanged: () => Promise<unknown>;
   linkBusy: boolean;
   unlinkBusy: string | null;
+  isOrgAdmin: boolean;
 }) {
   const view = mapTelegramChannelEntry(entry);
   const [resetBusy, setResetBusy] = useState(false);
 
   if (!view) return null;
+
+  const notConfigured = view.status === 'channel_not_configured';
 
   const statusVariant: 'default' | 'secondary' | 'warning' | 'danger' =
     view.status === 'linked'
@@ -325,7 +338,9 @@ function TelegramCard({
         ? 'warning'
         : view.status === 'channel_disabled'
           ? 'danger'
-          : 'secondary';
+          : view.status === 'channel_not_configured'
+            ? 'secondary'
+            : 'secondary';
 
   async function handleReset() {
     setResetBusy(true);
@@ -362,7 +377,23 @@ function TelegramCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        {view.status === 'channel_disabled' && (
+        {notConfigured && (
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-xs">
+            <p className="text-muted-foreground">
+              Telegram пока не настроен администратором компании. Подключение
+              станет доступно, когда будет задан бот.
+            </p>
+            {isOrgAdmin && (
+              <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0">
+                <Link href="/admin/content/global-channels">
+                  Настроить бота
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!notConfigured && view.status === 'channel_disabled' && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs">
             Глобальный канал Telegram временно выключен главным
             администратором Коры. Сообщения через Telegram не приходят и не
@@ -379,7 +410,7 @@ function TelegramCard({
           </div>
         )}
 
-        {view.binding ? (
+        {notConfigured ? null : view.binding ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground">
@@ -578,7 +609,7 @@ function TelegramLinkDialog({
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  code: { code: string; ttlSec: number } | null;
+  code: { code: string; ttlSec: number; botUsername: string | null } | null;
 }) {
   if (!code) {
     return (
@@ -588,7 +619,7 @@ function TelegramLinkDialog({
     );
   }
 
-  const deepLink = buildTelegramDeepLink(code.code);
+  const deepLink = buildTelegramDeepLink(code.code, code.botUsername);
   const ttlMin = Math.round(code.ttlSec / 60);
 
   async function copyCode() {

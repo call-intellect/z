@@ -19,20 +19,27 @@ import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
 import { ApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
+import { usePersons } from '@/hooks/usePersons';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  CONFIDENCE_LEVEL_LABELS,
   GOAL_STATUS_LABELS,
   GOAL_STATUS_VALUES,
   alignmentBarColor,
   alignmentTextColor,
   buildTree,
+  confidenceChipClasses,
+  confidenceLevel,
   daysUntil,
   deltaTone,
   formatAlignment,
   formatDelta,
   goalFromApi,
+  movementVerdict,
+  movementVerdictChipClasses,
   statusBadgeVariant,
   targetDateLabel,
+  type ConfidenceLevel,
   type GoalDomain,
   type GoalStatus,
 } from '@/domain/goal';
@@ -302,6 +309,13 @@ function GoalCard({
       : Math.max(0, Math.min(100, goal.cachedAlignment));
   const tone = deltaTone(goal.cachedAlignmentDelta);
   const deltaText = formatDelta(goal.cachedAlignmentDelta);
+  const confLevel: ConfidenceLevel = confidenceLevel(
+    goal.themesCount,
+    goal.blocksCount,
+  );
+  const confChip = confidenceChipClasses(confLevel);
+  const verdict = movementVerdict(goal.cachedAlignment, goal.progressStatus);
+  const verdictChip = movementVerdictChipClasses(verdict.tone);
 
   return (
     <li className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elevated p-4 transition-colors hover:border-accent/60">
@@ -330,6 +344,18 @@ function GoalCard({
             : goal.description}
         </p>
       )}
+
+      <div>
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+            verdictChip.bg,
+            verdictChip.fg,
+          )}
+        >
+          {verdict.label}
+        </span>
+      </div>
 
       {/* Alignment progress */}
       <div className="space-y-1.5">
@@ -369,13 +395,32 @@ function GoalCard({
             />
           ) : null}
         </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-fg-tertiary">Достоверность:</span>
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+              confChip.bg,
+              confChip.fg,
+            )}
+          >
+            {CONFIDENCE_LEVEL_LABELS[confLevel]}
+          </span>
+        </div>
         {alignmentClamped === null && (
           <p className="text-[11px] text-fg-tertiary">
-            Не считалось — дождитесь cron&apos;а или нажмите «Пересчитать»
-            внутри цели.
+            Пока не рассчитано. Кора обновляет оценку каждую ночь, либо
+            нажмите «Пересчитать» внутри цели.
           </p>
         )}
       </div>
+
+      {goal.ownerPersonName && (
+        <div className="flex items-center gap-1 text-xs text-fg-tertiary">
+          <span className="text-fg-tertiary">Ответственный:</span>
+          <span className="font-medium text-fg-secondary">{goal.ownerPersonName}</span>
+        </div>
+      )}
 
       <div className="mt-auto flex items-center justify-between text-xs text-fg-tertiary">
         <span>
@@ -442,13 +487,16 @@ function CreateGoalDialog({
   const [description, setDescription] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [weight, setWeight] = useState('1');
+  const [ownerPersonId, setOwnerPersonId] = useState('__none__');
   const [submitting, setSubmitting] = useState(false);
+  const { persons } = usePersons(orgId);
 
   function reset() {
     setName('');
     setDescription('');
     setTargetDate('');
     setWeight('1');
+    setOwnerPersonId('__none__');
   }
 
   function handleOpenChange(v: boolean) {
@@ -478,6 +526,7 @@ function CreateGoalDialog({
         description: description.trim(),
         ...(targetIso ? { targetDate: targetIso } : {}),
         weight: w,
+        ...(ownerPersonId !== '__none__' ? { ownerPersonId } : {}),
       });
       toast.success('Цель создана');
       onOpenChange(false);
@@ -546,6 +595,22 @@ function CreateGoalDialog({
               />
             </div>
           </div>
+          <div>
+            <Label htmlFor="goal-create-owner">Ответственный (опц.)</Label>
+            <Select value={ownerPersonId} onValueChange={setOwnerPersonId}>
+              <SelectTrigger id="goal-create-owner">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Не назначен</SelectItem>
+                {persons.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.fullName || 'Без имени'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter className="mt-2">
             <Button
               type="button"
@@ -589,9 +654,13 @@ function EditGoalDialog({
   );
   const [status, setStatus] = useState<GoalStatus>(goal.status);
   const [weight, setWeight] = useState(String(goal.weight));
+  const [ownerPersonId, setOwnerPersonId] = useState(
+    goal.ownerPersonId ?? '__none__',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+  const { persons } = usePersons(orgId);
 
   // Сброс на текущие значения при открытии.
   const lastGoalIdRef = useRef<string | null>(null);
@@ -603,6 +672,7 @@ function EditGoalDialog({
       setTargetDate(goal.targetDate ? formatDateInput(goal.targetDate) : '');
       setStatus(goal.status);
       setWeight(String(goal.weight));
+      setOwnerPersonId(goal.ownerPersonId ?? '__none__');
     }
   }, [open, goal]);
 
@@ -629,6 +699,7 @@ function EditGoalDialog({
         targetDate: targetIso,
         weight: w,
         status,
+        ownerPersonId: ownerPersonId === '__none__' ? null : ownerPersonId,
       });
       toast.success('Цель обновлена');
       onUpdated();
@@ -729,6 +800,22 @@ function EditGoalDialog({
                 {GOAL_STATUS_VALUES.map((s) => (
                   <SelectItem key={s} value={s}>
                     {GOAL_STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="goal-edit-owner">Ответственный (опц.)</Label>
+            <Select value={ownerPersonId} onValueChange={setOwnerPersonId}>
+              <SelectTrigger id="goal-edit-owner">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Не назначен</SelectItem>
+                {persons.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.fullName || 'Без имени'}
                   </SelectItem>
                 ))}
               </SelectContent>

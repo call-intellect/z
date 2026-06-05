@@ -56,6 +56,8 @@ export const CreateGoalSchema = z.object({
   /** Goals OKR v2 — родитель в дереве целей. null/опущено = корневая. */
   parentGoalId: z.string().min(1).nullable().optional(),
   horizon: HorizonSchema.optional(),
+  /** ТЗ-F — ответственный за цель (Person.id). null = без ответственного. */
+  ownerPersonId: z.string().min(1).nullable().optional(),
 });
 export type CreateGoalDto = z.infer<typeof CreateGoalSchema>;
 
@@ -71,6 +73,8 @@ export const UpdateGoalSchema = z
     horizon: HorizonSchema.optional(),
     progressStatus: ProgressStatusSchema.optional(),
     promotionState: PromotionStateSchema.optional(),
+    /** ТЗ-F — ответственный (Person.id). null = снять ответственного. */
+    ownerPersonId: z.string().min(1).nullable().optional(),
   })
   .refine(
     (data) => Object.values(data).some((v) => v !== undefined),
@@ -202,6 +206,11 @@ export interface GoalListItemDto {
   promotionState: 'suggested' | 'active' | 'dismissed';
   progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
   parentGoalId: string | null;
+  // ── ТЗ-F (2026-06-05) ──
+  ownerPersonId: string | null;
+  ownerPersonName: string | null;
+  /** Число блоков последнего snapshot (для светофора в списке). null = не считалось. */
+  blocksCount: number | null;
 }
 
 export interface GoalDetailDto extends GoalListItemDto {

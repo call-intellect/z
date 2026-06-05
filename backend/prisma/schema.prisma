@@ -3954,6 +3954,15 @@ model Goal {
   cascadeMissedAt         DateTime?
   createdById             String
   createdBy               User        @relation("GoalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  /// ТЗ-F (2026-06-05) — назначенный ответственный за цель (Person).
+  /// nullable: цель может быть без ответственного. Паттерн как Process/Regulation/
+  /// Policy.ownerPersonId. onDelete:SetNull — удаление Person не роняет цель.
+  ownerPersonId           String?
+  ownerPerson             Person?     @relation("GoalOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  /// ТЗ-F Ф2/C-3 (2026-06-05) — кэш числа блоков последнего snapshot для
+  /// «светофора уверенности» в СПИСКЕ целей (без JOIN на snapshots).
+  /// Обновляется тем же tx.goal.update, что и cachedAlignment. NULL = не считалось.
+  cachedBlocksCount       Int?
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
   archivedAt              DateTime?
@@ -4006,6 +4015,7 @@ model Goal {
   @@index([tenantId, parentGoalId])
   @@index([tenantId, promotionState])
   @@index([tenantId, validUntil])
+  @@index([tenantId, ownerPersonId])
   /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
   @@index([tenantId, isPrimary])
 }
@@ -4434,6 +4444,8 @@ model Person {
   uploadedDocuments     Document[]         @relation("DocumentUploader")
   decisionsMade         Decision[]         @relation("DecisionDecidedBy")
   ownedProcesses        Process[]          @relation("ProcessOwnerPerson")
+  /// ТЗ-F (2026-06-05) — Person как ответственный за цель (Goal.ownerPersonId).
+  ownedGoals            Goal[]             @relation("GoalOwnerPerson")
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations      Regulation[]       @relation("RegulationOwnerPerson")
   ownedPolicies         Policy[]           @relation("PolicyOwnerPerson")

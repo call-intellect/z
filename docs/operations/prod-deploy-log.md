@@ -64,6 +64,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🎯 2026-06-05 — ТЗ-F Цели: ответственный (ownerPersonId) + кэш blocksCount + UI-полировка
+
+> Ветка `feature/goals-improvements`. Контракт: `plans/tz/2026-06-05-goals-improvements.md` (Ф1–Ф4; Ф5 голос — vNext). Коммиты: Ф1 `afe344b2`+`2701cff2`, Ф2 `62febeec`, Ф3 `158ac9df`, Ф4 `184bce07`.
+
+- **Шаг 4 — Prisma миграция** — **обязательно** (аддитивно, без data-loss). После мержа `dev` (переход на миграции) изменения едут **файлом миграции `20260605130000_goal_owner_person_and_blocks_cache`**, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Никакого `db push`. Содержимое: `Goal += ownerPersonId String?` (relation `ownerPerson` GoalOwnerPerson, FK `→ persons(id) ON DELETE SET NULL`) + `cachedBlocksCount Int?` + `@@index([tenantId, ownerPersonId])`; `Person += ownedGoals Goal[] @relation("GoalOwnerPerson")`. Проверка применения: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 1 — ENV/AdminSetting** — новых ENV/флагов нет. Пороги «светофора уверенности» — code-fallback в `frontend/src/domain/goal.ts` (`confidenceLevel`); вынос в AdminSetting → vNext.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `goals.service` ownerPerson + `strategic-alignment.worker` пишет `cachedBlocksCount`; frontend: пикер ответственного + светофор уверенности + вердикт движения + русификация): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Swagger `/api/docs` → `GoalListItemDto` содержит `ownerPersonId`/`ownerPersonName`/`blocksCount`.
+  - `POST /api/v1/goals { …, ownerPersonId:"<Person.id>" }` → 201 с `ownerPersonName`; `ownerPersonId` чужого tenant → 404 `owner_person_not_found`.
+  - после ночного прогона `strategic-alignment` у целей заполняется `Goal.cachedBlocksCount` (светофор в списке без JOIN).
+- Новых очередей/cron нет (используется существующий `strategic-alignment.worker`, +1 поле `cachedBlocksCount` в его `tx.goal.update`).
+
+---
+
 ### 📊 2026-06-05 — Пакет улучшений дашбордов (ТЗ B/D/C/G/E: компас целей · план-факт по людям · операции · люди под риском · кабинет «Я»)
 
 > Контракты: `plans/tz/2026-06-05-goal-vector-compass.md` (B), `…-weekly-per-person-plan-fact.md` (D), `…-operations-dashboards-redesign.md` (C), `…-employee-pulse-and-people-at-risk.md` (G), `…-personal-cabinet-me.md` (E). Ветка `feature/dashboards-improvements`. Изменения схемы **аддитивны** (2 новых nullable-колонки + индексы, опасных нет). C/E содержат только backend-сервисы и фронт (схему не трогают).

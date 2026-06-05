@@ -171,6 +171,16 @@ Quota: `MAX_GOAL_RECOMPUTE_PER_DAY=5` (per-user, отклонение от ТЗ 
 
 `Goal.departmentId` (цели отдела); грейдинг цикла 0.0–1.0; кросс-Org бенчмаркинг; линковка AI-целей с `Entity{type=goal}`; регистрация в chat-v2 `CardSpecialistRegistry`; HTTP-e2e дашборда; AI-предложение целей «с нуля» (без встреч).
 
+## ТЗ-F — Ответственный за цель + читаемость (2026-06-05)
+
+**Источник:** [`plans/tz/2026-06-05-goals-improvements.md`](../../plans/tz/2026-06-05-goals-improvements.md) (Ф1–Ф4; Ф5 голос — vNext). Ветка `feature/goals-improvements`. Коммиты Ф1 `afe344b2`+`2701cff2`, Ф2 `62febeec`, Ф3 `158ac9df`, Ф4 `184bce07`.
+
+- **Ответственный человек** — `Goal.ownerPersonId` (nullable, relation `GoalOwnerPerson`, `onDelete: SetNull`, `@@index([tenantId, ownerPersonId])`; back-relation `Person.ownedGoals`). Сервис: guard `assertOwnerPersonExists` (`owner_person_not_found`), connect/disconnect в create/update, `GoalListItemDto` += `ownerPersonId`/`ownerPersonName`. UI: пикер через `usePersons` в Create/Edit диалогах (sentinel `__none__` = «Не назначен»), вывод «Ответственный: {имя}» в карточке.
+- **Светофор уверенности** (derive, без новой колонки) — `confidenceLevel(themesCount, blocksCount)` в `frontend/src/domain/goal.ts` → 3 состояния «Мало/Достаточно/Много данных» (парные токены, без процентов). Воркер `strategic-alignment.worker` пишет `Goal.cachedBlocksCount` (для светофора в списке без JOIN). Чип в `GoalCard` и шапке `GoalDetailClient`.
+- **Один вердикт движения** — `movementVerdict(cachedAlignment, progressStatus)` склеивает два индикатора в один текст (статус приоритетнее балла: achieved/dropped/stalled/at_risk + on_track×балл). Поля БД (`cachedAlignment`, `progressStatus`) не трогаются — склейка в UI (C-2).
+- **Русификация UI** — из видимого текста целей убраны `cron`/`snapshot`/`timeline`/`₽` (Timeline→«История движения к цели», snapshots→«замеры», «cron'а 04:00»→«Кора рассчитывает каждую ночь», placeholder «встреч, %, ₽»→«встреч, задач, %»). Имена компонентов/пропсов (`TimelineChart`/`SnapshotRow`) — контракт, не трогали.
+- Пороги светофора — code-fallback в `domain/goal.ts`; вынос в AdminSetting → vNext. Ф5 (голосовая постановка цели) — vNext.
+
 ## Связанные документы (v2)
 
 - [`02_architecture/data-model.md`](../02_architecture/data-model.md) — модели Goal/GoalKeyResult/Checkpoint/WeeklyGoalsPulseDigest.

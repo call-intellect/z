@@ -473,6 +473,31 @@ async function psqlScalar(url: string, sql: string): Promise<string | null> {
   return out.trim();
 }
 
+/** Выполнить SQL-стейтмент через psql (без значения). true при успехе. */
+async function psqlExec(url: string, sql: string): Promise<boolean> {
+  const proc = Bun.spawn(['psql', url, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  return (await proc.exited) === 0;
+}
+
+/**
+ * Принудительный `search_path=public` для prisma-команд миграций.
+ *
+ * Из-за AGE search_path роли = `ag_catalog, "$user", public` Prisma создаёт
+ * служебную `_prisma_migrations` НЕ в public (в первой схеме search_path —
+ * ag_catalog), а ИЩЕТ её в public (datasource schema) → P3005. Параметр
+ * `options=-c search_path=public` (поддерживается Prisma для PostgreSQL) делает
+ * все операции миграций детерминированно в public. Применяется только к
+ * prisma-сабпроцессам (resolve/deploy), не к psql и не к рантайму приложения.
+ */
+function withPublicSearchPath(url: string): string {
+  if (/[?&]options=/.test(url)) return url; // уже задано — не трогаем
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}options=-c%20search_path%3Dpublic`;
+}
+
 /**
  * Авто-baseline: делает деплой hands-free для существующих БД, созданных старым
  * `db push` (без таблицы `_prisma_migrations`). Идемпотентно и безопасно —
@@ -507,46 +532,65 @@ async function ensureBaseline(): Promise<boolean> {
     return false;
   }
 
-  // Детекция schema-АГНОСТИЧНАЯ (pg_class по всем схемам, не только public):
-  // из-за AGE search_path роли = `ag_catalog, "$user", public`, Prisma создаёт
-  // `_prisma_migrations` НЕ обязательно в public → `to_regclass('public.…')` дал бы
-  // ложный NULL. Считаем по relname в любой схеме.
-  const hasMigrations = await psqlScalar(url, "SELECT count(*) FROM pg_class WHERE relname = '_prisma_migrations'");
-  if (hasMigrations === null) return false;
-  if (hasMigrations !== '0') {
+  const migrateUrl = withPublicSearchPath(url);
+
+  // В какой схеме лежит `_prisma_migrations`? (по всем схемам; public — приоритет).
+  // Из-за AGE search_path таблица миграций могла оказаться в ag_catalog.
+  const migSchema = await psqlScalar(
+    url,
+    "SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace " +
+      "WHERE c.relname = '_prisma_migrations' ORDER BY (n.nspname = 'public') DESC LIMIT 1",
+  );
+  if (migSchema === null) return false;
+
+  // Есть, но НЕ в public → перенести в public. Prisma migrate ищет таблицу в
+  // public (datasource schema); qualified ALTER не зависит от search_path.
+  if (migSchema !== '' && migSchema !== 'public') {
     // eslint-disable-next-line no-console
-    console.log('[schema] baseline не нужен (_prisma_migrations есть) → обычный migrate deploy.');
+    console.log(`\n>>> [schema] _prisma_migrations в схеме "${migSchema}" (AGE search_path) → переношу в public.`);
+    if (!(await psqlExec(url, `ALTER TABLE "${migSchema}"._prisma_migrations SET SCHEMA public`))) {
+      // eslint-disable-next-line no-console
+      console.error('[schema] ✗ не удалось перенести _prisma_migrations в public.');
+      return false;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[schema] ✓ _prisma_migrations перенесена в public → migrate deploy применит pending.');
     return true;
   }
 
-  // Сентинел существующей схемы — таблица "User" (есть в любой непустой БД Z).
+  // Уже в public → baseline есть.
+  if (migSchema === 'public') {
+    // eslint-disable-next-line no-console
+    console.log('[schema] baseline есть (_prisma_migrations в public) → обычный migrate deploy.');
+    return true;
+  }
+
+  // Таблицы миграций нет нигде. Пустая БД?
   const hasTables = await psqlScalar(url, `SELECT count(*) FROM pg_class WHERE relname = 'User' AND relkind = 'r'`);
   if (hasTables === null) return false;
   if (hasTables === '0') {
     // eslint-disable-next-line no-console
     console.log('[schema] пустая БД — migrate deploy создаст схему с нуля (0_init).');
-    return true;
+    return true; // deploy идёт с forced search_path=public → _prisma_migrations в public
   }
 
-  // Существующая БД без миграций → одноразовый baseline (resolve, без diff —
-  // см. docstring: schema.prisma + postgres-init.sql разделены).
+  // Существующая БД без миграций → baseline `resolve --applied 0_init`.
+  // Запускаем с forced search_path=public (migrateUrl), чтобы _prisma_migrations
+  // создалась в public, а не в ag_catalog. P3008 (уже applied) = успех.
   // eslint-disable-next-line no-console
   console.log('\n>>> [schema] АВТО-BASELINE: существующая БД без _prisma_migrations → resolve --applied 0_init.');
-  // eslint-disable-next-line no-console
-  console.log('>>> [schema] bunx prisma migrate resolve --applied 0_init');
   const resolve = Bun.spawn(['bunx', 'prisma', 'migrate', 'resolve', '--applied', '0_init'], {
     stdout: 'pipe',
     stderr: 'pipe',
+    env: { ...process.env, DATABASE_URL: migrateUrl },
   });
   const resolveOut = (await new Response(resolve.stdout).text()) + (await new Response(resolve.stderr).text());
   // eslint-disable-next-line no-console
   console.log(resolveOut.trim());
   if ((await resolve.exited) !== 0) {
-    // P3008 = миграция уже отмечена applied (детекция могла промахнуться/прошлый
-    // прогон уже забэйслайнил) → это не ошибка, продолжаем к migrate deploy.
     if (/P3008|already recorded as applied/i.test(resolveOut)) {
       // eslint-disable-next-line no-console
-      console.log('[schema] 0_init уже отмечен applied (P3008) — baseline уже сделан, продолжаем.');
+      console.log('[schema] 0_init уже отмечен applied (P3008) — продолжаем.');
       return true;
     }
     // eslint-disable-next-line no-console
@@ -554,7 +598,7 @@ async function ensureBaseline(): Promise<boolean> {
     return false;
   }
   // eslint-disable-next-line no-console
-  console.log('[schema] ✓ авто-baseline завершён. Дальше — обычный migrate deploy.');
+  console.log('[schema] ✓ авто-baseline завершён.');
   return true;
 }
 
@@ -607,11 +651,15 @@ async function runSchemaPhase(dryRun: boolean, continueOnFail: boolean): Promise
 
   // 3. prisma migrate deploy (бэкап уже сделан выше). Применяет только новые
   //    миграции из prisma/migrations/. Идемпотентно: если новых нет — no-op.
+  //    DATABASE_URL с forced search_path=public — чтобы `_prisma_migrations`
+  //    создавалась/читалась в public (а не в ag_catalog из-за AGE search_path).
+  const dbUrl = process.env['DATABASE_URL'];
   // eslint-disable-next-line no-console
   console.log('\n>>> [schema] bunx prisma migrate deploy');
   const push = Bun.spawn(['bunx', 'prisma', 'migrate', 'deploy'], {
     stdout: 'inherit',
     stderr: 'inherit',
+    ...(dbUrl ? { env: { ...process.env, DATABASE_URL: withPublicSearchPath(dbUrl) } } : {}),
   });
   if ((await push.exited) !== 0) return false; // migrate критичен — всегда стоп
 

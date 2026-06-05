@@ -137,6 +137,20 @@ export type ChatboxMessageApi = {
   sessionId: string | null;
 };
 
+// --- Менеджеры → сотрудники (ТЗ 2026-06-05 chatbox-integration, Фаза 9) ---
+
+export type ChatboxLinkMode = 'auto' | 'manual' | 'none';
+
+export type ChatboxMemberApi = {
+  id: string;
+  externalId: string;
+  email: string | null;
+  name: string | null;
+  role: string | null;
+  linkMode: ChatboxLinkMode;
+  linkedPerson: { id: string; name: string | null } | null;
+};
+
 export type ListChatsQuery = {
   status?: ChatboxChatStatusApi;
   channelType?: string;
@@ -207,5 +221,16 @@ export const chatboxApi = {
     apiClient.post<{ ok: true; id: string }>(
       '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/messages',
       { text },
+    ),
+
+  // --- Менеджеры → сотрудники (Фаза 9) ---
+
+  listMembers: () =>
+    apiClient.get<ChatboxMemberApi[]>('/api/v1/chatbox/members'),
+
+  linkMember: (id: string, personId: string | null) =>
+    apiClient.put<{ ok: true; member: ChatboxMemberApi }>(
+      '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/link',
+      { personId },
     ),
 };

@@ -12,6 +12,8 @@ import type {
   ChatboxChatDetailApi,
   ChatboxChatStatusApi,
   ChatboxIntegrationApi,
+  ChatboxLinkMode,
+  ChatboxMemberApi,
   ChatboxMessageApi,
   ChatboxSenderTypeApi,
   ChatboxSessionApi,
@@ -287,6 +289,65 @@ export function mapChatDetail(
     messengerIdentities: (api.messengerIdentities ?? []).map(
       mapMessengerIdentity,
     ),
+  };
+}
+
+// --- Менеджеры → сотрудники (ТЗ 2026-06-05 chatbox-integration, Фаза 9) ---
+
+const LINK_MODE_LABELS: Record<ChatboxLinkMode, string> = {
+  auto: 'Авто (по email)',
+  manual: 'Вручную',
+  none: 'Не связан',
+};
+
+export function chatboxLinkModeLabel(mode: ChatboxLinkMode): string {
+  return LINK_MODE_LABELS[mode] ?? mode;
+}
+
+/**
+ * Вариант бейджа режима связи (только дизайн-токены через shadcn Badge).
+ * Палитра Badge: `default` использует accent-токены (auto), `success`
+ * (вручную), `secondary` — приглушённый/нейтральный (не связан).
+ */
+export function chatboxLinkModeBadgeVariant(
+  mode: ChatboxLinkMode,
+): 'default' | 'success' | 'secondary' {
+  switch (mode) {
+    case 'auto':
+      return 'default';
+    case 'manual':
+      return 'success';
+    default:
+      return 'secondary';
+  }
+}
+
+export type ChatboxMemberView = {
+  id: string;
+  externalId: string;
+  email: string | null;
+  name: string | null;
+  /** Имя для показа: name, иначе email, иначе externalId. */
+  displayName: string;
+  role: string | null;
+  linkMode: ChatboxLinkMode;
+  linkModeLabel: string;
+  linkedPersonId: string | null;
+  linkedPersonName: string | null;
+};
+
+export function mapMember(api: ChatboxMemberApi): ChatboxMemberView {
+  return {
+    id: api.id,
+    externalId: api.externalId,
+    email: api.email,
+    name: api.name,
+    displayName: api.name ?? api.email ?? api.externalId,
+    role: api.role,
+    linkMode: api.linkMode,
+    linkModeLabel: chatboxLinkModeLabel(api.linkMode),
+    linkedPersonId: api.linkedPerson?.id ?? null,
+    linkedPersonName: api.linkedPerson?.name ?? null,
   };
 }
 

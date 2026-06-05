@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
-import { Loader2, MessagesSquare, RefreshCw, Trash2 } from 'lucide-react';
+import { Loader2, MessagesSquare, RefreshCw, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -406,6 +407,25 @@ function ConnectedView({
               </Button>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Менеджеры и сотрудники */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Менеджеры и сотрудники</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-fg-secondary">
+            Свяжите менеджеров Чат бокса с сотрудниками компании, чтобы Кора
+            верно приписывала знания из переписок.
+          </p>
+          <Button asChild variant="outline">
+            <Link href="/chats/integrations/chatbox/managers">
+              <Users size={14} />
+              Менеджеры и сотрудники
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 

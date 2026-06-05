@@ -4,7 +4,9 @@ import { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxIntegrationController } from './chatbox-integration.controller';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import { ChatboxSessionService } from './chatbox-session.service';
+import { ChatboxSyncCron } from './chatbox-sync.cron';
 import { ChatboxSyncService } from './chatbox-sync.service';
+import { ChatboxWebhookController } from './chatbox-webhook.controller';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
 /**
@@ -22,13 +24,14 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
  *   - ConfigModule — TypedConfigService (CHATBOX_API_BASE_URL).
  */
 @Module({
-  controllers: [ChatboxIntegrationController],
+  controllers: [ChatboxIntegrationController, ChatboxWebhookController],
   providers: [
     ChatboxApiClient,
     ChatboxIntegrationService,
     ChatboxSessionService,
     ChatboxSyncService,
     ChatboxSyncQueueService,
+    ChatboxSyncCron,
   ],
   exports: [
     ChatboxApiClient,

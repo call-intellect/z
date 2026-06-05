@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import {
   BadRequestException,
   Inject,
@@ -6,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { ChatboxIntegration } from '@prisma/client';
 
+import { TypedConfigService } from '../../common/config/index';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -38,6 +41,7 @@ export class ChatboxIntegrationService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
     @Inject(ChatboxApiClient) private readonly client: ChatboxApiClient,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   /** Текущая интеграция org (sanitized, без токена) или null. */
@@ -118,7 +122,7 @@ export class ChatboxIntegrationService {
       ? this.crypto.encrypt(plainToken)
       : (existing?.tokenEnc ?? this.crypto.encrypt(plainToken));
 
-    await this.prisma.chatboxIntegration.upsert({
+    const saved = await this.prisma.chatboxIntegration.upsert({
       where: { tenantId },
       create: {
         tenantId,
@@ -139,8 +143,8 @@ export class ChatboxIntegrationService {
       },
     });
 
-    // Фаза 4 (TODO): регистрация webhook ChatBox при syncMode==='realtime'
-    // (plans/tz/2026-06-05-chatbox-integration.md Фаза 4).
+    // Фаза 4: синхронизация webhook ChatBox в зависимости от syncMode.
+    await this.reconcileWebhook(tenantId, plainToken, dto.workspaceId, saved);
 
     const result = await this.getIntegration(tenantId);
     // upsert гарантирует наличие строки — null здесь невозможен.
@@ -148,11 +152,18 @@ export class ChatboxIntegrationService {
   }
 
   /**
-   * Отключить интеграцию (удалить конфиг). Снятие webhook ChatBox — Фаза 4.
+   * Отключить интеграцию (удалить конфиг). Перед удалением снимает
+   * зарегистрированный webhook ChatBox (best-effort).
    */
   async remove(tenantId: string): Promise<{ ok: true }> {
-    // Фаза 4 (TODO): перед удалением снять зарегистрированный webhook ChatBox
-    // (client.deleteWebhook), plans/tz/2026-06-05-chatbox-integration.md Фаза 4.
+    const row = await this.prisma.chatboxIntegration.findUnique({
+      where: { tenantId },
+    });
+    if (row?.webhookExternalId) {
+      // Снять webhook ПЕРЕД удалением строки — токен ещё доступен.
+      const token = this.crypto.decrypt(row.tokenEnc);
+      await this.removeWebhook(token, row.workspaceId, row.webhookExternalId);
+    }
     await this.prisma.chatboxIntegration.deleteMany({ where: { tenantId } });
     return { ok: true };
   }
@@ -187,6 +198,113 @@ export class ChatboxIntegrationService {
       token: this.crypto.decrypt(row.tokenEnc),
       integrationId: row.id,
     };
+  }
+
+  // ─────────────────────────── webhook (Фаза 4) ─────────────────────
+
+  /** Внешний URL inbound-webhook'а ChatBox для этого tenant'а. */
+  private buildWebhookUrl(tenantId: string, secret: string): string {
+    return `${this.cfg.publicHostUrl}/api/v1/webhooks/chatbox/${tenantId}/${secret}`;
+  }
+
+  /**
+   * Синхронизировать webhook ChatBox с текущим `syncMode` (best-effort):
+   *   - `realtime` → гарантировать наличие webhook'а; при ошибке создания —
+   *     НЕ ронять upsert, а пометить `status:'error'` + `lastError`.
+   *   - иначе, если webhook был → снять и очистить поля.
+   */
+  private async reconcileWebhook(
+    tenantId: string,
+    token: string,
+    workspaceId: string,
+    row: ChatboxIntegration,
+  ): Promise<void> {
+    if (row.syncMode === 'realtime') {
+      try {
+        const { webhookExternalId, webhookSecret } = await this.ensureWebhook(
+          tenantId,
+          token,
+          workspaceId,
+          row,
+        );
+        await this.prisma.chatboxIntegration.update({
+          where: { tenantId },
+          data: { webhookExternalId, webhookSecret },
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Не удалось создать webhook';
+        this.logger.warn(
+          `reconcileWebhook: создание webhook не удалось для tenant=${tenantId}: ${message}`,
+        );
+        // Интеграцию сохраняем, но помечаем проблему.
+        await this.prisma.chatboxIntegration
+          .update({
+            where: { tenantId },
+            data: { status: 'error', lastError: message },
+          })
+          .catch(() => undefined);
+      }
+      return;
+    }
+
+    // syncMode !== realtime: если был webhook — снять и очистить.
+    if (row.webhookExternalId) {
+      await this.removeWebhook(token, workspaceId, row.webhookExternalId);
+      await this.prisma.chatboxIntegration
+        .update({
+          where: { tenantId },
+          data: { webhookExternalId: null, webhookSecret: null },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  /**
+   * Гарантировать webhook: если у строки уже есть `webhookExternalId` +
+   * `webhookSecret` — переиспользовать (не пересоздавать). Иначе создать новый.
+   */
+  private async ensureWebhook(
+    tenantId: string,
+    token: string,
+    workspaceId: string,
+    row: ChatboxIntegration,
+  ): Promise<{ webhookExternalId: string; webhookSecret: string }> {
+    if (row.webhookExternalId && row.webhookSecret) {
+      return {
+        webhookExternalId: row.webhookExternalId,
+        webhookSecret: row.webhookSecret,
+      };
+    }
+    const secret = randomBytes(24).toString('hex');
+    const wh = await this.client.createWebhook(token, workspaceId, {
+      url: this.buildWebhookUrl(tenantId, secret),
+      events: [
+        'CHAT_CREATED',
+        'CHAT_CLOSED',
+        'MESSAGE_CREATED',
+        'MESSAGE_UPDATED',
+        'CHANNEL_CLIENT_CREATED',
+      ],
+      description: 'Кора (Z) — синхронизация чатов',
+    });
+    return { webhookExternalId: wh.id, webhookSecret: secret };
+  }
+
+  /** Снять webhook ChatBox (best-effort: webhook мог быть удалён вручную). */
+  private async removeWebhook(
+    token: string,
+    workspaceId: string,
+    webhookExternalId: string,
+  ): Promise<void> {
+    try {
+      await this.client.deleteWebhook(token, workspaceId, webhookExternalId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `removeWebhook: не удалось снять webhook ${webhookExternalId}: ${message}`,
+      );
+    }
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

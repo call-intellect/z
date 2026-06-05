@@ -22,8 +22,9 @@ Prisma 7 флаги migrate diff: `--from-empty`, `--from-schema`/`--to-schema` 
 ## Фазы
 
 - [x] **Ф1. Init-миграция** — `backend/prisma/migrations/0_init/migration.sql` из `migrate diff --from-empty --to-schema prisma/schema.prisma --script` (8005 строк, содержит `CREATE EXTENSION vector`, vector-колонки, enum+колонки Participant) + `migration_lock.toml` (provider=postgresql).
+- [x] **Ф1b. Reconcile-миграция** — `0001_reconcile_participant_invitation_status/migration.sql`: идемпотентно актуализирует существующие БД до схемы (чинит `Participant.invitationStatus` enum-тип + дотягивает Ф0-колонки; на свежей БД no-op). Только объекты schema.prisma — postgres-init.sql не трогается.
 - [x] **Ф2. Деплой-пайплайн** — `apply-prod-deploy.ts` `runSchemaPhase`: `db push --accept-data-loss` → `prisma migrate deploy`; обновлены docstrings/help/autoBackup-формулировки.
-- [x] **Ф2b. Авто-baseline (hands-free деплой)** — `ensureBaseline()` в schema-фазе: определяет состояние БД (`_prisma_migrations` есть? таблицы есть?) и ОДНОРАЗОВО переводит db-push'нутую базу под миграции — reconcile-дифф (аддитивно, с DROP-гейтом) + `migrate resolve --applied 0_init`. Деплой = `docker compose up -d`, без ручных шагов.
+- [x] **Ф2b. Авто-baseline (hands-free деплой)** — `ensureBaseline()` в schema-фазе: определяет состояние БД (`_prisma_migrations` есть? таблицы есть?) и ОДНОРАЗОВО на существующей db-push'нутой БД делает `migrate resolve --applied 0_init` (без diff-reconcile: схема разделена с postgres-init.sql → diff давал ложные DROP). Актуализацию прода до схемы делает миграция 0001 через `migrate deploy`. Деплой = `docker compose up -d`, без ручных шагов.
 - [x] **Ф3. package.json** — добавлены `prisma:migrate` (migrate dev), `prisma:migrate:deploy`, `prisma:migrate:status`; `prisma:push` оставлен.
 - [x] **Ф4. Документация** — `schema.prisma` header, skill `prisma-db-push-rules` (переписан), `CLAUDE.md`, `docs/operations/prod-deploy-log.md` (migrate-контейнер + baseline-блок).
 - [x] **Ф5. second-brain** — `02_architecture/data-model.md` + `tech-stack.md` баннеры; рефлексия в `05_история/`; строка в `04_не-сделано`.

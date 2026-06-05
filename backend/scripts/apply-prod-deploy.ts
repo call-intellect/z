@@ -482,13 +482,18 @@ async function psqlScalar(url: string, sql: string): Promise<string | null> {
  * Логика:
  *   1. Есть `_prisma_migrations` → ничего не делаем (обычный `migrate deploy`).
  *   2. Нет таблиц приложения (пустая БД) → ничего: `migrate deploy` создаст всё из 0_init.
- *   3. Существующая БД без `_prisma_migrations` → baseline:
- *      a. reconcile-дифф от реальной БД к schema.prisma (аддитивно подравнивает
- *         дрейф, например частично применённый Ф0: добавит недостающие колонки,
- *         используя уже существующий enum — без CreateEnum). **Гейт безопасности:**
- *         если дифф содержит деструктив (DROP ...) — стоп, без авто-применения.
- *      b. `migrate resolve --applied 0_init` — помечает init применённым (БД уже
- *         в этом состоянии после reconcile), не выполняя его SQL.
+ *   3. Существующая БД без `_prisma_migrations` → `migrate resolve --applied 0_init`
+ *      (помечаем init применённым, SQL не выполняется). БД создана прошлым
+ *      `db push` из той же `schema.prisma` → уже соответствует 0_init.
+ *
+ * ВАЖНО — почему БЕЗ reconcile-диффа. Схема Z РАЗДЕЛЕНА: `schema.prisma` +
+ * `postgres-init.sql` (GIN/HNSW/trgm-индексы, generated-колонки `*_search_tsv`,
+ * partial-индексы — Prisma их не выражает). `migrate diff --to-schema` не видит
+ * объекты из postgres-init и сгенерил бы их `DROP` (false-positives), плюс
+ * путается с unused-enum'ами. Поэтому diff к схеме здесь НЕЛЬЗЯ использовать для
+ * выравнивания. postgres-init.sql прогоняется отдельным шагом ПОСЛЕ migrate
+ * (идемпотентно пересоздаёт свои объекты). Если когда-нибудь нужен реальный
+ * аддитивный fix существующей БД — это делается отдельной нормальной миграцией.
  *
  * Требует psql (postgresql16-client) и DATABASE_URL.
  */
@@ -517,53 +522,10 @@ async function ensureBaseline(): Promise<boolean> {
     return true;
   }
 
-  // Существующая БД без миграций → одноразовый baseline.
+  // Существующая БД без миграций → одноразовый baseline (resolve, без diff —
+  // см. docstring: schema.prisma + postgres-init.sql разделены).
   // eslint-disable-next-line no-console
-  console.log('\n>>> [schema] АВТО-BASELINE: существующая БД без _prisma_migrations.');
-
-  // a. reconcile-дифф (реальная БД → schema.prisma).
-  const diff = Bun.spawn(
-    ['bunx', 'prisma', 'migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--script'],
-    { stdout: 'pipe', stderr: 'pipe' },
-  );
-  const diffSql = await new Response(diff.stdout).text();
-  if ((await diff.exited) !== 0) {
-    const err = await new Response(diff.stderr).text();
-    // eslint-disable-next-line no-console
-    console.error(`[schema] ✗ migrate diff (reconcile) упал: ${err.slice(-800)}`);
-    return false;
-  }
-
-  const trimmed = diffSql.trim();
-  const isEmpty = trimmed.length === 0 || /This is an empty migration/i.test(trimmed);
-  if (isEmpty) {
-    // eslint-disable-next-line no-console
-    console.log('[schema] reconcile: дрейфа нет (БД уже совпадает со схемой).');
-  } else if (/\bDROP\s+(TABLE|COLUMN|TYPE|CONSTRAINT|INDEX|SCHEMA|VIEW)\b/i.test(trimmed)) {
-    // Деструктив в авто-режиме недопустим — требует ручного ревью.
-    // eslint-disable-next-line no-console
-    console.error(
-      '[schema] ✗ АВТО-BASELINE остановлен: reconcile-дифф содержит DROP. ' +
-        'Примени схему вручную после ревью (см. prod-deploy-log § Baseline), затем повтори деплой.\n' +
-        '----- reconcile.sql -----\n' + trimmed + '\n-------------------------',
-    );
-    return false;
-  } else {
-    // eslint-disable-next-line no-console
-    console.log('[schema] reconcile (аддитивно) применяю:\n' + trimmed);
-    const exec = Bun.spawn(['bunx', 'prisma', 'db', 'execute', '--stdin'], {
-      stdin: new Blob([trimmed + '\n']),
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-    if ((await exec.exited) !== 0) {
-      // eslint-disable-next-line no-console
-      console.error('[schema] ✗ применение reconcile упало.');
-      return false;
-    }
-  }
-
-  // b. пометить 0_init применённым (БД уже в этом состоянии).
+  console.log('\n>>> [schema] АВТО-BASELINE: существующая БД без _prisma_migrations → resolve --applied 0_init.');
   // eslint-disable-next-line no-console
   console.log('>>> [schema] bunx prisma migrate resolve --applied 0_init');
   const resolve = Bun.spawn(['bunx', 'prisma', 'migrate', 'resolve', '--applied', '0_init'], {

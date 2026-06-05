@@ -76,21 +76,13 @@ docker compose logs -f migrate     # увидишь блок ">>> [schema] АВ�
 
 `apply-prod-deploy.ts` → `ensureBaseline()` сам, ОДНОРАЗОВО, при первом запуске на существующей (db-push'нутой) БД без `_prisma_migrations`:
 1. авто-бэкап (`pg_dump`),
-2. **reconcile** — `migrate diff --from-config-datasource --to-schema` → аддитивный SQL (добавит недостающие колонки `Participant`, используя существующий enum; **гейт безопасности:** если в диффе есть `DROP ...` — деплой останавливается без авто-применения, см. фолбэк),
-3. `migrate resolve --applied 0_init`,
-4. дальше — обычный `migrate deploy`.
+2. `migrate resolve --applied 0_init` — помечает init применённым (SQL НЕ выполняется; БД уже имеет все таблицы из прошлого `db push` той же `schema.prisma`),
+3. `migrate deploy` → применяет **`0001_reconcile_participant_invitation_status`** — она **актуализирует БД до текущей схемы** (чинит `Participant.invitationStatus` + дотягивает Ф0-колонки; идемпотентна — на свежей БД no-op),
+4. `apply-postgres-init` (идемпотентно держит GIN/HNSW/tsvector).
 
-После первого успешного прогона `_prisma_migrations` есть → ветка baseline больше не выполняется, каждый `up -d` просто докатывает новые миграции. Проверка: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → «up to date».
+> **Актуализация прода — через миграцию, а не diff.** Схема Z разделена: `schema.prisma` + `postgres-init.sql` (GIN/HNSW/trgm-индексы, generated-колонки `*_search_tsv`, partial-индексы — Prisma их не выражает). `migrate diff --to-schema` не видит объекты postgres-init → сгенерил бы их `DROP` (false-positives, что и поймал первый подход). Поэтому реальный дрейф (только `Participant.invitationStatus`) выправляется явной идемпотентной миграцией `0001`, а не авто-диффом.
 
-**Фолбэк (только если авто-baseline остановился на DROP-гейте):** прогнать reconcile вручную после ревью —
-```bash
-docker compose run --rm --no-deps backend sh -c \
-  'bunx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script' > reconcile.sql
-# отревьюить reconcile.sql → применить → resolve → повторить выкат
-docker compose run --rm --no-deps backend sh -c 'psql "$DATABASE_URL" -f reconcile.sql'
-docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate resolve --applied 0_init'
-docker compose up -d
-```
+После первого успешного прогона `_prisma_migrations` есть, 0_init+0001 applied → каждый `up -d` просто докатывает новые миграции. Проверка: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → «up to date».
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 

@@ -19,7 +19,7 @@ description: Правила работы с Prisma и схемой БД в Z (с
 **Источник истины о схеме — файлы `backend/prisma/migrations/`** (плюс `schema.prisma` как desired-state).
 
 - Изменение схемы → **`prisma migrate dev`** генерит файл миграции → ревью SQL → коммит.
-- На прод/staging схема применяется **`prisma migrate deploy`** (только новые миграции, транзакционно) — **автоматически на каждом `docker compose up -d`** (через `apply-prod-deploy.ts --with-schema`). Деплой hands-free; первичный baseline существующей БД делает `ensureBaseline()` сам.
+- На прод/staging схема применяется **`prisma migrate deploy`** (только новые миграции, транзакционно) — **автоматически на каждом `docker compose up -d`** (через `apply-prod-deploy.ts --with-schema`). Деплой hands-free; первичный baseline существующей БД делает `ensureBaseline()` сам (авто-бэкап + `resolve --applied 0_init`, без diff-reconcile — схема разделена с `postgres-init.sql`).
 - `prisma db push` — **ТОЛЬКО** для быстрых черновых локальных экспериментов, которые **НЕ коммитятся**.
   Перед коммитом такой эксперимент оформляется нормальной миграцией через `migrate dev`.
 

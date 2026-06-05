@@ -1257,6 +1257,23 @@ GIN-индекс `Goal_sourceBlockIds_gin ON "Goal" USING GIN ("sourceBlockIds")
 
 [[../index|← index]]
 
+## Пакет улучшений дашбордов (ТЗ B/D, 2026-06-05)
+
+Аддитивные расширения под компас целей (B) и недельный план-факт по людям (D). Контракты — `plans/tz/2026-06-05-goal-vector-compass.md`, `plans/tz/2026-06-05-weekly-per-person-plan-fact.md`. Полная карта сервисов — [[module-map]] §«Пакет улучшений дашбордов».
+
+### `Goal.isPrimary` (ТЗ-B)
+
+- **`Goal.isPrimary Boolean @default(false)`** + `@@index([tenantId, isPrimary])` — «главная цель компании» (одна на Org), вокруг которой строится компас на главной директора (`pulse-patterns.getGoalVector` отдаёт `primaryGoalId`).
+- **Partial unique вне schema.prisma** — `goal_primary_unique ON "Goal"("tenantId") WHERE "isPrimary" = true` (через `backend/scripts/postgres-init.sql`) — гарантирует не более одной главной цели на Org (Prisma не умеет partial-unique с `WHERE`).
+
+### `IdeaBlock.commitmentAuthorPersonId` (ТЗ-D)
+
+- **`IdeaBlock.commitmentAuthorPersonId String?`** — «кто пообещал» (автор обещания), отдельно от subject/получателя. Relation `commitmentAuthor → Person? @relation("CommitmentAuthor", onDelete: SetNull)` + обратка **`Person.commitmentsAuthored IdeaBlock[]`**.
+- Индексы: `@@index([tenantId, commitmentAuthorPersonId])` и `@@index([tenantId, signalType, commitmentAuthorPersonId, commitmentDueDate])` (для недельного план-факта: обещания человека за окно по сроку).
+- Заполнение: `block-ingest.worker.attributeCommitmentAuthor` (резолв через `EntityResolutionService.resolveSubjectPersonId`, под флагом `knowledge.commitmentAuthorAttributionEnabled`, code-fallback **true**). История — backfill `backend/scripts/backfill-commitment-author.ts` (идемпотентен, в `apply-prod-deploy.ts` STEPS `phase: backfill`).
+
+[[../index|← index]]
+
 ## Технические логи (LoggingModule, 2026-06-01)
 
 ```prisma

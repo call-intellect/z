@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
@@ -203,16 +204,15 @@ export function OperationsDashboardClient() {
         </section>
       </div>
 
-      <TeamTemperatureWidget summary={data.teamTemperature} />
-
-      <TeamTemperatureHeatmapCard
-        loading={temperatureSwr.isLoading}
-        error={
+      <TeamTemperatureSection
+        summary={data.teamTemperature}
+        heatmapLoading={temperatureSwr.isLoading}
+        heatmapError={
           temperatureSwr.error instanceof Error
             ? temperatureSwr.error.message
             : null
         }
-        temperature={temperatureSwr.data ?? null}
+        heatmap={temperatureSwr.data ?? null}
       />
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -310,7 +310,72 @@ export function OperationsDashboardClient() {
   );
 }
 
-function TeamTemperatureWidget(props: {
+/**
+ * ТЗ-C Ф3 (R4) — единый блок «Температура команды» с переключателем
+ * «Общая / По людям». Один визуальный `<section>` с общим заголовком; внутри —
+ * либо `TeamTemperatureOverallBody` (полоса green/yellow/red), либо
+ * `TeamTemperatureByPersonBody` (heatmap по людям). Каждый body сохраняет свои
+ * empty/loading/error-состояния.
+ */
+function TeamTemperatureSection(props: {
+  summary: OperationsTeamTemperatureSummaryApi;
+  heatmapLoading: boolean;
+  heatmapError: string | null;
+  heatmap: OperationsTeamTemperatureApi | null;
+}) {
+  const [mode, setMode] = useState<'overall' | 'byPerson'>('overall');
+  return (
+    <section className="mt-8 rounded border bg-bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Температура команды
+        </h2>
+        <div className="inline-flex gap-1 rounded-lg bg-bg-subtle p-1">
+          <button
+            type="button"
+            onClick={() => setMode('overall')}
+            aria-pressed={mode === 'overall'}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              mode === 'overall'
+                ? 'bg-accent/15 text-accent-fg'
+                : 'text-fg-secondary hover:bg-bg-subtle'
+            }`}
+          >
+            Общая
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('byPerson')}
+            aria-pressed={mode === 'byPerson'}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              mode === 'byPerson'
+                ? 'bg-accent/15 text-accent-fg'
+                : 'text-fg-secondary hover:bg-bg-subtle'
+            }`}
+          >
+            По людям
+          </button>
+        </div>
+      </div>
+      {mode === 'overall' ? (
+        <TeamTemperatureOverallBody summary={props.summary} />
+      ) : (
+        <TeamTemperatureByPersonBody
+          loading={props.heatmapLoading}
+          error={props.heatmapError}
+          temperature={props.heatmap}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * ТЗ-C Ф3 — режим «Общая»: полоса зелёный/жёлтый/красный + легенда.
+ * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
+ * Empty-state при нуле чек-инов сохранён.
+ */
+function TeamTemperatureOverallBody(props: {
   summary: OperationsTeamTemperatureSummaryApi;
 }) {
   const s = props.summary;
@@ -327,12 +392,60 @@ function TeamTemperatureWidget(props: {
     return `красных ${delta}% к прошлой неделе`;
   })();
 
+  if (s.totalCheckIns === 0) {
+    return (
+      <p className="text-sm text-fg-secondary">
+        За последние {s.days} дней нет чек-инов с проанализированным
+        настроением. Когда сотрудники начнут отвечать на вечерние чек-ины —
+        здесь появится распределение зелёный / жёлтый / красный.
+      </p>
+    );
+  }
+
   return (
-    <section className="mt-8 rounded border bg-bg-card p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">
-          Температура команды (последние {s.days} дн.)
-        </h2>
+    <>
+      <p className="text-sm text-fg-secondary">
+        Последние {s.days} дн. · всего чек-инов: {s.totalCheckIns}
+        {deltaLabel ? `; ${deltaLabel}.` : '.'}
+      </p>
+      <div className="mt-3 flex h-6 overflow-hidden rounded border">
+        {greenW > 0 ? (
+          <div
+            className="bg-success"
+            style={{ width: `${greenW}%` }}
+            title={`зелёных ${pct(s.greenShare)}`}
+          />
+        ) : null}
+        {yellowW > 0 ? (
+          <div
+            className="bg-warning"
+            style={{ width: `${yellowW}%` }}
+            title={`жёлтых ${pct(s.yellowShare)}`}
+          />
+        ) : null}
+        {redW > 0 ? (
+          <div
+            className="bg-danger"
+            style={{ width: `${redW}%` }}
+            title={`красных ${pct(s.redShare)}`}
+          />
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-3 text-xs text-fg-secondary">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-success" />
+            зелёных {pct(s.greenShare)}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-warning" />
+            жёлтых {pct(s.yellowShare)}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 rounded bg-danger" />
+            красных {pct(s.redShare)}
+          </span>
+        </div>
         <Link
           href="/dashboard/operations/weekly"
           className="text-xs text-info hover:underline"
@@ -340,58 +453,7 @@ function TeamTemperatureWidget(props: {
           Открыть недельную сводку →
         </Link>
       </div>
-      {s.totalCheckIns === 0 ? (
-        <p className="mt-2 text-sm text-fg-secondary">
-          За последние {s.days} дней нет чек-инов с проанализированным
-          настроением. Когда сотрудники начнут отвечать на вечерние чек-ины
-          — здесь появится распределение зелёный / жёлтый / красный.
-        </p>
-      ) : (
-        <>
-          <p className="mt-1 text-sm text-fg-secondary">
-            Всего чек-инов: {s.totalCheckIns}
-            {deltaLabel ? `; ${deltaLabel}.` : '.'}
-          </p>
-          <div className="mt-3 flex h-6 overflow-hidden rounded border">
-            {greenW > 0 ? (
-              <div
-                className="bg-success"
-                style={{ width: `${greenW}%` }}
-                title={`зелёных ${pct(s.greenShare)}`}
-              />
-            ) : null}
-            {yellowW > 0 ? (
-              <div
-                className="bg-warning"
-                style={{ width: `${yellowW}%` }}
-                title={`жёлтых ${pct(s.yellowShare)}`}
-              />
-            ) : null}
-            {redW > 0 ? (
-              <div
-                className="bg-danger"
-                style={{ width: `${redW}%` }}
-                title={`красных ${pct(s.redShare)}`}
-              />
-            ) : null}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-fg-secondary">
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-success" />
-              зелёных {pct(s.greenShare)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-warning" />
-              жёлтых {pct(s.yellowShare)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-3 w-3 rounded bg-danger" />
-              красных {pct(s.redShare)}
-            </span>
-          </div>
-        </>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -558,34 +620,30 @@ function YesterdayDigestCard(props: {
 }
 
 /**
- * Pulse Wave 2.3 — карточка «Температура команды по людям» (heatmap).
- *
- * Тонкая обёртка над `TeamTemperatureHeatmap`: title + skeleton/error/empty.
- * `byPerson` уже отсортирован на бэке по `red DESC`.
+ * ТЗ-C Ф3 — режим «По людям»: heatmap из `TeamTemperatureHeatmap`.
+ * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
+ * Состояния loading/error/empty сохранены. `byPerson` уже отсортирован на бэке
+ * по `red DESC`.
  */
-function TeamTemperatureHeatmapCard(props: {
+function TeamTemperatureByPersonBody(props: {
   loading: boolean;
   error: string | null;
   temperature: OperationsTeamTemperatureApi | null;
 }) {
-  return (
-    <section className="mt-6 rounded border bg-bg-card p-4">
-      <h2 className="mb-3 text-lg font-semibold">
-        Температура команды по людям
-      </h2>
-      {props.loading ? (
-        <p className="text-sm text-fg-secondary">Загрузка…</p>
-      ) : props.error ? (
-        <p className="text-sm text-chip-danger-fg">{props.error}</p>
-      ) : !props.temperature || props.temperature.byPerson.length === 0 ? (
-        <p className="text-sm text-fg-tertiary">
-          Чек-инов с проанализированным настроением пока нет.
-        </p>
-      ) : (
-        <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />
-      )}
-    </section>
-  );
+  if (props.loading) {
+    return <p className="text-sm text-fg-secondary">Загрузка…</p>;
+  }
+  if (props.error) {
+    return <p className="text-sm text-chip-danger-fg">{props.error}</p>;
+  }
+  if (!props.temperature || props.temperature.byPerson.length === 0) {
+    return (
+      <p className="text-sm text-fg-tertiary">
+        Чек-инов с проанализированным настроением пока нет.
+      </p>
+    );
+  }
+  return <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />;
 }
 
 /**

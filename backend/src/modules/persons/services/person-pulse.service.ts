@@ -65,7 +65,7 @@ export interface PersonPulseDto {
   departmentName: string | null;
   /** true если этот Person — глава своего primaryDepartment'а. */
   isHead: boolean;
-  /** Последний 1:1 — placeholder v1, заполнится при интеграции с calendar. */
+  /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
   lastOneOnOneAt: string | null;
   /** Engagement score 0..1 (Engagement-Scorer cron). null до первого прогона. */
   engagementScore: number | null;
@@ -194,7 +194,8 @@ export class PersonPulseService {
       isHead:
         person.primaryDepartment !== null &&
         person.primaryDepartment.headPersonId === person.id,
-      lastOneOnOneAt: null, // v1 placeholder — интеграция с calendar отдельной фазой.
+      /** @deprecated v1 placeholder — интеграция с calendar отложена (vNext). Всегда null, на UI не выводится. */
+      lastOneOnOneAt: null,
       engagementScore:
         person.engagementScore === null ? null : Number(person.engagementScore),
       engagementScoreAt: person.engagementScoreAt?.toISOString() ?? null,

@@ -137,7 +137,7 @@ function PersonPulseContent({
     return (
       <AdminForbidden
         title="Нет доступа к карточке"
-        description="Просмотр Pulse-карточки доступен руководителям организации (owner / admin / COO) или самому сотруднику."
+        description="Карточка Пульса доступна руководителям организации (владелец, администратор, операционный директор) и самому сотруднику. HR-партнёру — только с согласия сотрудника."
       />
     );
   }
@@ -249,6 +249,7 @@ function HeaderBlock({
   const pulse = useMemo(() => computePulseScore(data), [data]);
   const initials = getInitials(data.personName);
   return (
+    <>
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-5 shadow-lg">
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <div
@@ -300,6 +301,11 @@ function HeaderBlock({
         <EngagementChip data={data} />
       </div>
     </header>
+    <p className="mt-2 px-1 text-xs text-fg-tertiary">
+      Эти данные видны руководителям организации; расширенная аналитика по
+      сотрудникам без согласия — только HR-партнёрам.
+    </p>
+    </>
   );
 }
 

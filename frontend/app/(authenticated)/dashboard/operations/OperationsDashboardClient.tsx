@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import Link from 'next/link';
 import useSWR from 'swr';
 
@@ -25,10 +23,10 @@ import {
 } from '@/domain/operations-dashboard';
 import { useAuth } from '@/contexts/auth-context';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
-import { CountUp } from '@/ui/components/dashboard/charts';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
+import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
 
@@ -48,11 +46,35 @@ import { MaturityWidget } from './widgets/MaturityWidget';
  */
 export function OperationsDashboardClient() {
   const { currentOrgId } = useAuth();
-  const [data, setData] = useState<OperationsOverviewDomain | null>(null);
-  const [commitments, setCommitments] =
-    useState<OpenCommitmentsListApi | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // R2 — overview и open-commitments через SWR (раньше императивная загрузка
+  // через Promise.all). Каждый запрос независим: провал commitments не валит
+  // overview.
+  const overviewSwr = useSWR(
+    ['operations-overview'],
+    () => operationsDashboardApi.getOverview(),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const commitmentsSwr = useSWR(
+    ['operations-open-commitments', 14, 100],
+    () => commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  const data: OperationsOverviewDomain | null = overviewSwr.data
+    ? fromOperationsOverviewApi(overviewSwr.data)
+    : null;
+  const commitments: OpenCommitmentsListApi | null = commitmentsSwr.data ?? null;
+  const loading = overviewSwr.isLoading;
+  // Сохраняем спец-обработку forbidden → понятный текст про роль.
+  const error = (() => {
+    const err = overviewSwr.error;
+    if (!err) return null;
+    if (err instanceof ApiError && err.code === 'forbidden') {
+      return 'Нет доступа к COO-дашборду (нужна роль coo / admin / owner).';
+    }
+    return err instanceof Error ? err.message : 'Не удалось загрузить дашборд';
+  })();
 
   // SBA β-8.3 Wave 1 — блок «Вчерашний отчёт». Через SWR независимо от
   // основного overview, чтобы провал ежедневного отчёта не валил весь дашборд.
@@ -82,37 +104,6 @@ export function OperationsDashboardClient() {
     async () => operationsDashboardApi.getStaleIssues({ staleDays: 5, limit: 20 }),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      operationsDashboardApi.getOverview(),
-      commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
-    ])
-      .then(([overview, openCommitments]) => {
-        if (cancelled) return;
-        setData(fromOperationsOverviewApi(overview));
-        setCommitments(openCommitments);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.code === 'forbidden') {
-          setError('Нет доступа к COO-дашборду (нужна роль coo / admin / owner).');
-        } else {
-          setError(
-            err instanceof Error ? err.message : 'Не удалось загрузить дашборд',
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (loading) {
     return <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>;
@@ -156,38 +147,53 @@ export function OperationsDashboardClient() {
         digest={dailyDigestDomain}
       />
 
-      <div className="mt-6">
-        <MaturityWidget maturity={data.maturity} />
-      </div>
+      {/* §5.3/§5.4 — KPI разбиты на смысловые зоны (R1). Карточки — KpiHero
+          c threshold-тоном вместо локального Card. Временных рядов в
+          overview-API нет — sparkline не выдумываем. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards lg:grid-cols-3">
+        {/* Зона «Люди» — кто в команде под нагрузкой/в конфликте. */}
+        <section className="lg:col-span-1">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Люди
+          </h2>
+          <KpiHero
+            label="Конфликты в команде"
+            value={data.teamFrictionCount}
+            numericValue={data.teamFrictionCount}
+            threshold={{ green: 0, yellow: 3, inverted: true }}
+          />
+        </section>
 
-      {/* §5.3/§5.4 — Hero-strip главных KPI с CountUp и hover-эффектом.
-          Временных рядов в overview-API нет — sparkline не выдумываем. */}
-      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:grid-cols-2 lg:grid-cols-4">
-        <Card
-          title="Активные блокеры"
-          value={data.blockersCount}
-          accent={data.blockersBySeverity.high > 0 ? 'red' : 'amber'}
-          subtitle={`high: ${data.blockersBySeverity.high}, medium: ${data.blockersBySeverity.medium}, low: ${data.blockersBySeverity.low}`}
-        />
-        <Card
-          title="Провалившиеся цели"
-          value={data.missedGoalsCount}
-          accent={data.missedGoalsCount > 0 ? 'red' : 'green'}
-          subtitle={`каскад: ${data.cascadeMissedCount}`}
-        />
-        <Card
-          title="Конфликты в команде"
-          value={data.teamFrictionCount}
-          accent={data.teamFrictionCount > 0 ? 'amber' : 'green'}
-          subtitle="EntityLink relationType=conflicted_with"
-        />
-        <Card
-          title="Средняя загрузка"
-          value={data.capacityAvgPercent}
-          suffix="%"
-          accent={data.capacityOverloadedCount > 0 ? 'amber' : 'green'}
-          subtitle={`перегружены: ${data.capacityOverloadedCount}`}
-        />
+        {/* Зона «Исполнение» — блокеры, цели, загрузка. */}
+        <section className="lg:col-span-2">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Исполнение
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <KpiHero
+              label="Активные блокеры"
+              value={data.blockersCount}
+              numericValue={data.blockersCount}
+              threshold={{ green: 0, yellow: 5, inverted: true }}
+              href="/dashboard/operations/weekly"
+            />
+            <KpiHero
+              label="Провалившиеся цели"
+              value={data.missedGoalsCount}
+              numericValue={data.missedGoalsCount}
+              threshold={{ green: 0, yellow: 2, inverted: true }}
+            />
+            {/* Тон — по числу перегруженных (≥1 = жёлтый), а сама цифра —
+                средний % загрузки. KpiHero берёт тон из numericValue, поэтому
+                процент рендерим строкой во `value` (без CountUp-анимации). */}
+            <KpiHero
+              label="Средняя загрузка"
+              value={`${data.capacityAvgPercent}%`}
+              numericValue={data.capacityOverloadedCount}
+              threshold={{ green: 0, yellow: 1, inverted: true }}
+            />
+          </div>
+        </section>
       </div>
 
       <TeamTemperatureWidget summary={data.teamTemperature} />
@@ -232,11 +238,18 @@ export function OperationsDashboardClient() {
         />
       </div>
 
-      <div className="mt-6">
-        <CauseCategoryMapWidget
-          insightsByCauseCategory={data.insightsByCauseCategory}
-        />
-      </div>
+      {/* Зона «Сигналы» — зрелость данных + карта первопричин (R1). */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+          Сигналы
+        </h2>
+        <div className="space-y-6">
+          <MaturityWidget maturity={data.maturity} />
+          <CauseCategoryMapWidget
+            insightsByCauseCategory={data.insightsByCauseCategory}
+          />
+        </div>
+      </section>
 
       {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
@@ -286,41 +299,6 @@ export function OperationsDashboardClient() {
           </ul>
         )}
       </section>
-    </div>
-  );
-}
-
-function Card(props: {
-  title: string;
-  value: number | string;
-  /** Доп. суффикс к числу (`%`, ` шт`, и т.п.). Используется только для number. */
-  suffix?: string;
-  accent: 'green' | 'amber' | 'red';
-  subtitle?: string;
-}) {
-  const colour =
-    props.accent === 'red'
-      ? 'border-chip-danger-bg bg-chip-danger-bg'
-      : props.accent === 'amber'
-        ? 'border-chip-warning-bg bg-chip-warning-bg'
-        : 'border-chip-success-bg bg-chip-success-bg';
-  const isNumeric = typeof props.value === 'number';
-  return (
-    <div
-      className={`rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md ${colour}`}
-    >
-      <div className="text-xs uppercase tracking-wide text-fg-secondary">
-        {props.title}
-      </div>
-      <div className="mt-1 text-3xl font-bold">
-        {isNumeric ? <CountUp to={props.value as number} /> : props.value}
-        {props.suffix ? (
-          <span className="ml-0.5 text-2xl font-semibold">{props.suffix}</span>
-        ) : null}
-      </div>
-      {props.subtitle ? (
-        <div className="mt-1 text-xs text-fg-secondary">{props.subtitle}</div>
-      ) : null}
     </div>
   );
 }

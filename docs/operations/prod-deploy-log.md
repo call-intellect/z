@@ -60,6 +60,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🎯 2026-06-05 — ТЗ-F Цели: ответственный (ownerPersonId) + кэш blocksCount + UI-полировка
+
+> Ветка `feature/goals-improvements`. Контракт: `plans/tz/2026-06-05-goals-improvements.md` (Ф1–Ф4; Ф5 голос — vNext). Коммиты: Ф1 `afe344b2`+`2701cff2`, Ф2 `62febeec`, Ф3 `158ac9df`, Ф4 `184bce07`.
+
+- **Шаг 4 — Prisma db push** — **обязательно** (аддитивно, без data-loss, без `--accept-data-loss`): `Goal += ownerPersonId String?` (relation `ownerPerson` GoalOwnerPerson, `onDelete: SetNull`) + `cachedBlocksCount Int?` + `@@index([tenantId, ownerPersonId])`; `Person += ownedGoals Goal[] @relation("GoalOwnerPerson")`. Команда: `docker compose exec backend bun run prisma:push` (через `migrate`-контейнер автоматически). ⚠ На dev схема применена только `prisma:generate` (dev-БД была выключена) — на проде нужен полноценный push.
+- **Шаг 1 — ENV/AdminSetting** — новых ENV/флагов нет. Пороги «светофора уверенности» — code-fallback в `frontend/src/domain/goal.ts` (`confidenceLevel`); вынос в AdminSetting → vNext.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `goals.service` ownerPerson + `strategic-alignment.worker` пишет `cachedBlocksCount`; frontend: пикер ответственного + светофор уверенности + вердикт движения + русификация): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Swagger `/api/docs` → `GoalListItemDto` содержит `ownerPersonId`/`ownerPersonName`/`blocksCount`.
+  - `POST /api/v1/goals { …, ownerPersonId:"<Person.id>" }` → 201 с `ownerPersonName`; `ownerPersonId` чужого tenant → 404 `owner_person_not_found`.
+  - после ночного прогона `strategic-alignment` у целей заполняется `Goal.cachedBlocksCount` (светофор в списке без JOIN).
+- Новых очередей/cron нет (используется существующий `strategic-alignment.worker`, +1 поле `cachedBlocksCount` в его `tx.goal.update`).
+
+---
+
 ### 🧩 2026-06-04 — Единая видимая задача из встречи (ТЗ meeting-identity, Ф5.2)
 
 > Контракт: `plans/tz/2026-06-04-meeting-identity-and-clones-attribution.md` §5.2. Дедуп Task↔Issue: из встречи рождается ОДНА видимая задача (tracker `Issue`), а не дубль Task+Issue. **GATE-COUPLED, дефолт OFF** — до включения флага владельцем поведение прода не меняется.

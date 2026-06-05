@@ -1162,11 +1162,18 @@ supersedeChain    Goal[]  @relation("GoalSupersedes")
 keyResults        GoalKeyResult[]
 linkedIdeas       Idea[]  @relation("IdeaGoal")
 linkedCycles      Cycle[] @relation("CyclePrimaryGoal")
+// ТЗ-F 2026-06-05 — ответственный + читаемость списка:
+ownerPersonId     String?                               // ответственный человек за цель (nullable)
+ownerPerson       Person? @relation("GoalOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+cachedBlocksCount Int?                                  // кэш числа блоков последнего snapshot — «светофор уверенности» в списке без JOIN; пишет strategic-alignment.worker
 @@index([tenantId, promotionState])
 @@index([tenantId, validUntil])
+@@index([tenantId, ownerPersonId])                      // ТЗ-F 2026-06-05
 ```
 
 > `progressStatus` — самостоятельная ось «движение для пульса», `status` (GoalStatus) остаётся жизненным циклом. Их не путать.
+>
+> **ТЗ-F 2026-06-05** ([`plans/tz/2026-06-05-goals-improvements.md`](../../plans/tz/2026-06-05-goals-improvements.md), ветка `feature/goals-improvements`): `ownerPersonId` — relation `GoalOwnerPerson` на `Person` с `onDelete: SetNull` и индексом `[tenantId, ownerPersonId]`; back-relation `Person.ownedGoals Goal[] @relation("GoalOwnerPerson")` (рядом с `ownedProcesses`/`ownedRegulations`). `cachedBlocksCount Int?` — кэш числа блоков последнего snapshot, чтобы «светофор уверенности» в списке считался без JOIN; обновляется `strategic-alignment.worker` тем же `tx.goal.update`. Поля `cachedAlignment`/`progressStatus` НЕ менялись.
 
 ### `model GoalKeyResult` (новая) — измеримый ориентир, 0..N на цель
 

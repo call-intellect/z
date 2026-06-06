@@ -204,6 +204,8 @@ function setupV2(args: V2SetupArgs) {
       cloneTopicSimilarityThreshold: 0.7,
       cloneTopicMinBlocks: args.topicMinBlocks ?? 2,
     },
+    // Ф5 knowledge-access — гейт off (поведение байт-в-байт текущему).
+    knowledgeAccess: { enforcement: 'off' as const },
   } as unknown as TypedConfigService;
 
   const llmCall = vi.fn(async () => ({
@@ -275,6 +277,7 @@ function setupV2(args: V2SetupArgs) {
     personaBuilder,
     personaVersioning,
     rbac,
+    undefined as never, // accessResolver (Ф5) — off-режим не зовёт его
     embedder,
     dialog,
   );

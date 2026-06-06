@@ -27,6 +27,10 @@ import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embeddi
 import { ExecutablePersonaBuildService } from '../../knowledge-core/services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from '../../knowledge-core/services/executable-persona-versioning.service';
 import { PracticeSkillRetrievalService } from '../../practice-skills/services/practice-skill-retrieval.service';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 import type {
   CloneConversationListItemDto,
@@ -98,6 +102,16 @@ export class ClonesService {
     @Inject(ExecutablePersonaVersioningService)
     private readonly personaVersioning: ExecutablePersonaVersioningService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    /**
+     * Ф5 knowledge-access-groups (R8) — резолв групп СПРАШИВАЮЩЕГО для
+     * фильтра контекста клона. `@Optional()` сохраняет совместимость с
+     * unit-тестами, конструирующими ClonesService без этого аргумента
+     * (при отсутствии резолвера фильтр пропускается — поведение = off).
+     * В рантайме сервис всегда доступен из `@Global RbacModule`.
+     */
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
     @Inject(KnowledgeEmbeddingService)
     private readonly embedder: KnowledgeEmbeddingService,
     /**
@@ -231,9 +245,21 @@ export class ClonesService {
     }
 
     // 5. Retrieval subgraph.
+    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (при off → null,
+    // фильтр не применяется; контекст клона байт-в-байт).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off' && this.accessResolver
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.requesterUserId,
+          })
+        : null;
     const subgraph = await this.loadPersonSubgraph({
       tenantId: args.tenantId,
       personId: args.personId,
+      accessCtx,
+      enforcement: enf,
     });
 
     // 5.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
@@ -450,9 +476,20 @@ export class ClonesService {
     }
 
     // 4. Retrieval — top reasoning от всех employee'ев этой роли.
+    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off' && this.accessResolver
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.requesterUserId,
+          })
+        : null;
     const subgraph = await this.loadRoleSubgraph({
       tenantId: args.tenantId,
       roleId: args.roleId,
+      accessCtx,
+      enforcement: enf,
     });
 
     // 4.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
@@ -707,9 +744,20 @@ export class ClonesService {
     const mode = ClonesService.intentToMode(dialog.intent);
 
     // 6. Subgraph retrieval (как в legacy).
+    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off' && this.accessResolver
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.requesterUserId,
+          })
+        : null;
     const subgraph = await this.loadPersonSubgraph({
       tenantId: args.tenantId,
       personId: args.personId,
+      accessCtx,
+      enforcement: enf,
     });
 
     // 7. Topic-density guard (порог зависит от mode).
@@ -905,9 +953,20 @@ export class ClonesService {
 
     const mode = ClonesService.intentToMode(dialog.intent);
 
+    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off' && this.accessResolver
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.requesterUserId,
+          })
+        : null;
     const subgraph = await this.loadRoleSubgraph({
       tenantId: args.tenantId,
       roleId: args.roleId,
+      accessCtx,
+      enforcement: enf,
     });
 
     const requiredBlocksOverride =
@@ -2156,7 +2215,19 @@ export class ClonesService {
   private async loadPersonSubgraph(args: {
     tenantId: string;
     personId: string;
+    /**
+     * Ф5 knowledge-access (R8) — группы СПРАШИВАЮЩЕГО. null → off (фильтр не
+     * применяется, контекст байт-в-байт). При shadow считаем метрику
+     * расхождения; при enforce — отбрасываем недоступные reasoning-блоки.
+     */
+    accessCtx?: KnowledgeAccessContext | null;
+    enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
+    const accessCtx = args.accessCtx ?? null;
+    const enforcement = args.enforcement ?? 'off';
+    const accessEnforce =
+      enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
+
     const person = await this.prisma.person.findUnique({
       where: { id: args.personId },
       select: {
@@ -2174,10 +2245,15 @@ export class ClonesService {
         where: {
           entityId: person.entityId,
           role: 'subject',
+          // Ф5: при enforce — DB-фильтр доступа спрашивающего по вложенному
+          // block (не тащим недоступные блоки из БД). off/shadow → {}.
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
             signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+            ...(accessEnforce && accessCtx
+              ? this.accessResolver!.buildAccessWhere(accessCtx)
+              : {}),
           },
         },
         select: { blockId: true },
@@ -2218,12 +2294,24 @@ export class ClonesService {
       }
     }
 
+    // Ф5 knowledge-access (R8) — post-filter поверх reasoningBlocks.
+    // off (accessCtx=null) или bypass → НИ одного нового запроса (байт-в-байт).
+    // shadow → метрика расхождения, выдачу НЕ меняем. enforce → отбрасываем
+    // недоступные (defense-in-depth поверх DB-фильтра в mentions).
+    await this.applyAccessToReasoningBlocks(
+      reasoningBlocks,
+      accessCtx,
+      enforcement,
+    );
+
     // 2. KnowledgeProfile summary.
     const knowledgeProfileSummary = this.serializeKnowledgeProfile(
       person.knowledgeProfile,
     );
 
     // 3. Top decisions с decidedByPersonIds.includes(personId).
+    // TODO Ф6: фильтр decisions по проекционному доступу спрашивающего
+    // (Decision — проекция, её групповой доступ добавит Фаза 6).
     const decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
@@ -2249,7 +2337,17 @@ export class ClonesService {
   private async loadRoleSubgraph(args: {
     tenantId: string;
     roleId: string;
+    /**
+     * Ф5 knowledge-access (R8) — группы СПРАШИВАЮЩЕГО. См. loadPersonSubgraph.
+     */
+    accessCtx?: KnowledgeAccessContext | null;
+    enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
+    const accessCtx = args.accessCtx ?? null;
+    const enforcement = args.enforcement ?? 'off';
+    const accessEnforce =
+      enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
+
     // Найти всех employee'ев этой роли.
     const personRoles = await this.prisma.personRole.findMany({
       where: {
@@ -2282,10 +2380,14 @@ export class ClonesService {
         where: {
           entityId: { in: entityIds },
           role: 'subject',
+          // Ф5: при enforce — DB-фильтр доступа спрашивающего. off/shadow → {}.
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
             signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
+            ...(accessEnforce && accessCtx
+              ? this.accessResolver!.buildAccessWhere(accessCtx)
+              : {}),
           },
         },
         select: { blockId: true },
@@ -2319,11 +2421,65 @@ export class ClonesService {
       }
     }
 
+    // Ф5 knowledge-access (R8) — post-filter (см. loadPersonSubgraph).
+    await this.applyAccessToReasoningBlocks(
+      reasoningBlocks,
+      accessCtx,
+      enforcement,
+    );
+
     return {
       reasoningBlocks,
       knowledgeProfileSummary: null,
       decisions: [],
     };
+  }
+
+  /**
+   * Ф5 knowledge-access (R8) — фильтр контекста клона по правам СПРАШИВАЮЩЕГО.
+   * Мутирует `reasoningBlocks` IN-PLACE.
+   *
+   * Гейт-семантика (как chat-v2 выходной шлюз):
+   *   - off (accessCtx=null) ИЛИ bypass → НИ одного запроса, массив не тронут;
+   *   - shadow → считаем `kc_access_shadow_diff_total{surface=clone}`, выдачу НЕ меняем;
+   *   - enforce → отбрасываем недоступные блоки + `kc_access_denied_total{surface=clone}`
+   *     (defense-in-depth поверх DB-фильтра buildAccessWhere в mentions).
+   *
+   * Порядок важен: фильтр вызывается ДО `assertTopicDensity` (density-guard
+   * естественно считает по доступным → корректный `topic_starved` при нехватке).
+   */
+  private async applyAccessToReasoningBlocks(
+    reasoningBlocks: CloneBlock[],
+    accessCtx: KnowledgeAccessContext | null,
+    enforcement: 'off' | 'shadow' | 'enforce',
+  ): Promise<void> {
+    if (
+      enforcement === 'off' ||
+      !accessCtx ||
+      accessCtx.isBypass ||
+      !this.accessResolver ||
+      reasoningBlocks.length === 0
+    ) {
+      return;
+    }
+    const ids = reasoningBlocks.map((b) => b.id);
+    const { accessible, denied } =
+      await this.accessResolver.partitionBlockIdsByAccess(accessCtx, ids);
+    if (enforcement === 'enforce') {
+      const allow = new Set(accessible);
+      // Отфильтровать reasoningBlocks IN-PLACE (defense-in-depth поверх DB-фильтра).
+      let write = 0;
+      for (let read = 0; read < reasoningBlocks.length; read++) {
+        if (allow.has(reasoningBlocks[read]!.id)) {
+          reasoningBlocks[write++] = reasoningBlocks[read]!;
+        }
+      }
+      reasoningBlocks.length = write;
+      this.metrics.incAccessDenied({ surface: 'clone' }, denied);
+    } else {
+      // shadow — выдачу НЕ меняем, только метрика расхождения.
+      this.metrics.incAccessShadowDiff({ surface: 'clone' }, denied);
+    }
   }
 
   private serializeKnowledgeProfile(raw: Prisma.JsonValue | null): string | null {

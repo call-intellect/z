@@ -246,8 +246,9 @@ AND (
 **Acceptance (ключевой e2e-предикат метрики «решено»):** при `enforce` запрос члена «Логистики» НЕ возвращает блок с `IdeaBlockAccess{closed=Совет}` ни в одной поверхности (chat/search/snapshot/graph); owner — возвращает; при `off` выдача идентична baseline (golden-тест на наборе блоков); cache-hit не отдаёт чужой доступ; `kc_access_denied_total` растёт при enforce. Тесты per-поверхность.
 **Закрывает:** R7, R10, R11.
 
-### Фаза 5 — Контекст клонов в правах спрашивающего
+### Фаза 5 — Контекст клонов в правах спрашивающего ✅ РЕАЛИЗОВАНО
 **Цель:** клон не цитирует знание вне групп спрашивающего.
+> Реализация: `loadPersonSubgraph`/`loadRoleSubgraph` фильтруют reasoning-блоки по accessCtx спрашивающего (DB-фильтр buildAccessWhere в mentions + defense-in-depth post-filter `applyAccessToReasoningBlocks`); accessCtx резолвится из `requesterUserId` во всех 4 respond-путях. assertTopicDensity естественно считает по доступным (корректный topic_starved). off=байт-в-байт. decisions в контексте клона — фильтр перенесён в Ф6 (проекционный доступ), помечено TODO.
 **Входит:**
 - Прокинуть `accessCtx` спрашивающего в `loadPersonSubgraph`/`loadRoleSubgraph` ([clones.service.ts:234,453,710,908](../../backend/src/modules/clones/services/clones.service.ts#L234)); фильтр `where` блоков (:2173,:2227,:2281) `...buildAccessWhere(ctx)`; defense-in-depth — отбросить недоступное перед `callCloneRespond` (:2515).
 - Учесть `assertTopicDensity` (:2363): фильтр ДО density-guard → корректный отказ `topic_starved`, если после фильтра контекста мало.

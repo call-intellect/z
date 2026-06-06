@@ -253,6 +253,8 @@ function setup(args: SetupArgs): Setup {
         args.cfgOverrides?.cloneTopicSimilarityThreshold ?? 0.7,
       cloneTopicMinBlocks: args.cfgOverrides?.cloneTopicMinBlocks ?? 2,
     },
+    // Ф5 knowledge-access — гейт off (поведение байт-в-байт текущему).
+    knowledgeAccess: { enforcement: 'off' as const },
   } as unknown as TypedConfigService;
 
   // ── LlmRouter mock — НЕ должен вызываться в отказных сценариях ──
@@ -309,6 +311,7 @@ function setup(args: SetupArgs): Setup {
     personaBuilder,
     personaVersioning,
     rbac,
+    undefined as never, // accessResolver (Ф5) — off-режим не зовёт его
     embedder,
   );
 

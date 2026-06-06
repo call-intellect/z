@@ -63,6 +63,6 @@ export class KnowledgeSearchController {
         error: { code: 'forbidden', message: 'Недостаточно прав' },
       });
     }
-    return this.svc.search({ ...body, tenantId });
+    return this.svc.search({ ...body, tenantId, userId: user.id });
   }
 }

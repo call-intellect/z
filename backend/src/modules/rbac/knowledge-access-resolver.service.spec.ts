@@ -269,3 +269,108 @@ describe('RbacService.canAccessKnowledgeGroup', () => {
     ).toBe(false);
   });
 });
+
+// ─── Ф4 ────────────────────────────────────────────────────────────────
+
+describe('KnowledgeAccessResolver.buildAccessSqlPredicate (Ф4)', () => {
+  // Для предиката prisma не нужна — чистая строковая функция.
+  const { resolver } = buildResolver({ loadContext: { role: 'manager' } });
+
+  it('bypass → пустая строка', () => {
+    const sql = resolver.buildAccessSqlPredicate(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: true },
+      () => '$1',
+    );
+    expect(sql).toBe('');
+  });
+
+  it('non-bypass → AND-фрагмент с IdeaBlockAccess и обоими placeholder', () => {
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+    const sql = resolver.buildAccessSqlPredicate(
+      { deptGroupIds: ['g-log'], closedGroupIds: ['g-council'], isBypass: false },
+      pushParam,
+    );
+    expect(sql).toContain('IdeaBlockAccess');
+    expect(sql).toContain('$1');
+    expect(sql).toContain('$2');
+    // closed-параметр пушится первым, dept — вторым.
+    expect(params).toEqual([['g-council'], ['g-log']]);
+  });
+});
+
+describe('KnowledgeAccessResolver.partitionBlockIdsByAccess (Ф4)', () => {
+  // Резолвер с настоящим RbacService.canAccessKnowledgeGroup и мок-prisma
+  // для ideaBlockAccess.findMany.
+  function buildPartitionResolver(
+    accessRows: Array<{
+      blockId: string;
+      groupId: string;
+      group: { isClosed: boolean; kind: string };
+    }>,
+  ): KnowledgeAccessResolver {
+    const prisma = {
+      ideaBlockAccess: {
+        findMany: vi.fn(async () => accessRows),
+      },
+    } as unknown as PrismaService;
+    const rbacReal = Object.create(RbacService.prototype) as RbacService;
+    return new KnowledgeAccessResolver(prisma, rbacReal);
+  }
+
+  it('bypass → все accessible, denied=0 (без запроса в БД)', async () => {
+    const resolver = buildPartitionResolver([]);
+    const res = await resolver.partitionBlockIdsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: true },
+      ['b1', 'b2'],
+    );
+    expect(res.accessible).toEqual(['b1', 'b2']);
+    expect(res.denied).toBe(0);
+  });
+
+  it('пустой вход → пустой результат', async () => {
+    const resolver = buildPartitionResolver([]);
+    const res = await resolver.partitionBlockIdsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      [],
+    );
+    expect(res.accessible).toEqual([]);
+    expect(res.denied).toBe(0);
+  });
+
+  it('closed-блок недоступен → denied++; открытый блок → accessible', async () => {
+    const resolver = buildPartitionResolver([
+      {
+        blockId: 'b-closed',
+        groupId: 'g-council',
+        group: { isClosed: true, kind: 'council' },
+      },
+      // b-open — без access-строк → открытый.
+    ]);
+    const res = await resolver.partitionBlockIdsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      ['b-closed', 'b-open'],
+    );
+    expect(res.accessible).toEqual(['b-open']);
+    expect(res.denied).toBe(1);
+  });
+
+  it('закрытый блок виден члену closed-группы (accessible)', async () => {
+    const resolver = buildPartitionResolver([
+      {
+        blockId: 'b-closed',
+        groupId: 'g-council',
+        group: { isClosed: true, kind: 'council' },
+      },
+    ]);
+    const res = await resolver.partitionBlockIdsByAccess(
+      { deptGroupIds: [], closedGroupIds: ['g-council'], isBypass: false },
+      ['b-closed'],
+    );
+    expect(res.accessible).toEqual(['b-closed']);
+    expect(res.denied).toBe(0);
+  });
+});

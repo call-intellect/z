@@ -392,6 +392,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания
   // по источнику identity (via). Покрывает ВСЕ типы знания (не только reasoning).
   private kcSubjectAttributionTotal!: Counter<'via'>;
+  // Ф4 (knowledge-access) — гейт доступа к знаниям. shadow: сколько блоков
+  // было бы отфильтровано (сверка перед enforce); enforce: сколько исключено.
+  private kcAccessShadowDiffTotal!: Counter<'surface'>;
+  private kcAccessDeniedTotal!: Counter<'surface'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -1947,6 +1951,17 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_subject_attribution_total',
       help: 'Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания по источнику identity. via: participant (speakerParticipantId) / userId / personId / email / name (fuzzy) / none (автор не определён).',
       labelNames: ['via'] as const,
+    });
+    // Ф4 (knowledge-access) — гейт доступа к знаниям (shadow / enforce).
+    this.kcAccessShadowDiffTotal = this.getOrCreateCounter({
+      name: 'kc_access_shadow_diff_total',
+      help: 'Ф4 knowledge-access — в shadow-режиме: сколько блоков было бы отфильтровано гейтом доступа (по поверхности). Сверка перед переводом в enforce.',
+      labelNames: ['surface'] as const,
+    });
+    this.kcAccessDeniedTotal = this.getOrCreateCounter({
+      name: 'kc_access_denied_total',
+      help: 'Ф4 knowledge-access — в enforce-режиме: сколько блоков исключено гейтом доступа (по поверхности).',
+      labelNames: ['surface'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -4776,6 +4791,22 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incSubjectAttribution(args: { via: string }): void {
     this.kcSubjectAttributionTotal.inc({ via: args.via });
+  }
+
+  /**
+   * Ф4 (knowledge-access) — shadow-режим: сколько блоков было бы отфильтровано
+   * гейтом доступа (по поверхности). Сверка перед переводом в enforce.
+   */
+  incAccessShadowDiff(args: { surface: string }, count = 1): void {
+    if (count > 0) this.kcAccessShadowDiffTotal.inc({ surface: args.surface }, count);
+  }
+
+  /**
+   * Ф4 (knowledge-access) — enforce-режим: сколько блоков исключено гейтом
+   * доступа (по поверхности).
+   */
+  incAccessDenied(args: { surface: string }, count = 1): void {
+    if (count > 0) this.kcAccessDeniedTotal.inc({ surface: args.surface }, count);
   }
 
   /**

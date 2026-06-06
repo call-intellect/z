@@ -230,8 +230,9 @@ AND (
 **Acceptance:** встреча отдела «Логистика» → блок получает `IdeaBlockAccess{department=Логистика}`; встреча с `closedGroupKind='council'` → блок получает `{closed=Совет}`; `interview` → personal; блок без домена/участников → без access-строк (открыт); backfill повторно = no-op; тесты зелёные.
 **Закрывает:** R5, R6.
 
-### Фаза 4 — Pre-filter доступа во всех поверхностях retrieval + фикс кэша (security-гейт)
+### Фаза 4 — Pre-filter доступа во всех поверхностях retrieval + фикс кэша (security-гейт) ✅ РЕАЛИЗОВАНО
 **Цель:** при `enforce` пользователь получает только доступные ему блоки во всех каналах выдачи.
+> **Реализация (4 части):** A — chat-v2 (выходной шлюз loadContextBlocks/loadContradictingBlocks + pool pre-filter + reasoning-chain) + хелперы резолвера (buildAccessSqlPredicate/loadBlockAccessGroups/partitionBlockIdsByAccess) + метрики kc_access_shadow_diff_total/kc_access_denied_total. B — /search (SQL-предикат, recall ок: full-scan), /snapshot (Prisma where), orchestrator base-retrieval-strategy. C — entities/themes/graph контроллеры (найдены адверсариальной проверкой покрытия). D — blocks.controller (GET /blocks/:id + /links + /reasoning-chain, найдено адверсариально). Кэш RetrievalCache закрыт выходным шлюзом (R10, без правок кэша). block-fetch (машинный путь) — без гейта (dataClass-floor). Полный DB-e2e «логист≠совет» — прод-смоук Ф8.
 **Входит (каждая точка — `...buildAccessWhere(ctx)` при enforce; при off/shadow — без изменения выдачи, shadow считает метрику):**
 - chat-v2 pool org/meeting/card/theme/entity ([chat-v2-retrieval.service.ts:203,242,273,339,359](../../backend/src/modules/knowledge-core/services/chat-v2-retrieval.service.ts#L203)); cosine raw-SQL + recency (:411,:430) — SQL-предикат; graph 1-hop (:533).
 - **Обязательный выходной шлюз** `loadContextBlocks` + `loadContradictingBlocks` ([chat-v2.service.ts:423,808](../../backend/src/modules/knowledge-core/services/chat-v2.service.ts#L423)) — defense-in-depth, ловит и precomputed-путь.

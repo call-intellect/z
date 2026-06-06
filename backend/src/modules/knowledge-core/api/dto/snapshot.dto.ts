@@ -55,6 +55,8 @@ export type SnapshotQueryDto = z.infer<typeof SnapshotQueryRawSchema>;
  */
 export interface SnapshotServiceArgs {
   tenantId: string;
+  /** Ф4 (knowledge-access) — кто запрашивает срез (для гейта групп доступа). */
+  userId: string;
   at: Date;
   entityId?: string;
   signalTypes?: string[];

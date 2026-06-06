@@ -38,6 +38,7 @@ describe('KnowledgeSearchController', () => {
       query: 'тест',
       limit: 5,
       tenantId: 't-A',
+      userId: 'u-A',
     });
     expect(res.results).toEqual([]);
   });

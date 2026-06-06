@@ -4,12 +4,15 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
   CurrentUser,
@@ -18,6 +21,10 @@ import {
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 import { ReasoningChainService } from '../services/reasoning-chain.service';
 
@@ -51,7 +58,71 @@ export class KnowledgeBlocksController {
     // GET /blocks/:id/reasoning-chain.
     @Inject(ReasoningChainService)
     private readonly reasoningChain: ReasoningChainService,
+    // Ф4 (knowledge-access) — гейт доступа в деталке блока / связях /
+    // reasoning-chain. RbacModule/MetricsModule/Config @Global. @Optional,
+    // чтобы legacy-тесты, создающие контроллер позиционно (без этих сервисов),
+    // не падали — при null гейт не активируется (поведение = off).
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
+
+  /**
+   * Ф4 (knowledge-access) — резолв режима гейта + контекста групп пользователя.
+   * Если сервисы не подключены (legacy позиционные тесты) или флаг off —
+   * возвращает enf='off' + ctx=null (поведение байт-в-байт текущее).
+   */
+  private async resolveAccess(
+    tenantId: string,
+    userId: string,
+  ): Promise<{
+    enf: 'off' | 'shadow' | 'enforce';
+    accessCtx: KnowledgeAccessContext | null;
+  }> {
+    if (!this.cfg || !this.accessResolver) {
+      return { enf: 'off', accessCtx: null };
+    }
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off'
+        ? await this.accessResolver.resolveAccessibleGroups({ tenantId, userId })
+        : null;
+    return { enf, accessCtx };
+  }
+
+  /**
+   * Ф4 (knowledge-access) — gate доступа к ОДНОМУ блоку (root деталки/связей/
+   * цепочки). Возвращает true, если блок доступен ИЛИ гейт неактивен (off /
+   * shadow / bypass / нет сервисов). При enforce + недоступном блоке — false
+   * (caller бросает NotFound block_not_found, не раскрывая существование).
+   * shadow → метрика расхождения, но true (выдачу не меняем).
+   */
+  private async isRootBlockAccessible(
+    enf: 'off' | 'shadow' | 'enforce',
+    accessCtx: KnowledgeAccessContext | null,
+    blockId: string,
+  ): Promise<boolean> {
+    if (!this.accessResolver || !this.metrics || !accessCtx || accessCtx.isBypass) {
+      return true;
+    }
+    const groupsMap = await this.accessResolver.loadBlockAccessGroups([blockId]);
+    const groups = groupsMap.get(blockId) ?? [];
+    const ok = this.rbac.canAccessKnowledgeGroup(accessCtx, groups);
+    if (ok) return true;
+    if (enf === 'enforce') {
+      this.metrics.incAccessDenied({ surface: 'blocks' }, 1);
+      return false;
+    }
+    // shadow — считаем расхождение, но отдаём как раньше.
+    this.metrics.incAccessShadowDiff({ surface: 'blocks' }, 1);
+    return true;
+  }
 
   @Get('blocks/:id')
   @ApiOperation({ summary: 'IdeaBlock + evidence + entities' })
@@ -94,6 +165,17 @@ export class KnowledgeBlocksController {
         target = canonical;
         redirected = true;
       }
+    }
+
+    // Ф4 (knowledge-access) — гейт доступа к canonical-блоку (после редиректа
+    // merged_into). При enforce + недоступном блоке — NotFound (не раскрываем
+    // существование закрытого блока); off/shadow/bypass → отдаём как раньше.
+    const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
+    if (!(await this.isRootBlockAccessible(enf, accessCtx, target.id))) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
     }
 
     const [evidence, entityRows, mergedFromRows] = await Promise.all([
@@ -181,18 +263,48 @@ export class KnowledgeBlocksController {
       });
     }
 
-    const [outgoing, incoming] = await Promise.all([
-      this.prisma.ideaBlockLink.findMany({
-        where: { fromBlockId: id, status: 'active', tenantId },
-        include: { toBlock: true },
-        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
-      }),
-      this.prisma.ideaBlockLink.findMany({
-        where: { toBlockId: id, status: 'active', tenantId },
-        include: { fromBlock: true },
-        orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
-      }),
-    ]);
+    // Ф4 (knowledge-access) — гейт доступа к root-блоку. При enforce +
+    // недоступном root — NotFound (как в byId); off/shadow/bypass → как раньше.
+    const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
+    if (!(await this.isRootBlockAccessible(enf, accessCtx, id))) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
+    }
+
+    let outgoing = await this.prisma.ideaBlockLink.findMany({
+      where: { fromBlockId: id, status: 'active', tenantId },
+      include: { toBlock: true },
+      orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+    });
+    let incoming = await this.prisma.ideaBlockLink.findMany({
+      where: { toBlockId: id, status: 'active', tenantId },
+      include: { fromBlock: true },
+      orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    // Ф4 (knowledge-access) — соседи. Контент «другого» блока (name/
+    // criticalQuestion) утекает через каждую связь. Партиционируем id «других»
+    // блоков по группам: enforce — оставляем только связи с доступным соседом
+    // (+incAccessDenied); shadow — только метрика, выдачу не меняем; bypass /
+    // off / нет сервисов → без изменений.
+    if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
+      const otherIds = [
+        ...outgoing.map((l) => l.toBlock.id),
+        ...incoming.map((l) => l.fromBlock.id),
+      ];
+      const { accessible, denied } =
+        await this.accessResolver.partitionBlockIdsByAccess(accessCtx, otherIds);
+      if (enf === 'enforce') {
+        const allow = new Set(accessible);
+        outgoing = outgoing.filter((l) => allow.has(l.toBlock.id));
+        incoming = incoming.filter((l) => allow.has(l.fromBlock.id));
+        this.metrics.incAccessDenied({ surface: 'blocks' }, denied);
+      } else {
+        this.metrics.incAccessShadowDiff({ surface: 'blocks' }, denied);
+      }
+    }
 
     return {
       outgoing: outgoing.map(
@@ -282,8 +394,28 @@ export class KnowledgeBlocksController {
         error: { code: 'block_not_found', message: 'Блок не найден' },
       });
     }
+
+    // Ф4 (knowledge-access) — гейт доступа к root-блоку (как в byId/links).
+    const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
+    if (!(await this.isRootBlockAccessible(enf, accessCtx, id))) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'block_not_found', message: 'Блок не найден' },
+      });
+    }
+
     const q = ReasoningChainQuerySchema.parse(query ?? {});
-    const chain = await this.reasoningChain.buildChain(id, q.depth);
+    // Ф4 (knowledge-access) — при enforce передаём accessWhere в BFS: цепочка
+    // не протащит недоступные соседние узлы (R11). off/shadow → undefined →
+    // поведение байт-в-байт текущее.
+    const accessWhere =
+      enf === 'enforce' && this.accessResolver && accessCtx
+        ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<
+            string,
+            unknown
+          >)
+        : undefined;
+    const chain = await this.reasoningChain.buildChain(id, q.depth, accessWhere);
     return {
       depth: q.depth,
       nodes: chain.nodes.map((n) => ({

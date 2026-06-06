@@ -4,11 +4,14 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -19,6 +22,10 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 
 import {
@@ -53,6 +60,18 @@ export class KnowledgeGraphController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    // Ф4 (knowledge-access) — гейт доступа в BFS-графе. RbacModule/Metrics/Config
+    // @Global. @Optional, чтобы legacy-тесты, создающие контроллер позиционно
+    // (без этих сервисов), не падали — при null гейт не активируется (=off).
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
   @Get('neighbors')
@@ -86,10 +105,25 @@ export class KnowledgeGraphController {
       });
     }
 
+    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
+    let enf: 'off' | 'shadow' | 'enforce' = 'off';
+    let accessCtx: KnowledgeAccessContext | null = null;
+    if (this.cfg && this.accessResolver) {
+      enf = this.cfg.knowledgeAccess.enforcement;
+      if (enf !== 'off') {
+        accessCtx = await this.accessResolver.resolveAccessibleGroups({
+          tenantId,
+          userId: user.id,
+        });
+      }
+    }
+
     return this.bfs({
       tenantId,
       root,
       depth: query.depth,
+      enf,
+      accessCtx,
     });
   }
 
@@ -99,8 +133,12 @@ export class KnowledgeGraphController {
     tenantId: string;
     root: GraphNodeDto;
     depth: number;
+    /** Ф4 (knowledge-access) — режим гейта. */
+    enf: 'off' | 'shadow' | 'enforce';
+    /** Ф4 (knowledge-access) — контекст групп пользователя (null при off / нет userId). */
+    accessCtx: KnowledgeAccessContext | null;
   }): Promise<GraphNeighborsResultDto> {
-    const { tenantId, root, depth } = args;
+    const { tenantId, root, depth, enf, accessCtx } = args;
     const nodesById = new Map<string, GraphNodeDto>();
     const edgesByKey = new Map<string, GraphEdgeDto>();
     let truncated = false;
@@ -141,9 +179,33 @@ export class KnowledgeGraphController {
       if (frontier.length === 0) break;
     }
 
-    const nodes = Array.from(nodesById.values());
+    let nodes = Array.from(nodesById.values());
+
+    // Ф4 (knowledge-access) — block-узлы несут контент знания; фильтруем по
+    // группам ТОЛЬКО block-узлы (entity-узлы не гейтятся). enforce — исключаем
+    // недоступные block-узлы из nodes (рёбра к ним отпадут на фильтре ниже,
+    // ловящем отсутствующий конец) + incAccessDenied. shadow — только метрика,
+    // выдачу не меняем. bypass — видит всё.
+    if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
+      const blockNodeIds = nodes
+        .filter((n) => n.type === 'block')
+        .map((n) => n.id);
+      const { accessible, denied } =
+        await this.accessResolver.partitionBlockIdsByAccess(
+          accessCtx,
+          blockNodeIds,
+        );
+      if (enf === 'enforce') {
+        const allow = new Set(accessible);
+        nodes = nodes.filter((n) => n.type !== 'block' || allow.has(n.id));
+        this.metrics.incAccessDenied({ surface: 'graph' }, denied);
+      } else {
+        this.metrics.incAccessShadowDiff({ surface: 'graph' }, denied);
+      }
+    }
+
     // Отфильтровываем edges, у которых хотя бы один конец отсутствует
-    // (могло случиться при truncated).
+    // (могло случиться при truncated ИЛИ при гейте доступа выше).
     const edges = Array.from(edgesByKey.values()).filter((e) => {
       const fromExists = nodes.some(
         (n) => n.id === e.from || this.nodeKey(n) === e.from,

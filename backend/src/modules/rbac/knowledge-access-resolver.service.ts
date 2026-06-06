@@ -153,6 +153,77 @@ export class KnowledgeAccessResolver {
     };
   }
 
+  /**
+   * Ф4 — SQL-предикат доступа для raw-SQL поверхностей (search/cosine).
+   * Алиас таблицы IdeaBlock в внешнем запросе ДОЛЖЕН быть `b`. pushParam —
+   * функция surface'а, добавляющая параметр и возвращающая `$N`. Возвращает
+   * AND-фрагмент (начинается с пробела+AND) или '' для bypass.
+   */
+  buildAccessSqlPredicate(
+    ctx: KnowledgeAccessContext,
+    pushParam: (v: unknown) => string,
+  ): string {
+    if (ctx.isBypass) return '';
+    const pClosed = pushParam(ctx.closedGroupIds);
+    const pDept = pushParam(ctx.deptGroupIds);
+    return `
+      AND NOT EXISTS (
+        SELECT 1 FROM "IdeaBlockAccess" a JOIN "KnowledgeGroup" g ON a."groupId" = g.id
+        WHERE a."blockId" = b.id AND g."isClosed" AND a."groupId" <> ALL(${pClosed}::text[])
+      )
+      AND (
+        NOT EXISTS (
+          SELECT 1 FROM "IdeaBlockAccess" a2 JOIN "KnowledgeGroup" g2 ON a2."groupId" = g2.id
+          WHERE a2."blockId" = b.id AND g2.kind = 'department'
+        )
+        OR EXISTS (
+          SELECT 1 FROM "IdeaBlockAccess" a3
+          WHERE a3."blockId" = b.id AND a3."groupId" = ANY(${pDept}::text[])
+        )
+      )`;
+  }
+
+  /** Группы доступа набора блоков: blockId → [{groupId,isClosed,kind}]. */
+  async loadBlockAccessGroups(
+    blockIds: string[],
+  ): Promise<Map<string, Array<{ groupId: string; isClosed: boolean; kind: string }>>> {
+    const map = new Map<string, Array<{ groupId: string; isClosed: boolean; kind: string }>>();
+    if (blockIds.length === 0) return map;
+    const rows = await this.prisma.ideaBlockAccess.findMany({
+      where: { blockId: { in: blockIds } },
+      select: { blockId: true, groupId: true, group: { select: { isClosed: true, kind: true } } },
+    });
+    for (const r of rows) {
+      const arr = map.get(r.blockId) ?? [];
+      arr.push({ groupId: r.groupId, isClosed: r.group.isClosed, kind: r.group.kind });
+      map.set(r.blockId, arr);
+    }
+    return map;
+  }
+
+  /**
+   * Партиционирует blockIds на доступные/недоступные по ctx. bypass → все
+   * доступны. Используется выходным шлюзом chat-v2 (enforce — фильтр, shadow —
+   * счёт denied). Работает на МАЛЫХ наборах (topK) — post-filter, не для пула.
+   */
+  async partitionBlockIdsByAccess(
+    ctx: KnowledgeAccessContext,
+    blockIds: string[],
+  ): Promise<{ accessible: string[]; denied: number }> {
+    if (ctx.isBypass || blockIds.length === 0) {
+      return { accessible: blockIds, denied: 0 };
+    }
+    const groupsMap = await this.loadBlockAccessGroups(blockIds);
+    const accessible: string[] = [];
+    let denied = 0;
+    for (const id of blockIds) {
+      const groups = groupsMap.get(id) ?? [];
+      if (this.rbac.canAccessKnowledgeGroup(ctx, groups)) accessible.push(id);
+      else denied++;
+    }
+    return { accessible, denied };
+  }
+
   invalidate(userId: string, tenantId: string): void {
     this.cache.delete(`${userId}:${tenantId}`);
   }

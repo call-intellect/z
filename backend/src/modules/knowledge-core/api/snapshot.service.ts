@@ -1,7 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 
 import type {
   BlockSearchItemDto,
@@ -42,13 +48,33 @@ import type {
 export class SnapshotService {
   private readonly logger = new Logger(SnapshotService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // Ф4 (knowledge-access) — гейт доступа в /snapshot. RbacModule @Global.
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
+  ) {}
 
   async getSnapshot(args: SnapshotServiceArgs): Promise<SnapshotResponseDto> {
     const startedAt = Date.now();
     const fetchLimit = args.limit + 1;
 
-    const blockWhere = this.buildBlockWhere(args);
+    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off'
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.userId,
+          })
+        : null;
+
+    // enforce → дополняем where фрагментом доступа (на уровне БД). shadow/off →
+    // where без изменений; shadow считает denied метрикой после выборки.
+    const blockWhere = this.buildBlockWhere(args, enf, accessCtx);
     const linkWhere = this.buildLinkWhere(args);
 
     const [blockRows, linkRows] = await Promise.all([
@@ -74,6 +100,17 @@ export class SnapshotService {
       : linkRows;
 
     const blockIds = trimmedBlocks.map((b) => b.id);
+
+    // Ф4 knowledge-access — shadow: считаем, сколько блоков было бы
+    // отфильтровано (выдачу НЕ меняем). enforce фильтрует уже в buildBlockWhere.
+    if (enf === 'shadow' && accessCtx && !accessCtx.isBypass) {
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockIds,
+      );
+      this.metrics.incAccessShadowDiff({ surface: 'snapshot' }, denied);
+    }
+
     const [evidenceMap, entitiesMap] = await Promise.all([
       this.loadEvidence(blockIds),
       this.loadEntities(blockIds),
@@ -110,15 +147,27 @@ export class SnapshotService {
   /**
    * `WHERE` для IdeaBlock: tenantId + canonical + bi-temporal-окно
    * + опц. signalTypes + опц. entityId (через IdeaBlockEntity).
+   *
+   * Ф4 (knowledge-access): при enforce и непустом accessCtx (не bypass)
+   * добавляем фрагмент `buildAccessWhere(ctx)` в общий `AND`. off/shadow —
+   * where без изменений (байт-в-байт текущее поведение).
    */
-  private buildBlockWhere(args: SnapshotServiceArgs): Prisma.IdeaBlockWhereInput {
+  private buildBlockWhere(
+    args: SnapshotServiceArgs,
+    enforcement: 'off' | 'shadow' | 'enforce' = 'off',
+    accessCtx: KnowledgeAccessContext | null = null,
+  ): Prisma.IdeaBlockWhereInput {
+    const and: Prisma.IdeaBlockWhereInput[] = [
+      { OR: [{ validFrom: null }, { validFrom: { lte: args.at } }] },
+      { OR: [{ validUntil: null }, { validUntil: { gt: args.at } }] },
+    ];
+    if (enforcement === 'enforce' && accessCtx && !accessCtx.isBypass) {
+      and.push(this.accessResolver.buildAccessWhere(accessCtx));
+    }
     const where: Prisma.IdeaBlockWhereInput = {
       tenantId: args.tenantId,
       status: 'canonical',
-      AND: [
-        { OR: [{ validFrom: null }, { validFrom: { lte: args.at } }] },
-        { OR: [{ validUntil: null }, { validUntil: { gt: args.at } }] },
-      ],
+      AND: and,
     };
     if (args.signalTypes && args.signalTypes.length > 0) {
       // Каст — фильтр валидирован Zod'ом по SIGNAL_TYPE_VALUES.

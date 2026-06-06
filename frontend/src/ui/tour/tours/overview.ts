@@ -169,7 +169,7 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 17 — Концьерж
+    // 17 — Помощник компании
     {
       id: 'concierge',
       target: '[data-tour-target="welcome.concierge"]',

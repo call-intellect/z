@@ -142,6 +142,7 @@ export function AssistantSidebar() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        data-tour-target="welcome.concierge"
         className={cn(
           'fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105',
           open && 'rotate-90',

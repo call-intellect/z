@@ -49,8 +49,8 @@ export const projectTour: TourDefinition = {
     {
       id: 'concierge',
       target: '[data-tour-target="welcome.concierge"]',
-      title: 'Концьерж',
-      body: 'Скажите словами: «создай задачу для Иванова на завтра по объекту Тверская» — Кора разберёт.',
+      title: 'Помощник компании',
+      body: 'Спросите Кору что угодно про компанию — здесь же срочное, сигналы и вопросы от неё.',
       placement: 'left',
       primaryAction: { label: 'Готово', kind: 'complete' },
     },

@@ -22,6 +22,8 @@ import {
   VideoOff,
   CircleStop,
   Circle,
+  LogOut,
+  UserPlus,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -30,6 +32,8 @@ import { toast } from 'sonner';
 import { Modal } from '@/ui/components/shared/Modal';
 import { Button } from '@/ui/components/shared/Button';
 import { t } from '@/lib/i18n';
+import { copyToClipboard } from '@/lib/copy-to-clipboard';
+import { InviteDialog } from '@/ui/shared/InviteDialog';
 
 import { RaiseHandButton } from './RaiseHandButton';
 
@@ -62,13 +66,17 @@ export function ControlsBar({
   const room = useRoomContext();
   const host = useHostControls(meetingId);
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [linkFallback, setLinkFallback] = useState<string | null>(null);
 
   const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/m/${meetingId}`);
-      toast.success(t('meetings.copied'));
-    } catch {
-      toast.error(t('errors.unknown'));
+    const url = `${window.location.origin}/m/${meetingId}`;
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      toast.success('Ссылка скопирована');
+    } else {
+      // clipboard и execCommand недоступны → показываем ссылку для ручного копирования
+      setLinkFallback(url);
     }
   };
 
@@ -145,7 +153,15 @@ export function ControlsBar({
             <IconBtn
               icon={<Copy size={20} strokeWidth={1.75} />}
               label="Ссылка"
+              title="Скопировать ссылку"
               onClick={() => { void copyLink(); }}
+            />
+
+            <IconBtn
+              icon={<UserPlus size={20} strokeWidth={1.75} />}
+              label="Пригласить"
+              title="Пригласить участников"
+              onClick={() => setInviteOpen(true)}
             />
 
             {/* Кнопка записи — только если ручной режим */}
@@ -165,6 +181,15 @@ export function ControlsBar({
                 }}
               />
             )}
+
+            <button
+              type="button"
+              onClick={() => { void room.disconnect(); onLeave(); }}
+              className="flex flex-col items-center gap-1 rounded-xl bg-bg-overlay px-4 py-2 text-[10px] font-medium text-fg-primary transition-colors hover:bg-bg-overlay/80"
+            >
+              <LogOut size={20} strokeWidth={1.75} />
+              <span>Выйти</span>
+            </button>
 
             <button
               type="button"
@@ -207,6 +232,33 @@ export function ControlsBar({
           </Button>
         </div>
       </Modal>
+
+      <InviteDialog
+        meetingId={meetingId}
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+      />
+
+      <Modal
+        open={linkFallback !== null}
+        onClose={() => setLinkFallback(null)}
+        title="Скопируйте ссылку вручную"
+      >
+        <p className="mb-3 text-sm text-fg-secondary">
+          Автоматическое копирование недоступно. Выделите ссылку и скопируйте её.
+        </p>
+        <input
+          readOnly
+          value={linkFallback ?? ''}
+          onFocus={(e) => e.currentTarget.select()}
+          className="w-full rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm text-fg-primary"
+        />
+        <div className="mt-4 flex justify-end">
+          <Button variant="secondary" onClick={() => setLinkFallback(null)}>
+            Закрыть
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 }
@@ -218,6 +270,7 @@ function IconBtn({
   active,
   activeClass,
   disabled,
+  title,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -225,10 +278,12 @@ function IconBtn({
   active?: boolean;
   activeClass?: string;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       disabled={disabled}
       className={clsx(

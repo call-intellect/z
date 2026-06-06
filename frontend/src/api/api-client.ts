@@ -175,7 +175,18 @@ export class ApiClient {
         }
         if (res.status === 403) {
           const parsed = await parseError(res, requestId);
-          if (parsed.code === 'subscription_required') {
+          // Пэйвол: глобальный SubscriptionGuard на бэке бросает 403 с кодом
+          // `subscription_demo` (никогда не платили) или `subscription_expired`
+          // (подписка закончилась); легаси-код `subscription_required` тоже
+          // поддерживаем. На любой из них поднимаем единый эвент →
+          // SubscriptionContext открывает PaywallModal, чтобы пользователь
+          // видел понятное объяснение, а не «нажал — ничего не происходит».
+          // Контракт кодов: backend/src/modules/billing/guards/subscription.guard.ts.
+          if (
+            parsed.code === 'subscription_required' ||
+            parsed.code === 'subscription_demo' ||
+            parsed.code === 'subscription_expired'
+          ) {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('subscription:required'));
             }

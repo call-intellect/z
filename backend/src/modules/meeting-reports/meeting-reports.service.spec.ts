@@ -9,7 +9,11 @@
  *       - Happy path → enqueueCustomReport вызван + статус='pending'.
  */
 
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -28,6 +32,7 @@ interface BuildHarnessOpts {
   liveCount?: number;
   template?: Record<string, unknown> | null;
   existingPending?: Record<string, unknown> | null;
+  aiResult?: Record<string, unknown> | null;
 }
 
 function buildHarness(opts: BuildHarnessOpts = {}): {
@@ -53,7 +58,7 @@ function buildHarness(opts: BuildHarnessOpts = {}): {
       findUnique: vi.fn(async () => meeting),
     },
     aiResult: {
-      findUnique: vi.fn(async () => null),
+      findUnique: vi.fn(async () => opts.aiResult ?? null),
     },
     meetingReport: {
       findMany: vi.fn(async () => []),
@@ -164,5 +169,34 @@ describe('MeetingReportsService.create', () => {
     expect(h.enqueue).toHaveBeenCalledTimes(1);
     expect(h.reportCreate).toHaveBeenCalledTimes(1);
     expect(h.metricsCreated).toHaveBeenCalledWith({ kind: 'additional' });
+  });
+});
+
+describe('MeetingReportsService.get', () => {
+  it('get primary by aiResult.id → 200 с output (S6-07)', async () => {
+    const h = buildHarness({
+      aiResult: {
+        id: 'ai-1',
+        meetingId: 'meet-1',
+        summary: 'Краткое саммари',
+        structuredData: { tasks: ['t1'], decisions: [] },
+        meetingType: 'sales',
+        createdAt: new Date('2026-06-06T10:00:00Z'),
+        updatedAt: new Date('2026-06-06T10:05:00Z'),
+        promptTemplateVersion: null,
+      },
+    });
+    const result = await h.svc.get('meet-1', 'ai-1', 'user-host');
+    expect(result.kind).toBe('primary');
+    expect(result.id).toBe('ai-1');
+    expect(result.output).toEqual({ tasks: ['t1'], decisions: [] });
+    expect(result.promptTemplateVersionId).toBeNull();
+  });
+
+  it('get неизвестного reportId → NotFoundException', async () => {
+    const h = buildHarness({ aiResult: null });
+    await expect(
+      h.svc.get('meet-1', 'unknown-id', 'user-host'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

@@ -345,7 +345,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         meetingType: meeting.type,
         markdown: parsed.summary_markdown,
         modelUsed,
-        hasAiResult: meeting.aiResult !== null,
       });
     } catch (err) {
       failures.push(
@@ -557,40 +556,32 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Пишет markdown summary в AiResult.summaryFast. Если AiResult ещё не
-   * существует (legacy ai-pipeline не отработал) — создаём минимальную
-   * запись только с summaryFast / summaryFastModel / summaryFastGeneratedAt.
-   *
-   * НЕ перезаписываем `summary` и `summaryV2`.
+   * Пишет markdown summary в AiResult.summaryFast. Атомарный upsert по
+   * уникальному meetingId (S6-01, Р5): убирает TOCTOU-гонку с analyze.worker
+   * (раньше ветвление по snapshot-флагу hasAiResult → при параллельном создании
+   * AiResult падал Unique constraint на create). НЕ перезаписываем `summary`/`summaryV2`.
    */
   private async writeSummary(args: {
     meetingId: string;
     meetingType: Parameters<PrismaService['aiResult']['create']>[0]['data']['meetingType'];
     markdown: string;
     modelUsed: string;
-    hasAiResult: boolean;
   }): Promise<void> {
     const text = args.markdown.trim();
     if (text.length === 0) return;
     const nowAt = new Date();
-    if (args.hasAiResult) {
-      await this.prisma.aiResult.update({
-        where: { meetingId: args.meetingId },
-        data: {
-          summaryFast: text,
-          summaryFastModel: args.modelUsed,
-          summaryFastGeneratedAt: nowAt,
-        },
-      });
-      return;
-    }
-    // AiResult ещё нет — создаём минимально-валидный.
-    await this.prisma.aiResult.create({
-      data: {
+    await this.prisma.aiResult.upsert({
+      where: { meetingId: args.meetingId },
+      update: {
+        summaryFast: text,
+        summaryFastModel: args.modelUsed,
+        summaryFastGeneratedAt: nowAt,
+      },
+      create: {
         meetingId: args.meetingId,
         meetingType: args.meetingType,
-        // `summary` обязательный (String @db.Text) — пишем пустую строку,
-        // чтобы не блокировать legacy. Заполнится позже analyze.worker'ом.
+        // `summary` обязательный (String @db.Text) — пустая строка, заполнится
+        // позже analyze.worker'ом (он тоже upsert'ит, не перезатирая summaryFast).
         summary: '',
         modelUsed: args.modelUsed,
         summaryFast: text,

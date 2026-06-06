@@ -120,6 +120,38 @@ export class MeetingReportsService {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrOrgAdmin(meeting, userId);
 
+    // S6-07 (Р4): primary-отчёт list() синтезирует из AiResult с id=aiResult.id.
+    // get() обязан отдавать его по тому же id — иначе «Открыть» основного
+    // отчёта даёт 404. Ветка только при reportId === aiResult.id (additional
+    // отчёты остаются на пути meetingReport.findFirst ниже).
+    const aiResult = await this.prisma.aiResult.findUnique({
+      where: { meetingId: meeting.id },
+      include: { promptTemplateVersion: { include: { template: true } } },
+    });
+    if (aiResult && reportId === aiResult.id) {
+      const output =
+        (aiResult.structuredData as unknown) ??
+        (aiResult.summary ? { summary: aiResult.summary } : null);
+      return {
+        kind: 'primary',
+        id: aiResult.id,
+        meetingId: meeting.id,
+        templateId: aiResult.promptTemplateVersion?.templateId ?? null,
+        templateName:
+          aiResult.promptTemplateVersion?.template.name ??
+          `Системный шаблон ${meeting.type}`,
+        status: 'ready',
+        outputPreview: makePreview(aiResult.summary),
+        createdAt: aiResult.createdAt.toISOString(),
+        completedAt: aiResult.updatedAt.toISOString(),
+        llmCostUsd: null,
+        llmDurationMs: null,
+        errorMessage: null,
+        output,
+        promptTemplateVersionId: null,
+      };
+    }
+
     const report = await this.prisma.meetingReport.findFirst({
       where: { id: reportId, meetingId: meeting.id, deletedAt: null },
       include: { promptTemplate: true },

@@ -158,6 +158,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
         meetingId={meetingId}
         meetingTitle={meeting.title}
         waitingForHost={meeting.status === 'scheduled'}
+        inviteToken={inviteToken ?? null}
         onJoined={(data) =>
           setJoined({ joined: data, identityToParticipantId: {} })
         }

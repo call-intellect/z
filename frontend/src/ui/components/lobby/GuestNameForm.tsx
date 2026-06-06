@@ -14,12 +14,15 @@ import {
 
 type Props = {
   meetingId: string;
+  /** Персональный токен приглашения (`?inv=`). Если задан — шлём в join, чтобы
+   * приглашённый переиспользовал pre-seed `invitee:`-строку, а не плодил дубль. */
+  inviteToken?: string | null;
   /** Если organizer ещё не запустил встречу, форму всё равно показываем —
    * по сабмиту backend вернёт ошибку, которую покажем тостом. */
   onJoined: (data: JoinMeetingApiResponse) => void;
 };
 
-export function GuestNameForm({ meetingId, onJoined }: Props) {
+export function GuestNameForm({ meetingId, inviteToken, onJoined }: Props) {
   const [name, setName] = useState('');
   const [pending, setPending] = useState(false);
   const [noiseEnabled, setNoiseEnabled] = useState(true);
@@ -43,7 +46,10 @@ export function GuestNameForm({ meetingId, onJoined }: Props) {
     }
     setPending(true);
     try {
-      const result = await meetingsApi.join(meetingId, { guest_name: trimmed });
+      const result = await meetingsApi.join(meetingId, {
+        guest_name: trimmed,
+        ...(inviteToken ? { invite_token: inviteToken } : {}),
+      });
       onJoined(result);
     } catch (e) {
       const message =

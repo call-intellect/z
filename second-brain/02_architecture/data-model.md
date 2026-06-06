@@ -675,6 +675,7 @@ erDiagram
 
 ### Project
 - `id String @id @default(cuid())`, `tenantId String`, `slug String` (unique per tenant), `identifier String` (короткий префикс задач: PROJ, SALES — до 5 симв.), `name`, `description? @db.Text`, `ownerId`, `defaultAssigneeId?`, `defaultStateId?`, `network Int @default(0)` (0=Private, 2=Public-внутри-org), `archivedAt?`, `timezone @default("Europe/Moscow")`.
+- `systemGenerated Boolean @default(false)` (2026-06-06) — помечает системно-сгенерированные проекты-контейнеры (org-scope «Спринт компании», который `quickCreate` создаёт, когда не указан ни один scope). Скрыты из `GET /projects` (фильтр `systemGenerated:false` в `ProjectsService.findAll`), но доступны через раздел «Спринты». Миграция `20260606071402_project_system_generated` (аддитивная: `ALTER TABLE "Project" ADD COLUMN "systemGenerated" BOOLEAN NOT NULL DEFAULT false`). Backfill для legacy-контейнеров: `scripts/backfill-system-generated-projects.ts`.
 - Feature-flags: `cycleViewEnabled`, `intakeViewEnabled`, `gantViewEnabled @default(false)`, `timeTrackingEnabled @default(false)`.
 - `teamTemplateId?` FK на TeamTemplate (создан из шаблона).
 - `entityId?` для графа знаний.

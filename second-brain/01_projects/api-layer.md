@@ -473,6 +473,14 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 **Новый conversational `eventType 'meeting.invite'`** (Ф3) — политика каналов `telegram → email → in_app` (`EVENT_TYPE_CHANNEL_POLICY`), payload-схема в `event-payload.registry.ts`; обрабатывается в `telegram-bot.adapter` / `max-bot.adapter`. Для **внешних** адресатов (email без аккаунта) приглашение идёт через `mail.sendMeetingInvite`, не через conversational (см. [[../02_architecture/code-pitfalls]] §«два движка email»).
 
+## Meetings — допригласить на идущую встречу + журнал/комната (Трекер+Встречи, 2026-06-06)
+
+ТЗ — [`plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md) (B5). Модуль `meetings`. Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`.
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/meetings/:id/invitees` | **Допригласить участников на joinable-встречу** (`status ∈ {scheduled, active}` — единый критерий `isJoinableStatus`). Тело `{ invitees: [{ userId?, personId?, email?, sendVia: ('email'\|'telegram')[] }] }`. **Идемпотентно** (повтор уже приглашённого `userId`/`personId` = no-op). Переиспользует `seedInviteeInTx` + `deliverMeetingInvites` — ровно ту же логику, что и при создании встречи (тот же `inviteToken` / joinUrl `${publicFrontendUrl}/m/<id>?inv=<token>`). Ответ `{ added, skipped }`. | host-only, `@RequireSubscription` |
+
 ## ChatBox-интеграция (2026-06-05)
 
 ТЗ — [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Модуль `chatbox`. Все (кроме webhook) под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `chatbox`. Профильная заметка — [[chatbox-integration]], фронт — [[frontend-pages]] §«Чаты».
@@ -510,5 +518,6 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-05 (ChatBox-интеграция):** добавлен раздел «ChatBox-интеграция» — `/chatbox/integration(+workspaces,sync,sync/status)`, `/chatbox/chats(+/:id,/messages,POST send)`, `/chatbox/members(+/:id/link)`, inbound webhook `/webhooks/chatbox/:tenantId/:secret`. Новый RBAC-ресурс `chatbox`, privacy-инвариант (super_admin без bypass на текст переписки). См. [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md).
 - **2026-06-05 (пакет улучшений дашбордов B/D/G/E):** новые эндпоинты `GET /dashboard/operations/weekly-per-person` (D, план-факт по людям), `GET /dashboard/people-at-risk` (G, люди под риском), `PATCH /me/promises/:blockId/reschedule` (E, перенос срока обещания), `GET|POST /me/social-contribution/opt-out` (E, Redis-preference); `GET /dashboard/pulse-patterns` дополнен `goalVector.primaryGoalId/proScore/contraScore/byDepartment` (B, компас); `GET /me/social-contribution` дополнен `constructiveFeedbackCount` (E). Сервисы — [[../02_architecture/module-map]] §«Пакет улучшений дашбордов». Контракты — `plans/tz/2026-06-05-{goal-vector-compass,weekly-per-person-plan-fact,employee-pulse-and-people-at-risk,personal-cabinet-me}.md`.
 - **2026-06-06 (надёжность отчёта встречи):** `GET /meetings/:id/reports/:reportId` теперь отдаёт **200 и для primary-отчёта** (когда `reportId === aiResult.id`) — `get()` синтезирует `ReportDetailDto` из `AiResult` (`output` = `structuredData` или `{summary}`, `promptTemplateVersionId: null`), зеркаля primary-ветку `list()`. Раньше искал только `MeetingReport` → 404 на «Открыть» основного отчёта (S6-07). Контракт additional-отчётов не изменён (primary-ветка только при совпадении `aiResult.id`). См. [plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md](../../plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md) Ф1.
+- **2026-06-06 (Трекер + Встречи, B5):** новый эндпоинт `POST /meetings/:id/invitees` — допригласить участников на joinable-встречу (host-only, `@RequireSubscription`, идемпотентно по `userId`/`personId`); переиспользует `seedInviteeInTx` + `deliverMeetingInvites` (та же логика, что при создании встречи). Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`. См. [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
 
 [[../index|← index]]

@@ -40,6 +40,27 @@ covers: React-контексты и кросс-компонентные патт
   `PaywallModal`.
 - Источник: [plans/tz/2026-06-05-bonus-access-and-paywall-sync.md](../../plans/tz/2026-06-05-bonus-access-and-paywall-sync.md) Ф2 (коммит `8522ecfb`).
 
+## Хелперы и хуки сессии «Трекер + Встречи» (2026-06-06)
+
+Общие переиспользуемые механизмы, выделенные в финальной сессии Трекер+Встречи
+(ТЗ [`plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md), ветка `sergdev`).
+
+- **`src/lib/badge-polling.ts`** (A7 — консолидация поллинга бейджей навигации) —
+  единые константы `BADGE_POLL_INTERVAL_MS = 60_000` и `BADGE_DEDUPE_MS = 30_000`:
+  общий интервал + dedup для badge-хуков (`useIntakePendingCount` /
+  `usePendingActionsCount` / `useMyInboxCount`). Навигация между страницами больше
+  не плодит повторные запросы за бейджами.
+- **`src/lib/copy-to-clipboard.ts`** — `copyToClipboard(text)` с fallback на
+  `execCommand('copy')` (когда `navigator.clipboard` недоступен / отказал —
+  напр. в небезопасном контексте). Используется в журнале встреч (B1/B3),
+  комнате и лобби (B3/B4).
+- **`src/domain/meeting.ts`** — `isJoinableStatus(status)` (`true` для
+  `scheduled` | `active`) — единый критерий «к встрече можно присоединиться /
+  допригласить» для UI журнала и комнаты, зеркалит бэк-gate `POST /meetings/:id/invitees`.
+- **`src/ui/shared/InviteDialog.tsx`** — переиспользуемый диалог приглашения:
+  `ParticipantPicker` с `showChannels` → `meetingsApi.addInvitees`. Один компонент
+  для «Пригласить» в комнате и в журнале встреч (B3/B5).
+
 ---
 
 [[../index|← index]] · [[frontend-pages]]

@@ -326,6 +326,23 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 `/settings/organization` очищена до вкладки **«Информация»** — управление участниками/приглашениями ушло в «Команду». Диалоги `InviteEmployeeDialog`/`InviteCreatedDialog` перенесены в `frontend/src/ui/components/team/`. Мастер «Знакомства» снова переоткрываем (убран редирект «есть отделы → /dashboard»).
 
+## Детальные страницы на async `params` (Next 16, 2026-06-06)
+
+В Next 16 `params` в server-компоненте страницы — **Promise**, его нужно
+`await`. 26 детальных `page.tsx` читали `params` синхронно (`{ params }: { params: { id } }`),
+из-за чего `id` оказывался `undefined` → переходы вида `/tables/undefined`,
+«Сотрудник не найден», «не найдено» на карточках. Все 26 переведены на
+эталон `cards/[id]`: сигнатура `params: Promise<{…}>` + `const { id } = await params`.
+
+Затронутые группы детальных маршрутов: **tables** (`/tables/[id]`),
+**documents** (`/documents/[id]`), **issues** (`/issues/[id]`),
+**sprints** (`/sprints/[id]`, `/sprints/[id]/review`), **roles** (`/roles/[id]`),
+**persons** (`/persons/[id]` и подстраницы), **clones**
+(`/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]`) и
+**admin-detail** (карточки в `(admin)/admin/*`).
+
+Источник: [plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md](../../plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md) Ф1 (коммит `521f7553`). ТЗ оценивало 22 страницы, по факту после merge `dev` их оказалось 26 — чинился весь класс с acceptance-грепом.
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
@@ -344,6 +361,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-06-05 (ChatBox-интеграция):** новая группа сайдбара **«Чаты»** (route `/chats`, гейт `gateFeature:'feature.chatbox'`, подгруппа «Интеграции» → пункт «Чат бокс»). Страницы: `/chats` (`ChatsListClient` — список чатов с бейджами типа мессенджера MAX/WhatsApp/Telegram/виджет/«Другое», единая карточка клиента по `customerExternalId`, менеджер, последнее сообщение), `/chats/[id]` (`ChatDetailClient` — лента сообщений + сегментация на сессии + поле ответа менеджера), `/chats/integrations/chatbox` (`ChatboxIntegrationClient` — ввод токена → выбор воркспейса → режим синка + кнопки ручного синка), `/chats/integrations/chatbox/managers` (`ChatboxManagersClient` — маппинг менеджеров на сотрудников). Слои `src/api/chatbox.api.ts` → `src/domain/chatbox.ts` (ApiDto→DomainModel, маппинг `channelType`→иконка/лейбл), SWR. `domain/entitlement.ts` пополнен флагом `feature.chatbox`. Источник: [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md). Профильная заметка — [[chatbox-integration]].
 
 - **2026-06-05 (онбординг собственника: должность + Telegram-каналы):** на странице «Я» (`/me`) добавлены три блока — карточка «Должность» (`MyPositionCard`: Popover+Command, выбор существующей `Role` или создание новой → `PATCH /persons/:id {roleId}`, шапка обновляется через `mutate(['me-profile'])`), карточка «Telegram» (`MyTelegramCard`: статус привязки + CTA на `/me/channels`), баннер-подсказка «заполните профиль» (виден пока нет должности и/или Telegram не `linked`, якоря `#me-card-position`/`#me-card-telegram`). В меню «Моё пространство» добавлен пункт **«Каналы»**→`/me/channels` (единый канон привязки Telegram). Со страницы `/settings/integrations` убран дубль `TelegramLinkSection` (файл удалён) — там остался только `DestinationsClient` (направления доставки); пункт «Интеграции» и страница сохранены. Фронт-only, бэкенд не тронут. Все нужные API уже были (`meProfileApi`/`rolesDomainApi`/`personsDomainApi`/`listMyChannels`). Источник: [plans/tz/2026-06-05-onboarding-owner-position-and-channels-entry.md](../../plans/tz/2026-06-05-onboarding-owner-position-and-channels-entry.md).
+- **2026-06-06 (детальные страницы → async `params` + UI-честность):** 26 детальных `page.tsx` (tables/documents/issues/sprints/roles/persons/clones/admin-detail) переведены на async `params` (Next 16) — чинит класс-баг «/tables/undefined» и «не найдено» (см. раздел «Детальные страницы на async `params`» выше). В 66 `metadata.title` суффикс `— Z` → `— Кора`. Объединены два наложенных плавающих помощника: у Консьержа (`ConciergeFloatingButton`) убран собственный FAB — он открывается только по событию `concierge:open`; единственная плавающая кнопка кабинета — «Помощник компании» (`AssistantSidebar`), на неё перенесена цель тура `welcome.concierge`. Деанглицизмы в `i18n/ru.ts` и заголовок чата «AI-чат» → «Помощник компании» (`/chat`, `/chat-v2`, командная палитра). `/dump` после сохранения показывает «куда попало» + ссылки; «Вопрос Коры» в `/actions` ведёт на `/me/notifications?id=<id>` (`NotificationsClient` раскрывает конкретный вопрос). Источник: [plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md](../../plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md) (коммиты `521f7553`/`edbb9554`/`d9730afb`/`dae2bb44`/`b9312735`). См. также [[frontend-contexts-hooks]] §«Единый плавающий помощник».
 - **2026-06-05 (telegram-channel-reachability-fix):** `/me/channels` и карточка «Telegram» на «Я» получили честное состояние **«Не настроен»** (`channel_not_configured`) — когда глобальный Telegram-бот без токена; вместо кнопки в тупик показывается «бот не настроен администратором» (+ссылка в `/admin/content/global-channels` для owner/admin). Канал «В личном кабинете» теперь «Работает автоматически» (без «Привязан: id»); «потолок чувствительности» свёрнут в `<details>`. Deep-link строится из `botUsername` канала. Бэкенд: `listMyChannels`+`resolveBindings` теперь видят глобальные бот-каналы. Источник: [plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md](../../plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md).
 
 [[../index|← index]]

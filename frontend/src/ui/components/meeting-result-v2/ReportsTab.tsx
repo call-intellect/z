@@ -30,6 +30,11 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { Button } from '@/ui/components/shared/Button';
 import { Modal } from '@/ui/components/shared/Modal';
+import {
+  structuredFieldLabel,
+  isEmptyStructuredValue,
+  StructuredFieldValue,
+} from './structured-report';
 
 export type ReportsTabProps = {
   meetingId: string;
@@ -497,10 +502,11 @@ function ReportDetailDialog({
 }
 
 /**
- * Динамический рендер JSON-output: верхний уровень — пары «ключ: значение».
- * Строки выводим как параграф, массивы — как список, объекты — как pre.
- * Это безопасный fallback: у разных шаблонов структура разная, и UI не
- * знает о ней заранее (ТЗ §11 «Несогласованность output-schema»).
+ * Динамический рендер output отчёта: верхний уровень — пары «ключ: значение» с
+ * русскими заголовками (`structuredFieldLabel`); значения человекочитаемо через
+ * общий `StructuredFieldValue` (НЕ сырой JSON, пустые секции скрыты). Безопасный
+ * fallback: у разных шаблонов структура разная, UI не знает её заранее
+ * (ТЗ §11 «Несогласованность output-schema», 2026-06-06 Фаза 5 S6-04).
  */
 function ReportOutputRenderer({ output }: { output: unknown | null }) {
   if (output === null || output === undefined) {
@@ -509,7 +515,9 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
   if (typeof output !== 'object') {
     return <p className="text-sm text-fg-secondary">{String(output)}</p>;
   }
-  const entries = Object.entries(output as Record<string, unknown>);
+  const entries = Object.entries(output as Record<string, unknown>).filter(
+    ([, v]) => !isEmptyStructuredValue(v),
+  );
   if (entries.length === 0) {
     return <div className="text-sm text-fg-secondary">Пустой отчёт.</div>;
   }
@@ -517,48 +525,15 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
     <div className="flex flex-col gap-4">
       {entries.map(([key, value]) => (
         <section key={key}>
-          <h5 className="mb-1 text-sm font-semibold text-fg-primary">{key}</h5>
-          {renderValue(value)}
+          <h5 className="mb-1 text-sm font-semibold text-fg-primary">
+            {structuredFieldLabel(key)}
+          </h5>
+          <div className="text-sm text-fg-secondary">
+            <StructuredFieldValue value={value} />
+          </div>
         </section>
       ))}
     </div>
-  );
-}
-
-function renderValue(value: unknown) {
-  if (value === null || value === undefined) {
-    return <p className="text-sm text-fg-tertiary">—</p>;
-  }
-  if (typeof value === 'string') {
-    return <p className="whitespace-pre-wrap text-sm text-fg-secondary">{value}</p>;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return <p className="text-sm text-fg-secondary">{String(value)}</p>;
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return <p className="text-sm text-fg-tertiary">пусто</p>;
-    }
-    return (
-      <ul className="list-inside list-disc text-sm text-fg-secondary">
-        {value.map((v, i) => (
-          <li key={i}>
-            {typeof v === 'string' || typeof v === 'number' ? (
-              String(v)
-            ) : (
-              <pre className="overflow-x-auto text-xs">
-                {JSON.stringify(v, null, 2)}
-              </pre>
-            )}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  return (
-    <pre className="overflow-x-auto rounded bg-bg-subtle p-2 text-xs text-fg-secondary">
-      {JSON.stringify(value, null, 2)}
-    </pre>
   );
 }
 

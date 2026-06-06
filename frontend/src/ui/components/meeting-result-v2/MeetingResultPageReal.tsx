@@ -44,7 +44,6 @@ import {
   Scissors,
   Share2,
   Sparkles,
-  StickyNote,
   Trash2,
 } from 'lucide-react';
 import useSWR from 'swr';
@@ -110,6 +109,11 @@ import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
 import { fmtTime, fmtDurationCompact } from './format-utils';
+import {
+  structuredFieldLabel,
+  isEmptyStructuredValue,
+  StructuredFieldValue,
+} from './structured-report';
 
 const MEETING_TYPE_LABELS: Record<string, string> = {
   team: 'Team sync',
@@ -129,8 +133,7 @@ type TabKey =
   | 'chapters'
   | 'transcript'
   | 'chat'
-  | 'tasks'
-  | 'notes';
+  | 'tasks';
 
 export type MeetingResultPageRealProps = {
   meetingId: string;
@@ -307,7 +310,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
             </TabsTrigger>
             <TabsTrigger value="chat">
               <MessageCircle size={14} strokeWidth={1.75} />
-              Чат
+              Чат комнаты
               {roomMessages.length > 0 && (
                 <span className="ml-1 rounded-full bg-bg-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-tertiary">
                   {roomMessages.length}
@@ -322,10 +325,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   {primaryTasks.length}
                 </span>
               )}
-            </TabsTrigger>
-            <TabsTrigger value="notes">
-              <StickyNote size={14} strokeWidth={1.75} />
-              Заметки
             </TabsTrigger>
           </TabsList>
 
@@ -407,10 +406,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
               onSeek={onSeek}
               onMutate={mutateTasks}
             />
-          </TabsContent>
-
-          <TabsContent value="notes">
-            <NotesTab primarySummary={primarySummary} />
           </TabsContent>
         </Tabs>
       </div>
@@ -916,6 +911,15 @@ function OverviewTab({
   );
 }
 
+/** Русская плюрализация: pluralRu(1,'реплика','реплики','реплик') → 'реплика'. */
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
 function StatsRow({ stats }: { stats: Array<{ label: string; value: string | number }> }) {
   return (
     <div
@@ -937,43 +941,27 @@ function StatsRow({ stats }: { stats: Array<{ label: string; value: string | num
 }
 
 function StructuredDataCard({ data }: { data: unknown }) {
-  // structuredData может быть object с разными ключами под тип встречи.
-  // Рендерим как key/value сетку с capped длиной строк.
   const entries = useMemo(() => {
     if (!data || typeof data !== 'object') return [];
-    return Object.entries(data as Record<string, unknown>);
+    return Object.entries(data as Record<string, unknown>).filter(
+      ([, v]) => !isEmptyStructuredValue(v),
+    );
   }, [data]);
   if (entries.length === 0) return null;
-
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {entries.map(([k, v]) => (
         <Card key={k}>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-            {k}
+            {structuredFieldLabel(k)}
           </div>
           <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
-            {renderStructuredValue(v)}
+            <StructuredFieldValue value={v} />
           </div>
         </Card>
       ))}
     </div>
   );
-}
-
-function renderStructuredValue(v: unknown): string {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-    return String(v);
-  }
-  if (Array.isArray(v)) {
-    return v.map((item) => renderStructuredValue(item)).join(', ');
-  }
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
 }
 
 function FollowUpCard({ text }: { text: string }) {
@@ -1298,12 +1286,15 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
         <div className="rounded-xl border border-border-subtle bg-bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-fg-primary">
-              Транскрипт · {data!.turns.length} реплик
+              Транскрипт · {data!.turns.length}{' '}
+              {pluralRu(data!.turns.length, 'реплика', 'реплики', 'реплик')}
             </h3>
             <div className="flex items-center gap-2">
-              {data!.durationSeconds && (
+              {(data!.durationSeconds ?? 0) > 0 && (
                 <span className="font-mono text-xs text-fg-tertiary">
-                  {Math.round(data!.durationSeconds / 60)} мин
+                  {(data!.durationSeconds ?? 0) < 60
+                    ? '<1 мин'
+                    : `${Math.round((data!.durationSeconds ?? 0) / 60)} мин`}
                 </span>
               )}
               <Button
@@ -1601,46 +1592,6 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
         </div>
       )}
     </div>
-  );
-}
-
-function NotesTab({
-  primarySummary,
-}: {
-  primarySummary: { markdown: string; source: 'fast' | 'v2' | 'legacy' } | null;
-}) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = async () => {
-    if (!primarySummary) return;
-    try {
-      await navigator.clipboard.writeText(primarySummary.markdown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      toast.error('Не удалось скопировать');
-    }
-  };
-  return (
-    <Card>
-      <CardHeader
-        title="Заметки"
-        accessory={
-          primarySummary ? (
-            <Button variant="outline" size="sm" onClick={onCopy}>
-              <Copy size={12} />
-              {copied ? 'Скопировано' : 'Скопировать'}
-            </Button>
-          ) : undefined
-        }
-      />
-      {primarySummary ? (
-        <MeetingSummaryRender markdown={primarySummary.markdown} />
-      ) : (
-        <p className="m-0 text-sm text-fg-tertiary">
-          Нет данных. Заметки появятся после AI-анализа.
-        </p>
-      )}
-    </Card>
   );
 }
 

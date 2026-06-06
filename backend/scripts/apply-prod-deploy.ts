@@ -403,6 +403,20 @@ const STEPS: Step[] = [
     hint: 'role=subject для исторических блоков ВСЕХ типов + per-adapter identity (Ф1 knowledge-access)',
     skipBootstrap: true,
   },
+  // 2026-06-06 — Ф3 (knowledge-access-groups-and-provenance): department-группы
+  // (IdeaBlockAccess) для исторических canonical-блоков из существующих
+  // functional axisLabels (+ участники/автор). closed задним числом НЕ
+  // назначается (В5: историческое знание = открыто). Идемпотентен (кандидаты —
+  // блоки без IdeaBlockAccess). Без --departments скрипт no-op — поэтому
+  // прогон через STEPS осмысленный только с args=['--departments'].
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 3.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-block-access.ts',
+    args: ['--departments'],
+    hint: 'department-группы для исторических блоков по флагу --departments (Ф3 knowledge-access)',
+    skipBootstrap: true,
+  },
   {
     phase: 'backfill',
     script: 'scripts/backfill-commitment-author.ts',

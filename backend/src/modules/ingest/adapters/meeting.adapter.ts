@@ -121,6 +121,10 @@ export class MeetingIngestAdapter {
       meetingId: meeting.id,
       type: meeting.type,
       title: meeting.title,
+      // Ф3 (knowledge-access) — ручная пометка закрытости встречи
+      // (null | 'leadership' | 'council' | 'personal'). Проставляется хостом
+      // (Ф7 UI); block-ingest читает её из payload в `deriveBlockAccess`.
+      closedGroupKind: meeting.closedGroupKind ?? null,
       startedAt: meeting.startedAt?.toISOString() ?? null,
       endedAt: meeting.endedAt?.toISOString() ?? null,
       durationMs: meeting.durationMs ?? null,

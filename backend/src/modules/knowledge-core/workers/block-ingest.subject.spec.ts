@@ -83,6 +83,7 @@ function buildWorker(opts: {
     metrics as never, // metrics
     {} as never, // axisClassifier
     cfg as never, // cfg
+    {} as never, // blockAccessDeriver (Ф3 — не дёргается в persistBlock)
   );
   return {
     worker,

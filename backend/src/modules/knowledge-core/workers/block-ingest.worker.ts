@@ -32,6 +32,7 @@ import {
   SIGNAL_TYPE_VALUES,
 } from '../prompts/block-ingest.prompt';
 import { AxisClassifierService } from '../services/axis-classifier.service';
+import { BlockAccessDeriverService } from '../services/block-access-deriver.service';
 import {
   BlockExtractionService,
   type ExtractedBlock,
@@ -203,6 +204,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(AxisClassifierService)
     private readonly axisClassifier: AxisClassifierService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // Ф3 (knowledge-access) — детерминированный вывод групп доступа блока.
+    @Inject(BlockAccessDeriverService)
+    private readonly blockAccessDeriver: BlockAccessDeriverService,
   ) {}
 
   onModuleInit(): void {
@@ -708,6 +712,26 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
                 err: err instanceof Error ? err.message : String(err),
               },
               'block-ingest: AxisClassifier.classify упал — продолжаем без axis-меток',
+            );
+          });
+
+        // Ф3 knowledge-access — детерминированный вывод групп доступа блока
+        // (department из домена/участников/автора + closed из типа/флага встречи).
+        // Пишется ВСЕГДА (не за enforcement) — данные готовы к будущему enforce.
+        // best-effort: ошибка не валит ingest. ВАЖНО: после classify — чтобы
+        // functional-axis-метки уже были записаны (department-путь читает их).
+        await this.blockAccessDeriver
+          .deriveForBlock({
+            tenantId: event.tenantId,
+            blockId,
+            sourceType: event.sourceType,
+            sourceExternalId: event.sourceExternalId ?? '',
+            payload,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              { blockId, err: err instanceof Error ? err.message : String(err) },
+              'block-ingest: deriveBlockAccess упал — продолжаем без групп доступа',
             );
           });
       }

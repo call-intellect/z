@@ -219,7 +219,7 @@ AND (
 **Acceptance:** `prisma:generate` ок; `resolveAccessibleGroups` юнит (member отдела → его dept-группа; owner → isBypass=true); `buildAccessWhere` для bypass = пустой фильтр; миграция повторно = no-op (Prisma migrate deploy идемпотентен); типы/линт/билд зелёные.
 **Закрывает:** R3, R4, R9.
 
-### Фаза 3 — Ingest-вывод группы блока + бэкфилл (детерминированно)
+### Фаза 3 — Ingest-вывод группы блока + бэкфилл (детерминированно) ✅ РЕАЛИЗОВАНО
 **Цель:** каждый новый блок получает свои группы; старое знание = «открыто».
 **Входит:**
 - После `AxisClassifier.classify` ([block-ingest.worker.ts:683](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L683)) — шаг `deriveBlockAccess`: department-группа из (а) functional-метки → `FunctionalDomain`→`DepartmentDomainLink`→Department ([schema.prisma:5131](../../backend/prisma/schema.prisma#L5131)) И (б) отделов участников (`payload.participants[].userId/personId`→`Person.primaryDepartmentId`). closed-группа из источника: `Meeting.closedGroupKind` / `MeetingTypeConfig.defaultClosedGroupKind` (interview→personal) / null. Запись в `IdeaBlockAccess` (via='department'|'closed').

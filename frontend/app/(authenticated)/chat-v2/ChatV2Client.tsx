@@ -303,7 +303,7 @@ function ConversationDetail({
         <div className="flex items-center gap-2">
           <MessageCircle size={18} className="text-accent" />
           <h1 className="text-lg font-semibold">
-            {detail.data?.title ?? (conversationId ? 'Новый диалог' : 'AI-чат компании')}
+            {detail.data?.title ?? (conversationId ? 'Новый диалог' : 'Помощник компании')}
           </h1>
         </div>
         {detail.data ? (

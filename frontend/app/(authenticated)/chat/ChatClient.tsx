@@ -28,9 +28,9 @@ export function ChatClient() {
         <header className="mb-4 flex items-center gap-2">
           <MessageCircle size={20} className="text-accent" />
           <div>
-            <h1 className="text-2xl font-semibold">AI-чат</h1>
+            <h1 className="text-2xl font-semibold">Помощник компании</h1>
             <p className="text-sm text-fg-tertiary">
-              Задайте вопрос по всему архиву встреч и знаний организации. AI
+              Задайте вопрос по всему архиву встреч и знаний организации. Кора
               подбирает релевантные блоки и отвечает с цитатами.
             </p>
           </div>

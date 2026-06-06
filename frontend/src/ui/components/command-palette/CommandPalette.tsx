@@ -1020,7 +1020,7 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
   },
   {
     href: '/chat-v2',
-    label: 'AI-чат компании',
+    label: 'Помощник компании',
     subtitle: 'Полноценный диалог с памятью компании',
     icon: Sparkles,
   },

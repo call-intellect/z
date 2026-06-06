@@ -225,6 +225,35 @@ export class VoxService {
             },
           );
         }
+        // S5-02 (ТЗ 2026-06-06, research): текст есть, но пословных таймингов нет
+        // → поведение/длительность нулевые. Логируем ТОЛЬКО форму ответа (ключи,
+        // наличие segments), без текста транскрипта (PII), чтобы на следующей
+        // реальной встрече установить, под каким ключом Vox отдаёт word-timing
+        // (или подтвердить, что модель его не возвращает вовсе).
+        if (wordsCount === 0 && textLength > 0) {
+          const ro = (raw ?? {}) as Record<string, unknown>;
+          const nestedRo = (ro.result ?? ro.data ?? {}) as Record<string, unknown>;
+          const segs = ro.segments ?? nestedRo.segments;
+          const firstSegmentKeys =
+            Array.isArray(segs) && segs[0] && typeof segs[0] === 'object'
+              ? Object.keys(segs[0] as object)
+              : [];
+          this.dbLog(
+            'WARN',
+            'vox.no_words',
+            `vox: COMPLETED с текстом (${textLength} симв.), но БЕЗ пословных таймингов — поведение/длительность будут нулевыми`,
+            {
+              taskId,
+              model: this.cfg.ai.vox.model,
+              durationSeconds: result.durationSeconds,
+              rawKeys: Object.keys(ro),
+              nestedKeys: Object.keys(nestedRo),
+              hasSegments: Array.isArray(segs),
+              segmentsCount: Array.isArray(segs) ? segs.length : 0,
+              firstSegmentKeys,
+            },
+          );
+        }
         return {
           status: 'COMPLETED',
           transcriptText: result.transcriptText,
@@ -270,6 +299,8 @@ async function safeReadText(response: Response): Promise<string> {
  * Парсит ответ Vox в `VoxResult`. Допускает разные формы поля `words`:
  *   - `words: [{ word, startMs, endMs }]`
  *   - `words: [{ text, start_ms, end_ms }]`
+ *   - `segments: [{ words: [...] }]` — пословные тайминги внутри сегментов
+ *     (Whisper/Google/Deepgram-стиль; top-level или в `result`/`data`).
  *   - отсутствие `words` — допустимо (тогда merge_worker оставит speech как один turn).
  */
 function parseVoxResult(raw: unknown): {
@@ -309,29 +340,49 @@ function parseVoxResult(raw: unknown): {
         ? obj.error_message
         : undefined;
 
-  const wordsRaw = (obj.words ??
-    obj.wordsTimestamps ??
-    nested.words ??
-    nested.wordsTimestamps ??
-    []) as unknown[];
-  const words = Array.isArray(wordsRaw)
-    ? wordsRaw
-        .map((w): { word: string; startMs: number; endMs: number } | null => {
-          if (!w || typeof w !== 'object') return null;
-          const wo = w as Record<string, unknown>;
-          const word =
-            typeof wo.word === 'string'
-              ? wo.word
-              : typeof wo.text === 'string'
-                ? wo.text
-                : '';
-          const startMs = numericMs(wo.startMs ?? wo.start_ms ?? wo.start);
-          const endMs = numericMs(wo.endMs ?? wo.end_ms ?? wo.end);
-          if (!word || startMs === null || endMs === null) return null;
-          return { word, startMs, endMs };
-        })
-        .filter((x): x is { word: string; startMs: number; endMs: number } => x !== null)
-    : undefined;
+  const mapWords = (
+    arr: unknown[],
+  ): Array<{ word: string; startMs: number; endMs: number }> =>
+    arr
+      .map((w): { word: string; startMs: number; endMs: number } | null => {
+        if (!w || typeof w !== 'object') return null;
+        const wo = w as Record<string, unknown>;
+        const word =
+          typeof wo.word === 'string'
+            ? wo.word
+            : typeof wo.text === 'string'
+              ? wo.text
+              : '';
+        const startMs = numericMs(wo.startMs ?? wo.start_ms ?? wo.start);
+        const endMs = numericMs(wo.endMs ?? wo.end_ms ?? wo.end);
+        if (!word || startMs === null || endMs === null) return null;
+        return { word, startMs, endMs };
+      })
+      .filter(
+        (x): x is { word: string; startMs: number; endMs: number } => x !== null,
+      );
+
+  const flatWordsRaw =
+    obj.words ?? obj.wordsTimestamps ?? nested.words ?? nested.wordsTimestamps;
+  let words = Array.isArray(flatWordsRaw) ? mapWords(flatWordsRaw) : undefined;
+
+  // S5-02 (ТЗ 2026-06-06): многие ASR кладут пословные тайминги в
+  // segments[].words (Whisper/Google/Deepgram-стиль). Если плоских words нет —
+  // собираем из сегментов (top-level или в result/data). Единицы те же (numericMs).
+  if (!words || words.length === 0) {
+    const segmentsRaw = (obj.segments ?? nested.segments ?? []) as unknown[];
+    if (Array.isArray(segmentsRaw) && segmentsRaw.length > 0) {
+      const segWords: unknown[] = [];
+      for (const seg of segmentsRaw) {
+        if (seg && typeof seg === 'object') {
+          const sw = (seg as Record<string, unknown>).words;
+          if (Array.isArray(sw)) segWords.push(...sw);
+        }
+      }
+      const fromSegments = mapWords(segWords);
+      if (fromSegments.length > 0) words = fromSegments;
+    }
+  }
 
   return {
     status,

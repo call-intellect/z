@@ -174,4 +174,68 @@ describe('VoxService.poll', () => {
     await expectation;
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it('COMPLETED с segments[].words → пословные тайминги извлекаются', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          text: 'Привет мир',
+          durationSeconds: 2,
+          segments: [
+            { words: [
+              { word: 'Привет', startMs: 0, endMs: 500 },
+              { word: 'мир', startMs: 600, endMs: 900 },
+            ] },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.words).toHaveLength(2);
+    expect(result.transcriptText).toBe('Привет мир');
+  });
+
+  it('COMPLETED с result.segments[].words (форма text/start_ms/end_ms) → извлекаются', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          result: {
+            text: 'Один',
+            durationSeconds: 1,
+            segments: [{ words: [{ text: 'Один', start_ms: 0, end_ms: 300 }] }],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.words).toHaveLength(1);
+  });
+
+  it('COMPLETED с текстом но без words/segments → words отсутствуют (честно, без падения)', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ status: 'COMPLETED', text: 'Текст без таймингов', durationSeconds: 48 }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.transcriptText).toBe('Текст без таймингов');
+    expect(result.words ?? []).toHaveLength(0);
+  });
 });

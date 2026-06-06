@@ -186,7 +186,14 @@ export function pickPrimaryTasks(items: TaskDomain[]): TaskDomain[] {
 **Acceptance:** на тест-встрече с fast=1+main=5 вкладка «Задачи» и стат-карта показывают **6** (объединение, без дублей); «Action items»/«Задач не найдено» не показывает 0 при наличии задач; греп: в `pickPrimaryTasks` нет `if (fast.length > 0) return fast`; `bun run typecheck && bun run lint && bun run build` (frontend) зелёные.
 **Закрывает:** S6-03.
 
-## Фаза 3 — ASR word-timestamps: диагностика и фикс (S5-02, research-tracked) `[ ]`
+## Фаза 3 — ASR word-timestamps: диагностика и фикс (S5-02, research-tracked) `[x]`
+> **Вывод диагностики 3.0 (по чтению кода, без сырого прод-ответа):**
+> - **(в) подтверждено:** `vox.submit` отправляет только `file/model/punctuationMode/diarizationEnabled` — **нет параметра запроса пословных таймингов**. Угадывать имя параметра НЕ стал (риск 400, как было с `language: «property language should not exist»`) — это решение владельца/нужны доки Vox.
+> - **(б) закрыто кодом:** `parseVoxResult` покрывал words только под плоскими `words/wordsTimestamps` (top-level и `result`/`data`), но НЕ `segments[].words` (почти универсальная ASR-форма Whisper/Google/Deepgram). **Добавлено:** при отсутствии плоских words собираем из `segments[].words` тем же word-mapper'ом (единицы не менял). Если Vox отдаёт так — тайминги теперь извлекутся, merger построит turn'ы, `totalDurationSeconds>0`, метрики ненулевые.
+> - **(а) не доказуемо без сырого ответа:** модель `v3_e2e_rnnt` может не возвращать word-ts by design. **Инструментировано:** новый лог `vox.no_words` (WARN, dbLog) при «текст есть, words=0» пишет ТОЛЬКО форму ответа (`rawKeys/nestedKeys/hasSegments/segmentsCount/firstSegmentKeys`, без текста — PII-safe). Следующая реальная встреча покажет точную форму → тогда решение: (б) расширить ещё / (в) добавить submit-param по докам / сменить модель (владелец).
+> - **Фаза 4 (честный UX) — основной ответ ПОКА** корень не подтверждён на проде: нули скрыты, длительность из записи.
+> - Тесты (golden, через `poll`+fetch-mock): `segments[].words` → извлечены; `result.segments[].words` (text/start_ms/end_ms) → извлечены; текст без words/segments → пусто без падения. 10 тестов зелёные. typecheck/lint/build ок.
+> - **TODO-реестр:** строку в `second-brain/04_не-сделано/` про «корень word-ts не подтверждён на проде» добавить, когда файл освободится от незакоммиченной правки параллельной сессии (на момент сдачи был занят).
 **Мини-картография:** `backend/src/modules/ai/services/vox.service.ts` (`parseVoxResult` ~270-296, `pollResult` ~191-234, лог `vox.completed`), `backend/src/modules/ai/services/merger.ts` (turn-builder), `backend/src/modules/ai/workers/transcribe.worker.ts`, `behavior-metrics.worker.ts`.
 **Цель:** восстановить пословные тайминги, чтобы `Transcript.totalDurationSeconds` и поведенческие метрики были ненулевыми на нормальной записи.
 **Шаг 3.0 — диагностика (обязательно ДО фикса, research):** определить, ПОЧЕМУ `words` пуст. Гипотезы и проверки:

@@ -54,7 +54,7 @@ describe('ProbePendingProvider (B0)', () => {
     expect(countMock.mock.calls[0]![0].where.id).toEqual({ notIn: ['nt-1'] });
   });
 
-  it('list: severity urgent по просроченному expiresAt; actionUrl /feed/probe-questions', async () => {
+  it('list: severity urgent по просроченному expiresAt; actionUrl ведёт к конкретному вопросу в /me/notifications', async () => {
     const past = new Date(Date.now() - 60_000);
     findManyMock.mockResolvedValue([
       { id: 'nt-9', expiresAt: past, createdAt: new Date() },
@@ -68,7 +68,7 @@ describe('ProbePendingProvider (B0)', () => {
     });
     expect(items[0]!.severity).toBe('urgent');
     expect(items[0]!.canQuickConfirm).toBe(false);
-    expect(items[0]!.actionUrl).toBe('/feed/probe-questions');
+    expect(items[0]!.actionUrl).toBe('/me/notifications?id=nt-9');
     expect(items[0]!.resourceId).toBe('nt-9');
   });
 

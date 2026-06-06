@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { Loader2, Send, X, MessageSquarePlus, MessageSquare, Sparkles } from 'lucide-react';
 
@@ -54,6 +54,19 @@ export function NotificationsClient() {
   const [tab, setTab] = useState<Tab>('inbox');
   const [filter, setFilter] = useState<Filter>('unread');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Deep-link из /actions «Вопрос Коры» (actionUrl=/me/notifications?id=<id>):
+  // сразу раскрываем конкретное уведомление и показываем его среди всех
+  // (а не только среди непрочитанных), чтобы ответить на нужный вопрос.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (id) {
+      setSelectedId(id);
+      setFilter('all');
+      setTab('inbox');
+    }
+  }, []);
 
   const listKey = currentOrgId
     ? ['my-notifications', currentOrgId, filter]

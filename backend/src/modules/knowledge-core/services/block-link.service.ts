@@ -188,11 +188,15 @@ export class BlockLinkService {
         });
         const parsed = this.parseVerdict(out.text);
         if (parsed) return parsed;
+        // S6-02: доля невалидного JSON per-attempt (видна ещё до терминального
+        // fallback). ?.(...) — метрика @Optional() + мок может не иметь метода.
+        this.metrics?.incKcBlockLinkerInvalidJson?.({ reason: 'parse' });
         this.logger.warn(
           { fromId, toId, attempt },
           'block-linker: invalid JSON LLM-арбитра — повтор',
         );
       } catch (err) {
+        this.metrics?.incKcBlockLinkerInvalidJson?.({ reason: 'llm_error' });
         this.logger.warn(
           {
             fromId,

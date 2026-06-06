@@ -223,7 +223,8 @@ export function pickPrimaryTasks(items: TaskDomain[]): TaskDomain[] {
 **Acceptance:** Обзор и диалог отчёта показывают русские заголовки и список задач (не JSON-строку, не англо-ключи); транскрипт — корректная форма мн.числа; вкладок «Чат» и «Заметки»-дубль в tablist нет; правая панель чата на месте; грепы: в `ReportOutputRenderer`/Обзоре нет вывода сырых `tasks/blockers/...` без маппинга; в tablist нет `value="chat"`/«Заметки»-дубля; typecheck/lint/build зелёные.
 **Закрывает:** S6-04, S6-09, S6-10, S6-11.
 
-## Фаза 6 — Устойчивость block-linker к JSON (S6-02) `[ ]`
+## Фаза 6 — Устойчивость block-linker к JSON (S6-02) `[x]`
+> Реализовано 2026-06-06. РЕВИЗИЯ: устойчивость УЖЕ была (strict `json_schema`-режим, ретрай ×2, `tryParseJson` снимает ```-обёртку/вытаскивает {…}, fallback на none + метрика на исчерпании; покрыто тестами valid/fenced/garbage×2/throw×2). Единственный пробел — нет метрики доли невалидных ответов per-attempt. Добавлен счётчик `kc_block_linker_invalid_json_total` (reason=parse|llm_error), инкремент в обеих ветках цикла; тест «грязный→валидный через ретрай → связь строится + метрика». typecheck/lint/build зелёные (8 тестов).
 **Мини-картография:** `KNOWLEDGE_GRAPH/BlockLinkService` (грепнуть `block-linker: invalid JSON LLM-арбитра` / `BlockLinkService` в `backend/src/modules/knowledge-core/`). Перед правкой перечитать.
 **Цель:** арбитр связей не терять при «грязном» JSON.
 **Что входит:** строгий JSON-режим запроса к LLM (если провайдер поддерживает `response_format`/JSON-mode — см. правило кэш-дружественных промптов, SYSTEM не ломать) ИЛИ устойчивый парс (извлечение JSON-блока, повтор уже есть). Метрика доли невалидных ответов (по возможности).

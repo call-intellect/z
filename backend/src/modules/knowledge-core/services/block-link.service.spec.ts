@@ -114,6 +114,7 @@ describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый пар
   function makeMetrics(): BusinessMetricsService {
     return {
       incKcBlockLinkerFallbackNone: vi.fn(),
+      incKcBlockLinkerInvalidJson: vi.fn(),
     } as unknown as BusinessMetricsService;
   }
 
@@ -238,5 +239,35 @@ describe('BlockLinkService.judgeLink (Фаза 4 — устойчивый пар
     expect(metrics.incKcBlockLinkerFallbackNone).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'exhausted' }),
     );
+  });
+
+  it('грязный ответ на 1-й попытке + валидный на 2-й → связь строится, метрика invalid_json(parse)', async () => {
+    const router = makeRouterReturning([
+      { text: 'преамбула без JSON' },
+      {
+        text: JSON.stringify({
+          relationType: 'develops',
+          confidence: 0.77,
+          explanation: 'B развивает A',
+          validFrom: null,
+          validUntil: null,
+        }),
+      },
+    ]);
+    const metrics = makeMetrics();
+    const svc = new BlockLinkService({} as never, router, undefined, metrics);
+    const verdict = await svc.judgeLink(linkArgs);
+
+    // Связь НЕ потеряна — ретрай восстановил.
+    expect(verdict.relationType).toBe('develops');
+    expect(verdict.confidence).toBe(0.77);
+    expect(router.call).toHaveBeenCalledTimes(2);
+    // Метрика невалидного JSON инкрементирована ровно один раз (1-я попытка).
+    expect(metrics.incKcBlockLinkerInvalidJson).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'parse' }),
+    );
+    expect(metrics.incKcBlockLinkerInvalidJson).toHaveBeenCalledTimes(1);
+    // Терминального fallback НЕ было.
+    expect(metrics.incKcBlockLinkerFallbackNone).not.toHaveBeenCalled();
   });
 });

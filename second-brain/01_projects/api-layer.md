@@ -503,6 +503,28 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 **Privacy-инвариант:** super_admin **не** получает bypass на чтение текста переписки (`ChatboxMessage.text`). Коды ошибок machine-readable: `chatbox_token_invalid`, `chatbox_workspace_not_found`, `chatbox_not_configured`, `chatbox_chat_not_found`, `chatbox_send_failed`, `chatbox_member_not_found`, `person_not_found`. Swagger-тег `chatbox`.
 
+## knowledge-access — группы доступа к знаниям (2026-06-06)
+
+ТЗ — [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Модуль `knowledge-access`, контроллер `knowledge-access-admin.controller.ts` под `CookieAuthGuard + TenantGuard + OrgAdminGuard` (owner/admin). Модель — [[../02_architecture/data-model]] §«Группы доступа к знаниям», принципы — [[rbac-access-control]] §«Группы доступа к знаниям». Каждая мутация инвалидирует кэш групп (`KnowledgeAccessResolver.invalidateAll()`).
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/knowledge-access/groups` | список групп доступа компании (с числом участников) | owner/admin |
+| GET | `/api/v1/knowledge-access/matrix` | направленная матрица видимости отделов (`GroupVisibilityPolicy`) | owner/admin |
+| PUT | `/api/v1/knowledge-access/matrix/:subjectGroupId` | задать список видимых отделов для отдела-субъекта. Тело `{ visibleGroupIds: string[] }` | owner/admin |
+| GET | `/api/v1/knowledge-access/groups/:groupId/members` | список членов группы | owner/admin |
+| POST | `/api/v1/knowledge-access/groups/:groupId/members` | добавить человека в группу (override/clearance). Тело `{ personId }` | owner/admin |
+| DELETE | `/api/v1/knowledge-access/groups/:groupId/members/:personId` | убрать человека из группы | owner/admin |
+| PATCH | `/api/v1/knowledge-access/meeting-types/:typeId/closed-default` | крутилка дефолта закрытости по типу встречи. Тело `{ defaultClosedGroupKind: null \| 'leadership' \| 'council' \| 'personal' }` | owner/admin |
+
+**Флаг закрытости встречи** (модуль `meetings`, `meetings.controller.ts`):
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| PATCH | `/api/v1/meetings/:id/closed-group` | пометить встречу закрытой (`Meeting.closedGroupKind`: null/leadership/council/personal); постфактум. Тело `{ closedGroupKind }` → `{ id, closedGroupKind }` | host-only, `@RequireSubscription` |
+
+Гейт доступа в retrieval — без отдельных эндпоинтов и кодов ошибок: отфильтрованные блоки просто не попадают в выдачу (не 403). Включается флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off/shadow/enforce, дефолт off).
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.

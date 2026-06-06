@@ -89,6 +89,8 @@ UI: `/persons/:id` — двухстадийный диалог (введи ФИ�
 
 ## 3. `dataClass` routing в LlmRouter
 
+> **Важно — две РАЗНЫЕ оси (не путать).** `dataClass` управляет **маршрутизацией LLM и egress** (какому провайдеру можно отдать данные, см. ниже). Группы доступа к знаниям (`KnowledgeGroup`, knowledge-access, 2026-06-06) управляют **видимостью знания конкретным пользователем** внутри Org (см. §6). Это параллельные измерения: `dataClass` — про «куда уходят данные на обработку», группы — про «кто из сотрудников видит блок в выдаче».
+
 Поле `LlmTaskRoute.requiredDataClass: DataClass?` (null = `internal`).
 
 Конфиг провайдеров (см. `llm-router.service.ts`):
@@ -131,6 +133,25 @@ UI: `/persons/:id` — двухстадийный диалог (введи ФИ�
 Gauges обновляются `CoreMetricsSnapshotCron @Cron('*/5 * * * *')` — per-tenant `groupBy` запросы.
 
 **Cardinality TODO**: `tenant`-label потенциально большой. На MVP допустимо (несколько сотен Org). При росте — заменить на `tenant_bucket = hash % 64`.
+
+## 6. Группы доступа к знаниям (видимость знания пользователем) — knowledge-access (2026-06-06)
+
+Отдельная от `dataClass` ось: ограничивает, **какие блоки знаний попадут в выдачу** AI-чата/поиска/клона/проекций конкретному сотруднику. Полное описание модели, резолвера и флага выката — [rbac-access-control.md §«Группы доступа к знаниям»](../01_projects/rbac-access-control.md). ТЗ: [plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md).
+
+Кратко для безопасности:
+- Группы (`KnowledgeGroup`: department/leadership/council/personal) + связь блок↔группа (`IdeaBlockAccess`) + направленная матрица (`GroupVisibilityPolicy`) — отдельные модели, смысл `dataClass` НЕ трогают.
+- Гейт за флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off→shadow→enforce, дефолт off); owner/admin/super — bypass.
+- Дефолт — знание открыто всей Org; закрытость только из явного флага встречи / `interview`→personal.
+
+### Новые метрики `kc_access_*` / `kc_subject_attribution_*`
+
+`BusinessMetricsService` ([backend/src/common/metrics/business-metrics.service.ts](../../backend/src/common/metrics/business-metrics.service.ts)):
+
+| Метрика | Тип | Labels | Назначение |
+|---|---|---|---|
+| `kc_subject_attribution_total` | counter | `via` (participant/userId/personId/email/name/none) | Ф1 — детерминированная subject-атрибуция автора знания по источнику identity |
+| `kc_access_shadow_diff_total` | counter | `surface` | shadow-режим: сколько блоков было бы отфильтровано гейтом (сверка перед enforce) |
+| `kc_access_denied_total` | counter | `surface` | enforce-режим: сколько блоков исключено гейтом доступа |
 
 ## 5. Не реализовано (vNext)
 

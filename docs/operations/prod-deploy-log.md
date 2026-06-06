@@ -64,6 +64,32 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔐 2026-06-06 — Доступ к знаниям через группы + фундамент-провенанс (knowledge-access)
+
+> Контракт: `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`. Ветка `feature/knowledge-access-groups`. 8 фаз: Ф1 провенанс автора на все типы + per-adapter identity · Ф2 модель групп + резолвер · Ф3 ingest-вывод группы блока · Ф4 security-гейт во всех поверхностях retrieval · Ф5 контекст клонов в правах спрашивающего · Ф6 наследование группы на проекции · Ф7 frontend admin (матрица/членство/флаг встречи) · Ф8 выкат.
+>
+> **Зачем для прода:** 1 аддитивная миграция (4 модели + 2 поля) + 1 seed (группы) + 2 backfill (subject-атрибуция всех типов, department-группы) + 1 patch (interview→personal) + 2 новых флага. **Гейт по умолчанию OFF — поведение байт-в-байт текущее.** Выкат безопасно поэтапный: off → shadow (сверка метрик) → enforce.
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `KNOWLEDGE_ACCESS_ENFORCEMENT`** = `off` | `shadow` | `enforce`, **дефолт `off`** (`env.schema.ts`). Режим гейта доступа к знаниям. На выкате оставить `off`; перевод в `shadow`/`enforce` — см. Шаг 12. owner/admin/super — bypass всегда.
+  - **AdminSetting `knowledge.subjectAttributionAllTypes`** (bool, **default TRUE**, code-fallback TRUE через `TypedConfigService.getDynamic`) — расширенная привязка автора знания на ВСЕ типы (не только reasoning). Master-выключатель `knowledge.subjectAttributionEnabled` сохранён. Засеивается идемпотентно `seed-admin-settings.ts` (уже в агрегаторе, phase `seed-base`); без сидера работает на code-дефолте.
+- **Шаг 4 — Prisma миграция** — **обязательно, автоматически** (аддитивно, без data-loss). Миграция **`20260606114416_knowledge_access_groups`** = 4 новые модели (`KnowledgeGroup`, `KnowledgeGroupMember`, `IdeaBlockAccess`, `GroupVisibilityPolicy`) + enum `KnowledgeGroupKind` + поля `Meeting.closedGroupKind String?` и `MeetingTypeConfig.defaultClosedGroupKind String?`. Едет файлом миграции, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Проверка: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-meeting-type-closed-defaults.ts` — `MeetingTypeConfig.defaultClosedGroupKind='personal'` для типа `interview` (В6), если ещё NULL (на проде, где bootstrap прошёл до фичи). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`). Прогон: `docker compose exec backend bun run scripts/patch-meeting-type-closed-defaults.ts --dry-run` → без флага. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный**: `scripts/seed-knowledge-groups.ts` — синглтон-группы «Руководство»/«Совет» + department-группы из существующих `Department` + leadership-членство из owner/admin. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'seed-base'`). Прогон: `docker compose exec backend bun run scripts/seed-knowledge-groups.ts` (или агрегатором `apply-prod-deploy.ts --mode update`).
+- **Шаг 8 — Backfill** — **2 новых, идемпотентных**:
+  - `scripts/backfill-subject-attribution-all-types.ts` — добивает `IdeaBlockEntity{role='subject'}` для исторических canonical-блоков ВСЕХ типов (не только reasoning) + per-adapter identity (tracker/chatbox/dump/email). Уважает флаги `knowledge.subjectAttributionEnabled` + `knowledge.subjectAttributionAllTypes`. Сначала `--dry-run`, затем без флага. STEPS (`phase: backfill`, `skipBootstrap`).
+  - `scripts/backfill-block-access.ts --departments` — department-группы (`IdeaBlockAccess`) для исторических блоков из functional axisLabels (+ участники/автор). closed задним числом НЕ назначается (В5: историческое знание = открыто). **Без `--departments` скрипт no-op** — в STEPS прописан с `args:['--departments']`. Сначала `--dry-run --departments`, затем `--departments`. STEPS (`phase: backfill`, `skipBootstrap`).
+  - Оба — через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый модуль `knowledge-access`, `KnowledgeAccessResolver` в rbac, `BlockAccessDeriverService` + гейт во всех retrieval-поверхностях, `env.schema.ts` новый флаг; frontend: `company-admin/access-groups`, селектор закрытости встречи): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (поэтапный перевод флага):
+  1. После выката `KNOWLEDGE_ACCESS_ENFORCEMENT` остаётся `off` — выдача идентична baseline. Swagger `/api/docs` показывает `/api/v1/knowledge-access/*` и `PATCH /meetings/:id/closed-group`.
+  2. Перевести в **`shadow`** (выдача не меняется), дать набежать данным, сверить метрики: `curl -s localhost:3000/metrics | grep kc_access_shadow_diff_total` — по `{surface}` видно, сколько блоков было бы отфильтровано. Также `kc_subject_attribution_total{via}` растёт (провенанс работает).
+  3. Если расхождение ожидаемое — перевести в **`enforce`**. Проверить e2e-предикат «логист не видит блок Совета» во всех поверхностях: chat / search / snapshot / blocks / контекст клона — член «Логистики» НЕ получает блок с `IdeaBlockAccess{closed=Совет}`; owner — получает. `curl -s localhost:3000/metrics | grep kc_access_denied_total` → счётчик `{surface}` растёт.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧩 2026-06-06 — Трекер + Встречи (sergdev)
 
 > Контракт: `plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`. Ветка `sergdev`. 12 фаз: A1-A7 (трекер: пикер проекта во Входящих, единый «Спринт», группа меню «Задачи», подвкладки проекта, русификация, скрытие теневого проекта, консолидация поллинга бейджей) + B1-B5 (встречи: войти/ссылка/пригласить в журнале, rejoin хоста, надёжный copyLink, лобби-ссылка, эндпоинт `POST /meetings/:id/invitees`).

@@ -2224,4 +2224,22 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 - `CompassWidget` (SVG-компас) на главной директора вместо списка целей (B); виджет недельного план-факта по людям (D); виджет «люди под риском» self-fetch + CTA «Открыть Пульс» (G); кабинет «Я» с вкладками + редиректы старых `/me/*` URL, удалена мёртвая `/me/dashboard` (E).
 
+## knowledge-access — группы доступа к знаниям (2026-06-06)
+
+**Источник:** `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`. Ветка `feature/knowledge-access-groups`. Схема — [[data-model]] §«Группы доступа к знаниям»; принципы и резолвер — [[../01_projects/rbac-access-control]] §«Группы доступа к знаниям»; разведение с `dataClass` — [[security-and-152fz]] §6; ingest-вывод — [[knowledge-core]].
+
+### Новый модуль `knowledge-access` (admin-CRUD)
+
+- **`backend/src/modules/knowledge-access/`** — `KnowledgeAccessAdminController` (`/api/v1/knowledge-access`): GET `groups`, GET/PUT `matrix` (направленная `GroupVisibilityPolicy`), GET/POST/DELETE `groups/:groupId/members` (членство + clearance-override), PATCH `meeting-types/:typeId/closed-default`. `KnowledgeAccessAdminService` — каждая мутация зовёт `KnowledgeAccessResolver.invalidateAll()` (кэш групп TTL 60с). Frontend: `app/(admin)/company-admin/access-groups`.
+
+### Резолвер доступа в `rbac`
+
+- **`backend/src/modules/rbac/knowledge-access-resolver.service.ts` — `KnowledgeAccessResolver`** — `resolveAccessibleGroups({tenantId,userId})` → `{deptGroupIds,closedGroupIds,isBypass}`; `buildAccessWhere(ctx)` (Prisma-фрагмент) / `buildAccessSqlPredicate(...)` (raw-SQL); `partitionBlockIdsByAccess` / `partitionProjectionsByAccess` (defense-in-depth). `RbacService.canAccessKnowledgeGroup(...)` — ABAC по образцу `canViewEmployeeFullCard`. Гейт за флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off/shadow/enforce).
+
+### Правки knowledge-core / clones / meetings
+
+- **`knowledge-core/services/block-access-deriver.service.ts` — `BlockAccessDeriverService`** — после `AxisClassifier.classify` в `block-ingest.worker` выводит группы блока (department из домена/участников/автора + closed из типа/флага встречи) и пишет `IdeaBlockAccess`.
+- **Pre-filter доступа** во всех поверхностях retrieval (chat-v2 выходной шлюз + pool + reasoning-chain; search; snapshot; orchestrator; entities/themes/graph/blocks-контроллеры), контекст клонов (`clones.service`), проекции (decisions/insights/ideas/regulations/processes/policies — on-read из `sourceBlockIds`). Метрики `kc_access_shadow_diff_total` / `kc_access_denied_total{surface}`.
+- **`meetings.controller` — PATCH `/meetings/:id/closed-group`** + `Meeting.closedGroupKind` в create; bootstrap-sync `MeetingTypesAdminService` проставляет `interview`→`defaultClosedGroupKind='personal'`.
+
 [[../index|← index]]

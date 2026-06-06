@@ -689,5 +689,21 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 **Эффект.** Клоны (specialist-3-7 / ExecutablePersona), `router.hasEmployeeSubject`, WHO-ось `axis-classifier`, `card-rollup-v2` и дашборд-агенты впервые получают непустую `role:'subject'` выборку. Грабля зафиксирована в [[code-pitfalls]].
 
+## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
+
+**Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.
+
+### Привязка блок↔группа при ingest (`IdeaBlockAccess`, Ф3)
+После `AxisClassifier.classify` в `block-ingest.worker` шаг `deriveBlockAccess` (сервис [`BlockAccessDeriverService`](../../backend/src/modules/knowledge-core/services/block-access-deriver.service.ts)) детерминированно выводит группы блока и пишет `IdeaBlockAccess` (m:n, `via='department'|'closed'`):
+- **department** — из (а) functional-метки → `FunctionalDomain`→`DepartmentDomainLink`→`Department` и (б) отделов участников (`payload.participants[].userId/personId`→`Person.primaryDepartmentId`).
+- **closed** — из источника-события: `Meeting.closedGroupKind` / `MeetingTypeConfig.defaultClosedGroupKind` (`interview`→personal). Метка приходит в payload адаптера встречи.
+- Блок без домена/участников/closed → без access-строк = **открыт всей Org** (дефолт памяти). Историческое знание задним числом в closed НЕ переводится (бэкфилл `backfill-block-access.ts --departments` только проставляет department).
+
+### Субъект-атрибуция на ВСЕ типы знания (Ф1)
+Узкий гейт reasoning-семейства снят: `attributeSubject` вызывается для блоков **любого** `signalType` (флаг `AdminSetting knowledge.subjectAttributionAllTypes`, code-fallback `true`; master-выключатель `knowledge.subjectAttributionEnabled` сохранён). Добавлена per-adapter identity (tracker/chatbox/dump/email), метрика `kc_subject_attribution_total{via}`. Бэкфилл — `backfill-subject-attribution-all-types.ts`. Эффект: WHO-ось непуста и для не-reasoning, «что Иван говорил по факту» работает для клонов.
+
+### Выходной шлюз retrieval (Ф4)
+При `KNOWLEDGE_ACCESS_ENFORCEMENT='enforce'` финальный набор блоков фильтруется на **выходном шлюзе** `loadContextBlocks`/`loadContradictingBlocks` (chat-v2) + pre-filter в pool/SQL во всех поверхностях retrieval (chat/search/snapshot/graph/reasoning-chain/проекции/контекст клонов). Defense-in-depth: даже precomputed-путь и кэш перефильтровываются на шлюзе. При `off` выдача байт-в-байт текущая.
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

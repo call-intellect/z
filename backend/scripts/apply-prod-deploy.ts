@@ -275,6 +275,18 @@ const STEPS: Step[] = [
     hint: 'удалить фантомных Participant с identity не host:/guest: (egress)',
     skipBootstrap: true, // На чистой БД фантомов нет.
   },
+  // 2026-06-06 — Ф8 (knowledge-access-groups-and-provenance): дефолт закрытости
+  // типа встречи interview → 'personal' (В6). На чистом старте bootstrap-sync
+  // создаёт interview с этим дефолтом сам → skipBootstrap. На проде, где
+  // bootstrap прошёл до фичи, строка interview имеет NULL — патч добивает.
+  // Идемпотентен (WHERE defaultClosedGroupKind IS NULL, safe-seed override).
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 8.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-meeting-type-closed-defaults.ts',
+    hint: 'interview → defaultClosedGroupKind=personal (Ф8 knowledge-access)',
+    skipBootstrap: true,
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },

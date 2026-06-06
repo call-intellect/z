@@ -178,6 +178,27 @@ describe('LivekitEventsHandler', () => {
     expect((prisma as any).participant.update).not.toHaveBeenCalled();
   });
 
+  it('participant_joined: invitee: (личная ссылка, нет kind), existing → обновляет joinedAt, не no-op', async () => {
+    const { handler, prisma } = makeHandler(
+      { status: 'active', type: 'sales' },
+      { id: 'p-inv' },
+    );
+
+    await handler.handle(
+      evt('participant_joined', 'm-1', { identity: 'invitee:tok', name: 'Сотрудник' }),
+    );
+
+    // Приглашённый по личной ссылке — реальный участник, не отсекается.
+    expect((prisma as any).participant.findUnique).toHaveBeenCalled();
+    expect((prisma as any).participant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-inv' },
+        data: { joinedAt: expect.any(Date) },
+      }),
+    );
+    expect((prisma as any).participant.create).not.toHaveBeenCalled();
+  });
+
   it('participant_joined: kind=EGRESS (строка) → no-op даже если identity случайно с префиксом', async () => {
     const { handler, prisma } = makeHandler({ status: 'active', type: 'sales' }, null);
     await handler.handle(

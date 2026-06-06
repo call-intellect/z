@@ -249,11 +249,13 @@ export class LivekitEventsHandler {
       // Fallback (PR #17): kind отсутствует в payload (proto3 опускает дефолт
       // STANDARD=0, а наш приёмник парсит сырой protojson). Полагаемся на
       // конвенцию identity: реальные участники всегда `host:<userId>` /
-      // `guest:<nanoid>` (см. ParticipantsService + генерация LiveKit-токенов);
-      // egress-рекордеры приходят как `EG_...` без префикса — отсекаем.
+      // `guest:<nanoid>` / `invitee:<token>` (приглашённый по личной ссылке —
+      // см. ParticipantsService + генерация LiveKit-токенов); egress-рекордеры
+      // приходят как `EG_...` без префикса — отсекаем.
       if (
         !participantInfo.identity.startsWith('host:') &&
-        !participantInfo.identity.startsWith('guest:')
+        !participantInfo.identity.startsWith('guest:') &&
+        !participantInfo.identity.startsWith('invitee:')
       ) {
         this.logger.debug(
           { meetingId, identity: participantInfo.identity },

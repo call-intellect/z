@@ -96,24 +96,25 @@ import { OrgSwitcher } from './OrgSwitcher';
 /**
  * Sidebar — главный навигационный каркас ЛК.
  *
- * Структура (ТЗ 2026-05-27 navigation-restructure) — 6 смысловых слоёв
- * вместо плоских 3 групп, отражающих частоту использования и природу
- * данных:
- *   1. «Каждый день» — daily drivers: главная, встречи, дамп, карточки,
- *      проекты, помощник. Для owner/admin сюда же добавляется «Входящие»
- *      с живым бейджем (useIntakePendingCount).
- *   2. «Моё пространство» — личный кабинет: /me и его подразделы, фидбек.
- *   3. «Память компании» — knowledge-граф: идеи, правила, решения,
- *      сигналы, сущности, темы. Доступ фильтруется через
+ * Структура (ТЗ 2026-05-27 navigation-restructure; ТЗ A3 2026-06-06 —
+ * добавлен слой «Задачи») — смысловые слои, отражающие частоту
+ * использования и природу данных:
+ *   1. «Каждый день» — daily drivers: команда, главная, встречи, карточки,
+ *      помощник.
+ *   2. «Задачи» — трекер: проекты, спринты, архив спринтов. Для owner/admin
+ *      сюда же добавляется «Входящие» с живым бейджем (useIntakePendingCount).
+ *   3. «Моё пространство» — личный кабинет: /me и его подразделы, фидбек.
+ *   4. «Память компании» — knowledge-граф: дамп, таблицы, идеи, правила,
+ *      решения, сигналы, сущности, темы. Доступ фильтруется через
  *      `useMemoryAccess()` (роль + entitlement-флаги).
- *   4. «Управление» — ролевые дашборды (COO-панель, отчёты, цели). Целая
+ *   5. «Управление» — ролевые дашборды (COO-панель, отчёты, цели). Целая
  *      группа условная: рендерится только для owner / admin / coo.
- *   5. «Справочник» — структура и метаданные компании (структура, отделы,
+ *   6. «Справочник» — структура и метаданные компании (структура, отделы,
  *      домены, документы, карты должностей, клоны, поставщики, события,
  *      эксперименты, голос бренда). Целая группа collapsible, по умолчанию
  *      свёрнута; внутри — вторая подгруппа «Будет в следующей фазе» с
  *      γ-пунктами (Процессы / Политики / Метрики).
- *   6. «Настройки» — конфиг + админка (последняя видна только owner/admin).
+ *   7. «Настройки» — конфиг + админка (последняя видна только owner/admin).
  *
  * Состояния пункта (порядок проверки: comingSoon → locked → enabled):
  *   - `comingSoon=true` — функционал ещё не реализован (Фаза γ). Иконка
@@ -202,6 +203,10 @@ type NavGroup = {
  * только если admin Org включил соответствующий feature-флаг.
  */
 const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
+  // Дамп и Таблицы (ТЗ A3 2026-06-06) — переехали сюда из «Каждый день»:
+  // это вход в память компании и витрина извлечённых данных.
+  { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
+  { href: '/tables', label: 'Таблицы', icon: Table2, matchPrefix: '/tables' },
   // SBA β-5 — реестр идей и запросов клиентов (доступ всем member по умолчанию).
   { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
   // SBA α-7 — Regulation / Process / Policy.
@@ -222,14 +227,15 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
 ];
 
 /**
- * ТЗ 2026-05-27 navigation-restructure — меню разбито на 6 смысловых слоёв
- * по частоте использования и природе данных вместо плоских 3 групп:
- *   1. Каждый день — daily drivers (встречи/трекер/помощник)
- *   2. Моё пространство — личный кабинет
- *   3. Память компании — knowledge-граф (доступ через useMemoryAccess)
- *   4. Управление — ролевые дашборды (owner/admin/coo)
- *   5. Справочник — структура и метаданные (collapsible, default свёрнут)
- *   6. Настройки — конфиг + админка
+ * ТЗ 2026-05-27 navigation-restructure (+ ТЗ A3 2026-06-06 «Задачи») —
+ * меню разбито на смысловые слои по частоте использования и природе данных:
+ *   1. Каждый день — daily drivers (команда/главная/встречи/карточки/помощник)
+ *   2. Задачи — трекер (проекты/спринты/архив; +Входящие для owner/admin)
+ *   3. Моё пространство — личный кабинет
+ *   4. Память компании — knowledge-граф (дамп/таблицы + граф; useMemoryAccess)
+ *   5. Управление — ролевые дашборды (owner/admin/coo)
+ *   6. Справочник — структура и метаданные (collapsible, default свёрнут)
+ *   7. Настройки — конфиг + админка
  */
 const DAILY_GROUP: NavGroup = {
   label: 'Каждый день',
@@ -242,18 +248,10 @@ const DAILY_GROUP: NavGroup = {
     { href: '/structure', label: 'Команда', icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
-    { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
-    // Smart-tables (2026-06-01 dashboards-wow-polish Фаза 1) — закрываем dead route.
-    { href: '/tables', label: 'Таблицы', icon: Table2, matchPrefix: '/tables' },
-    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects', overviewTarget: 'overview.projects' },
-    // Sprints (2026-05-27) — Wave 4 frontend, отдельный раздел рядом с трекером.
-    { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
-    // Sprint archive (2026-06-01 dashboards-wow-polish Фаза 1) — закрываем dead route.
-    // matchPrefix важен: /sprints/archive должен быть более специфичным, чем /sprints,
-    // иначе winnerHref подсветит «Спринты» при заходе на архив. Алгоритм
-    // выбора winner'а сравнивает длину префиксов — здесь это работает корректно.
-    { href: '/sprints/archive', label: 'Архив спринтов', icon: Archive, matchPrefix: '/sprints/archive' },
+    // ТЗ A3 (2026-06-06): «Дамп» и «Таблицы» переехали в «Память компании»
+    // (MEMORY_SUBGROUP_ITEMS); «Проекты», «Спринты», «Архив спринтов» —
+    // в новую группу «Задачи» (TASKS_GROUP). Здесь остаётся только daily-ядро.
     {
       href: '/chat',
       label: 'Помощник компании',
@@ -263,6 +261,20 @@ const DAILY_GROUP: NavGroup = {
       tourTarget: 'welcome.sidebar-chat',
       overviewTarget: 'overview.chat',
     },
+  ],
+};
+
+/**
+ * ТЗ A3 (2026-06-06) — раздел «Задачи»: трекер в одном месте.
+ * «Входящие» (только owner/admin) инжектится динамически в Sidebar
+ * (между «Спринты» и «Архив спринтов»), badgeCount из useIntakePendingCount.
+ */
+const TASKS_GROUP: NavGroup = {
+  label: 'Задачи',
+  items: [
+    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects', overviewTarget: 'overview.projects' },
+    { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
+    { href: '/sprints/archive', label: 'Архив спринтов', icon: Archive, matchPrefix: '/sprints/archive' },
   ],
 };
 
@@ -405,8 +417,9 @@ const REFERENCE_GROUP: NavGroup = {
 
 /**
  * Доп. пункт «Входящие» (Phase 3 Sprint 6) — только для owner/admin.
- * Вставляется в `OPERATIONS_GROUP` динамически в Sidebar (роль приходит
- * с клиента, поэтому здесь нельзя жёстко прописать в массиве выше).
+ * ТЗ A3 (2026-06-06): вставляется в `TASKS_GROUP` динамически в Sidebar
+ * (между «Спринты» и «Архив спринтов»). Роль приходит с клиента, поэтому
+ * здесь нельзя жёстко прописать в массиве группы выше.
  */
 const INTAKE_NAV_ITEM: NavItem = {
   href: '/intake',
@@ -498,20 +511,15 @@ export function Sidebar({
     currentOrgRole === 'admin' ||
     currentOrgRole === 'coo';
 
-  // Phase 3 Sprint 6: для owner/admin добавляем пункт «Входящие» в группу
-  // «Каждый день» (рядом с «Проекты» / трекером). badgeCount тянется из
-  // useIntakePendingCount — живой счётчик pending-карточек, обновляется
-  // каждые 60 сек.
-  const dailyGroup: NavGroup = (() => {
-    if (!canTriage) return DAILY_GROUP;
-    const items: NavItem[] = [...DAILY_GROUP.items];
-    const projectsIdx = items.findIndex((i) => i.href === '/projects');
-    const insertAt = projectsIdx >= 0 ? projectsIdx + 1 : items.length;
-    items.splice(insertAt, 0, {
-      ...INTAKE_NAV_ITEM,
-      badgeCount: intakePendingCount,
-    });
-    return { ...DAILY_GROUP, items };
+  // ТЗ A3 (2026-06-06): «Входящие» (owner/admin) инжектится в «Задачи»
+  // между «Спринты» и «Архив спринтов». badgeCount — живой счётчик pending.
+  const tasksGroup: NavGroup = (() => {
+    if (!canTriage) return TASKS_GROUP;
+    const items: NavItem[] = [...TASKS_GROUP.items];
+    const archiveIdx = items.findIndex((i) => i.href === '/sprints/archive');
+    const insertAt = archiveIdx >= 0 ? archiveIdx : items.length;
+    items.splice(insertAt, 0, { ...INTAKE_NAV_ITEM, badgeCount: intakePendingCount });
+    return { ...TASKS_GROUP, items };
   })();
 
   // Action Center B1 — инжектим живой badgeCount в пункт «Подтверждения».
@@ -556,7 +564,8 @@ export function Sidebar({
   })();
 
   const groups: NavGroup[] = [
-    dailyGroup,
+    DAILY_GROUP,
+    tasksGroup,
     meGroup,
     CHATS_GROUP,
     memoryGroup,

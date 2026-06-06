@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../../ProjectViewShell';
 import { CycleDetailClient } from './CycleDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Цикл — Кора',
+  title: 'Спринт — Кора',
 };
 
 export default async function CycleDetailPage({

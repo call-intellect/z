@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Pulse §5.3 (2026-05-30) — Архив гипотез.
+ * Pulse §5.3 (2026-05-30) — Архив спринтов.
  *
  * `/sprints/archive` — хроника всех Cycle tenant'а за период с фильтрами
  * (period / status / search) и сводкой.
@@ -22,7 +22,6 @@ import {
   HelpCircle,
   ListChecks,
   Search,
-  XCircle,
 } from 'lucide-react';
 
 import { Input } from '@/ui/shadcn/input';
@@ -109,11 +108,10 @@ export function SprintArchiveClient() {
               <ArrowLeft size={12} /> К списку спринтов
             </Link>
             <h1 className="mt-1 text-xl font-semibold text-fg-primary md:text-2xl">
-              Архив гипотез
+              Архив спринтов
             </h1>
             <p className="text-xs text-fg-tertiary">
-              Хроника спринтов: что проверяли, что подтвердилось, чему
-              научились.
+              Хроника спринтов: цели, итоги и выводы команды.
             </p>
           </div>
 
@@ -121,12 +119,12 @@ export function SprintArchiveClient() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <SummaryTile label="Всего" value={summary.total} tone="info" />
               <SummaryTile
-                label="Подтвердились"
+                label="Завершены"
                 value={summary.confirmed}
                 tone="success"
               />
               <SummaryTile
-                label="Не подтвердились"
+                label="Отменены"
                 value={summary.rejected}
                 tone="danger"
               />
@@ -235,9 +233,9 @@ function FiltersRow({
         <Input
           value={searchInput}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Найти по гипотезе"
+          placeholder="Найти по цели спринта"
           className="pl-9"
-          aria-label="Поиск по тексту гипотезы спринта"
+          aria-label="Поиск по тексту цели спринта"
         />
       </div>
     </div>
@@ -383,7 +381,7 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
         </p>
       ) : (
         <p className="text-xs italic text-fg-tertiary">
-          Гипотеза не была зафиксирована.
+          Цель спринта не зафиксирована.
         </p>
       )}
 
@@ -426,7 +424,7 @@ function computeDurationDays(
   const s = new Date(startDate).getTime();
   const e = new Date(endDate).getTime();
   if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return null;
-  return Math.max(1, Math.round((e - s) / 86_400_000) + 1);
+  return Math.max(1, Math.round((e - s) / 86_400_000));
 }
 
 function computeCompletedPercent(
@@ -461,25 +459,10 @@ function renderStatusBadge(item: SprintArchiveItemApi): React.ReactNode {
       </span>
     );
   }
-  // completed
-  if (item.confirmedHypothesis === true) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-[10px] font-medium text-chip-success-fg">
-        <CheckCircle2 size={11} /> Подтвердилась
-      </span>
-    );
-  }
-  if (item.confirmedHypothesis === false) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-danger-bg px-2 py-0.5 text-[10px] font-medium text-chip-danger-fg">
-        <XCircle size={11} /> Не подтвердилась
-      </span>
-    );
-  }
-  // null — нет данных hint'ов
+  // completed (любой исход) — единый «Завершён»
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-bg-overlay px-2 py-0.5 text-[10px] font-medium text-fg-tertiary">
-      Завершён
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-[10px] font-medium text-chip-success-fg">
+      <CheckCircle2 size={11} /> Завершён
     </span>
   );
 }
@@ -510,7 +493,7 @@ function EmptyState() {
       </div>
       <p className="max-w-md text-sm text-fg-tertiary">
         Когда вы завершите первый спринт, он попадёт сюда. По каждому
-        будет видно, какую гипотезу вы проверяли и подтвердилась ли она.
+        будет видно, какую цель вы ставили на спринт и чем он завершился.
       </p>
       <Link
         href="/sprints"

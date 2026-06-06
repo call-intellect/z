@@ -35,7 +35,7 @@ export function ProjectSettingsClient({ slug }: { slug: string }) {
           <Field label="Идентификатор" value={project.identifier} />
           <Field label="Таймзона" value={project.timezone} />
           <Field
-            label="Циклы"
+            label="Спринты"
             value={project.cycleViewEnabled ? 'Вкл' : 'Выкл'}
           />
           <Field

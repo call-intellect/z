@@ -40,7 +40,7 @@ function buildTabs(slug: string): Tab[] {
     { href: `/projects/${slug}/integrations`, label: 'Приложения' },
     {
       href: `/projects/${slug}/cycles`,
-      label: 'Циклы',
+      label: 'Спринты',
       show: (p) => p.cycleViewEnabled,
     },
     {

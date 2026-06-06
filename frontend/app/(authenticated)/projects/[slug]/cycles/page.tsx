@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../ProjectViewShell';
 import { CyclesClient } from './CyclesClient';
 
 export const metadata: Metadata = {
-  title: 'Циклы — Кора',
+  title: 'Спринты — Кора',
 };
 
 export default async function ProjectCyclesPage({

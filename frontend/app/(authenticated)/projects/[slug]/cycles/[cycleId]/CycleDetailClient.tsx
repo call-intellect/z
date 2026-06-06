@@ -19,7 +19,7 @@ export function CycleDetailClient({ cycleId }: { cycleId: string }) {
   }
 
   if (!cycle) {
-    return <div className="text-sm text-fg-tertiary">Цикл не найден.</div>;
+    return <div className="text-sm text-fg-tertiary">Спринт не найден.</div>;
   }
 
   return (
@@ -28,7 +28,7 @@ export function CycleDetailClient({ cycleId }: { cycleId: string }) {
       {issuesLoading ? (
         <div className="text-sm text-fg-tertiary">Загружаем задачи…</div>
       ) : (
-        <IssueList issues={issues} group emptyText="В этом цикле задач нет" />
+        <IssueList issues={issues} group emptyText="В этом спринте задач нет" />
       )}
     </div>
   );

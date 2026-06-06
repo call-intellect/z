@@ -136,7 +136,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
   {
     kind: 'project',
     title: 'Проект',
-    description: 'Цикл внутри существующего проекта',
+    description: 'Спринт внутри существующего проекта',
     icon: FolderKanban,
   },
 ];

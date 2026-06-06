@@ -240,9 +240,14 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const recording = result?.recording;
 
   // Длительность в миллисекундах: приоритет — meeting.durationMs, fallback — recording.
+  // S6-12: meeting.durationMs может быть 0 (FSM не проставил) при реальной
+  // записи — тогда берём длительность из recording, а не показываем «—»/«0м».
   const durationMs =
-    meeting.durationMs ??
-    (recording?.durationSeconds ? recording.durationSeconds * 1000 : null);
+    meeting.durationMs && meeting.durationMs > 0
+      ? meeting.durationMs
+      : recording?.durationSeconds
+        ? recording.durationSeconds * 1000
+        : null;
 
   return (
     <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">

@@ -24,6 +24,19 @@ export interface MeetingBehaviorSectionProps {
   meetingId: string;
 }
 
+/**
+ * S5-02-UX (Фаза 4): есть ли в метриках реальный сигнал речи. При нулевой речи
+ * (ASR не дал таймингов) метрики вырождаются в «Тишина 100 % / 0 с / нули» —
+ * такую секцию честнее скрыть, чем показывать таблицу нулей как факт.
+ */
+export function hasBehaviorSignal(data: BehaviorMetricsDomain): boolean {
+  return (
+    !!data.meeting &&
+    (data.meeting.totalSpeechMs > 0 ||
+      data.participants.some((p) => p.speakingTimeMs > 0))
+  );
+}
+
 export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProps): JSX.Element {
   const { data, error, isLoading, mutate } = useMeetingBehaviorMetrics(meetingId);
 
@@ -34,6 +47,7 @@ export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProp
   if (data.status === 'pending') return <PendingSkeleton />;
   if (data.status === 'failed') return <FailedBox onRetry={mutate} />;
   // ready или low_confidence — рендерим метрики.
+  if (!hasBehaviorSignal(data)) return <UnavailableBox />;
 
   const lowConfidence = data.status === 'low_confidence' || data.meeting?.lowConfidence === true;
   return (
@@ -87,6 +101,20 @@ function FailedBox({ onRetry }: { onRetry: () => void }): JSX.Element {
       >
         Обновить
       </button>
+    </section>
+  );
+}
+
+function UnavailableBox(): JSX.Element {
+  return (
+    <section
+      data-testid="meeting-behavior-section-unavailable"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-2"
+    >
+      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+      <p className="text-sm text-fg-secondary">
+        Поведенческая аналитика недоступна для этой записи.
+      </p>
     </section>
   );
 }

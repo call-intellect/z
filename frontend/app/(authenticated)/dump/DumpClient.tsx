@@ -118,8 +118,8 @@ export function DumpClient() {
                 <Link href="/chat" className="text-accent hover:underline">
                   Спросить помощника компании
                 </Link>
-                <Link href="/intake" className="text-accent hover:underline">
-                  Открыть «Входящие»
+                <Link href="/ideas" className="text-accent hover:underline">
+                  Открыть «Идеи»
                 </Link>
               </div>
             </div>

@@ -70,6 +70,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-chatbox.ts', hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[

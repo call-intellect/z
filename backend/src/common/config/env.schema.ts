@@ -1649,6 +1649,14 @@ const TrackerSchema = z.object({
     .enum(['off', 'shadow', 'enforce'])
     .default('shadow'),
   DATACLASS_POLICY_VERSION: z.string().min(1).default('v1'),
+  // ── Ф2 knowledge-access-groups (2026-06-06) — режим гейта доступа к знаниям.
+  //   * off (default) — фильтр НЕ применяется, поведение байт-в-байт текущее.
+  //   * shadow — считаются метрики расхождения, выдача НЕ меняется.
+  //   * enforce — фильтр доступа применяется во всех поверхностях retrieval.
+  // Читается через cfg.knowledgeAccess.enforcement.
+  KNOWLEDGE_ACCESS_ENFORCEMENT: z
+    .enum(['off', 'shadow', 'enforce'])
+    .default('off'),
   // ── W4.2 (2026-05-25) — DataClassPolicy enforce + audit-trail ─────────
   // Если true и `DATACLASS_POLICY_ENFORCEMENT === 'enforce'` — persist
   // проекций без `dataClassAudit` фейлится с ошибкой. На shadow/off — не

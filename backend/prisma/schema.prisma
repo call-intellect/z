@@ -1268,6 +1268,11 @@ model Meeting {
   linkedCycleId String?
   linkedCycle   Cycle?  @relation("MeetingLinkedCycle", fields: [linkedCycleId], references: [id], onDelete: SetNull)
 
+  /// Ф2 knowledge-access — ручная пометка закрытости встречи (хост/админ).
+  /// null = открыто; 'leadership' | 'council' | 'personal'. Читается на ingest
+  /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
+  closedGroupKind String? @db.VarChar(20)
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
@@ -2359,6 +2364,10 @@ model Org {
   retentionPolicy        OrgRetentionPolicy?
   entitlement            OrgEntitlement?
 
+  // ── Ф2 knowledge-access-groups (2026-06-06) ──
+  knowledgeGroups          KnowledgeGroup[]
+  groupVisibilityPolicies  GroupVisibilityPolicy[]
+
   // ── Фаза 0 — каркас компании ──
   departments     Department[]
   roles           Role[]
@@ -2661,6 +2670,67 @@ model CloneAccessGrant {
   @@index([tenantId, cloneType, cloneRefId])
   @@index([revokedAt])
   @@index([expiresAt])
+}
+
+/// Группа доступа к знаниям (Ф2 knowledge-access). kind=department ССЫЛАЕТСЯ на
+/// существующий Department (refId=departmentId — оргдерево НЕ дублируем);
+/// leadership/council — закрытые «верхние» группы (синглтоны на Org, refId=null);
+/// personal — личный сейф (refId=personId).
+enum KnowledgeGroupKind {
+  department
+  leadership
+  council
+  personal
+}
+
+model KnowledgeGroup {
+  id        String                 @id @default(cuid())
+  tenantId  String
+  kind      KnowledgeGroupKind
+  refId     String?                /// departmentId | personId | null
+  name      String                 @db.VarChar(200)
+  /// Закрытая группа: видна ТОЛЬКО прямым членам, НЕ через матрицу отделов (вертикаль).
+  isClosed  Boolean                @default(false)
+  createdAt DateTime               @default(now())
+  org        Org                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members    KnowledgeGroupMember[]
+  blockLinks IdeaBlockAccess[]
+  @@unique([tenantId, kind, refId])
+  @@index([tenantId, kind])
+}
+
+model KnowledgeGroupMember {
+  groupId   String
+  personId  String
+  source    String   @db.VarChar(10) /// 'auto' (из должности) | 'manual' (override)
+  createdAt DateTime @default(now())
+  group     KnowledgeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([groupId, personId])
+  @@index([personId])
+}
+
+/// M:N блок ↔ группа. Блок может быть и «логистика», и «совет» одновременно.
+model IdeaBlockAccess {
+  blockId   String
+  groupId   String
+  via       String   @db.VarChar(12) /// 'department' (горизонталь) | 'closed' (вертикаль)
+  createdAt DateTime @default(now())
+  block     IdeaBlock      @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  group     KnowledgeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([blockId, groupId])
+  @@index([groupId])
+}
+
+/// Направленная матрица «отдел-субъект видит отдел-объект». Образец — DepartmentDomainLink.
+model GroupVisibilityPolicy {
+  id             String   @id @default(cuid())
+  tenantId       String
+  subjectGroupId String
+  visibleGroupId String
+  createdAt      DateTime @default(now())
+  org            Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([subjectGroupId, visibleGroupId])
+  @@index([tenantId, subjectGroupId])
 }
 
 model OrgInvitation {
@@ -3112,6 +3182,8 @@ model IdeaBlock {
   commitmentRecipient Person?              @relation("CommitmentRecipient", fields: [commitmentRecipientPersonId], references: [id], onDelete: SetNull)
   /// ТЗ-D — автор обещания (для блоков signalType='commitment').
   commitmentAuthor    Person?              @relation("CommitmentAuthor", fields: [commitmentAuthorPersonId], references: [id], onDelete: SetNull)
+  /// Ф2 knowledge-access — группы доступа блока (m:n). Пусто = открыт всем (дефолт).
+  blockAccess         IdeaBlockAccess[]
 
   @@index([tenantId, status])
   @@index([tenantId, signalType])
@@ -9161,6 +9233,9 @@ model MeetingTypeConfig {
   reportPromptKey String?
   isActive        Boolean  @default(true)
   sortOrder       Int      @default(0)
+  /// Ф2 knowledge-access — admin-editable дефолт закрытости для этого типа встречи.
+  /// null = открыто; 'leadership' | 'council' | 'personal'. interview→'personal' (сид).
+  defaultClosedGroupKind String? @db.VarChar(20)
   updatedBy       String?
   updatedAt       DateTime @updatedAt
 }

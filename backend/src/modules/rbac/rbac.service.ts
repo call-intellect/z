@@ -380,6 +380,26 @@ export class RbacService implements OnModuleInit {
   }
 
   /**
+   * Ф2 knowledge-access — проверка доступа пользователя к конкретному блоку по
+   * его группам (ctx от KnowledgeAccessResolver.resolveAccessibleGroups).
+   * Каноничное правило visible(user, block) из ТЗ. blockGroups — связи
+   * IdeaBlockAccess блока (kind+isClosed+groupId).
+   */
+  canAccessKnowledgeGroup(
+    ctx: { deptGroupIds: string[]; closedGroupIds: string[]; isBypass: boolean },
+    blockGroups: Array<{ groupId: string; isClosed: boolean; kind: string }>,
+  ): boolean {
+    if (ctx.isBypass) return true;
+    const closed = blockGroups.filter((g) => g.isClosed);
+    if (closed.length > 0) {
+      return closed.every((g) => ctx.closedGroupIds.includes(g.groupId));
+    }
+    const dept = blockGroups.filter((g) => g.kind === 'department');
+    if (dept.length === 0) return true;
+    return dept.some((g) => ctx.deptGroupIds.includes(g.groupId));
+  }
+
+  /**
    * Может ли роль выполнять write-операции (POST/PUT/PATCH/DELETE) в Org.
    * `demo_observer` — единственная роль, которая возвращает false. Используется
    * глобальным `DemoObserverGuard`. super_admin bypass обрабатывается в guard'е.

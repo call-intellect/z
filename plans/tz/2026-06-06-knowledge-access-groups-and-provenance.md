@@ -205,7 +205,7 @@ AND (
 **Acceptance:** греп — `attributeSubject` вызывается без сужения на REASONING-Set (или Set расширен/обойдён флагом); юнит: блок `signalType='fact'` со `speakerParticipantId` → создаётся `IdeaBlockEntity{role='subject'}`; who-ось непуста для не-reasoning ([axis-classifier.service.ts:236](../../backend/src/modules/knowledge-core/services/axis-classifier.service.ts#L236)); backfill повторно = no-op; `bun run typecheck/lint/test:unit` зелёные.
 **Закрывает:** R1, R2.
 
-### Фаза 2 — Модель групп + резолв групп пользователя (схема + RBAC)
+### Фаза 2 — Модель групп + резолв групп пользователя (схема + RBAC) ✅ РЕАЛИЗОВАНО
 **Цель:** появились сущности групп и метод «какие группы у пользователя / доступен ли блок».
 **Входит:**
 - Prisma-модели из «Контракт-first» (`KnowledgeGroup`, `KnowledgeGroupMember`, `IdeaBlockAccess`, `GroupVisibilityPolicy`, enum `KnowledgeGroupKind`; обратная связь в `IdeaBlock`). Миграция (`prisma:migrate -- --name knowledge-access-groups`), `prisma:generate`. Индексы заданы в моделях (обычные btree; pgvector не затрагивается).

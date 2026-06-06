@@ -17,7 +17,9 @@ import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TenantGuard } from '../../modules/rbac/guards/tenant.guard';
+import type { KnowledgeAccessResolver } from '../../modules/rbac/knowledge-access-resolver.service';
 import type { RbacService } from '../../modules/rbac/rbac.service';
+import type { TypedConfigService } from '../config/index';
 import type { PrismaService } from '../prisma/prisma.service';
 
 interface ReqShape {
@@ -72,7 +74,20 @@ function buildGuard(opts: {
     },
   } as unknown as PrismaService;
 
-  return { guard: new TenantGuard(prisma, rbac), prisma, rbac };
+  // Ф2 knowledge-access — gate выключен (off) → резолвер не вызывается,
+  // поведение TenantGuard байт-в-байт прежнее.
+  const cfg = {
+    knowledgeAccess: { enforcement: 'off' as const },
+  } as unknown as TypedConfigService;
+  const accessResolver = {
+    resolveAccessibleGroups: vi.fn(async () => ({
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    })),
+  } as unknown as KnowledgeAccessResolver;
+
+  return { guard: new TenantGuard(prisma, rbac, cfg, accessResolver), prisma, rbac };
 }
 
 describe('TenantGuard', () => {

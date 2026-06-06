@@ -2079,6 +2079,22 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────── Ф2 knowledge-access groups ──────────────────────
+  /**
+   * Режим гейта доступа к знаниям (группы). off (default) — фильтр не
+   * применяется, поведение текущее. shadow — метрики расхождения. enforce —
+   * фильтр во всех поверхностях retrieval. См. ТЗ
+   * plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md.
+   */
+  get knowledgeAccess() {
+    const mode = this.get('KNOWLEDGE_ACCESS_ENFORCEMENT') as
+      | 'off'
+      | 'shadow'
+      | 'enforce'
+      | undefined;
+    return { enforcement: mode ?? 'off' } as const;
+  }
+
   // ─────────────────── W2.2 calibrated confidence (KC-Temporal) ───────
   /**
    * W2.2 — параметры Platt scaling калибровки confidence.

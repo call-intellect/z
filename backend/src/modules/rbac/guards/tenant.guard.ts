@@ -8,7 +8,9 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { KnowledgeAccessResolver } from '../knowledge-access-resolver.service';
 import { RbacService } from '../rbac.service';
 
 /**
@@ -35,12 +37,20 @@ export class TenantGuard implements CanActivate {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<
       Request & {
-        rbacContext?: { role: string; visibility: string; isSuperAdmin: boolean };
+        rbacContext?: {
+          role: string;
+          visibility: string;
+          isSuperAdmin: boolean;
+          groups?: unknown;
+        };
       }
     >();
     const user = req.user;
@@ -88,6 +98,21 @@ export class TenantGuard implements CanActivate {
       visibility: rbacCtx.visibility,
       isSuperAdmin: rbacCtx.isSuperAdmin,
     };
+    // Ф2 knowledge-access — лениво кладём группы пользователя ТОЛЬКО при включённом
+    // гейте (off → ничего не делаем, поведение неизменно).
+    if (this.cfg.knowledgeAccess.enforcement !== 'off') {
+      try {
+        const groups = await this.accessResolver.resolveAccessibleGroups({
+          tenantId, userId: user.id,
+        });
+        (req.rbacContext as Record<string, unknown>)['groups'] = groups;
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'TenantGuard: резолв групп доступа упал — пропускаем (best-effort)',
+        );
+      }
+    }
     return true;
   }
 

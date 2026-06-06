@@ -93,6 +93,12 @@ export function MeetingPlayer({
         // расширению из-за query-строки → без `type` плеер не создаёт <video> и
         // виснет на «вечной крутилке» БЕЗ сетевого запроса к файлу.
         src={{ src: videoUrl, type: 'video/mp4' }}
+        // Дефолт Vidstack `load="visible"` (грузить по входу в зону видимости через
+        // IntersectionObserver) на странице результата НЕ срабатывает: плеер навсегда
+        // остаётся `aria-busy` с пустым <video src=""> — «вечная крутилка» БЕЗ запроса к
+        // файлу (диагностика 2026-06-06). Запись — основной контент страницы (выше сгиба),
+        // поэтому грузим сразу: `load="eager"`.
+        load="eager"
         playsInline
         className="aspect-video w-full"
       >

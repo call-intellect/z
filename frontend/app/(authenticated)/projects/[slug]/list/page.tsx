@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../ProjectViewShell';
 import { ListClient } from './ListClient';
 
 export const metadata: Metadata = {
-  title: 'Список задач — Z',
+  title: 'Список задач — Кора',
 };
 
 export default async function ProjectListPage({

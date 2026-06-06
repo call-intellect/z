@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { TeamsListClient } from './TeamsListClient';
 
 export const metadata: Metadata = {
-  title: 'Команды — Z',
+  title: 'Команды — Кора',
 };
 
 export default function TeamsListPage() {

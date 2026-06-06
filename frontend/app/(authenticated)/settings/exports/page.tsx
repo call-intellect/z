@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ExportsClient } from './ExportsClient';
 
 export const metadata: Metadata = {
-  title: 'Экспорты — Z',
+  title: 'Экспорты — Кора',
 };
 
 export default function ExportsPage() {

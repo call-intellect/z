@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { SettingsClient } from './SettingsClient';
 
 export const metadata: Metadata = {
-  title: 'Настройки — Z',
+  title: 'Настройки — Кора',
 };
 
 export default function SettingsPage() {

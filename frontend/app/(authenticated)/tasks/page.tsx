@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { TasksClient } from './TasksClient';
 
 export const metadata: Metadata = {
-  title: 'Задачи — Z',
+  title: 'Задачи — Кора',
 };
 
 export default function TasksPage() {

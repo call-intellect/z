@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RoleMapClient } from './RoleMapClient';
 
 export const metadata: Metadata = {
-  title: 'Карта должности — Z',
+  title: 'Карта должности — Кора',
 };
 
 /**

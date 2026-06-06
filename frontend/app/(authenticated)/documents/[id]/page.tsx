@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DocumentDetailClient } from './DocumentDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Документ — Z',
+  title: 'Документ — Кора',
 };
 
 export default async function DocumentDetailPage({

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ProjectViewShell } from '../ProjectViewShell';
 
 export const metadata: Metadata = {
-  title: 'Гант — Z',
+  title: 'Гант — Кора',
 };
 
 export default async function ProjectGanttPage({

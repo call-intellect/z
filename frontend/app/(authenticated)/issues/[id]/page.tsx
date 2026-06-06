@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { IssueDetailClient } from './IssueDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Задача — Z',
+  title: 'Задача — Кора',
 };
 
 export default async function IssueDetailPage({

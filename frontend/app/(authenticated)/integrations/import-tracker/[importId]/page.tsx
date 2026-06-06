@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ImportDetailClient } from './ImportDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Импорт — Z',
+  title: 'Импорт — Кора',
 };
 
 interface PageProps {

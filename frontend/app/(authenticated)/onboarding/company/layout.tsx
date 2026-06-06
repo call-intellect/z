@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { WizardShell } from './WizardShell';
 
 export const metadata: Metadata = {
-  title: 'Знакомство с компанией — Z',
+  title: 'Знакомство с компанией — Кора',
 };
 
 /**

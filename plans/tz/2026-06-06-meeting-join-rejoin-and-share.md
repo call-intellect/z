@@ -7,6 +7,8 @@ owner: Сергей (владелец Org «ооо ромашка»)
 relates_to:
   - plans/analysis/2026-06-06-meeting-join-link-and-rejoin-gap.md
 ---
+> ⛔ **ПОГЛОЩЕНО.** Это ТЗ целиком вошло как **Часть Б** в единое финальное ТЗ сессии — реализовывать по нему: **`plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`**. Этот файл оставлен как детальный источник, в работу НЕ брать.
+>
 > Анализ-источник (воспроизведение, якоря кода, A/B): `plans/analysis/2026-06-06-meeting-join-link-and-rejoin-gap.md`
 > Согласование: 2026-06-06.
 

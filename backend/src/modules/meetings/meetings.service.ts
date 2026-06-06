@@ -25,6 +25,7 @@ import { JwtService } from '../auth/services/jwt.service';
 import { ConversationalService } from '../conversational/conversational.service';
 import { MailService } from '../mail/mail.service';
 import { MeetingsBalanceService } from '../meetings-balance/meetings-balance.service';
+import { isPresentParticipant } from '../participants/participant-presence';
 import { UsersService } from '../users/users.service';
 
 import type {
@@ -934,14 +935,16 @@ export class MeetingsService {
         failureReason: meeting.failureReason ?? null,
         cardId: meeting.cardId ?? null,
       },
-      participants: meeting.participants.map((p: Participant) => ({
-        id: p.id,
-        name: p.name,
-        role: p.role,
-        joinedAt: p.joinedAt?.toISOString() ?? null,
-        leftAt: p.leftAt?.toISOString() ?? null,
-        isRegisteredUser: p.isRegisteredUser,
-      })),
+      participants: meeting.participants
+        .filter(isPresentParticipant)
+        .map((p: Participant) => ({
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          joinedAt: p.joinedAt?.toISOString() ?? null,
+          leftAt: p.leftAt?.toISOString() ?? null,
+          isRegisteredUser: p.isRegisteredUser,
+        })),
       aiResult: meeting.aiResult
         ? this.toAiResultDto(meeting.aiResult)
         : null,

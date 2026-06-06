@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
+import { PRESENT_PARTICIPANT_WHERE } from '../../participants/participant-presence';
 import type {
   PulsePatternBottleneckDto,
   PulsePatternBottleneckTopPairDto,
@@ -227,7 +227,7 @@ export class PulsePatternsService {
         startedAt: true,
         durationMs: true,
         roiScore: true,
-        _count: { select: { participants: true } },
+        _count: { select: { participants: { where: PRESENT_PARTICIPANT_WHERE } } },
       },
     });
 

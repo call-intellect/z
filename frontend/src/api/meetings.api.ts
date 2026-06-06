@@ -39,6 +39,12 @@ export type CreateMeetingApiRequest = {
     email?: string | null;
     sendVia?: ('email' | 'telegram')[];
   }>;
+  /**
+   * ТЗ 2026-06-06 knowledge-access (Ф7) — закрытость встречи. Опционально.
+   * null/опущено = знание встречи открыто; иначе блоки встречи привязываются
+   * к закрытой группе: «руководство» / «совет» / «личное».
+   */
+  closed_group_kind?: 'leadership' | 'council' | 'personal' | null;
 };
 
 export type ListMeetingsApiRequest = {
@@ -220,6 +226,19 @@ export const meetingsApi = {
     apiClient.post<AddInviteesApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/invitees`,
       body,
+    ),
+
+  /**
+   * ТЗ 2026-06-06 knowledge-access (Ф7) — задать закрытость встречи постфактум
+   * (host-only). null = открыто; 'leadership' | 'council' | 'personal'.
+   */
+  setClosedGroup: (
+    id: string,
+    closedGroupKind: 'leadership' | 'council' | 'personal' | null,
+  ) =>
+    apiClient.patch<{ id: string; closedGroupKind: string | null }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/closed-group`,
+      { closedGroupKind },
     ),
 
   /** Soft-delete встречи. */

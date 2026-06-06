@@ -33,6 +33,7 @@ import {
   FileText,
   ListChecks,
   Loader2,
+  Lock,
   MessageCircle,
   MessageSquareText,
   MoreHorizontal,
@@ -67,6 +68,10 @@ import type { RoomMessageDomain } from '@/domain/room-message';
 
 import { aiResultFromApi, pickPrimarySummary } from '@/domain/ai-result';
 import { pickPrimaryChapters } from '@/domain/chapter';
+import {
+  CLOSED_GROUP_OPTIONS,
+  type ClosedGroupKind,
+} from '@/domain/knowledge-access';
 import type { MeetingDomain } from '@/domain/meeting';
 import { meetingStatusView } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
@@ -523,6 +528,22 @@ function MeetingHeader({
     }
   };
 
+  // ТЗ 2026-06-06 knowledge-access (Ф7) — пометить закрытость встречи постфактум.
+  const onSetClosedGroup = async (value: ClosedGroupKind | 'none') => {
+    const label =
+      CLOSED_GROUP_OPTIONS.find((o) => o.value === value)?.label ?? '';
+    try {
+      await meetingsApi.setClosedGroup(
+        meeting.id,
+        value === 'none' ? null : value,
+      );
+      toast.success(`Доступ обновлён: ${label}`);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Не удалось изменить доступ';
+      toast.error(msg);
+    }
+  };
+
   return (
     <header className="flex flex-col gap-3 border-b border-border-subtle pb-5">
       <nav className="flex items-center gap-1.5 text-xs text-fg-tertiary">
@@ -629,6 +650,24 @@ function MeetingHeader({
                   Открыть в новой вкладке
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Lock size={14} />
+                  Кто видит знания встречи
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuLabel>Пометить доступ</DropdownMenuLabel>
+                  {CLOSED_GROUP_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onSelect={() => void onSetClosedGroup(opt.value)}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => void onDelete()}

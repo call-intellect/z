@@ -23,8 +23,10 @@ import {
   FolderKanban,
   Headphones,
   Loader2,
+  Lock,
   MessageSquare,
   Mic,
+  ShieldAlert,
   Sparkles,
   Target,
   Users,
@@ -40,6 +42,11 @@ import { templatesApi } from '@/api/templates.api';
 import { ApiError } from '@/api/api-error';
 import { templateFromApi, type TemplateDomain } from '@/domain/template';
 import { MEETING_TYPES, type MeetingType } from '@/domain/enums';
+import {
+  CLOSED_GROUP_OPTIONS,
+  detectConfidentiality,
+  type ClosedGroupKind,
+} from '@/domain/knowledge-access';
 import { t } from '@/lib/i18n';
 
 import { Button } from '@/ui/shadcn/button';
@@ -47,6 +54,13 @@ import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { Checkbox } from '@/ui/shadcn/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/ui/shadcn/select';
 import {
   ParticipantPicker,
   type ParticipantPickerValue,
@@ -123,6 +137,10 @@ export function CreateMeetingFormV2() {
   const [includeFollowUp, setIncludeFollowUp] = useState(true);
   const [includeTasks, setIncludeTasks] = useState(true);
   const [recordByDefault, setRecordByDefault] = useState(true);
+  // ТЗ 2026-06-06 knowledge-access (Ф7) — закрытость встречи. 'none' = открыто.
+  const [closedGroupKind, setClosedGroupKind] = useState<ClosedGroupKind | 'none'>(
+    'none',
+  );
   const [customPrompt, setCustomPrompt] = useState('');
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [invitees, setInvitees] = useState<ParticipantPickerValue[]>([]);
@@ -172,6 +190,9 @@ export function CreateMeetingFormV2() {
         ...(selected.kind === 'custom' ? { templateId: selected.template.id } : {}),
         ...(cardId ? { card_id: cardId } : {}),
         ...(inviteesPayload.length > 0 ? { invitees: inviteesPayload } : {}),
+        ...(closedGroupKind !== 'none'
+          ? { closed_group_kind: closedGroupKind }
+          : {}),
       });
       setCreated(result);
     } catch (e) {
@@ -317,6 +338,41 @@ export function CreateMeetingFormV2() {
             </label>
           </div>
 
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="meeting-closed-group">Кто увидит знания встречи</Label>
+            <Select
+              value={closedGroupKind}
+              onValueChange={(v) =>
+                setClosedGroupKind(v as ClosedGroupKind | 'none')
+              }
+            >
+              <SelectTrigger id="meeting-closed-group">
+                <span className="flex items-center gap-2">
+                  <Lock size={14} className="text-fg-tertiary" />
+                  <SelectValue />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {CLOSED_GROUP_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-fg-tertiary">
+              {CLOSED_GROUP_OPTIONS.find((o) => o.value === closedGroupKind)
+                ?.hint ?? ''}
+            </p>
+
+            <ConfidentialityAdvisory
+              meetingType={baseType}
+              title={title}
+              currentValue={closedGroupKind}
+              onApply={(kind) => setClosedGroupKind(kind)}
+            />
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="meeting-invitees">Пригласить сотрудников</Label>
             <ParticipantPicker
@@ -400,6 +456,52 @@ export function CreateMeetingFormV2() {
           onClose={() => setCreated(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Advisory-подсказка о конфиденциальности (ТЗ 2026-06-06 knowledge-access, Ф7).
+ *
+ * Лёгкий клиентский эвристик: по типу встречи или словам-маркерам в заголовке
+ * предлагает закрыть доступ. Это ПОДСКАЗКА, не замок — решает человек. Не
+ * показывается, если пользователь уже выбрал предлагаемый уровень закрытости.
+ */
+function ConfidentialityAdvisory({
+  meetingType,
+  title,
+  currentValue,
+  onApply,
+}: {
+  meetingType: MeetingType;
+  title: string;
+  currentValue: ClosedGroupKind | 'none';
+  onApply: (kind: ClosedGroupKind) => void;
+}) {
+  const hint = detectConfidentiality(meetingType, title);
+  // Не навязываем, если человек уже закрыл встречу нужным образом.
+  if (!hint.show || currentValue === hint.suggested) return null;
+
+  const suggestedLabel =
+    CLOSED_GROUP_OPTIONS.find((o) => o.value === hint.suggested)?.label ??
+    'Закрыть доступ';
+
+  return (
+    <div className="flex items-start gap-2.5 rounded-md bg-chip-warning-bg px-3 py-2.5 text-chip-warning-fg">
+      <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 space-y-2">
+        <p className="text-sm">
+          Похоже, встреча конфиденциальная — закрыть доступ? {hint.reason}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onApply(hint.suggested)}
+        >
+          {`Закрыть: «${suggestedLabel}»`}
+        </Button>
+      </div>
     </div>
   );
 }

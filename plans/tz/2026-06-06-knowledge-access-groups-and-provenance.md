@@ -269,8 +269,9 @@ AND (
 **Acceptance:** проекция из блока `closed=Совет` → помечена council, не видна не-члену при enforce; при off — без изменений; derive юнит на union-правило.
 **Закрывает:** R12.
 
-### Фаза 7 — Frontend admin: матрица отделов, флаг встречи, членство, advisory-подсказка
+### Фаза 7 — Frontend admin: матрица отделов, флаг встречи, членство, advisory-подсказка ✅ РЕАЛИЗОВАНО
 **Цель:** админ настраивает «кто что видит»; хост помечает закрытые встречи.
+> Реализация: **7a (backend)** — `KnowledgeAccessAdminController` (/api/v1/knowledge-access): GET /groups, GET+PUT /matrix (направленно), GET/POST/DELETE members (членство + clearance-override), PATCH /meeting-types/:id/closed-default; Meeting.closedGroupKind в create + PATCH /meetings/:id/closed-group; все мутации → resolver.invalidateAll(). **7b (frontend)** — `src/api/knowledge-access.api.ts` + `src/domain/knowledge-access.ts` + `company-admin/access-groups` (матрица + членство) + сайдбар + селектор закрытости в форме встречи + advisory-баннер (эвристик, не замок). Упрощения (honest): UI крутилки defaultClosedGroupKind по типу встречи — контракт готов, отдельной org-admin поверхности списка типов нет (вне scope); post-factum селектор write-only (meeting-detail DTO не отдаёт closedGroupKind). interview→personal дефолт — засидить в Ф8.
 **Входит (слои `ApiDto→DomainModel→UiModel`, App Router `(admin)`, только русский, парные токены):**
 - UI направленной матрицы `GroupVisibilityPolicy` («отдел → видит отделы», несимметрично) — образец взаимодействия `DepartmentDomainLink`.
 - Селектор закрытой группы на встрече (`Meeting.closedGroupKind`: нет/Руководство/Совет/Личное), при создании и постфактум.

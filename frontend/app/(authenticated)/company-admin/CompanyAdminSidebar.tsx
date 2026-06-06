@@ -2,7 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CalendarDays, Eye, Link2, type LucideIcon } from 'lucide-react';
+import {
+  CalendarDays,
+  Eye,
+  Link2,
+  ShieldCheck,
+  type LucideIcon,
+} from 'lucide-react';
 
 import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -15,6 +21,11 @@ type Item = {
 
 const ITEMS: Item[] = [
   { href: '/company-admin/memory-access', label: 'Доступ к памяти', icon: Eye },
+  {
+    href: '/company-admin/access-groups',
+    label: 'Группы доступа',
+    icon: ShieldCheck,
+  },
   { href: '/company-admin/sources', label: 'Источники', icon: Link2 },
   { href: '/company-admin/meetings', label: 'Встречи', icon: CalendarDays },
 ];

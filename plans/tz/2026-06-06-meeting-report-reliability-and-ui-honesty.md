@@ -162,7 +162,8 @@ await this.prisma.aiResult.upsert({
 
 **Граф фазы 1:** 1A, 1B, 1C независимы (3 разных файла) → одна волна.
 
-## Фаза 2 — Показ всех задач (S6-03) `[ ]`
+## Фаза 2 — Показ всех задач (S6-03) `[x]`
+> Реализовано 2026-06-06. `pickPrimaryTasks` → merge fast+main с дедупом по trim+lowercase. Журнал-превью (`MeetingDetailPane`) переведён с устаревшего `aiResult.tasks` на `useMeetingTasks`+`pickPrimaryTasks`. Бейдж вкладки и стат-карта уже читали `primaryTasks` — теперь показывают 6. Тест `domain/__tests__/task.test.ts` (6 кейсов). typecheck/lint/build/тест зелёные.
 **Мини-картография:** `frontend/src/domain/task.ts:55-61` (`pickPrimaryTasks`). Поверхности счётчика: `MeetingResultPageReal.tsx` (вкладка «Задачи» — бейдж `e359`; стат-карта «Задачи»; блок «Action items» в превью списка встреч). Перед правкой перечитать.
 **Цель:** показывать ВСЕ извлечённые задачи; счётчик задач одинаков во всех поверхностях и равен числу реальных `Task`.
 **Что входит:**

@@ -34,7 +34,9 @@ import { exportsApi } from '@/api/exports.api';
 import { ApiError } from '@/api/api-error';
 import { meetingSummaryFromApi, meetingDurationSeconds } from '@/domain/meeting';
 import { tagFromApi, type TagDomain } from '@/domain/tag';
+import { pickPrimaryTasks } from '@/domain/task';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
 import {
   MEETING_STATUSES,
   MEETING_TYPES,
@@ -887,6 +889,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false },
   );
+  const { tasks: taskRows } = useMeetingTasks(meetingId);
 
   if (isLoading) {
     return (
@@ -913,10 +916,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const recording = data.recording;
   const aiResult = data.aiResult;
   const summary = aiResult?.summary ?? null;
-  const tasks =
-    Array.isArray(aiResult?.tasks)
-      ? (aiResult.tasks as Array<Record<string, unknown>>)
-      : [];
+  // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
+  // а НЕ из устаревшего пустого aiResult.tasks. pickPrimaryTasks объединяет fast+main.
+  const tasks = pickPrimaryTasks(taskRows);
 
   const durMs =
     typeof meeting.durationMs === 'number'
@@ -1036,13 +1038,15 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                     </div>
                   ) : (
                     <ul className="flex flex-col">
-                      {tasks.slice(0, 5).map((t, i) => {
-                        const title = typeof t.title === 'string' ? t.title : '—';
-                        const assignee = (t.assignee ?? t.owner) as string | undefined;
-                        const due = (t.due ?? t.deadline) as string | undefined;
+                      {tasks.slice(0, 5).map((t) => {
+                        const title = t.title || '—';
+                        const assignee = t.assignee ?? undefined;
+                        const due = t.dueDate
+                          ? t.dueDate.toLocaleDateString('ru-RU')
+                          : undefined;
                         return (
                           <li
-                            key={i}
+                            key={t.id}
                             className="flex items-start gap-2.5 rounded-md px-3 py-2.5 transition-colors hover:bg-bg-overlay"
                           >
                             <Circle

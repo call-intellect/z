@@ -12,6 +12,7 @@ import { type Job, Worker } from 'bullmq';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { PRESENT_PARTICIPANT_WHERE } from '../../participants/participant-presence';
 import {
   DASHBOARD_QUEUE_NAMES,
   type MeetingRoiJobData,
@@ -115,7 +116,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
         durationMs: true,
         startedAt: true,
         endedAt: true,
-        _count: { select: { participants: true } },
+        _count: { select: { participants: { where: PRESENT_PARTICIPANT_WHERE } } },
       },
     });
     if (!meeting) {

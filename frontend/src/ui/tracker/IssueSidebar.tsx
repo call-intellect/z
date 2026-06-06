@@ -57,7 +57,7 @@ export function IssueSidebar({
         </span>
       </Row>
 
-      <Row icon={<Layers size={14} />} label="Цикл">
+      <Row icon={<Layers size={14} />} label="Спринт">
         <span className="text-fg-primary">{issue.cycleId ?? '—'}</span>
       </Row>
 

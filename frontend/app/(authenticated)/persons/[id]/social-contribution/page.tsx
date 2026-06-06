@@ -17,10 +17,11 @@ export const metadata: Metadata = {
  * Если у текущего пользователя нет прав — бэк отдаёт 403, мы показываем
  * empty/forbidden состояние.
  */
-export default function PersonSocialContributionPage({
+export default async function PersonSocialContributionPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PersonSocialContributionClient personId={params.id} />;
+  const { id } = await params;
+  return <PersonSocialContributionClient personId={id} />;
 }

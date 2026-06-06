@@ -3,17 +3,18 @@ import type { Metadata } from 'next';
 import { RoleMapClient } from './RoleMapClient';
 
 export const metadata: Metadata = {
-  title: 'Карта должности — Z',
+  title: 'Карта должности — Кора',
 };
 
 /**
  * SBA α-8 wave 4 — графический вид карты должности (5 нормализованных
  * категорий wave-2 + KPI + completeness + maturity).
  */
-export default function RoleMapPage({
+export default async function RoleMapPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <RoleMapClient roleId={params.id} />;
+  const { id } = await params;
+  return <RoleMapClient roleId={id} />;
 }

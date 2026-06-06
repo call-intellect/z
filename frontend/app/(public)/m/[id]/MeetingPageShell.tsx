@@ -12,7 +12,9 @@ import { Lobby } from '@/ui/components/lobby/Lobby';
 import { MeetingFinishedPlaceholder } from '@/ui/components/MeetingFinishedPlaceholder';
 import { MeetingFailedPlaceholder } from '@/ui/components/MeetingFailedPlaceholder';
 import { MeetingRoom } from '@/ui/components/meeting-room/MeetingRoom';
-import { t } from '@/lib/i18n';
+import { Button } from '@/ui/components/shared/Button';
+import { copyToClipboard } from '@/lib/copy-to-clipboard';
+import { isJoinableStatus } from '@/domain/meeting';
 import type { MeetingStatus } from '@/domain/enums';
 
 type Props = {
@@ -48,6 +50,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
   const access = useMeetingAccess(meetingId);
   const [joined, setJoined] = useState<JoinedState | null>(null);
   const [autoJoinAttempted, setAutoJoinAttempted] = useState(false);
+  const [hasLeft, setHasLeft] = useState(false);
 
   // Авто-join хоста — как только мы знаем что role === 'host' и встреча
   // ещё «живая».
@@ -57,8 +60,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
     if (access.state !== 'ready') return;
     const { role, meeting: { status } } = access.data;
 
-    const isJoinableStatus = status === 'scheduled' || status === 'active';
-    if (role === 'host' && isJoinableStatus) {
+    if (role === 'host' && isJoinableStatus(status)) {
       setAutoJoinAttempted(true);
       void joinAsHostOrGuest();
     } else if (role === 'guest' && status === 'active') {
@@ -93,6 +95,17 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
         e instanceof ApiError ? e.message : 'Не удалось подключиться.';
       toast.error(message);
     }
+  };
+
+  const rejoin = async () => {
+    setHasLeft(false);
+    await joinAsHostOrGuest();
+  };
+
+  const copyShellLink = async () => {
+    const ok = await copyToClipboard(`${window.location.origin}/m/${meetingId}`);
+    if (ok) toast.success('Ссылка скопирована');
+    else toast.error('Не удалось скопировать ссылку');
   };
 
   // ─── render ────────────────────────────────────────────
@@ -134,6 +147,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
         identityToParticipantId={joined.identityToParticipantId}
         onLeave={() => {
           setJoined(null);
+          setHasLeft(true);
           access.mutate();
         }}
       />
@@ -158,6 +172,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
         meetingId={meetingId}
         meetingTitle={meeting.title}
         waitingForHost={meeting.status === 'scheduled'}
+        inviteToken={inviteToken ?? null}
         onJoined={(data) =>
           setJoined({ joined: data, identityToParticipantId: {} })
         }
@@ -165,13 +180,32 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
     );
   }
 
-  // role === host или guest, но joined ещё не выставлено (автоjoin в полёте) —
-  // показываем «загрузка комнаты».
+  // role === host/guest, joined ещё не выставлено: либо авто-join в полёте,
+  // либо пользователь вышел (B2) и может вернуться. Для хоста — копирование
+  // ссылки (B4). Сюда попадаем только при joinable-статусе (failed/finished
+  // отсеяны выше).
   return (
     <main className="flex min-h-screen items-center justify-center bg-bg-subtle p-6">
-      <div className="w-full max-w-sm space-y-3 text-center">
-        <p className="text-fg-secondary">{t('app.loading')}</p>
-        <Skeleton className="h-32 w-full" />
+      <div className="w-full max-w-sm space-y-4 rounded-lg border border-border-subtle bg-bg-elevated p-6 text-center">
+        <h1 className="text-lg font-semibold text-fg-primary">
+          {hasLeft ? 'Вы вышли из встречи' : meeting.title}
+        </h1>
+        <p className="text-sm text-fg-secondary">
+          {hasLeft
+            ? 'Встреча продолжается — вы можете вернуться в любой момент.'
+            : 'Подключаемся к встрече…'}
+        </p>
+        {!hasLeft && <Skeleton className="h-2 w-full" />}
+        <div className="flex flex-col gap-2">
+          <Button onClick={() => void rejoin()}>
+            {hasLeft ? 'Вернуться в встречу' : 'Войти'}
+          </Button>
+          {role === 'host' && (
+            <Button variant="secondary" onClick={() => void copyShellLink()}>
+              Скопировать ссылку
+            </Button>
+          )}
+        </div>
       </div>
     </main>
   );

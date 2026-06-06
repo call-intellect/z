@@ -34,6 +34,7 @@ interface CreatedTask {
 function buildWorker(opts?: { trackerOnly?: boolean }): {
   worker: MeetingReportFastWorker;
   created: CreatedTask[];
+  upsert: ReturnType<typeof vi.fn>;
 } {
   const created: CreatedTask[] = [];
   const prisma = {
@@ -48,6 +49,9 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
         });
         return data;
       }),
+    },
+    aiResult: {
+      upsert: vi.fn(async () => ({})),
     },
   };
 
@@ -69,7 +73,7 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
     undefined, // metrics @Optional()
   );
 
-  return { worker, created };
+  return { worker, created, upsert: prisma.aiResult.upsert };
 }
 
 function task(
@@ -223,5 +227,48 @@ describe('MeetingReportFastWorker.writeTasks — Ф5.2 gate meetingTasksToTracke
     });
 
     expect(created).toHaveLength(1);
+  });
+});
+
+describe('MeetingReportFastWorker.writeSummary — S6-01 upsert', () => {
+  it('пишет через upsert по meetingId', async () => {
+    const { worker, upsert } = buildWorker();
+    await (worker as any).writeSummary({
+      meetingId: 'm-1',
+      meetingType: 'sales',
+      markdown: 'Привет мир',
+      modelUsed: 'deepseek:v4',
+    });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { meetingId: 'm-1' },
+        update: expect.objectContaining({ summaryFast: 'Привет мир' }),
+      }),
+    );
+  });
+
+  it('идемпотентность: два вызова → upsert вызван дважды, без create-пути (нет гонки)', async () => {
+    const { worker, upsert } = buildWorker();
+    const args = {
+      meetingId: 'm-1',
+      meetingType: 'sales',
+      markdown: 'Привет мир',
+      modelUsed: 'deepseek:v4',
+    };
+    await (worker as any).writeSummary(args);
+    await (worker as any).writeSummary(args);
+    expect(upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('пустой markdown → early return, upsert НЕ вызван', async () => {
+    const { worker, upsert } = buildWorker();
+    await (worker as any).writeSummary({
+      meetingId: 'm-1',
+      meetingType: 'sales',
+      markdown: '   ',
+      modelUsed: 'deepseek:v4',
+    });
+    expect(upsert).not.toHaveBeenCalled();
   });
 });

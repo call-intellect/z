@@ -12,10 +12,11 @@ export const metadata: Metadata = {
  * Отдельный path для ссылок из chat-v2 / probe-events / уведомлений.
  * Контент почти повторяет правую панель master-detail, но в полноэкранном виде.
  */
-export default function ExperimentDetailPage({
+export default async function ExperimentDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <ExperimentDetailClient id={params.id} />;
+  const { id } = await params;
+  return <ExperimentDetailClient id={id} />;
 }

@@ -8,6 +8,8 @@
 
 import { useState } from 'react';
 import { Check, X, Clock } from 'lucide-react';
+import { mutate as globalMutate } from 'swr';
+import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import { useIntake } from '@/hooks/tracker/useIntake';
@@ -19,9 +21,16 @@ import {
   type Intake,
 } from '@/domain/tracker';
 
-export function IntakeBoard({ orgId }: { orgId: string }) {
+export function IntakeBoard({
+  orgId,
+  projectId,
+}: {
+  orgId: string;
+  projectId?: string;
+}) {
   const { intake, isLoading, error, mutate } = useIntake(orgId, {
     status: 'pending',
+    ...(projectId ? { projectId } : {}),
   });
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -40,13 +49,22 @@ export function IntakeBoard({ orgId }: { orgId: string }) {
               ).toISOString(),
             }
           : {}),
-        ...(decision === 'accept' && item.projectId
-          ? { targetProjectId: item.projectId }
+        // В проектном контексте targetProjectId всегда задан (id проекта);
+        // в общем случае бэк сам зарезолвит intake.projectId/suggested.
+        ...(decision === 'accept'
+          ? { targetProjectId: projectId ?? item.projectId ?? null }
           : {}),
       });
       await mutate();
+      // A7: обновить бейдж «Входящие» в сайдбаре (отдельный SWR-ключ счётчика).
+      void globalMutate(
+        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+      );
     } catch (e) {
-      console.error('triage failed', e);
+      toast.error(
+        `Не удалось выполнить: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`,
+        { duration: 5000 },
+      );
     } finally {
       setBusyId(null);
     }

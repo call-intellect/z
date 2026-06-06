@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Вопросы агентов — Z',
+  title: 'Вопросы агентов — Кора',
 };
 
 /**

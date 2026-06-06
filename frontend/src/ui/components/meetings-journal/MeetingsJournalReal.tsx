@@ -17,13 +17,16 @@ import {
   ChevronRight,
   Circle,
   Clock,
+  Copy,
   Filter,
   ListChecks,
+  LogIn,
   Plus,
   Search,
   Sparkles,
   Tag as TagIcon,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -32,9 +35,15 @@ import { meetingsApi } from '@/api/meetings.api';
 import { tagsApi } from '@/api/tags.api';
 import { exportsApi } from '@/api/exports.api';
 import { ApiError } from '@/api/api-error';
-import { meetingSummaryFromApi, meetingDurationSeconds } from '@/domain/meeting';
+import {
+  meetingSummaryFromApi,
+  meetingDurationSeconds,
+  isJoinableStatus,
+} from '@/domain/meeting';
 import { tagFromApi, type TagDomain } from '@/domain/tag';
+import { pickPrimaryTasks } from '@/domain/task';
 import { useIsMobile } from '@/hooks/useMediaQuery';
+import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
 import {
   MEETING_STATUSES,
   MEETING_TYPES,
@@ -64,6 +73,8 @@ import {
 import { toast } from '@/ui/shadcn/toast';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { cn } from '@/ui/shadcn/lib/utils';
+import { InviteDialog } from '@/ui/shared/InviteDialog';
+import { copyToClipboard } from '@/lib/copy-to-clipboard';
 
 import { fmtDurationCompact } from '@/ui/components/meeting-result-v2/format-utils';
 
@@ -117,6 +128,13 @@ function useDebouncedValue<T>(value: T, delay = 250): T {
     return () => clearTimeout(id);
   }, [value, delay]);
   return debounced;
+}
+
+async function copyMeetingLink(meetingId: string): Promise<void> {
+  const url = `${window.location.origin}/m/${meetingId}`;
+  const ok = await copyToClipboard(url);
+  if (ok) toast.success('Ссылка скопирована');
+  else toast.error('Не удалось скопировать ссылку');
 }
 
 export function MeetingsJournalReal() {
@@ -447,6 +465,7 @@ function MeetingRowCard({
   const durMs = durSec ? durSec * 1000 : null;
   const date = item.startedAt ?? item.createdAt;
   const typeLabel = MEETING_TYPE_LABEL[item.type] ?? item.type;
+  const joinable = isJoinableStatus(item.status);
   const isProcessing =
     item.status === 'recording_processing' ||
     item.status === 'transcription_processing' ||
@@ -508,12 +527,42 @@ function MeetingRowCard({
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
           {typeLabel}
         </Badge>
+        {item.status === 'active' && (
+          <Badge className="bg-chip-info-bg px-1.5 py-0 text-[10px] text-chip-info-fg">
+            Идёт
+          </Badge>
+        )}
         <span className="inline-flex items-center gap-1">
           <Clock size={10} strokeWidth={1.75} />
           <span className="font-mono">{fmtDurationCompact(durMs)}</span>
         </span>
         <span>{date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })}</span>
       </div>
+      {joinable && (
+        <div className="flex flex-wrap items-center gap-2 pl-6 pt-1">
+          <Button
+            asChild
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link href={`/m/${item.id}`}>
+              <LogIn size={12} /> Войти
+            </Link>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              void copyMeetingLink(item.id);
+            }}
+          >
+            <Copy size={12} /> Скопировать ссылку
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -887,6 +936,8 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false },
   );
+  const { tasks: taskRows } = useMeetingTasks(meetingId);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -909,14 +960,14 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   }
 
   const meeting = data.meeting;
+  const joinable = isJoinableStatus(meeting.status);
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
   const summary = aiResult?.summary ?? null;
-  const tasks =
-    Array.isArray(aiResult?.tasks)
-      ? (aiResult.tasks as Array<Record<string, unknown>>)
-      : [];
+  // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
+  // а НЕ из устаревшего пустого aiResult.tasks. pickPrimaryTasks объединяет fast+main.
+  const tasks = pickPrimaryTasks(taskRows);
 
   const durMs =
     typeof meeting.durationMs === 'number'
@@ -964,11 +1015,35 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
             )}
           </div>
         </div>
-        <Button asChild size="sm">
-          <Link href={`/meetings/${meeting.id}/result`}>
-            Открыть полную страницу
-          </Link>
-        </Button>
+        {joinable ? (
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button asChild size="sm">
+              <Link href={`/m/${meeting.id}`}>
+                <LogIn size={14} /> Войти в встречу
+              </Link>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void copyMeetingLink(meeting.id)}
+            >
+              <Copy size={14} /> Скопировать ссылку
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setInviteOpen(true)}
+            >
+              <UserPlus size={14} /> Пригласить
+            </Button>
+          </div>
+        ) : (
+          <Button asChild size="sm">
+            <Link href={`/meetings/${meeting.id}/result`}>
+              Открыть полную страницу
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
@@ -1036,13 +1111,15 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                     </div>
                   ) : (
                     <ul className="flex flex-col">
-                      {tasks.slice(0, 5).map((t, i) => {
-                        const title = typeof t.title === 'string' ? t.title : '—';
-                        const assignee = (t.assignee ?? t.owner) as string | undefined;
-                        const due = (t.due ?? t.deadline) as string | undefined;
+                      {tasks.slice(0, 5).map((t) => {
+                        const title = t.title || '—';
+                        const assignee = t.assignee ?? undefined;
+                        const due = t.dueDate
+                          ? t.dueDate.toLocaleDateString('ru-RU')
+                          : undefined;
                         return (
                           <li
-                            key={i}
+                            key={t.id}
                             className="flex items-start gap-2.5 rounded-md px-3 py-2.5 transition-colors hover:bg-bg-overlay"
                           >
                             <Circle
@@ -1088,6 +1165,12 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
           </Link>
         </Button>
       </div>
+
+      <InviteDialog
+        meetingId={meeting.id}
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+      />
     </div>
   );
 }

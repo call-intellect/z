@@ -17,10 +17,11 @@ export const metadata: Metadata = {
  * Заменяет канонический URL клона — старый `/roles/[id]/clone` теперь
  * 301-редиректит сюда.
  */
-export default function CloneDetailPage({
+export default async function CloneDetailPage({
   params,
 }: {
-  params: { roleId: string };
+  params: Promise<{ roleId: string }>;
 }) {
-  return <CloneDetailClient roleId={params.roleId} />;
+  const { roleId } = await params;
+  return <CloneDetailClient roleId={roleId} />;
 }

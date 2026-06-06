@@ -451,6 +451,7 @@ export class SprintsService {
             dto.scope === 'person' ? (dto.refId ?? null) : null,
           departmentId:
             dto.scope === 'department' ? (dto.refId ?? null) : null,
+          systemGenerated: dto.scope === 'org',
         };
 
         const project = await tx.project.create({

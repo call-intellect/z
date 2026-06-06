@@ -16,10 +16,11 @@ export const metadata: Metadata = {
  * Видны: версия, носитель в этот период, confidence, traits count.
  * Empty state: «У клона пока единственная версия (v1)».
  */
-export default function RoleCloneHistoryPage({
+export default async function RoleCloneHistoryPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <RoleCloneHistoryClient roleId={params.id} />;
+  const { id } = await params;
+  return <RoleCloneHistoryClient roleId={id} />;
 }

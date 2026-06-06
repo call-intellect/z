@@ -366,7 +366,7 @@ function ListHeader({
         <div>
           <h1 className="text-lg font-semibold text-fg-primary">Спринты</h1>
           <p className="text-xs text-fg-tertiary">
-            Циклы команды — всего {total}
+            Спринты команды — всего {total}
           </p>
         </div>
         <Button size="sm" className="gap-1.5" onClick={onCreateClick}>

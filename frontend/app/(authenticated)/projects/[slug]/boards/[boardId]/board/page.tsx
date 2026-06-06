@@ -5,7 +5,7 @@ import { ProjectViewShell } from '../../../ProjectViewShell';
 import { BoardClient } from './BoardClient';
 
 export const metadata: Metadata = {
-  title: 'Доска — Z',
+  title: 'Доска — Кора',
 };
 
 /**

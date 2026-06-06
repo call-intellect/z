@@ -145,6 +145,18 @@ export function intakeFromApi(api: IntakeApi): Intake {
   };
 }
 
+// ─── Accept resolver ────────────────────────────────────────────────────────
+
+/**
+ * Резолвит проект для accept входящей: явный projectId → suggested → null.
+ * null означает «проект не определён, нужен ручной выбор» (открыть пикер).
+ */
+export function resolveAcceptTargetProjectId(
+  item: Pick<Intake, 'projectId' | 'suggestedProjectId'>,
+): string | null {
+  return item.projectId ?? item.suggestedProjectId ?? null;
+}
+
 // ─── UI helpers ─────────────────────────────────────────────────────────────
 
 export function intakeDisplayTitle(intake: Intake): string {

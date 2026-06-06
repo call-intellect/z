@@ -18,6 +18,7 @@ describe('ParticipantsService.join', () => {
       create: ReturnType<typeof vi.fn>;
       update: ReturnType<typeof vi.fn>;
     };
+    person: { findMany: ReturnType<typeof vi.fn> };
     user: { findUnique: ReturnType<typeof vi.fn> };
   };
   let jwt: {
@@ -51,6 +52,7 @@ describe('ParticipantsService.join', () => {
         })),
         update: vi.fn(async (args: { data: Record<string, unknown> }) => ({ ...args.data })),
       },
+      person: { findMany: vi.fn(async () => []) },
       user: { findUnique: vi.fn() },
     };
     jwt = {
@@ -158,5 +160,46 @@ describe('ParticipantsService.join', () => {
     expect(result.role).toBe('guest');
     expect(result.guestSessionCookie).toBeDefined();
     expect(result.guestSessionCookie?.value).toBe('guest-cookie-jwt');
+  });
+
+  it('дедуп по personId: залогинен, pre-seed по personId (userId=null), вход без inviteToken → переиспущает строку, не плодит guest', async () => {
+    // meeting с tenantId
+    prisma.meeting.findUnique.mockResolvedValue({
+      id: MEETING_ID, ownerId: 'owner1', status: 'active', endedAt: null, tenantId: 'org1',
+    });
+    // user u1 связан с Person pers1
+    prisma.person.findMany.mockResolvedValueOnce([{ id: 'pers1' }]);
+    // pre-seed invited по personId (userId null)
+    prisma.participant.findFirst.mockResolvedValueOnce({
+      id: 'p-inv', personId: 'pers1', userId: null, invitationStatus: 'invited',
+      livekitIdentity: 'invitee:tok', name: 'Сотрудник', role: 'guest', meetingId: MEETING_ID,
+    });
+
+    const svc = make();
+    const result = await svc.join({
+      meetingId: MEETING_ID, userId: 'u1', guestName: 'Сотрудник',
+      existingGuestCookie: null, inviteToken: null,
+    });
+
+    expect(result.participantId).toBe('p-inv');
+    expect(prisma.participant.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ invitationStatus: 'joined' }) }),
+    );
+    expect(prisma.participant.create).not.toHaveBeenCalled(); // дубль не создан
+  });
+
+  it('нет pre-seed ни по userId, ни по personId → joinAsGuest создаёт нового', async () => {
+    prisma.meeting.findUnique.mockResolvedValue({
+      id: MEETING_ID, ownerId: 'owner1', status: 'active', endedAt: null, tenantId: 'org1',
+    });
+    prisma.person.findMany.mockResolvedValueOnce([]);
+    prisma.participant.findFirst.mockResolvedValueOnce(null);
+
+    const svc = make();
+    await svc.join({
+      meetingId: MEETING_ID, userId: 'u2', guestName: 'Гость',
+      existingGuestCookie: null, inviteToken: null,
+    });
+    expect(prisma.participant.create).toHaveBeenCalled();
   });
 });

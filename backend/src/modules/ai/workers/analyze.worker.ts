@@ -503,12 +503,14 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   // ─────────────────────────── pieces ──────────────────────────────────────
 
   private async upsertEmptyAiResult(meeting: Meeting): Promise<AiResult> {
-    const existing = await this.prisma.aiResult.findUnique({
+    // Атомарный upsert (INSERT ... ON CONFLICT) убирает TOCTOU: раньше
+    // findUnique→create мог упасть P2002, если meeting-report-fast.worker
+    // создал AiResult между двумя запросами (тот же КЛАСС гонки, S6-01, Р5).
+    // update:{} — no-op: existing возвращается без перезаписи полей.
+    return this.prisma.aiResult.upsert({
       where: { meetingId: meeting.id },
-    });
-    if (existing) return existing;
-    return this.prisma.aiResult.create({
-      data: {
+      update: {},
+      create: {
         meetingId: meeting.id,
         meetingType: meeting.type,
         summary: '',

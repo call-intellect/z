@@ -99,14 +99,28 @@ export class ParticipantsService {
       return this.joinAsHost(meeting, input.userId);
     }
 
-    // 2. Залогинен, не владелец, и есть pre-seeded Participant по `userId` в этой
-    //    встрече (приглашён заранее) — переиспользуем его, не плодим guest.
+    // 2. Залогинен, не владелец — ищем pre-seeded `invited`-строку ЭТОГО человека
+    //    и переиспользуем её, не плодя дубль `guest:`. Матчим по `userId` ИЛИ по
+    //    `personId` связанного с этим userId Person: приглашение по сотруднику
+    //    заводит строку с userId=null/personId=<id>, и матч только по userId её не
+    //    находил → дубль (корень бага дублирования счётчика, анализ 2026-06-06).
     if (input.userId) {
+      const persons = await this.prisma.person.findMany({
+        where: {
+          userId: input.userId,
+          ...(meeting.tenantId ? { tenantId: meeting.tenantId } : {}),
+        },
+        select: { id: true },
+      });
+      const personIds = persons.map((p) => p.id);
       const preSeeded = await this.prisma.participant.findFirst({
         where: {
           meetingId: meeting.id,
-          userId: input.userId,
           invitationStatus: 'invited',
+          OR: [
+            { userId: input.userId },
+            ...(personIds.length > 0 ? [{ personId: { in: personIds } }] : []),
+          ],
         },
       });
       if (preSeeded) {

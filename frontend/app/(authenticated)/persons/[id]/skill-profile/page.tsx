@@ -7,10 +7,11 @@ import { redirect } from 'next/navigation';
  *
  * Маршрут оставлен только для редиректа со старых ссылок.
  */
-export default function PersonSkillProfilePage({
+export default async function PersonSkillProfilePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  redirect(`/persons/${params.id}`);
+  const { id } = await params;
+  redirect(`/persons/${id}`);
 }

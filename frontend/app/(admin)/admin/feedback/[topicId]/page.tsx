@@ -17,10 +17,11 @@ export const metadata: Metadata = {
  * См. ТЗ: `plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`,
  * раздел «Frontend — админский» → подраздел «Страница `/admin/feedback/[topicId]`».
  */
-export default function AdminFeedbackTopicPage({
+export default async function AdminFeedbackTopicPage({
   params,
 }: {
-  params: { topicId: string };
+  params: Promise<{ topicId: string }>;
 }) {
-  return <FeedbackTopicDetailClient topicId={params.topicId} />;
+  const { topicId } = await params;
+  return <FeedbackTopicDetailClient topicId={topicId} />;
 }

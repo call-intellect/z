@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DestinationsClient } from './DestinationsClient';
 
 export const metadata: Metadata = {
-  title: 'Интеграции — Z',
+  title: 'Интеграции — Кора',
 };
 
 /**

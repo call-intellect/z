@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SourcesClient } from './SourcesClient';
 
 export const metadata: Metadata = {
-  title: 'Источники — Z',
+  title: 'Источники — Кора',
 };
 
 /**

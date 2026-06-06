@@ -19,7 +19,7 @@ export default function ProjectIntakePage({
   return (
     <ProjectViewShell slug={slug}>
       {currentOrgId && project ? (
-        <IntakeBoard orgId={currentOrgId} />
+        <IntakeBoard orgId={currentOrgId} projectId={project.id} />
       ) : (
         <div className="text-sm text-fg-tertiary">Загружаем проект…</div>
       )}

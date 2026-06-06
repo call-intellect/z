@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Инсайты — Z',
+  title: 'Инсайты — Кора',
 };
 
 export default function FeedInsightsPage() {

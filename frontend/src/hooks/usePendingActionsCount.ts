@@ -18,6 +18,7 @@ import {
   mapPendingActionsCount,
   type PendingActionsCount,
 } from '@/domain/pending-action';
+import { BADGE_POLL_INTERVAL_MS, BADGE_DEDUPE_MS } from '@/lib/badge-polling';
 
 export function usePendingActionsCount(
   orgId: string | null | undefined,
@@ -43,7 +44,8 @@ export function usePendingActionsCount(
       return mapPendingActionsCount(dto);
     },
     {
-      refreshInterval: 60_000,
+      refreshInterval: BADGE_POLL_INTERVAL_MS,
+      dedupingInterval: BADGE_DEDUPE_MS,
       revalidateOnFocus: true,
     },
   );

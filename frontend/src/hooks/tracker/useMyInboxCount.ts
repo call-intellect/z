@@ -16,6 +16,7 @@ import { useMemo } from 'react';
 import useSWR from 'swr';
 
 import { issuesApi } from '@/api/tracker/issues.api';
+import { BADGE_DEDUPE_MS } from '@/lib/badge-polling';
 
 import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
 
@@ -44,7 +45,7 @@ export function useMyInboxCount(
       if (!orgId) throw new Error('orgId required');
       return issuesApi.myInboxCount(orgId);
     },
-    { revalidateOnFocus: true },
+    { revalidateOnFocus: true, dedupingInterval: BADGE_DEDUPE_MS },
   );
 
   useTrackerLiveRefresh(orgId, {}, Boolean(orgId));

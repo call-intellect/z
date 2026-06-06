@@ -8,7 +8,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/ui/shadcn/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/ui/shadcn/dropdown-menu';
 import { useAuth } from '@/contexts/auth-context';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { projectShortLabel, type Project } from '@/domain/tracker';
@@ -18,38 +25,24 @@ interface Tab {
   href: string;
   label: string;
   show?: (p: Project) => boolean;
+  group: 'primary' | 'secondary';
 }
 
 function buildTabs(slug: string): Tab[] {
-  // Wave 2 (2026-05-27): паритет Weeek/Kaiten — порядок табов
-  // Обзор → Доска/Список/Календарь/Гант → Документы → Приложения →
-  // Циклы → Входящие → Загруженность → Настройки.
-  // Группировка «Задачи ▾» не делаем (см. ТЗ overview §"Решение по группировке Задачи").
+  // A4 (2026-06-06): primary на виду, остальное под «Ещё ▾».
   return [
-    { href: `/projects/${slug}/overview`, label: 'Обзор' },
-    { href: `/projects/${slug}/board`, label: 'Доска' },
-    { href: `/projects/${slug}/list`, label: 'Список' },
-    { href: `/projects/${slug}/calendar`, label: 'Календарь' },
-    {
-      href: `/projects/${slug}/gantt`,
-      label: 'Гант',
-      show: (p) => p.gantViewEnabled,
-    },
-    // Tracker Project Documents (2026-05-27).
-    { href: `/projects/${slug}/documents`, label: 'Документы' },
-    { href: `/projects/${slug}/integrations`, label: 'Приложения' },
-    {
-      href: `/projects/${slug}/cycles`,
-      label: 'Циклы',
-      show: (p) => p.cycleViewEnabled,
-    },
-    {
-      href: `/projects/${slug}/intake`,
-      label: 'Входящие',
-      show: (p) => p.intakeViewEnabled,
-    },
-    { href: `/projects/${slug}/workload`, label: 'Загруженность' },
-    { href: `/projects/${slug}/settings`, label: 'Настройки' },
+    { href: `/projects/${slug}/overview`, label: 'Обзор', group: 'primary' },
+    { href: `/projects/${slug}/board`, label: 'Доска', group: 'primary' },
+    { href: `/projects/${slug}/list`, label: 'Список', group: 'primary' },
+    { href: `/projects/${slug}/calendar`, label: 'Календарь', group: 'primary' },
+    { href: `/projects/${slug}/cycles`, label: 'Спринты', show: (p) => p.cycleViewEnabled, group: 'primary' },
+    { href: `/projects/${slug}/settings`, label: 'Настройки', group: 'primary' },
+    // secondary — под «Ещё ▾»
+    { href: `/projects/${slug}/documents`, label: 'Документы', group: 'secondary' },
+    { href: `/projects/${slug}/integrations`, label: 'Приложения', group: 'secondary' },
+    { href: `/projects/${slug}/workload`, label: 'Загруженность', group: 'secondary' },
+    { href: `/projects/${slug}/intake`, label: 'Входящие', show: (p) => p.intakeViewEnabled, group: 'secondary' },
+    { href: `/projects/${slug}/gantt`, label: 'Гант', show: (p) => p.gantViewEnabled, group: 'secondary' },
   ];
 }
 
@@ -68,9 +61,12 @@ export function ProjectViewShell({
   // открытии любой страницы проекта. Если уже завершён/пропущен — no-op.
   useTour('project');
 
-  const tabs = buildTabs(slug).filter(
+  const visibleTabs = buildTabs(slug).filter(
     (t) => !t.show || (project && t.show(project)),
   );
+  const primaryTabs = visibleTabs.filter((t) => t.group === 'primary');
+  const secondaryTabs = visibleTabs.filter((t) => t.group === 'secondary');
+  const activeSecondary = secondaryTabs.some((t) => t.href === pathname);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -88,8 +84,8 @@ export function ProjectViewShell({
             </h1>
           )}
 
-          <nav className="-mb-3 flex gap-1 overflow-x-auto">
-            {tabs.map((tab) => {
+          <nav className="-mb-3 flex items-center gap-1 overflow-x-auto">
+            {primaryTabs.map((tab) => {
               const active = pathname === tab.href;
               const isOverview = tab.label === 'Обзор';
               return (
@@ -110,6 +106,40 @@ export function ProjectViewShell({
                 </Link>
               );
             })}
+
+            {secondaryTabs.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
+                      activeSecondary
+                        ? 'border-accent text-accent'
+                        : 'border-transparent text-fg-tertiary hover:text-fg-secondary',
+                    )}
+                  >
+                    Ещё
+                    <ChevronDown size={14} aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {secondaryTabs.map((tab) => (
+                    <DropdownMenuItem key={tab.href} asChild>
+                      <Link
+                        href={tab.href}
+                        className={cn(
+                          'w-full cursor-pointer',
+                          pathname === tab.href && 'text-accent',
+                        )}
+                      >
+                        {tab.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </nav>
         </div>
       </header>

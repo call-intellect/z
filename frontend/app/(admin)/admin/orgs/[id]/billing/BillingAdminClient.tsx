@@ -5,7 +5,15 @@ import { Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
+import { billingApi } from '@/api/billing.api';
 import { entitlementsApi } from '@/api/entitlements.api';
+import type {
+  AdminActivateBody,
+  BillingPeriodApi,
+  PaymentModeApi,
+  SubscriptionStatusApi,
+  SubscriptionViewApi,
+} from '@/api/types/billing';
 import {
   ALL_FEATURES,
   ALL_QUOTAS,
@@ -81,19 +89,34 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
   const [reason, setReason] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
+  const [subscription, setSubscription] = useState<SubscriptionViewApi | null>(
+    null,
+  );
+  const [activateMode, setActivateMode] = useState<PaymentModeApi>('bonus');
+  const [activatePeriod, setActivatePeriod] =
+    useState<BillingPeriodApi>('monthly');
+  const [activateSeatsExtra, setActivateSeatsExtra] = useState<string>('0');
+  const [activateReason, setActivateReason] = useState<string>('');
+  const [activateExternalRef, setActivateExternalRef] = useState<string>('');
+  const [activating, setActivating] = useState(false);
+
   const reload = useMemo(
     () => async () => {
       setLoading(true);
       setForbidden(false);
       setError(null);
       try {
-        const res = await entitlementsApi.getAdminOrg(tenantId);
+        const [res, billing] = await Promise.all([
+          entitlementsApi.getAdminOrg(tenantId),
+          billingApi.adminGetOrgBilling(tenantId).catch(() => null),
+        ]);
         const ent = entitlementFromApi(res);
         setEntitlement(ent);
         setTier(ent.tier);
         setFeatureOverrides(featureOverridesToForm(ent));
         setQuotaOverrides(quotaOverridesToForm(ent));
         setNotes(ent.notes ?? '');
+        setSubscription(billing?.subscription ?? null);
       } catch (e) {
         if (e instanceof ApiError && e.code === 'forbidden') {
           setForbidden(true);
@@ -150,6 +173,42 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
     }
   };
 
+  const activate = async () => {
+    if (activateReason.trim().length < 3) {
+      toast.error('Укажите причину выдачи доступа (минимум 3 символа).');
+      return;
+    }
+    setActivating(true);
+    try {
+      const parsedSeats = Number(activateSeatsExtra);
+      const body: AdminActivateBody = {
+        billingPeriod: activatePeriod,
+        seatsExtra: Number.isFinite(parsedSeats)
+          ? Math.max(0, Math.floor(parsedSeats))
+          : 0,
+        startedAt: new Date().toISOString(),
+        paymentMode: activateMode,
+        reason: activateReason.trim(),
+        ...(activateExternalRef.trim()
+          ? { externalRef: activateExternalRef.trim() }
+          : {}),
+      };
+      await billingApi.adminActivate(tenantId, body);
+      toast.success(
+        activateMode === 'bonus'
+          ? 'Бонусный доступ выдан — компания активирована'
+          : 'Платный доступ выдан — компания активирована',
+      );
+      setActivateReason('');
+      setActivateExternalRef('');
+      await reload();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось выдать доступ');
+    } finally {
+      setActivating(false);
+    }
+  };
+
   if (loading || authLoading) {
     return <AdminLoading rows={6} />;
   }
@@ -175,6 +234,22 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-6">
+      <AccessSection
+        subscription={subscription}
+        activateMode={activateMode}
+        setActivateMode={setActivateMode}
+        activatePeriod={activatePeriod}
+        setActivatePeriod={setActivatePeriod}
+        activateSeatsExtra={activateSeatsExtra}
+        setActivateSeatsExtra={setActivateSeatsExtra}
+        activateReason={activateReason}
+        setActivateReason={setActivateReason}
+        activateExternalRef={activateExternalRef}
+        setActivateExternalRef={setActivateExternalRef}
+        activating={activating}
+        onActivate={() => void activate()}
+      />
+
       <section className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
         <h2 className="text-base font-medium">Тариф</h2>
         <div className="flex flex-wrap items-center gap-3">
@@ -274,6 +349,162 @@ export function BillingAdminClient({ tenantId }: { tenantId: string }) {
 }
 
 // ─── Sections ───────────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<SubscriptionStatusApi, string> = {
+  DEMO: 'Демо (доступ не активирован)',
+  ACTIVE: 'Активна',
+  PAST_DUE: 'Просрочен платёж',
+  SUSPENDED: 'Приостановлена',
+  CANCELED: 'Отменена',
+  EXPIRED: 'Истекла',
+};
+
+function AccessSection({
+  subscription,
+  activateMode,
+  setActivateMode,
+  activatePeriod,
+  setActivatePeriod,
+  activateSeatsExtra,
+  setActivateSeatsExtra,
+  activateReason,
+  setActivateReason,
+  activateExternalRef,
+  setActivateExternalRef,
+  activating,
+  onActivate,
+}: {
+  subscription: SubscriptionViewApi | null;
+  activateMode: PaymentModeApi;
+  setActivateMode: React.Dispatch<React.SetStateAction<PaymentModeApi>>;
+  activatePeriod: BillingPeriodApi;
+  setActivatePeriod: React.Dispatch<React.SetStateAction<BillingPeriodApi>>;
+  activateSeatsExtra: string;
+  setActivateSeatsExtra: React.Dispatch<React.SetStateAction<string>>;
+  activateReason: string;
+  setActivateReason: React.Dispatch<React.SetStateAction<string>>;
+  activateExternalRef: string;
+  setActivateExternalRef: React.Dispatch<React.SetStateAction<string>>;
+  activating: boolean;
+  onActivate: () => void;
+}) {
+  const isDemo = subscription === null || subscription.status === 'DEMO';
+  const statusLabel =
+    subscription === null
+      ? 'Подписки нет (демо)'
+      : STATUS_LABELS[subscription.status];
+  const isActive = subscription?.status === 'ACTIVE';
+  const statusColor = isActive ? 'text-success' : 'text-warning';
+  const bonusSuffix =
+    isActive && subscription?.paymentMode === 'bonus' ? ' (бонусный)' : '';
+
+  return (
+    <section className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
+      <h2 className="text-base font-medium">Доступ к продукту</h2>
+
+      <p className="text-sm">
+        Текущий статус подписки:{' '}
+        <span className={`font-medium ${statusColor}`}>
+          {statusLabel}
+          {bonusSuffix}
+        </span>
+      </p>
+
+      {isDemo && (
+        <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+          Тариф задан, но доступ не активирован — компания всё ещё в демо.
+          Выдайте бонусный или платный доступ ниже.
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="activate-mode">Режим доступа</Label>
+            <Select
+              value={activateMode}
+              onValueChange={(v) => setActivateMode(v as PaymentModeApi)}
+            >
+              <SelectTrigger id="activate-mode" className="w-[320px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bonus">
+                  Бонусный (не учитывается в выручке)
+                </SelectItem>
+                <SelectItem value="paid">
+                  Платный (учитывается в выручке)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="activate-period">Период</Label>
+            <Select
+              value={activatePeriod}
+              onValueChange={(v) => setActivatePeriod(v as BillingPeriodApi)}
+            >
+              <SelectTrigger id="activate-period" className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">Помесячно</SelectItem>
+                <SelectItem value="yearly">Ежегодно</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="activate-seats">Доп. места сверх базовых</Label>
+            <Input
+              id="activate-seats"
+              type="number"
+              min={0}
+              step={1}
+              className="w-[220px]"
+              value={activateSeatsExtra}
+              onChange={(e) => setActivateSeatsExtra(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="activate-reason">
+            Причина выдачи доступа <span className="text-danger">*</span>
+          </Label>
+          <Textarea
+            id="activate-reason"
+            value={activateReason}
+            onChange={(e) => setActivateReason(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder="Например: бонусный доступ для пилота"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="activate-external-ref">
+            Внешняя ссылка/референс (необязательно)
+          </Label>
+          <Input
+            id="activate-external-ref"
+            value={activateExternalRef}
+            onChange={(e) => setActivateExternalRef(e.target.value)}
+            placeholder="Например: тикет #1234 или ссылка на счёт"
+          />
+        </div>
+
+        <Button
+          onClick={onActivate}
+          disabled={activating || activateReason.trim().length < 3}
+        >
+          {activating ? 'Выдаём…' : 'Выдать доступ'}
+        </Button>
+      </div>
+    </section>
+  );
+}
 
 function FeatureOverridesSection({
   entitlement,

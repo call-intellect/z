@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { IssueDetailClient } from './IssueDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Задача — Z',
+  title: 'Задача — Кора',
 };
 
-export default function IssueDetailPage({
+export default async function IssueDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <IssueDetailClient issueId={params.id} />;
+  const { id } = await params;
+  return <IssueDetailClient issueId={id} />;
 }

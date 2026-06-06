@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PersonContributionsClient } from './PersonContributionsClient';
 
 export const metadata: Metadata = {
-  title: 'Профиль сотрудника — Z',
+  title: 'Профиль сотрудника — Кора',
 };
 
 /**
@@ -19,10 +19,11 @@ export const metadata: Metadata = {
  * `ContributionsView` в `PersonContributionsClient`, чтобы добавить
  * горизонтальную навигацию `PersonSubpagesNav` по подстраницам карточки.
  */
-export default function PersonContributionsPage({
+export default async function PersonContributionsPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PersonContributionsClient personId={params.id} />;
+  const { id } = await params;
+  return <PersonContributionsClient personId={id} />;
 }

@@ -46,15 +46,15 @@ export function ActiveCycleWidget({
   if (!cycle) {
     return (
       <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
-        <h3 className="text-sm font-medium text-fg-primary">Активный цикл</h3>
+        <h3 className="text-sm font-medium text-fg-primary">Активный спринт</h3>
         <p className="mt-2 text-sm text-fg-tertiary">
-          Циклы в проекте не настроены.
+          Спринты в проекте не настроены.
         </p>
         <Link
           href={`/projects/${encodeURIComponent(projectSlug)}/cycles`}
           className="mt-3 inline-block text-sm text-accent hover:underline"
         >
-          Создать цикл →
+          Создать спринт →
         </Link>
       </section>
     );
@@ -96,7 +96,7 @@ export function ActiveCycleWidget({
         href={`/projects/${encodeURIComponent(projectSlug)}/cycles/${encodeURIComponent(cycle.id)}`}
         className="mt-3 inline-block text-sm text-accent hover:underline"
       >
-        Посмотреть цикл →
+        Посмотреть спринт →
       </Link>
     </section>
   );

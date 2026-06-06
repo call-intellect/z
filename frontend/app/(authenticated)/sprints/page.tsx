@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SprintsListClient } from './SprintsListClient';
 
 export const metadata: Metadata = {
-  title: 'Спринты — Z',
+  title: 'Спринты — Кора',
 };
 
 export default function SprintsPage() {

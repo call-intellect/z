@@ -67,31 +67,33 @@ function buildWorker(args: BuildArgs): {
   const meetingUpdate = vi.fn(async () => ({ id: meetingId }));
 
   const aiResultFindUnique = vi.fn(async () => null);
-  const aiResultCreate = vi.fn(
-    async (_args: unknown): Promise<AiResult> => ({
-      id: 'ai-1',
-      meetingId,
-      meetingType: args.type,
-      summary: '',
-      structuredData: null,
-      customOutputMd: null,
-      followUpEmail: null,
-      tasks: null,
-      modelUsed: 'pending',
-      // Фаза 5 knowledge-core: новые поля под summary-v2.
-      summaryV2: null,
-      summaryV2Model: null,
-      summaryV2GeneratedAt: null,
-      // 2026-05-25 meeting-report-fast: новые поля под быстрый отчёт.
-      summaryFast: null,
-      summaryFastModel: null,
-      summaryFastGeneratedAt: null,
-      promptTemplateVersionId: null,
-      experimentGroup: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }),
-  );
+  // Пустой AiResult (id='ai-1', summary='', modelUsed='pending') — общий для
+  // create- и upsert-путей (analyze.worker использует атомарный upsert).
+  const emptyAiResult = (): AiResult => ({
+    id: 'ai-1',
+    meetingId,
+    meetingType: args.type,
+    summary: '',
+    structuredData: null,
+    customOutputMd: null,
+    followUpEmail: null,
+    tasks: null,
+    modelUsed: 'pending',
+    // Фаза 5 knowledge-core: новые поля под summary-v2.
+    summaryV2: null,
+    summaryV2Model: null,
+    summaryV2GeneratedAt: null,
+    // 2026-05-25 meeting-report-fast: новые поля под быстрый отчёт.
+    summaryFast: null,
+    summaryFastModel: null,
+    summaryFastGeneratedAt: null,
+    promptTemplateVersionId: null,
+    experimentGroup: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  const aiResultCreate = vi.fn(async (_args: unknown): Promise<AiResult> => emptyAiResult());
+  const aiResultUpsert = vi.fn(async (_args: unknown): Promise<AiResult> => emptyAiResult());
   const aiResultUpdate = vi.fn(
     async (input: { data: Record<string, unknown> }): Promise<AiResult> => ({
       id: 'ai-1',
@@ -122,6 +124,7 @@ function buildWorker(args: BuildArgs): {
       findUnique: aiResultFindUnique,
       create: aiResultCreate,
       update: aiResultUpdate,
+      upsert: aiResultUpsert,
     },
   } as unknown as PrismaService;
 

@@ -12,6 +12,7 @@
 import Link from 'next/link';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { dueDateLabel, type Issue } from '@/domain/tracker';
+import { pluralRu } from '@/domain/contribution';
 import { IssuePriorityIcon } from './IssuePriorityIcon';
 import { AssigneeAvatarGroup } from './AssigneeAvatar';
 
@@ -66,14 +67,21 @@ export function IssueCard({
             </span>
           )}
           {issue.estimatePoints !== null && (
-            <span title="Оценка в попугаях">{issue.estimatePoints} ед.</span>
+            <span title="Оценка сложности">{issue.estimatePoints} ед.</span>
           )}
           {issue.labelIds.length > 0 && (
-            <span title="Меток">{issue.labelIds.length} меток</span>
+            <span title="Меток">
+              {pluralRu(issue.labelIds.length, 'метка', 'метки', 'меток')}
+            </span>
           )}
           {issue.linkedMeetingIds.length > 0 && (
             <span title="Связанные встречи">
-              {issue.linkedMeetingIds.length} встреч
+              {pluralRu(
+                issue.linkedMeetingIds.length,
+                'встреча',
+                'встречи',
+                'встреч',
+              )}
             </span>
           )}
           {/* Badge'ы в правом нижнем углу: чек-листы (☑ N/M) и подзадачи (✓ N).

@@ -45,17 +45,24 @@ export function taskFromApi(api: TaskApi): TaskDomain {
 }
 
 /**
- * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — фильтр приоритета:
- *   - если есть хоть одна fast-задача → возвращаем только fast,
- *   - иначе возвращаем v2 + legacy (null + ручные) — как fallback.
+ * ТЗ 2026-06-06 meeting-report-reliability-and-ui-honesty, Фаза 2 (S6-03):
+ * показываем ВСЕ извлечённые задачи. Раньше «есть fast → только fast» прятало
+ * main-задачи (на проде fast=1, main=5 → видно было 1 из 6). Теперь объединяем
+ * fast и main (v2/legacy/ручные) с дедупом по нормализованному заголовку
+ * (fast приоритетнее при дубле). Нормализация — только trim+lowercase (НЕ fuzzy),
+ * чтобы не схлопывать реально разные задачи.
  *
- * Используется ТОЛЬКО в пользовательском UI карточки встречи.
+ * Используется в пользовательском UI карточки/журнала встречи.
  * Admin compare UI продолжает показывать оба варианта рядом.
  */
 export function pickPrimaryTasks(items: TaskDomain[]): TaskDomain[] {
+  const norm = (t: TaskDomain) => t.title.trim().toLowerCase();
   const fast = items.filter((t) => t.extractorVersion === 'fast');
-  if (fast.length > 0) return fast;
-  return items.filter(
-    (t) => t.extractorVersion === 'v2' || t.extractorVersion === null,
+  const seen = new Set(fast.map(norm));
+  const rest = items.filter(
+    (t) =>
+      (t.extractorVersion === 'v2' || t.extractorVersion === null) &&
+      !seen.has(norm(t)),
   );
+  return [...fast, ...rest];
 }

@@ -60,7 +60,7 @@ export const ru = {
       description: 'Звонок с потенциальным клиентом, демо, переговоры.',
     },
     custdev: {
-      label: 'CustDev',
+      label: 'Глубинное интервью (CustDev)',
       description: 'Глубинное интервью с клиентом или пользователем.',
     },
     partner: {
@@ -72,8 +72,8 @@ export const ru = {
       description: 'Интервью с кандидатом, техническое или продуктовое.',
     },
     customer_success: {
-      label: 'Customer Success',
-      description: 'Чек-ин с действующим клиентом, фидбек по продукту.',
+      label: 'Работа с клиентом (Customer Success)',
+      description: 'Встреча с действующим клиентом, обратная связь по продукту.',
     },
   },
   meeting_status: {
@@ -268,7 +268,7 @@ export const ru = {
     summary: 'Краткое резюме',
     custom_report: 'Отчёт (по вашему промпту)',
     report: 'Структурированный отчёт',
-    follow_up: 'Follow-up письмо',
+    follow_up: 'Письмо-резюме после встречи',
     follow_up_copy: 'Скопировать письмо',
     follow_up_copied: 'Письмо скопировано',
     tasks: 'Задачи',

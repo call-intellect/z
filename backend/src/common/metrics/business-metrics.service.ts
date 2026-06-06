@@ -44,6 +44,7 @@ export class BusinessMetricsService implements OnModuleInit {
 
   // ── block-linker fallback на none (молчаливая деградация графа) ──────
   private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
+  private kcBlockLinkerInvalidJsonTotal!: Counter<'reason'>;
 
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
@@ -1022,6 +1023,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.kcBlockLinkerFallbackNoneTotal = this.getOrCreateCounter({
       name: 'kc_block_linker_fallback_none_total',
       help: 'block-linker не смог распарсить вердикт арбитра после ретраев → связь не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
+      labelNames: ['reason'] as const,
+    });
+
+    this.kcBlockLinkerInvalidJsonTotal = this.getOrCreateCounter({
+      name: 'kc_block_linker_invalid_json_total',
+      help: 'block-linker: невалидный ответ арбитра на попытке (reason=parse — не распарсился JSON-вердикт; reason=llm_error — вызов LLM упал). Доля растёт → проблема с моделью/форматом; терминальные потери — в kc_block_linker_fallback_none_total.',
       labelNames: ['reason'] as const,
     });
 
@@ -3645,6 +3652,16 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcBlockLinkerFallbackNone(args: { reason: string }): void {
     this.kcBlockLinkerFallbackNoneTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * block-linker: невалидный ответ арбитра на отдельной попытке (до ретрая).
+   * reason=parse — JSON-вердикт не распарсился; reason=llm_error — вызов LLM
+   * упал. Считает долю «грязного» JSON per-attempt; терминальные потери (после
+   * исчерпания ретраев) — в kc_block_linker_fallback_none_total.
+   */
+  incKcBlockLinkerInvalidJson(args: { reason: string }): void {
+    this.kcBlockLinkerInvalidJsonTotal.inc({ reason: args.reason });
   }
 
   /**

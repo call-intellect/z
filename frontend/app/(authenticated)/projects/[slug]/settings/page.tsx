@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../ProjectViewShell';
 import { ProjectSettingsClient } from './ProjectSettingsClient';
 
 export const metadata: Metadata = {
-  title: 'Настройки проекта — Z',
+  title: 'Настройки проекта — Кора',
 };
 
 export default async function ProjectSettingsPage({

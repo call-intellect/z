@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { DocumentDetailClient } from './DocumentDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Документ — Z',
+  title: 'Документ — Кора',
 };
 
-export default function DocumentDetailPage({
+export default async function DocumentDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <DocumentDetailClient documentId={params.id} />;
+  const { id } = await params;
+  return <DocumentDetailClient documentId={id} />;
 }

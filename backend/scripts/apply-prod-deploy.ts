@@ -139,6 +139,7 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/patch-team-templates-ru.ts', hint: 'русификация ролей шаблона продаж (SDR→квалификация, BANT/CHAMP→методика)', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-org-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-migrate-mvs-to-company-profile.ts', args: ['--apply'], skipBootstrap: true },
@@ -282,6 +283,7 @@ const STEPS: Step[] = [
   // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
   { phase: 'backfill', script: 'scripts/backfill-default-board.ts', hint: 'default Board + issues.boardId backfill', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-system-generated-projects.ts', hint: 'пометить org-контейнеры «Спринт компании» systemGenerated=true (A6)', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-onboarding-setup-completed.ts',

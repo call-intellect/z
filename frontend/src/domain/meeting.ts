@@ -271,6 +271,14 @@ export function meetingStatusView(status: MeetingStatus): MeetingStatusView {
   };
 }
 
+/**
+ * Единый критерий «встреча открыта для входа» (Войти/Скопировать/Пригласить
+ * vs Открыть результат). См. ТЗ Часть Б.
+ */
+export function isJoinableStatus(status: MeetingStatus): boolean {
+  return status === 'scheduled' || status === 'active';
+}
+
 /** Список всех статусов с их представлением — для фильтров/легенд. */
 export const MEETING_STATUS_VIEWS: ReadonlyArray<{ status: MeetingStatus } & MeetingStatusView> =
   MEETING_STATUSES.map((status) => ({ status, ...meetingStatusView(status) }));

@@ -68,7 +68,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             места через useCommandPalette(). */}
         <CommandPalette />
 
-        {/* SBA γ-2 — sквозной floating Concierge. */}
+        {/* SBA γ-2 — Консьерж без собственного FAB (ТЗ-2 Ф3, Р4): открывается
+            только по событию `concierge:open`, напр. из «Спросить Кору» в
+            Таблицах. Единственная плавающая кнопка — «Помощник компании»
+            (AssistantSidebar в AuthenticatedShell). */}
         <ConciergeFloatingButton />
       </div>
     </CommandPaletteProvider>

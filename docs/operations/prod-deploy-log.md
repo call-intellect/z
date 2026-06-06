@@ -64,6 +64,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧩 2026-06-06 — Трекер + Встречи (sergdev)
+
+> Контракт: `plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`. Ветка `sergdev`. 12 фаз: A1-A7 (трекер: пикер проекта во Входящих, единый «Спринт», группа меню «Задачи», подвкладки проекта, русификация, скрытие теневого проекта, консолидация поллинга бейджей) + B1-B5 (встречи: войти/ссылка/пригласить в журнале, rejoin хоста, надёжный copyLink, лобби-ссылка, эндпоинт `POST /meetings/:id/invitees`).
+>
+> **Зачем для прода:** аддитивная миграция (`Project.systemGenerated`) + 1 русификационный patch + 1 backfill для legacy-контейнеров. Остальные фазы (A1-A5 фронт, A7, B1-B4) — без БД-операций.
+
+- **Шаг 4 — Prisma миграция** — **обязательно, автоматически** (аддитивно, без data-loss). Миграция **`20260606071402_project_system_generated`** = `ALTER TABLE "Project" ADD COLUMN "systemGenerated" BOOLEAN NOT NULL DEFAULT false` (скрывает теневой org-контейнер «Спринт компании» из `GET /projects`). Едет файлом миграции, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Никакого `db push`. Проверка применения: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-team-templates-ru.ts` — русификация ролей шаблона продаж (SDR → «Специалист по квалификации», BANT/CHAMP → «методике квалификации») в `TeamTemplate.definition`. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`). Прогон: `docker compose exec backend bun run scripts/patch-team-templates-ru.ts` (или через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный**: `scripts/backfill-system-generated-projects.ts` — помечает существующие legacy org-контейнеры «Спринт компании» `systemGenerated = true` (чтобы они тоже пропали из `GET /projects`). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'backfill'`, `skipBootstrap: true`). Сначала `--dry-run`, затем без флага: `docker compose exec backend bun run scripts/backfill-system-generated-projects.ts --dry-run` → `docker compose exec backend bun run scripts/backfill-system-generated-projects.ts`. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `ProjectsService.findAll` фильтр `systemGenerated:false`, `MeetingsService.addInvitees` + контроллер; frontend: журнал/комната/лобби встреч, меню «Задачи», подвкладки проекта, пикер проекта, «Архив спринтов»): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Swagger `/api/docs` показывает `POST /meetings/:id/invitees`.
+  - Ручной чек «допригласить» на active-встрече → новый `Participant(invitationStatus='invited')` + ушло приглашение со ссылкой `…/m/<id>?inv=<token>`; повтор того же `userId`/`personId` → no-op (`skipped`).
+  - `GET /projects` больше не возвращает теневой «Спринт компании» (org-scope контейнер) — он виден только в разделе «Спринты».
+  - Прочие фазы (A1-A5 фронт, A7, B1-B4) — без БД-операций, достаточно `docker compose up -d --build`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🛡️ 2026-06-05 — Надёжность LLM-роутера + нормализация цепочек (deepseek → openai → kie)
 
 > Контракт: `plans/tz/2026-06-05-llm-router-resilience-and-chain-normalization.md`. Ветка `sergdev`. Коммиты: Ф1 `025714d3`, Ф3 `caf69f13`, Ф4 `b68554fb`, Ф2a `c21c9e15`, Ф2b `cb820a69`.

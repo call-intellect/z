@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { TeamTemplateDetailClient } from './TeamTemplateDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Шаблон команды — Z',
+  title: 'Шаблон команды — Кора',
 };
 
-export default function TeamTemplateDetailPage({
+export default async function TeamTemplateDetailPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  return <TeamTemplateDetailClient slug={params.slug} />;
+  const { slug } = await params;
+  return <TeamTemplateDetailClient slug={slug} />;
 }

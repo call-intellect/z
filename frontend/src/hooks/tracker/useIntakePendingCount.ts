@@ -15,6 +15,7 @@
 import useSWR from 'swr';
 
 import { intakeApi } from '@/api/tracker/intake.api';
+import { BADGE_POLL_INTERVAL_MS, BADGE_DEDUPE_MS } from '@/lib/badge-polling';
 
 export function useIntakePendingCount(
   orgId: string | null | undefined,
@@ -37,7 +38,8 @@ export function useIntakePendingCount(
     {
       // Раз в 60 секунд достаточно — это второстепенный счётчик; не давим
       // на backend и не путаем пользователя постоянным «пингом».
-      refreshInterval: 60_000,
+      refreshInterval: BADGE_POLL_INTERVAL_MS,
+      dedupingInterval: BADGE_DEDUPE_MS,
       revalidateOnFocus: true,
     },
   );

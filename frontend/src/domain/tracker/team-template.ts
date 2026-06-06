@@ -195,6 +195,7 @@ export function teamTemplateCategoryLabel(category: string): string {
     quality: 'Качество',
     legal: 'Юристы',
     events: 'События',
+    technology: 'Технологии',
   };
   return map[category] ?? category;
 }

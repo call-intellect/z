@@ -4,10 +4,11 @@ import { OrgEconomicsDetailClient } from './OrgEconomicsDetailClient';
 
 export const metadata: Metadata = { title: 'Z-Admin — Org Юнит-экономика' };
 
-export default function OrgEconomicsDetailPage({
+export default async function OrgEconomicsDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <OrgEconomicsDetailClient tenantId={params.id} />;
+  const { id } = await params;
+  return <OrgEconomicsDetailClient tenantId={id} />;
 }

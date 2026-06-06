@@ -20,6 +20,20 @@ export const CreateMeetingSchema = z.object({
 export type CreateMeetingDto = z.infer<typeof CreateMeetingSchema>;
 
 /**
+ * Приглашённый на встречу (pre-seed Participant + доставка по каналам).
+ * Используется и при создании встречи (`CreateMeetingForUserSchema.invitees`),
+ * и при «допригласить» (`AddInviteesSchema`, B5 2026-06-06).
+ */
+export const InviteeSchema = z.object({
+  userId: z.string().nullish(),
+  personId: z.string().nullish(),
+  email: z.string().email().nullish(),
+  sendVia: z.array(z.enum(['email', 'telegram'])).default([]),
+});
+
+export type InviteeDto = z.infer<typeof InviteeSchema>;
+
+/**
  * Схема для cookie-эндпоинта (Фаза 7.5).
  * Юзер уже есть (cookie), поэтому `host` не нужен.
  *
@@ -32,18 +46,17 @@ export const CreateMeetingForUserSchema = z.object({
   custom_prompt: z.string().max(10000).nullish(),
   card_id: z.string().min(1).max(50).nullish(),
   record_by_default: z.boolean().optional().default(true),
-  invitees: z
-    .array(
-      z.object({
-        userId: z.string().nullish(),
-        personId: z.string().nullish(),
-        email: z.string().email().nullish(),
-        sendVia: z.array(z.enum(['email', 'telegram'])).default([]),
-      }),
-    )
-    .max(50)
-    .optional()
-    .default([]),
+  invitees: z.array(InviteeSchema).max(50).optional().default([]),
 });
 
 export type CreateMeetingForUserDto = z.infer<typeof CreateMeetingForUserSchema>;
+
+/**
+ * Тело `POST /api/v1/meetings/:id/invitees` (B5 2026-06-06) — допригласить
+ * участников на уже созданную / идущую встречу. Минимум один приглашённый.
+ */
+export const AddInviteesSchema = z.object({
+  invitees: z.array(InviteeSchema).min(1).max(50),
+});
+
+export type AddInviteesDto = z.infer<typeof AddInviteesSchema>;

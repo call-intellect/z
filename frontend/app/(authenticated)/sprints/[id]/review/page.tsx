@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { SprintReviewClient } from './SprintReviewClient';
 
 export const metadata: Metadata = {
-  title: 'Итоги спринта — Z',
+  title: 'Итоги спринта — Кора',
 };
 
-export default function SprintReviewPage({
+export default async function SprintReviewPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <SprintReviewClient cycleId={params.id} />;
+  const { id } = await params;
+  return <SprintReviewClient cycleId={id} />;
 }

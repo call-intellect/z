@@ -70,7 +70,10 @@ export class ProbePendingProvider implements PendingActionsProvider {
         title: 'Уточняющий вопрос ждёт вашего ответа',
         severity: overdue ? 'urgent' : 'normal',
         ageDays,
-        actionUrl: '/feed/probe-questions',
+        // Ведём прямо к конкретному вопросу в «Уведомлениях», где на него
+        // можно ответить (ProbeAnswerInput), а не на общий список-ленту.
+        // resourceId здесь = id Notification (см. select выше).
+        actionUrl: `/me/notifications?id=${i.id}`,
         canQuickConfirm: false,
       } satisfies PendingActionItem;
     });

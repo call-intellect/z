@@ -25,7 +25,7 @@ export function CyclesClient({ slug }: { slug: string }) {
   }
 
   if (error) {
-    return <div className="text-sm text-danger">Не удалось загрузить циклы.</div>;
+    return <div className="text-sm text-danger">Не удалось загрузить спринты.</div>;
   }
 
   if (!project) {
@@ -35,7 +35,7 @@ export function CyclesClient({ slug }: { slug: string }) {
   if (cycles.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-10 text-center text-sm text-fg-tertiary">
-        В этом проекте ещё нет циклов.
+        В этом проекте ещё нет спринтов.
       </div>
     );
   }

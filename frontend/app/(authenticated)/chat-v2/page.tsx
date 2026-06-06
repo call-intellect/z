@@ -4,7 +4,7 @@ import type { ReactElement } from 'react';
 import { ChatV2Client } from './ChatV2Client';
 
 export const metadata: Metadata = {
-  title: 'AI-чат компании',
+  title: 'Помощник компании — Кора',
 };
 
 export default function ChatV2Page(): ReactElement {

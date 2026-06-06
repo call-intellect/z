@@ -5,7 +5,7 @@ import { CalendarView } from '@/ui/calendar/CalendarView';
 import { ProjectViewShell } from '../../../ProjectViewShell';
 
 export const metadata: Metadata = {
-  title: 'Календарь доски — Z',
+  title: 'Календарь доски — Кора',
 };
 
 /**

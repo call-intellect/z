@@ -3,7 +3,7 @@
 /**
  * TrackerBottomNav — нижняя навигация для мобильных устройств (≤md).
  *
- * 5 табов: Инбокс / Проекты / Лента / Чек-ин / Профиль.
+ * 5 табов: Мои задачи / Проекты / Лента / Чек-ин / Профиль.
  * На больших экранах скрыт (sidebar заменяет).
  *
  * Wave 2 A8: бейдж непрочитанных задач на иконке «Инбокс». Подсветка через
@@ -34,7 +34,7 @@ type NavItem = {
 };
 
 const ITEMS: readonly NavItem[] = [
-  { href: '/me/inbox', label: 'Инбокс', icon: Inbox, withInboxBadge: true },
+  { href: '/me/inbox', label: 'Мои задачи', icon: Inbox, withInboxBadge: true },
   { href: '/projects', label: 'Проекты', icon: FolderKanban },
   { href: '/feed', label: 'Лента', icon: Newspaper },
   { href: '/me/check-ins', label: 'Чек-ин', icon: CheckCircle2 },

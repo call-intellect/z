@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { TableClient } from './TableClient';
 
 export const metadata: Metadata = {
-  title: 'Таблица — Z',
+  title: 'Таблица — Кора',
 };
 
-export default function TablePage({
+export default async function TablePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <TableClient tableId={params.id} />;
+  const { id } = await params;
+  return <TableClient tableId={id} />;
 }

@@ -7894,6 +7894,11 @@ model Project {
   gantViewEnabled     Boolean @default(false)
   timeTrackingEnabled Boolean @default(false)
 
+  /// audit (2026-06-06) — системно-сгенерированный проект-контейнер
+  /// (org-scope «Спринт компании» из quickCreate). Скрыт из GET /projects;
+  /// спринты доступны через раздел «Спринты». См. ТЗ A6.
+  systemGenerated Boolean @default(false)
+
   // Tracker Phase 4 (Email-to-task, T5) — уникальный alias для приёма писем.
   // Полный адрес = `${emailInboxAlias}@${MAIL_INBOX_DOMAIN}`.
   // - emailInboxAlias: nullable + @unique (одноимённый alias невозможен в принципе).

@@ -3,13 +3,14 @@ import type { Metadata } from 'next';
 import { SprintDashboardClient } from './SprintDashboardClient';
 
 export const metadata: Metadata = {
-  title: 'Спринт — Z',
+  title: 'Спринт — Кора',
 };
 
-export default function SprintDashboardPage({
+export default async function SprintDashboardPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <SprintDashboardClient cycleId={params.id} />;
+  const { id } = await params;
+  return <SprintDashboardClient cycleId={id} />;
 }

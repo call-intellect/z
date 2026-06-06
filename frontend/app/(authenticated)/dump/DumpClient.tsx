@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Brain, Loader2, Send } from 'lucide-react';
+import Link from 'next/link';
+import { Brain, CheckCircle2, Loader2, Send } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { dumpApi } from '@/api/dump.api';
@@ -28,6 +29,7 @@ export function DumpClient() {
 
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const trimmed = text.trim();
   const len = text.length;
@@ -50,6 +52,7 @@ export function DumpClient() {
         toast.success('Мысль сохранена в память компании');
       }
       setText('');
+      setSaved(true);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'quota_exceeded') {
         toast.error('Лимит 30 мыслей в день. Попробуйте позже.');
@@ -96,10 +99,41 @@ export function DumpClient() {
         </div>
       </header>
 
+      {saved && (
+        <div className="rounded-md border border-success/30 bg-success/10 p-4 text-sm">
+          <div className="flex items-start gap-2">
+            <CheckCircle2
+              size={18}
+              className="mt-0.5 shrink-0 text-success"
+            />
+            <div className="space-y-2">
+              <p className="font-medium text-success">
+                Мысль сохранена в память компании
+              </p>
+              <p className="text-fg-secondary">
+                Через несколько минут она появится в поиске и у помощника
+                компании — у него можно сразу спросить по ней.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-0.5">
+                <Link href="/chat" className="text-accent hover:underline">
+                  Спросить помощника компании
+                </Link>
+                <Link href="/ideas" className="text-accent hover:underline">
+                  Открыть «Идеи»
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         <Textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (saved) setSaved(false);
+          }}
           placeholder="Что вы думаете? Любая мысль, замечание, идея..."
           className="min-h-[60vh] resize-none font-mono text-sm leading-relaxed"
           disabled={submitting}

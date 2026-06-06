@@ -309,7 +309,7 @@ export class RecordingsService {
           livekitIdentity: participant.identity,
         },
       },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     const trackKey = audioTrackKey(meeting.id, participant.identity);
@@ -356,7 +356,7 @@ export class RecordingsService {
         data: {
           recordingId,
           ...(participantRecord ? { participantId: participantRecord.id } : {}),
-          participantName: participant.name || 'Participant',
+          participantName: participant.name || participantRecord?.name || 'Участник',
           livekitIdentity: participant.identity,
           trackId: track.sid,
           trackEgressId: egressId,

@@ -28,21 +28,26 @@ import {
   MessageCircle,
   Mic2,
   PencilLine,
+  Search,
   Tag,
   Target,
   User,
   X,
 } from 'lucide-react';
 
+import { mutate as globalMutate } from 'swr';
+
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { useIntake } from '@/hooks/tracker/useIntake';
+import { useProjects } from '@/hooks/tracker/useProjects';
 import { intakeApi } from '@/api/tracker/intake.api';
 import {
   INTAKE_SOURCE_LABELS,
   INTAKE_STATUS_LABELS,
   ISSUE_PRIORITY_LABELS,
   intakeDisplayTitle,
+  resolveAcceptTargetProjectId,
   type Intake,
   type IntakeSource,
   type IssuePriority,
@@ -102,6 +107,10 @@ export function IntakeClient() {
   const [rejectingItem, setRejectingItem] = useState<Intake | null>(null);
   const [snoozingItem, setSnoozingItem] = useState<Intake | null>(null);
   const [duplicatingItem, setDuplicatingItem] = useState<Intake | null>(null);
+  // Выбор проекта вручную, когда проект для accept не резолвится.
+  const [pickingProjectFor, setPickingProjectFor] = useState<Intake | null>(
+    null,
+  );
 
   // ─── Триаж (single source of truth для accept без диалога) ────────────
   const triage = async (
@@ -114,6 +123,10 @@ export function IntakeClient() {
       await intakeApi.triage(currentOrgId, item.id, body);
       await mutate();
       toast.success(triageSuccessMessage(body.decision));
+      // A7: обновить бейдж «Входящие» (отдельный SWR-ключ счётчика).
+      void globalMutate(
+        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+      );
     } catch (e) {
       toast.error(`Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`, { duration: 5000 });
     } finally {
@@ -121,12 +134,15 @@ export function IntakeClient() {
     }
   };
 
-  const handleAccept = (item: Intake) =>
-    triage(item, {
-      decision: 'accept',
-      // accept без overrides — backend применит сохранённые suggested*.
-      ...(item.projectId ? { targetProjectId: item.projectId } : {}),
-    });
+  const handleAccept = (item: Intake) => {
+    const resolved = resolveAcceptTargetProjectId(item);
+    if (resolved) {
+      void triage(item, { decision: 'accept', targetProjectId: resolved });
+    } else {
+      // Проект не определён — спрашиваем у пользователя через пикер.
+      setPickingProjectFor(item);
+    }
+  };
 
   // ─── Заглушки до загрузки ──────────────────────────────────────────────
   if (authLoading || !currentOrgId) {
@@ -227,6 +243,17 @@ export function IntakeClient() {
           void triage(target, { decision: 'duplicate', duplicateOfIssueId });
         }}
       />
+      <ProjectPickerDialog
+        orgId={currentOrgId}
+        item={pickingProjectFor}
+        onClose={() => setPickingProjectFor(null)}
+        onSelect={(projectId) => {
+          if (!pickingProjectFor) return;
+          const target = pickingProjectFor;
+          setPickingProjectFor(null);
+          void triage(target, { decision: 'accept', targetProjectId: projectId });
+        }}
+      />
     </PageShell>
   );
 }
@@ -266,8 +293,8 @@ function PageShell({
             Входящие
           </h1>
           <p className="text-xs text-fg-tertiary">
-            Triage входящих задач из писем, чатов, встреч и API. AI заранее
-            заполнил подсказки — твоя задача подтвердить или поправить.
+            Разбор входящих задач из писем, чатов, встреч и внешних сервисов. AI
+            заранее заполнил подсказки — ваша задача — подтвердить или поправить.
             {typeof total === 'number' && total > 0 ? (
               <>
                 {' · '}
@@ -647,6 +674,99 @@ function DuplicateDialog({
             onClick={() => onSubmit(trimmed)}
           >
             Это дубликат
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Project picker dialog ──────────────────────────────────────────────────
+// Открывается при accept, когда проект для входящей не определён
+// (ни явного projectId, ни suggestedProjectId). Пользователь выбирает проект,
+// в который создать задачу.
+
+function ProjectPickerDialog({
+  orgId,
+  item,
+  onClose,
+  onSelect,
+}: {
+  orgId: string;
+  item: Intake | null;
+  onClose: () => void;
+  onSelect: (projectId: string) => void;
+}) {
+  const open = item !== null;
+  const [query, setQuery] = useState('');
+  useResetOnOpen(open, () => setQuery(''));
+
+  // Хук вызывается всегда (rules-of-hooks); ключ null, пока диалог закрыт.
+  const { projects, isLoading } = useProjects(open ? orgId : null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) return projects;
+    return projects.filter((p) => p.name.toLowerCase().includes(q));
+  }, [projects, query]);
+
+  if (item === null) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Выбор проекта</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-fg-secondary">
+          Для этой входящей не определён проект. Выберите, куда создать задачу.
+        </p>
+        <div className="relative">
+          <Search
+            size={14}
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-tertiary"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск проекта…"
+            className="pl-8"
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto rounded-md border border-border-subtle">
+          {isLoading ? (
+            <div className="px-3 py-6 text-center text-sm text-fg-tertiary">
+              Загружаем проекты…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-fg-tertiary">
+              Проекты не найдены.
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {filtered.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(project.id)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-fg-primary hover:bg-bg-overlay"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {project.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-fg-tertiary">
+                      {project.identifier}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Отмена
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -12,9 +12,14 @@
  * (детерминированно truthy), Date реальный (значение не проверяем).
  */
 
+import { ConflictException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
+import {
+  MeetingNotFoundError,
+  NotAuthorizedError,
+} from '../../common/errors/domain-errors';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { JwtService } from '../auth/services/jwt.service';
@@ -278,5 +283,188 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
     // Только host-participant, приглашённый-дубль не создан.
     expect(participantCreate).toHaveBeenCalledTimes(1);
     expect(participantCreate.mock.calls[0]![0].data.role).toBe('host');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// B5 (2026-06-06) — addInvitees: допригласить участников ПОСЛЕ создания /
+// во время встречи. Покрывает общий seedInviteeInTx с другой стороны (host-
+// проверка, joinable-gate, идемпотентность по userId/personId).
+// ──────────────────────────────────────────────────────────────────────────
+
+interface MeetingRow {
+  id: string;
+  ownerId: string;
+  tenantId: string;
+  title: string;
+  status: string;
+  owner: { name: string };
+  participants: Array<{ userId: string | null; personId: string | null }>;
+}
+
+function makeAddInviteesService(args: { meeting?: MeetingRow | null }) {
+  const participantCreate = vi.fn(async (_arg: ParticipantCreateArg) => ({}));
+  const txMock = {
+    participant: { create: participantCreate },
+    user: { findUnique: vi.fn(async () => ({ name: 'U2', email: 'u2@x.ru' })) },
+    person: { findUnique: vi.fn(async () => ({ name: 'P2' })) },
+  };
+
+  const prisma = {
+    $transaction: vi.fn(async (cb: (t: typeof txMock) => Promise<void>) => {
+      await cb(txMock);
+    }),
+  } as unknown as PrismaService;
+
+  const repository = {
+    findByIdWithOwnerAndParticipants: vi.fn(async () => args.meeting ?? null),
+  } as unknown as MeetingsRepository;
+
+  const cfg = {
+    auth: { publicFrontendUrl: 'https://app.kora.test' },
+  } as unknown as TypedConfigService;
+
+  const mail = { sendMeetingInvite: vi.fn(async () => undefined) } as never;
+  const conversational = {
+    sendNotification: vi.fn(async () => undefined),
+  } as never;
+
+  const svc = new MeetingsService(
+    prisma,
+    repository,
+    {} as unknown as UsersService,
+    {} as unknown as JwtService,
+    cfg,
+    {} as unknown as BusinessMetricsService,
+    {} as unknown as MeetingsBalanceService,
+    mail,
+    conversational,
+  );
+
+  return { svc, participantCreate };
+}
+
+function baseMeeting(overrides: Partial<MeetingRow> = {}): MeetingRow {
+  return {
+    id: 'm-1',
+    ownerId: 'u-host',
+    tenantId: 'org1',
+    title: 'Планёрка',
+    status: 'active',
+    owner: { name: 'Хост' },
+    participants: [],
+    ...overrides,
+  };
+}
+
+describe('MeetingsService.addInvitees (B5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('actor ≠ ownerId → NotAuthorizedError, create НЕ вызван', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({ ownerId: 'u-host' }),
+    });
+
+    await expect(
+      svc.addInvitees('m-1', [{ userId: 'u2', sendVia: ['telegram'] }], 'u-stranger'),
+    ).rejects.toBeInstanceOf(NotAuthorizedError);
+    expect(participantCreate).not.toHaveBeenCalled();
+  });
+
+  it('встреча не найдена → MeetingNotFoundError', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({ meeting: null });
+
+    await expect(
+      svc.addInvitees('m-nope', [{ userId: 'u2', sendVia: [] }], 'u-host'),
+    ).rejects.toBeInstanceOf(MeetingNotFoundError);
+    expect(participantCreate).not.toHaveBeenCalled();
+  });
+
+  it('status=completed → ConflictException (meeting_not_joinable), create НЕ вызван', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({ status: 'completed' }),
+    });
+
+    await expect(
+      svc.addInvitees('m-1', [{ userId: 'u2', sendVia: [] }], 'u-host'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(participantCreate).not.toHaveBeenCalled();
+  });
+
+  it('успех: status=active, новый invitee {userId} → create с invited, { added:1, skipped:0 }', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({ status: 'active', participants: [] }),
+    });
+
+    const result = await svc.addInvitees(
+      'm-1',
+      [{ userId: 'u2', sendVia: ['telegram'] }],
+      'u-host',
+    );
+
+    expect(result).toEqual({ added: 1, skipped: 0 });
+    expect(participantCreate).toHaveBeenCalledTimes(1);
+    expect(participantCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          invitationStatus: 'invited',
+          userId: 'u2',
+          role: 'guest',
+        }),
+      }),
+    );
+  });
+
+  it('идемпотентность: участник {userId:u2} уже есть → create НЕ вызван, { added:0, skipped:1 }', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({
+        status: 'active',
+        participants: [{ userId: 'u2', personId: null }],
+      }),
+    });
+
+    const result = await svc.addInvitees(
+      'm-1',
+      [{ userId: 'u2', sendVia: ['telegram'] }],
+      'u-host',
+    );
+
+    expect(result).toEqual({ added: 0, skipped: 1 });
+    expect(participantCreate).not.toHaveBeenCalled();
+  });
+
+  it('host как invitee {userId:actor} → skipped, не создаётся', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({ status: 'active', ownerId: 'u-host', participants: [] }),
+    });
+
+    const result = await svc.addInvitees(
+      'm-1',
+      [{ userId: 'u-host', sendVia: ['telegram'] }],
+      'u-host',
+    );
+
+    expect(result).toEqual({ added: 0, skipped: 1 });
+    expect(participantCreate).not.toHaveBeenCalled();
+  });
+
+  it('personId-дедуп: участник {personId:p2} уже есть → skipped', async () => {
+    const { svc, participantCreate } = makeAddInviteesService({
+      meeting: baseMeeting({
+        status: 'active',
+        participants: [{ userId: null, personId: 'p2' }],
+      }),
+    });
+
+    const result = await svc.addInvitees(
+      'm-1',
+      [{ personId: 'p2', sendVia: [] }],
+      'u-host',
+    );
+
+    expect(result).toEqual({ added: 0, skipped: 1 });
+    expect(participantCreate).not.toHaveBeenCalled();
   });
 });

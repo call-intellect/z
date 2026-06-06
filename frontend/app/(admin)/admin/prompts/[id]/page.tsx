@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Шаблон промпта — Управление',
 };
 
-export default function AdminPromptDetailPage({
+export default async function AdminPromptDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PromptDetailClient id={params.id} />;
+  const { id } = await params;
+  return <PromptDetailClient id={id} />;
 }

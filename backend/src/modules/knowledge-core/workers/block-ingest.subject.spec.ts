@@ -20,6 +20,7 @@ interface Mocks {
   resolveSubjectEntityId: ReturnType<typeof vi.fn>;
   upsert: ReturnType<typeof vi.fn>;
   getDynamic: ReturnType<typeof vi.fn>;
+  incSubjectAttribution: ReturnType<typeof vi.fn>;
 }
 
 function buildFakeTx() {
@@ -65,6 +66,9 @@ function buildWorker(opts: {
     getDynamic,
   } as unknown;
 
+  const incSubjectAttribution = vi.fn();
+  const metrics = { incSubjectAttribution } as unknown;
+
   const worker = new BlockIngestWorker(
     {} as never, // redis
     prisma as never, // prisma
@@ -76,11 +80,14 @@ function buildWorker(opts: {
     {} as never, // coreQueue
     {} as never, // gate
     {} as never, // graph
-    {} as never, // metrics
+    metrics as never, // metrics
     {} as never, // axisClassifier
     cfg as never, // cfg
   );
-  return { worker, mocks: { resolveSubjectEntityId, upsert, getDynamic } };
+  return {
+    worker,
+    mocks: { resolveSubjectEntityId, upsert, getDynamic, incSubjectAttribution },
+  };
 }
 
 function buildBlock(overrides: Partial<ExtractedBlock> = {}): ExtractedBlock {
@@ -257,5 +264,91 @@ describe('BlockIngestWorker — Фаза 1.2 атрибуция role=subject', (
 
     expect(mocks.resolveSubjectEntityId).toHaveBeenCalled();
     expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+
+  it('(f) signalType=fact + subjectAllTypes=true + meeting-сегмент → resolve + upsert role=subject (Ф1)', async () => {
+    const { worker, mocks } = buildWorker({
+      subjectEntityId: 'e3',
+      killSwitch: true,
+    });
+    const segments: Segment[] = [
+      {
+        startMs: 1000,
+        endMs: 3000,
+        speakers: ['Иван'],
+        text: 'Иван: ...',
+        speakerParticipantId: 'p1',
+      },
+    ];
+
+    await (
+      worker as unknown as {
+        persistBlock: (a: unknown) => Promise<string | null>;
+      }
+    ).persistBlock({
+      event: meetingEvent,
+      block: buildBlock({ signalType: 'fact', evidenceStartMs: 1500 }),
+      embedding: null,
+      roleRelevant: false,
+      roleId: null,
+      segments,
+      authorUserId: null,
+      subjectAllTypes: true,
+    });
+
+    expect(mocks.resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ speakerParticipantId: 'p1', speakerName: 'Иван' }),
+    );
+    expect(mocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          blockId_entityId: expect.objectContaining({ entityId: 'e3' }),
+        }),
+        create: expect.objectContaining({ role: 'subject' }),
+        update: expect.objectContaining({ role: 'subject' }),
+      }),
+    );
+    expect(mocks.incSubjectAttribution).toHaveBeenCalledWith(
+      expect.objectContaining({ via: 'participant' }),
+    );
+  });
+
+  it('(g) signalType=fact + authorPersonId + subjectAllTypes=true (dump) → resolve вызван с authorPersonId (Ф1)', async () => {
+    const { worker, mocks } = buildWorker({
+      subjectEntityId: 'e4',
+      killSwitch: true,
+    });
+
+    await (
+      worker as unknown as {
+        persistBlock: (a: unknown) => Promise<string | null>;
+      }
+    ).persistBlock({
+      event: textEvent,
+      block: buildBlock({ signalType: 'fact', evidenceStartMs: 0, evidenceEndMs: 0 }),
+      embedding: null,
+      roleRelevant: false,
+      roleId: null,
+      segments: [{ startMs: 0, endMs: 0, speakers: [], text: 'дамп' }],
+      authorUserId: null,
+      authorPersonId: 'pers-1',
+      subjectAllTypes: true,
+    });
+
+    expect(mocks.resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({ authorPersonId: 'pers-1' }),
+    );
+    expect(mocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          blockId_entityId: expect.objectContaining({ entityId: 'e4' }),
+        }),
+      }),
+    );
+    expect(mocks.incSubjectAttribution).toHaveBeenCalledWith(
+      expect.objectContaining({ via: 'personId' }),
+    );
   });
 });

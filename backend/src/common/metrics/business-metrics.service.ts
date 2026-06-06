@@ -389,6 +389,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'validation_error' / 'idempotent_skip' (P2002 гонка concurrency — норма) /
   // 'other'. Раньше любой провал глушился warn'ом без метрики.
   private kcTypedEntityFailedTotal!: Counter<'type' | 'reason'>;
+  // Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания
+  // по источнику identity (via). Покрывает ВСЕ типы знания (не только reasoning).
+  private kcSubjectAttributionTotal!: Counter<'via'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -1938,6 +1941,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_typed_entity_failed_total',
       help: 'Ф5 МТЗ — провалы записи типизированной сущности группы Б в block-ingest (type × reason). type: process/regulation/policy/tool/metric/decision. reason: age_unavailable (системный отказ графа) / validation_error / idempotent_skip (P2002 гонка — норма) / other. age_unavailable блокирует пометку RawEvent ingested → failed+ретрай.',
       labelNames: ['type', 'reason'] as const,
+    });
+    // Ф1 (knowledge-access) — субъект-атрибуция автора знания по источнику identity.
+    this.kcSubjectAttributionTotal = this.getOrCreateCounter({
+      name: 'kc_subject_attribution_total',
+      help: 'Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания по источнику identity. via: participant (speakerParticipantId) / userId / personId / email / name (fuzzy) / none (автор не определён).',
+      labelNames: ['via'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -4759,6 +4768,14 @@ export class BusinessMetricsService implements OnModuleInit {
       type: args.type,
       reason: args.reason,
     });
+  }
+
+  /**
+   * Ф1 (knowledge-access) — инкремент субъект-атрибуции автора знания.
+   * via ∈ participant | userId | personId | email | name | none.
+   */
+  incSubjectAttribution(args: { via: string }): void {
+    this.kcSubjectAttributionTotal.inc({ via: args.via });
   }
 
   /**

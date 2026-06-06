@@ -389,6 +389,19 @@ const STEPS: Step[] = [
     hint: 'role=subject для исторических reasoning-блоков + rebuild клонов (Ф1.3)',
     skipBootstrap: true,
   },
+  // 2026-06-06 — Ф1 (knowledge-access-groups-and-provenance): расширение
+  // subject-атрибуции на ВСЕ типы знания (не только reasoning) + per-adapter
+  // identity (tracker/chatbox/dump/email). Добивает role='subject' для
+  // исторических canonical-блоков любого типа без subject-связи. Идемпотентен
+  // (кандидаты — только блоки без subject-связи). Уважает флаги
+  // knowledge.subjectAttributionEnabled + knowledge.subjectAttributionAllTypes.
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 1.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-subject-attribution-all-types.ts',
+    hint: 'role=subject для исторических блоков ВСЕХ типов + per-adapter identity (Ф1 knowledge-access)',
+    skipBootstrap: true,
+  },
   {
     phase: 'backfill',
     script: 'scripts/backfill-commitment-author.ts',

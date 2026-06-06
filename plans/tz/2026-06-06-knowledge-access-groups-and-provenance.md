@@ -193,7 +193,7 @@ AND (
 
 Граф зависимостей: **Ф1 ∥ Ф2 → Ф3 → Ф4 → Ф5 ∥ Ф6 → Ф7 → Ф8**. (Ф1 и Ф2 независимы; Ф5 и Ф6 после Ф4 параллельны.)
 
-### Фаза 1 — Фундамент-провенанс: привязка автора на все типы + per-adapter identity
+### Фаза 1 — Фундамент-провенанс: привязка автора на все типы + per-adapter identity ✅ РЕАЛИЗОВАНО
 **Цель:** «кто сказал / из какого источника» проставляется для всех типов знания и всех источников.
 **Входит:**
 - Снять узкий гейт: вызывать `attributeSubject` для всех `signalType`, а не только 6 reasoning ([block-ingest.worker.ts:991](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L991); Set на :53). Новый AdminSetting `knowledge.subjectAttributionAllTypes` (code-fallback true); master `knowledge.subjectAttributionEnabled` сохранить.

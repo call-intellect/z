@@ -96,6 +96,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutotuneEnabled', z.boolean()],
   // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
   ['knowledge.subjectAttributionEnabled', z.boolean()],
+  // Ф1 (knowledge-access) — привязка автора (subject) на ВСЕ типы знания,
+  // не только reasoning-семейство (false = только reasoning).
+  ['knowledge.subjectAttributionAllTypes', z.boolean()],
   // Поэтапная раскатка (ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2):
   // true = из встречи рождается ТОЛЬКО tracker Issue (видимый артефакт),
   // пользовательский Task для action-items НЕ создаётся, а потребители

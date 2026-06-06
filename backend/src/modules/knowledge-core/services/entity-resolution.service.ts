@@ -900,6 +900,8 @@ export class EntityResolutionService {
    * Резолвит автора рассуждения (role='subject') в Entity.id (type=person),
    * лениво создавая person-Entity при необходимости. Источники по приоритету
    * (первый успех возвращает):
+   *   0. authorPersonId — прямой Person.id (chatbox responsible / dump uploader, strong-ID).
+   *   0b. authorEmail — Person по email (case-insensitive, email-источник).
    *   1. authorUserId — текстовые каналы (free_note / in_app).
    *   2. speakerParticipantId — встречи (дорожка участника).
    *   3. speakerName — fallback по имени спикера.
@@ -908,6 +910,8 @@ export class EntityResolutionService {
   async resolveSubjectEntityId(
     tenantId: string,
     input: {
+      authorPersonId?: string | null;
+      authorEmail?: string | null;
       speakerParticipantId?: string | null;
       speakerName?: string | null;
       authorUserId?: string | null;
@@ -920,6 +924,28 @@ export class EntityResolutionService {
       if (person.entityId) return person.entityId;
       return this.ensurePersonEntity({ tenantId, personId: person.id });
     };
+
+    // 0. authorPersonId — прямой Person.id (chatbox responsible / dump uploader).
+    if (input.authorPersonId) {
+      const p = await this.prisma.person.findFirst({
+        where: { id: input.authorPersonId, tenantId, deletedAt: null },
+        select: { id: true, entityId: true },
+      });
+      if (p) return personToEntity(p);
+    }
+
+    // 0b. authorEmail — Person по email (email-источник).
+    if (input.authorEmail) {
+      const p = await this.prisma.person.findFirst({
+        where: {
+          tenantId,
+          email: { equals: input.authorEmail, mode: 'insensitive' },
+          deletedAt: null,
+        },
+        select: { id: true, entityId: true },
+      });
+      if (p) return personToEntity(p);
+    }
 
     // 1. authorUserId — текстовые каналы.
     if (input.authorUserId) {
@@ -975,17 +1001,40 @@ export class EntityResolutionService {
    * ТЗ-D (2026-06-05) — детерминированный резолв АВТОРА обещания в Person.id.
    * Зеркало resolveSubjectEntityId, но возвращает person.id напрямую (поле
    * IdeaBlock.commitmentAuthorPersonId ссылается на Person, не Entity).
-   * Приоритет: authorUserId → speakerParticipantId → speakerName. Все ветки
-   * tenant-scoped. NULL если identity не разрешилась (best-effort).
+   * Приоритет: authorPersonId → authorEmail → authorUserId →
+   * speakerParticipantId → speakerName. Все ветки tenant-scoped. NULL если
+   * identity не разрешилась (best-effort).
    */
   async resolveSubjectPersonId(
     tenantId: string,
     input: {
+      authorPersonId?: string | null;
+      authorEmail?: string | null;
       speakerParticipantId?: string | null;
       speakerName?: string | null;
       authorUserId?: string | null;
     },
   ): Promise<string | null> {
+    // 0. authorPersonId — прямой Person.id (chatbox responsible / dump uploader).
+    if (input.authorPersonId) {
+      const p = await this.prisma.person.findFirst({
+        where: { id: input.authorPersonId, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (p) return p.id;
+    }
+    // 0b. authorEmail — Person по email (email-источник).
+    if (input.authorEmail) {
+      const p = await this.prisma.person.findFirst({
+        where: {
+          tenantId,
+          email: { equals: input.authorEmail, mode: 'insensitive' },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (p) return p.id;
+    }
     // 1. authorUserId — текстовые каналы.
     if (input.authorUserId) {
       const p = await this.prisma.person.findFirst({

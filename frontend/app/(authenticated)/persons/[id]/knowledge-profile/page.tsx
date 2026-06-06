@@ -15,10 +15,11 @@ export const metadata: Metadata = {
  * Доступ: все member'ы Org (RBAC `knowledge_profile.read`). Member видит
  * только сводку без цитат; owner/admin — полную информацию с цитатами.
  */
-export default function PersonKnowledgeProfilePage({
+export default async function PersonKnowledgeProfilePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PersonKnowledgeProfileClient personId={params.id} />;
+  const { id } = await params;
+  return <PersonKnowledgeProfileClient personId={id} />;
 }

@@ -5,10 +5,11 @@ import { redirect } from 'next/navigation';
  * под `/admin/ai/routing/[taskType]`. Сохраняем redirect, чтобы старые
  * Link'и (например, в `AiModelsClient`) не приводили к 404.
  */
-export default function AdminAiModelsDetailRedirect({
+export default async function AdminAiModelsDetailRedirect({
   params,
 }: {
-  params: { taskType: string };
+  params: Promise<{ taskType: string }>;
 }) {
-  redirect(`/admin/ai/routing/${encodeURIComponent(params.taskType)}`);
+  const { taskType } = await params;
+  redirect(`/admin/ai/routing/${encodeURIComponent(taskType)}`);
 }

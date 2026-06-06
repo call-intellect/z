@@ -7,13 +7,14 @@ export const metadata: Metadata = {
 };
 
 interface PageProps {
-  params: { importId: string };
+  params: Promise<{ importId: string }>;
 }
 
 /**
  * `/integrations/import-tracker/:importId` — детальная страница импорта
  * (Wave 3 / Tracker Phase 5 part 1). Прогресс + ошибки + отмена.
  */
-export default function ImportDetailPage({ params }: PageProps) {
-  return <ImportDetailClient importLogId={params.importId} />;
+export default async function ImportDetailPage({ params }: PageProps) {
+  const { importId } = await params;
+  return <ImportDetailClient importLogId={importId} />;
 }

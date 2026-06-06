@@ -5,10 +5,11 @@ import { redirect } from 'next/navigation';
  * переехал в `/clones/[roleId]`. Этот файл — перманентный редирект,
  * чтобы старые ссылки (письма, чат, история браузера) не ломались.
  */
-export default function LegacyRoleClonePage({
+export default async function LegacyRoleClonePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  redirect(`/clones/${encodeURIComponent(params.id)}`);
+  const { id } = await params;
+  redirect(`/clones/${encodeURIComponent(id)}`);
 }

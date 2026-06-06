@@ -12,12 +12,13 @@ export const metadata: Metadata = {
  * Server-обёртка. Раскладывает существующий TaskTypeDetailsClient на 4
  * вкладки (Цепочка / Метрики / История / A/B) через AdminTabs.
  */
-export default function AdminAiRoutingDetailPage({
+export default async function AdminAiRoutingDetailPage({
   params,
 }: {
-  params: { taskType: string };
+  params: Promise<{ taskType: string }>;
 }) {
+  const { taskType } = await params;
   return (
-    <RoutingDetailClient taskType={decodeURIComponent(params.taskType)} />
+    <RoutingDetailClient taskType={decodeURIComponent(taskType)} />
   );
 }

@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Должность — Z',
 };
 
-export default function RoleDetailPage({
+export default async function RoleDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <RoleDetailClient roleId={params.id} />;
+  const { id } = await params;
+  return <RoleDetailClient roleId={id} />;
 }

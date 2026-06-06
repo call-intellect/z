@@ -11,10 +11,11 @@ export const metadata: Metadata = {
  *
  * Видимость: все, кто имеет read на role (по умолчанию все members Org).
  */
-export default function RoleSkillProfilePage({
+export default async function RoleSkillProfilePage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <RoleSkillProfileClient roleId={params.id} />;
+  const { id } = await params;
+  return <RoleSkillProfileClient roleId={id} />;
 }

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
@@ -17,6 +17,7 @@ interface PageProps {
  * При маунте подключается к SSE re-stream (`GET /runs/:id/events`) или
  * polling-у статуса (если run уже завершён).
  */
-export default function OrchestratorRunPage({ params }: PageProps): ReactElement {
-  return <OrchestratorRunClient runId={params.id} />;
+export default async function OrchestratorRunPage({ params }: PageProps): Promise<ReactElement> {
+  const { id } = await params;
+  return <OrchestratorRunClient runId={id} />;
 }

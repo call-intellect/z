@@ -16,15 +16,16 @@ export const metadata: Metadata = {
  * Доступ требует активный `CloneAccessGrant`. Если grant отозван
  * mid-session — клиент редиректит на `/clones/[roleId]` с тостом.
  */
-export default function CloneChatPage({
+export default async function CloneChatPage({
   params,
 }: {
-  params: { roleId: string; conversationId: string };
+  params: Promise<{ roleId: string; conversationId: string }>;
 }) {
+  const { roleId, conversationId } = await params;
   return (
     <CloneChatClient
-      roleId={params.roleId}
-      conversationId={params.conversationId}
+      roleId={roleId}
+      conversationId={conversationId}
     />
   );
 }

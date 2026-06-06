@@ -6,10 +6,11 @@ export const metadata: Metadata = {
   title: 'Сотрудник — Кора',
 };
 
-export default function PersonCardPage({
+export default async function PersonCardPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <PersonCardClient personId={params.id} />;
+  const { id } = await params;
+  return <PersonCardClient personId={id} />;
 }

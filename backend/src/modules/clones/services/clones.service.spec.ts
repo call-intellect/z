@@ -53,6 +53,14 @@ function buildService(opts: {
   enforcement: Enforcement;
   accessCtx: KnowledgeAccessContext;
   scope: 'person' | 'role';
+  /** Ф6 — строки decision.findMany для проверки фильтра проекций (по умолчанию пусто). */
+  decisionRows?: Array<{
+    id: string;
+    statement: string | null;
+    rationale: string | null;
+    decidedAt: Date | null;
+    sourceBlockIds: string[];
+  }>;
 }) {
   // Перехват where, переданного в ideaBlockEntity.findMany (для проверки nested block).
   let capturedMentionsWhere: Record<string, unknown> | null = null;
@@ -79,7 +87,7 @@ function buildService(opts: {
       findMany: vi.fn(async () => BLOCK_ROWS),
     },
     decision: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async () => opts.decisionRows ?? []),
     },
   } as unknown as PrismaService;
 
@@ -95,9 +103,27 @@ function buildService(opts: {
     },
   );
   const resolveAccessibleGroups = vi.fn(async () => opts.accessCtx);
+  // Ф6 — фильтр проекций: проекция с b-council в sourceBlockIds недоступна.
+  const partitionProjectionsByAccess = vi.fn(
+    async (
+      _ctx: KnowledgeAccessContext,
+      items: Array<{ id: string; sourceBlockIds: string[] }>,
+    ) => {
+      if (_ctx.isBypass) {
+        return { accessibleIds: new Set(items.map((i) => i.id)), denied: 0 };
+      }
+      const accessibleIds = new Set(
+        items
+          .filter((i) => !i.sourceBlockIds.includes('b-council'))
+          .map((i) => i.id),
+      );
+      return { accessibleIds, denied: items.length - accessibleIds.size };
+    },
+  );
   const accessResolver = {
     buildAccessWhere,
     partitionBlockIdsByAccess,
+    partitionProjectionsByAccess,
     resolveAccessibleGroups,
   } as unknown as KnowledgeAccessResolver;
 
@@ -132,6 +158,7 @@ function buildService(opts: {
     mocks: {
       buildAccessWhere,
       partitionBlockIdsByAccess,
+      partitionProjectionsByAccess,
       incAccessDenied,
       incAccessShadowDiff,
     },
@@ -232,3 +259,60 @@ describe.each(['person', 'role'] as const)(
     });
   },
 );
+
+/**
+ * Ф6 (R12) — фильтр ПРОЕКЦИЙ (decisions) в контексте клона по доступу
+ * спрашивающего. Decisions грузятся только в loadPersonSubgraph.
+ */
+describe('ClonesService Ф6 knowledge-access — decisions в loadPersonSubgraph', () => {
+  const FIXED = new Date('2026-01-01');
+  const DECISION_ROWS = [
+    { id: 'd-open', statement: 'открытое', rationale: null, decidedAt: FIXED, sourceBlockIds: ['b-open'] },
+    { id: 'd-council', statement: 'закрытое', rationale: null, decidedAt: FIXED, sourceBlockIds: ['b-council'] },
+  ];
+
+  async function runPerson(enforcement: Enforcement, accessCtx: KnowledgeAccessContext) {
+    const built = buildService({
+      enforcement,
+      accessCtx,
+      scope: 'person',
+      decisionRows: DECISION_ROWS,
+    });
+    const anySvc = built.svc as unknown as Record<
+      string,
+      (a: unknown) => Promise<{ decisions: Array<{ id: string }> }>
+    >;
+    const subgraph = await anySvc.loadPersonSubgraph!({
+      tenantId: TENANT_ID,
+      personId: PERSON_ID,
+      accessCtx,
+      enforcement,
+    });
+    return { ...built, subgraph };
+  }
+
+  it('off → все decisions, partitionProjectionsByAccess НЕ вызывается', async () => {
+    const { subgraph, mocks } = await runPerson('off', NON_BYPASS_CTX);
+    expect(subgraph.decisions.map((d) => d.id).sort()).toEqual(['d-council', 'd-open']);
+    expect(mocks.partitionProjectionsByAccess).not.toHaveBeenCalled();
+  });
+
+  it('enforce → недоступный decision (d-council) убран + incAccessDenied(clone)', async () => {
+    const { subgraph, mocks } = await runPerson('enforce', NON_BYPASS_CTX);
+    expect(subgraph.decisions.map((d) => d.id)).toEqual(['d-open']);
+    expect(mocks.partitionProjectionsByAccess).toHaveBeenCalled();
+    expect(mocks.incAccessDenied).toHaveBeenCalledWith({ surface: 'clone' }, 1);
+  });
+
+  it('shadow → все decisions + incAccessShadowDiff(clone)', async () => {
+    const { subgraph, mocks } = await runPerson('shadow', NON_BYPASS_CTX);
+    expect(subgraph.decisions.map((d) => d.id).sort()).toEqual(['d-council', 'd-open']);
+    expect(mocks.incAccessShadowDiff).toHaveBeenCalledWith({ surface: 'clone' }, 1);
+  });
+
+  it('bypass (enforce) → все decisions, partition не зовётся', async () => {
+    const { subgraph, mocks } = await runPerson('enforce', BYPASS_CTX);
+    expect(subgraph.decisions.map((d) => d.id).sort()).toEqual(['d-council', 'd-open']);
+    expect(mocks.partitionProjectionsByAccess).not.toHaveBeenCalled();
+  });
+});

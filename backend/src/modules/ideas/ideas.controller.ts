@@ -76,7 +76,7 @@ export class IdeasController {
   ): Promise<ListIdeasResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.list({ tenantId: t, query: q });
+    return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get('ideas/:id')

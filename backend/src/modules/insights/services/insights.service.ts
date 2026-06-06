@@ -15,7 +15,10 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   ChangeInsightStatusBody,
   ChangeSeverityBody,
@@ -57,12 +60,60 @@ export class InsightsService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
+    /**
+     * Ф6 knowledge-access (R12) — гейт проекций по группам спрашивающего.
+     * @Optional — spec-и конструируют сервис позиционно; null → гейт off.
+     */
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
+
+  /**
+   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
+   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
+   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
+   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
+   * страница может стать короче, total остаётся посчитанным до фильтра —
+   * лёгкий over-count; приемлемый трейд-офф on-read подхода.
+   */
+  private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
+    items: T[],
+    args: { tenantId: string; userId?: string; surface: string },
+  ): Promise<T[]> {
+    const enf = this.cfg?.knowledgeAccess.enforcement ?? 'off';
+    if (enf === 'off' || !this.accessResolver || !args.userId || items.length === 0) {
+      return items;
+    }
+    const accessCtx = await this.accessResolver.resolveAccessibleGroups({
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
+    if (accessCtx.isBypass) return items;
+    const { accessibleIds, denied } =
+      await this.accessResolver.partitionProjectionsByAccess(
+        accessCtx,
+        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+      );
+    if (enf === 'enforce') {
+      this.metrics?.incAccessDenied({ surface: args.surface }, denied);
+      return items.filter((i) => accessibleIds.has(i.id));
+    }
+    this.metrics?.incAccessShadowDiff({ surface: args.surface }, denied);
+    return items;
+  }
 
   // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
+    userId?: string;
     query: ListInsightsQuery;
   }): Promise<ListInsightsResponse> {
     const q = args.query;
@@ -86,8 +137,14 @@ export class InsightsService {
     ]);
     // Принудительно поднимаем 'spike' в начало (не покрывается enum-сортировкой).
     const sorted = this.sortSpikesFirst(items);
+    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
+    const visible = await this.gateProjections(sorted, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'insights',
+    });
     return {
-      items: sorted.map((d) => this.toListItem(d)),
+      items: visible.map((d) => this.toListItem(d)),
       total,
       page: q.page,
       limit: q.limit,
@@ -167,6 +224,7 @@ export class InsightsService {
 
   async getTop(args: {
     tenantId: string;
+    userId?: string;
     query: TopInsightsQuery;
   }): Promise<TopInsightsResponse> {
     // SBA β-4 wave 2 — фильтр виджета «Топ-5 проблем» по причине.
@@ -187,8 +245,16 @@ export class InsightsService {
       ],
       take: Math.max(args.query.limit * 3, args.query.limit),
     });
-    const sorted = this.sortSpikesFirst(items).slice(0, args.query.limit);
-    return { items: sorted.map((d) => this.toListItem(d)) };
+    const sorted = this.sortSpikesFirst(items);
+    // Ф6 — гейт доступа ДО slice (иначе недоступные съедали бы слоты топ-N).
+    const visible = await this.gateProjections(sorted, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'insights',
+    });
+    return {
+      items: visible.slice(0, args.query.limit).map((d) => this.toListItem(d)),
+    };
   }
 
   // ─────────────────────── update actions ───────────────────────

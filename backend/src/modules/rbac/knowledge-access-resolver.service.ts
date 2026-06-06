@@ -224,6 +224,38 @@ export class KnowledgeAccessResolver {
     return { accessible, denied };
   }
 
+  /**
+   * Ф6 — партиция ПРОЕКЦИЙ по доступу спрашивающего. Группы проекции выводятся
+   * ON-READ из её sourceBlockIds (union групп блоков-источников; строжайшее).
+   * Проекция без sourceBlockIds или с блоками без групп → открыта всем.
+   * bypass → все доступны. Один DB-запрос на страницу.
+   */
+  async partitionProjectionsByAccess(
+    ctx: KnowledgeAccessContext,
+    items: Array<{ id: string; sourceBlockIds: string[] }>,
+  ): Promise<{ accessibleIds: Set<string>; denied: number }> {
+    if (ctx.isBypass || items.length === 0) {
+      return { accessibleIds: new Set(items.map((i) => i.id)), denied: 0 };
+    }
+    const allBlockIds = [...new Set(items.flatMap((i) => i.sourceBlockIds ?? []))];
+    const groupsMap = await this.loadBlockAccessGroups(allBlockIds);
+    const accessibleIds = new Set<string>();
+    let denied = 0;
+    for (const item of items) {
+      // union групп всех блоков-источников проекции
+      const projGroups: Array<{ groupId: string; isClosed: boolean; kind: string }> = [];
+      const seen = new Set<string>();
+      for (const bId of item.sourceBlockIds ?? []) {
+        for (const g of groupsMap.get(bId) ?? []) {
+          if (!seen.has(g.groupId)) { seen.add(g.groupId); projGroups.push(g); }
+        }
+      }
+      if (this.rbac.canAccessKnowledgeGroup(ctx, projGroups)) accessibleIds.add(item.id);
+      else denied++;
+    }
+    return { accessibleIds, denied };
+  }
+
   invalidate(userId: string, tenantId: string): void {
     this.cache.delete(`${userId}:${tenantId}`);
   }

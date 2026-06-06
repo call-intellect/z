@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurationService } from '../../curation/services/curation.service';
+import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { ListRegulationsQuerySchema } from '../dto/regulations.dto';
 
 import { RegulationsService } from './regulations.service';
@@ -333,5 +336,100 @@ describe('RegulationsService — E1 dispute / correct', () => {
     expect(recordDecisionMock).toHaveBeenCalledWith(
       expect.objectContaining({ resourceType: 'process', decisionType: 'approve_with_edits' }),
     );
+  });
+});
+
+/**
+ * Ф6 knowledge-access (R12) — гейт проекций (regulation) по доступу
+ * спрашивающего на листинге. off→все; enforce→недоступная убрана +
+ * incAccessDenied; shadow→та же выдача + incAccessShadowDiff; bypass→все.
+ */
+describe('RegulationsService — Ф6 гейт проекций на list', () => {
+  const OPEN = makeRegulation({ id: 'r-open', sourceBlockIds: ['b-open'] });
+  const DENIED = makeRegulation({ id: 'r-council', sourceBlockIds: ['b-council'] });
+
+  function buildSvc(opts: {
+    enforcement: 'off' | 'shadow' | 'enforce';
+    isBypass?: boolean;
+    accessibleIds?: Set<string>;
+    denied?: number;
+  }): {
+    svc: RegulationsService;
+    incAccessDenied: ReturnType<typeof vi.fn>;
+    incAccessShadowDiff: ReturnType<typeof vi.fn>;
+    partitionSpy: ReturnType<typeof vi.fn>;
+  } {
+    const prisma = {
+      regulation: {
+        findMany: vi.fn().mockResolvedValue([OPEN, DENIED]),
+        count: vi.fn().mockResolvedValue(2),
+      },
+      process: { findMany: vi.fn(), count: vi.fn() },
+      policy: { findMany: vi.fn(), count: vi.fn() },
+    } as unknown as PrismaService;
+
+    const partitionSpy = vi.fn().mockResolvedValue({
+      accessibleIds: opts.accessibleIds ?? new Set(['r-open']),
+      denied: opts.denied ?? 1,
+    });
+    const accessResolver = {
+      resolveAccessibleGroups: vi.fn().mockResolvedValue({
+        deptGroupIds: [],
+        closedGroupIds: [],
+        isBypass: opts.isBypass ?? false,
+      }),
+      partitionProjectionsByAccess: partitionSpy,
+    } as unknown as KnowledgeAccessResolver;
+
+    const cfg = {
+      knowledgeAccess: { enforcement: opts.enforcement },
+    } as unknown as TypedConfigService;
+
+    const incAccessDenied = vi.fn();
+    const incAccessShadowDiff = vi.fn();
+    const metrics = {
+      incAccessDenied,
+      incAccessShadowDiff,
+    } as unknown as BusinessMetricsService;
+
+    const svc = new RegulationsService(
+      prisma,
+      {} as unknown as CurationService,
+      null,
+      accessResolver,
+      cfg,
+      metrics,
+    );
+    return { svc, incAccessDenied, incAccessShadowDiff, partitionSpy };
+  }
+
+  const query = ListRegulationsQuerySchema.parse({ kind: 'regulation' });
+
+  it('off → выдаёт все', async () => {
+    const { svc, partitionSpy } = buildSvc({ enforcement: 'off' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['r-open', 'r-council']);
+    expect(partitionSpy).not.toHaveBeenCalled();
+  });
+
+  it('enforce → недоступная убрана + incAccessDenied(regulations)', async () => {
+    const { svc, incAccessDenied } = buildSvc({ enforcement: 'enforce' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['r-open']);
+    expect(incAccessDenied).toHaveBeenCalledWith({ surface: 'regulations' }, 1);
+  });
+
+  it('shadow → та же выдача + incAccessShadowDiff(regulations)', async () => {
+    const { svc, incAccessShadowDiff } = buildSvc({ enforcement: 'shadow' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['r-open', 'r-council']);
+    expect(incAccessShadowDiff).toHaveBeenCalledWith({ surface: 'regulations' }, 1);
+  });
+
+  it('bypass → все, partition не зовётся', async () => {
+    const { svc, partitionSpy } = buildSvc({ enforcement: 'enforce', isBypass: true });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['r-open', 'r-council']);
+    expect(partitionSpy).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
+import type { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { ListDecisionsQuerySchema } from '../dto/decisions.dto';
 
 import { DecisionsService } from './decisions.service';
@@ -329,5 +332,104 @@ describe('DecisionsService — E1 dispute / correct', () => {
     ).rejects.toThrow();
     expect(updateMock).not.toHaveBeenCalled();
     expect(submitProposalMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Ф6 knowledge-access (R12) — гейт проекций (Decision) по доступу спрашивающего
+ * на листинге. off→выдача все; enforce→недоступная убрана + incAccessDenied;
+ * shadow→выдача та же + incAccessShadowDiff; bypass→все.
+ */
+describe('DecisionsService — Ф6 гейт проекций на list', () => {
+  const ACCESSIBLE = makeDecision({ id: 'd-open', sourceBlockIds: ['b-open'] });
+  const DENIED = makeDecision({ id: 'd-council', sourceBlockIds: ['b-council'] });
+
+  function buildSvc(opts: {
+    enforcement: 'off' | 'shadow' | 'enforce';
+    isBypass?: boolean;
+    accessibleIds?: Set<string>;
+    denied?: number;
+  }): {
+    svc: DecisionsService;
+    incAccessDenied: ReturnType<typeof vi.fn>;
+    incAccessShadowDiff: ReturnType<typeof vi.fn>;
+    resolveSpy: ReturnType<typeof vi.fn>;
+    partitionSpy: ReturnType<typeof vi.fn>;
+  } {
+    const prisma = {
+      decision: {
+        findMany: vi.fn().mockResolvedValue([ACCESSIBLE, DENIED]),
+        count: vi.fn().mockResolvedValue(2),
+      },
+    } as unknown as PrismaService;
+
+    const resolveSpy = vi.fn().mockResolvedValue({
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: opts.isBypass ?? false,
+    });
+    const partitionSpy = vi.fn().mockResolvedValue({
+      accessibleIds: opts.accessibleIds ?? new Set(['d-open']),
+      denied: opts.denied ?? 1,
+    });
+    const accessResolver = {
+      resolveAccessibleGroups: resolveSpy,
+      partitionProjectionsByAccess: partitionSpy,
+    } as unknown as KnowledgeAccessResolver;
+
+    const cfg = {
+      knowledgeAccess: { enforcement: opts.enforcement },
+    } as unknown as TypedConfigService;
+
+    const incAccessDenied = vi.fn();
+    const incAccessShadowDiff = vi.fn();
+    const metrics = {
+      incAccessDenied,
+      incAccessShadowDiff,
+    } as unknown as BusinessMetricsService;
+
+    const svc = new DecisionsService(
+      prisma,
+      {} as unknown as CurationService,
+      {} as unknown as ConflictService,
+      null,
+      accessResolver,
+      cfg,
+      metrics,
+    );
+    return { svc, incAccessDenied, incAccessShadowDiff, resolveSpy, partitionSpy };
+  }
+
+  const query = ListDecisionsQuerySchema.parse({});
+
+  it('off → выдаёт все (гейт не активируется)', async () => {
+    const { svc, resolveSpy } = buildSvc({ enforcement: 'off' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['d-open', 'd-council']);
+    expect(resolveSpy).not.toHaveBeenCalled();
+  });
+
+  it('enforce → недоступная проекция убрана + incAccessDenied', async () => {
+    const { svc, incAccessDenied } = buildSvc({ enforcement: 'enforce' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['d-open']);
+    expect(incAccessDenied).toHaveBeenCalledWith({ surface: 'decisions' }, 1);
+  });
+
+  it('shadow → выдача та же + incAccessShadowDiff', async () => {
+    const { svc, incAccessShadowDiff } = buildSvc({ enforcement: 'shadow' });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['d-open', 'd-council']);
+    expect(incAccessShadowDiff).toHaveBeenCalledWith({ surface: 'decisions' }, 1);
+  });
+
+  it('bypass → все, partition не зовётся', async () => {
+    const { svc, partitionSpy } = buildSvc({
+      enforcement: 'enforce',
+      isBypass: true,
+    });
+    const res = await svc.list({ tenantId: 't-1', userId: 'u-1', query });
+    expect(res.items.map((i) => i.id)).toEqual(['d-open', 'd-council']);
+    expect(partitionSpy).not.toHaveBeenCalled();
   });
 });

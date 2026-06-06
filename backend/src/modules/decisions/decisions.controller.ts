@@ -87,7 +87,7 @@ export class DecisionsController {
   ): Promise<ListDecisionsResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.list({ tenantId: t, query: q });
+    return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
   @Post()
@@ -145,7 +145,7 @@ export class DecisionsController {
   ): Promise<DecisionSupersedeChainResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.getSupersedeChain({ tenantId: t, id });
+    return this.svc.getSupersedeChain({ tenantId: t, userId: user.id, id });
   }
 
   @Post(':id/supersede')

@@ -374,3 +374,114 @@ describe('KnowledgeAccessResolver.partitionBlockIdsByAccess (Ф4)', () => {
     expect(res.denied).toBe(0);
   });
 });
+
+// ─── Ф6 ────────────────────────────────────────────────────────────────
+
+describe('KnowledgeAccessResolver.partitionProjectionsByAccess (Ф6)', () => {
+  // Резолвер с настоящим RbacService.canAccessKnowledgeGroup и мок-prisma для
+  // ideaBlockAccess.findMany (группы блоков-источников проекции).
+  function buildResolverFor(
+    accessRows: Array<{
+      blockId: string;
+      groupId: string;
+      group: { isClosed: boolean; kind: string };
+    }>,
+  ): KnowledgeAccessResolver {
+    const prisma = {
+      ideaBlockAccess: {
+        findMany: vi.fn(async () => accessRows),
+      },
+    } as unknown as PrismaService;
+    const rbacReal = Object.create(RbacService.prototype) as RbacService;
+    return new KnowledgeAccessResolver(prisma, rbacReal);
+  }
+
+  it('bypass → все проекции доступны, denied=0', async () => {
+    const resolver = buildResolverFor([]);
+    const res = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: true },
+      [
+        { id: 'd1', sourceBlockIds: ['b-council'] },
+        { id: 'd2', sourceBlockIds: [] },
+      ],
+    );
+    expect(res.accessibleIds).toEqual(new Set(['d1', 'd2']));
+    expect(res.denied).toBe(0);
+  });
+
+  it('пустой вход → пустой результат', async () => {
+    const resolver = buildResolverFor([]);
+    const res = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      [],
+    );
+    expect(res.accessibleIds).toEqual(new Set());
+    expect(res.denied).toBe(0);
+  });
+
+  it('проекция с council-source-блоком недоступна не-члену (denied)', async () => {
+    const resolver = buildResolverFor([
+      {
+        blockId: 'b-council',
+        groupId: 'g-council',
+        group: { isClosed: true, kind: 'council' },
+      },
+    ]);
+    const res = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      [{ id: 'd-council', sourceBlockIds: ['b-council'] }],
+    );
+    expect(res.accessibleIds.has('d-council')).toBe(false);
+    expect(res.denied).toBe(1);
+  });
+
+  it('проекция без sourceBlockIds → доступна всем', async () => {
+    const resolver = buildResolverFor([]);
+    const res = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      [{ id: 'd-open', sourceBlockIds: [] }],
+    );
+    expect(res.accessibleIds.has('d-open')).toBe(true);
+    expect(res.denied).toBe(0);
+  });
+
+  it('проекция с dept-source доступна члену отдела; недоступна чужому', async () => {
+    const resolver = buildResolverFor([
+      {
+        blockId: 'b-log',
+        groupId: 'g-log',
+        group: { isClosed: false, kind: 'department' },
+      },
+    ]);
+    const member = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: ['g-log'], closedGroupIds: [], isBypass: false },
+      [{ id: 'd-log', sourceBlockIds: ['b-log'] }],
+    );
+    expect(member.accessibleIds.has('d-log')).toBe(true);
+    expect(member.denied).toBe(0);
+
+    const outsider = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: ['g-sales'], closedGroupIds: [], isBypass: false },
+      [{ id: 'd-log', sourceBlockIds: ['b-log'] }],
+    );
+    expect(outsider.accessibleIds.has('d-log')).toBe(false);
+    expect(outsider.denied).toBe(1);
+  });
+
+  it('строжайшее union: любой council-source среди нескольких → проекция закрыта', async () => {
+    // d-mix имеет два блока: открытый b-open и закрытый b-council.
+    const resolver = buildResolverFor([
+      {
+        blockId: 'b-council',
+        groupId: 'g-council',
+        group: { isClosed: true, kind: 'council' },
+      },
+    ]);
+    const res = await resolver.partitionProjectionsByAccess(
+      { deptGroupIds: [], closedGroupIds: [], isBypass: false },
+      [{ id: 'd-mix', sourceBlockIds: ['b-open', 'b-council'] }],
+    );
+    expect(res.accessibleIds.has('d-mix')).toBe(false);
+    expect(res.denied).toBe(1);
+  });
+});

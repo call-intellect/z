@@ -8,8 +8,11 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   ConfirmRegulationBody,
   ListRegulationsQuery,
@@ -47,12 +50,62 @@ export class RegulationsService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
+    /**
+     * Ф6 knowledge-access (R12) — гейт проекций (regulation/process/policy) по
+     * группам спрашивающего. @Optional — spec-и конструируют сервис позиционно;
+     * null → гейт off.
+     */
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
+
+  /**
+   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
+   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
+   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
+   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
+   * страница может стать короче, total остаётся посчитанным до фильтра —
+   * лёгкий over-count; приемлемый трейд-офф on-read подхода. Все 3 типа
+   * (regulation/process/policy) под одной surface-меткой 'regulations'.
+   */
+  private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
+    items: T[],
+    args: { tenantId: string; userId?: string },
+  ): Promise<T[]> {
+    const enf = this.cfg?.knowledgeAccess.enforcement ?? 'off';
+    if (enf === 'off' || !this.accessResolver || !args.userId || items.length === 0) {
+      return items;
+    }
+    const accessCtx = await this.accessResolver.resolveAccessibleGroups({
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
+    if (accessCtx.isBypass) return items;
+    const { accessibleIds, denied } =
+      await this.accessResolver.partitionProjectionsByAccess(
+        accessCtx,
+        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+      );
+    if (enf === 'enforce') {
+      this.metrics?.incAccessDenied({ surface: 'regulations' }, denied);
+      return items.filter((i) => accessibleIds.has(i.id));
+    }
+    this.metrics?.incAccessShadowDiff({ surface: 'regulations' }, denied);
+    return items;
+  }
 
   // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
+    userId?: string;
     query: ListRegulationsQuery;
   }): Promise<ListRegulationsResponse> {
     const q = args.query;
@@ -107,14 +160,20 @@ export class RegulationsService {
         }),
       ]);
 
+    // Ф6 — гейт каждого типа ДО маппинга (на сырых записях с sourceBlockIds).
+    const [visRegs, visProcs, visPols] = await Promise.all([
+      this.gateProjections(regs, { tenantId: args.tenantId, userId: args.userId }),
+      this.gateProjections(procs, { tenantId: args.tenantId, userId: args.userId }),
+      this.gateProjections(pols, { tenantId: args.tenantId, userId: args.userId }),
+    ]);
     const merged = [
-      ...regs.map((r) =>
+      ...visRegs.map((r) =>
         this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
       ),
-      ...procs.map((p) =>
+      ...visProcs.map((p) =>
         this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
       ),
-      ...pols.map((p) =>
+      ...visPols.map((p) =>
         this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
       ),
     ];
@@ -132,6 +191,7 @@ export class RegulationsService {
 
   private async listRegulations(args: {
     tenantId: string;
+    userId?: string;
     query: ListRegulationsQuery;
     skip: number;
     take: number;
@@ -151,8 +211,13 @@ export class RegulationsService {
       }),
       this.prisma.regulation.count({ where }),
     ]);
+    // Ф6 — гейт доступа по проекционным группам.
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
     return {
-      items: items.map((r) =>
+      items: visible.map((r) =>
         this.regulationToListItem(r, r.currentVersion?.trustTier ?? 'human'),
       ),
       total,
@@ -164,6 +229,7 @@ export class RegulationsService {
 
   private async listProcesses(args: {
     tenantId: string;
+    userId?: string;
     query: ListRegulationsQuery;
     skip: number;
     take: number;
@@ -179,8 +245,13 @@ export class RegulationsService {
       }),
       this.prisma.process.count({ where }),
     ]);
+    // Ф6 — гейт доступа по проекционным группам.
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
     return {
-      items: items.map((p) =>
+      items: visible.map((p) =>
         this.processToListItem(p, p.currentVersion?.trustTier ?? 'human'),
       ),
       total,
@@ -192,6 +263,7 @@ export class RegulationsService {
 
   private async listPolicies(args: {
     tenantId: string;
+    userId?: string;
     query: ListRegulationsQuery;
     skip: number;
     take: number;
@@ -207,8 +279,13 @@ export class RegulationsService {
       }),
       this.prisma.policy.count({ where }),
     ]);
+    // Ф6 — гейт доступа по проекционным группам.
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
     return {
-      items: items.map((p) =>
+      items: visible.map((p) =>
         this.policyToListItem(p, p.currentVersion?.trustTier ?? 'human'),
       ),
       total,

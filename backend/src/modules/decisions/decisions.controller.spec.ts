@@ -56,6 +56,7 @@ describe('DecisionsController (IDOR fence)', () => {
     await ctrl.list(q, userA, 'org-A');
     expect(svc.list).toHaveBeenCalledWith({
       tenantId: 'org-A',
+      userId: 'u-1',
       query: q,
     });
   });

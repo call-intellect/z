@@ -84,7 +84,7 @@ export class InsightsController {
   ): Promise<ListInsightsResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.list({ tenantId: t, query: q });
+    return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get('chart')
@@ -115,7 +115,7 @@ export class InsightsController {
   ): Promise<TopInsightsResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.getTop({ tenantId: t, query: q });
+    return this.svc.getTop({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get(':id')

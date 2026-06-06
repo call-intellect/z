@@ -2310,18 +2310,46 @@ export class ClonesService {
     );
 
     // 3. Top decisions с decidedByPersonIds.includes(personId).
-    // TODO Ф6: фильтр decisions по проекционному доступу спрашивающего
-    // (Decision — проекция, её групповой доступ добавит Фаза 6).
-    const decisions = await this.prisma.decision.findMany({
+    // Ф6 (R12) — Decision — проекция; её групповой доступ выводится ON-READ из
+    // sourceBlockIds (наследование строжайшей закрытой группы блоков-источников).
+    let decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
         decidedByPersonIds: { has: args.personId },
         status: { notIn: ['rejected', 'cancelled', 'superseded'] },
       },
-      select: { id: true, statement: true, rationale: true, decidedAt: true },
+      select: {
+        id: true,
+        statement: true,
+        rationale: true,
+        decidedAt: true,
+        sourceBlockIds: true,
+      },
       orderBy: { decidedAt: 'desc' },
       take: 10,
     });
+
+    // Ф6 — фильтр проекций (decisions) по доступу СПРАШИВАЮЩЕГО. off/bypass →
+    // байт-в-байт. enforce → отбрасываем недоступные; shadow → только метрика.
+    if (
+      enforcement !== 'off' &&
+      accessCtx &&
+      !accessCtx.isBypass &&
+      this.accessResolver &&
+      decisions.length > 0
+    ) {
+      const { accessibleIds, denied } =
+        await this.accessResolver.partitionProjectionsByAccess(
+          accessCtx,
+          decisions.map((d) => ({ id: d.id, sourceBlockIds: d.sourceBlockIds })),
+        );
+      if (enforcement === 'enforce') {
+        decisions = decisions.filter((d) => accessibleIds.has(d.id));
+        this.metrics.incAccessDenied({ surface: 'clone' }, denied);
+      } else {
+        this.metrics.incAccessShadowDiff({ surface: 'clone' }, denied);
+      }
+    }
 
     return {
       reasoningBlocks,

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
   type AiResult,
@@ -38,6 +38,28 @@ import type {
 import type { MeetingPublicDto } from './dto/meeting-public.dto';
 import { assertTransition } from './fsm/meeting-fsm';
 import { MeetingsRepository } from './meetings.repository';
+
+/**
+ * Вход «приглашённый» — общий для создания встречи и «допригласить» (B5).
+ */
+type InviteeInput = {
+  userId?: string | null;
+  personId?: string | null;
+  email?: string | null;
+  sendVia?: ('email' | 'telegram')[];
+};
+
+/**
+ * Отложенная доставка приглашения (накапливается внутри транзакции,
+ * отправляется side-effect'ом ПОСЛЕ коммита).
+ */
+type PendingInvite = {
+  inviteToken: string;
+  sendVia: ('email' | 'telegram')[];
+  userId: string | null;
+  email: string | null;
+  name: string;
+};
 
 /**
  * Бизнес-сервис встреч.
@@ -140,6 +162,70 @@ export class MeetingsService {
     }
   }
 
+  /**
+   * Pre-seed одного приглашённого внутри транзакции (ТЗ 2026-06-04 Фаза 2.1 +
+   * B5 2026-06-06). Создаёт `Participant` со статусом 'invited' и персональным
+   * `inviteToken`, резолвит имя/email для доставки. Возвращает `PendingInvite`
+   * для последующей доставки или `null`, если приглашённый — сам хост.
+   *
+   * Логика byte-identical с прежним инлайн-циклом в `createForUser` — это
+   * чистый вынос для переиспользования в `addInvitees`.
+   */
+  private async seedInviteeInTx(
+    tx: Prisma.TransactionClient,
+    meetingId: string,
+    invitee: InviteeInput,
+    hostUserId: string,
+  ): Promise<PendingInvite | null> {
+    // Хост уже добавлен отдельно — не дублируем его как приглашённого.
+    if (invitee.userId && invitee.userId === hostUserId) return null;
+
+    let resolvedName: string;
+    // ТЗ 2026-06-04 Фаза 3 — резолвим email для доставки: явный
+    // invitee.email приоритетен, иначе берём из User.
+    let resolvedEmail: string | null = invitee.email ?? null;
+    if (invitee.userId) {
+      const u = await tx.user.findUnique({
+        where: { id: invitee.userId },
+        select: { name: true, email: true },
+      });
+      resolvedName = u?.name ?? invitee.email ?? 'Приглашённый';
+      if (!resolvedEmail) resolvedEmail = u?.email ?? null;
+    } else if (invitee.personId) {
+      const p = await tx.person.findUnique({
+        where: { id: invitee.personId },
+        select: { name: true },
+      });
+      resolvedName = p?.name ?? invitee.email ?? 'Приглашённый';
+    } else {
+      resolvedName = invitee.email ?? 'Приглашённый';
+    }
+
+    const inviteToken = nanoid();
+    await tx.participant.create({
+      data: {
+        meetingId,
+        livekitIdentity: `invitee:${inviteToken}`,
+        name: resolvedName,
+        role: 'guest',
+        isRegisteredUser: Boolean(invitee.userId),
+        userId: invitee.userId ?? null,
+        personId: invitee.personId ?? null,
+        invitationStatus: 'invited',
+        inviteToken,
+        invitedAt: new Date(),
+      },
+    });
+
+    return {
+      inviteToken,
+      sendVia: invitee.sendVia ?? [],
+      userId: invitee.userId ?? null,
+      email: resolvedEmail,
+      name: resolvedName,
+    };
+  }
+
   // ────────────────────────── создание ──────────────────────────────────
 
   async createFromCrossmark(
@@ -232,13 +318,7 @@ export class MeetingsService {
     let created!: Meeting;
     // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — собираем приглашённых для
     // доставки ПОСЛЕ транзакции (доставка — side-effect, не часть БД-транзакции).
-    const pendingInvites: Array<{
-      inviteToken: string;
-      sendVia: ('email' | 'telegram')[];
-      userId: string | null;
-      email: string | null;
-      name: string;
-    }> = [];
+    const pendingInvites: PendingInvite[] = [];
     let hostName = '';
 
     await this.prisma.$transaction(async (tx) => {
@@ -290,55 +370,9 @@ export class MeetingsService {
       // Participant'ов со статусом 'invited' и персональным inviteToken —
       // identity сотрудника протягивается до диаризации/графа ещё до входа.
       // Доставка приглашений (email/Telegram) — Фаза 3, здесь только pre-seed.
-      const invitees = input.invitees ?? [];
-      for (const invitee of invitees) {
-        // Хост уже добавлен выше — не дублируем его как приглашённого.
-        if (invitee.userId && invitee.userId === userId) continue;
-
-        let resolvedName: string;
-        // ТЗ 2026-06-04 Фаза 3 — резолвим email для доставки: явный
-        // invitee.email приоритетен, иначе берём из User.
-        let resolvedEmail: string | null = invitee.email ?? null;
-        if (invitee.userId) {
-          const u = await tx.user.findUnique({
-            where: { id: invitee.userId },
-            select: { name: true, email: true },
-          });
-          resolvedName = u?.name ?? invitee.email ?? 'Приглашённый';
-          if (!resolvedEmail) resolvedEmail = u?.email ?? null;
-        } else if (invitee.personId) {
-          const p = await tx.person.findUnique({
-            where: { id: invitee.personId },
-            select: { name: true },
-          });
-          resolvedName = p?.name ?? invitee.email ?? 'Приглашённый';
-        } else {
-          resolvedName = invitee.email ?? 'Приглашённый';
-        }
-
-        const inviteToken = nanoid();
-        await tx.participant.create({
-          data: {
-            meetingId,
-            livekitIdentity: `invitee:${inviteToken}`,
-            name: resolvedName,
-            role: 'guest',
-            isRegisteredUser: Boolean(invitee.userId),
-            userId: invitee.userId ?? null,
-            personId: invitee.personId ?? null,
-            invitationStatus: 'invited',
-            inviteToken,
-            invitedAt: new Date(),
-          },
-        });
-
-        pendingInvites.push({
-          inviteToken,
-          sendVia: invitee.sendVia ?? [],
-          userId: invitee.userId ?? null,
-          email: resolvedEmail,
-          name: resolvedName,
-        });
+      for (const invitee of input.invitees ?? []) {
+        const pi = await this.seedInviteeInTx(tx, meetingId, invitee, userId);
+        if (pi) pendingInvites.push(pi);
       }
 
       // Денормализация счётчиков карточки. Делается в той же транзакции —
@@ -730,6 +764,81 @@ export class MeetingsService {
         `oldName="${participant.name}" newName="${trimmed}" by=${args.actorUserId}`,
     );
     return updated;
+  }
+
+  /**
+   * B5 (2026-06-06) — допригласить участников ПОСЛЕ создания / во время встречи.
+   * Доступ: только хост. Разрешено только для joinable-встречи (scheduled|active).
+   * Идемпотентность: повтор того же userId/personId = no-op (email-only не
+   * дедупится — Participant не хранит email).
+   */
+  async addInvitees(
+    meetingId: string,
+    invitees: InviteeInput[],
+    actorUserId: string,
+  ): Promise<{ added: number; skipped: number }> {
+    const meeting = await this.meetings.findByIdWithOwnerAndParticipants(meetingId);
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== actorUserId) throw new NotAuthorizedError('not_meeting_host');
+    if (meeting.status !== 'scheduled' && meeting.status !== 'active') {
+      throw new ConflictException({
+        ok: false,
+        error: {
+          code: 'meeting_not_joinable',
+          message: 'Пригласить можно только в запланированную или идущую встречу',
+        },
+      });
+    }
+
+    const existingUserIds = new Set(
+      meeting.participants.map((p) => p.userId).filter((v): v is string => Boolean(v)),
+    );
+    const existingPersonIds = new Set(
+      meeting.participants.map((p) => p.personId).filter((v): v is string => Boolean(v)),
+    );
+
+    const pendingInvites: PendingInvite[] = [];
+    let skipped = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const invitee of invitees) {
+        if (invitee.userId && invitee.userId === actorUserId) {
+          skipped++;
+          continue;
+        }
+        if (invitee.userId && existingUserIds.has(invitee.userId)) {
+          skipped++;
+          continue;
+        }
+        if (invitee.personId && existingPersonIds.has(invitee.personId)) {
+          skipped++;
+          continue;
+        }
+        const pi = await this.seedInviteeInTx(tx, meetingId, invitee, actorUserId);
+        if (pi) {
+          pendingInvites.push(pi);
+          if (invitee.userId) existingUserIds.add(invitee.userId);
+          if (invitee.personId) existingPersonIds.add(invitee.personId);
+        } else {
+          skipped++;
+        }
+      }
+    });
+
+    if (pendingInvites.length > 0) {
+      void this.deliverMeetingInvites({
+        meetingId,
+        tenantId: meeting.tenantId,
+        hostName: meeting.owner?.name ?? '',
+        meetingTitle: meeting.title,
+        invites: pendingInvites,
+      });
+    }
+
+    this.logger.log(
+      `addInvitees: meeting=${meetingId} added=${pendingInvites.length} skipped=${skipped} by=${actorUserId}`,
+    );
+    return { added: pendingInvites.length, skipped };
   }
 
   /**

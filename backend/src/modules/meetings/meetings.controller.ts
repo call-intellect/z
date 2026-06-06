@@ -32,6 +32,8 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import type { AccessInfo } from './domain/meeting.domain';
 import {
+  type AddInviteesDto,
+  AddInviteesSchema,
   type CreateMeetingForUserDto,
   CreateMeetingForUserSchema,
 } from './dto/create-meeting.dto';
@@ -146,6 +148,25 @@ export class MeetingsController {
       user.id,
     );
     return { id: meeting.id, url: `/m/${meeting.id}` };
+  }
+
+  /**
+   * B5 (2026-06-06) — допригласить участников на joinable-встречу (host-only).
+   * Идемпотентно: повтор того же userId/personId = no-op.
+   *
+   *   - 403 `not_meeting_host` — actor не хост встречи;
+   *   - 404 `meeting_not_found` — встреча не найдена;
+   *   - 409 `meeting_not_joinable` — встреча не scheduled/active.
+   */
+  @Post(':id/invitees')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.CREATED)
+  async addInvitees(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AddInviteesSchema)) body: AddInviteesDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ added: number; skipped: number }> {
+    return this.meetings.addInvitees(id, body.invitees, user.id);
   }
 
   // ─────────────────────────── result page (Фаза 7.6) ────────────────────

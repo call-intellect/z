@@ -65,6 +65,22 @@ export type RegenerateSectionApiRequest = {
 
 export type CreateMeetingApiResponse = { id: string; url: string };
 
+/**
+ * Тело POST /meetings/:id/invitees (Фаза B5) — добавить приглашённых к уже
+ * созданной встрече. Backend host-only, идемпотентен (повторные дубликаты
+ * пропускаются), разрешён для joinable-встречи.
+ */
+export type AddInviteesApiRequest = {
+  invitees: Array<{
+    userId?: string | null;
+    personId?: string | null;
+    email?: string | null;
+    sendVia?: ('email' | 'telegram')[];
+  }>;
+};
+
+export type AddInviteesApiResponse = { added: number; skipped: number };
+
 export type JoinMeetingApiRequest = {
   guest_name?: string;
   /**
@@ -195,6 +211,16 @@ export const meetingsApi = {
   // Нужен глобальному SubscriptionGuard на бэке. См. api-client.setApiClientOrgId.
   create: (body: CreateMeetingApiRequest) =>
     apiClient.post<CreateMeetingApiResponse>('/api/v1/meetings', body),
+
+  /**
+   * Фаза B5 — добавить приглашённых к существующей встрече. Host-only,
+   * идемпотентно. Возвращает счётчики `added` / `skipped`.
+   */
+  addInvitees: (id: string, body: AddInviteesApiRequest) =>
+    apiClient.post<AddInviteesApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/invitees`,
+      body,
+    ),
 
   /** Soft-delete встречи. */
   softDelete: (id: string) =>

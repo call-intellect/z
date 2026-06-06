@@ -282,8 +282,9 @@ AND (
 **Acceptance:** админ задаёт «продажи→[логистика,продажи,маркетинг]» направленно; хост ставит закрытость встречи; UI без английских слов; SWR-загрузка; `bun run typecheck/lint/build` (frontend) зелёные.
 **Закрывает:** R13, R14.
 
-### Фаза 8 — Выкат: shadow→enforce, метрики, прод-операции
+### Фаза 8 — Выкат: shadow→enforce, метрики, прод-операции ✅ РЕАЛИЗОВАНО (код+доки; сам перевод флага на проде — за владельцем)
 **Цель:** включить безопасно и наблюдаемо.
+> Реализация: все seed/backfill/patch зарегистрированы в `apply-prod-deploy.ts` STEPS (seed-knowledge-groups · backfill-subject-attribution-all-types · backfill-block-access --departments · patch-meeting-type-closed-defaults). interview→personal дефолт засижен (bootstrap MeetingTypeConfig + patch). `prod-deploy-log.md` обновлён (ENV-флаг, миграция, seed, backfill, patch, smoke off→shadow→enforce). second-brain обновлён (rbac-access-control / security-and-152fz / knowledge-core / data-model / module-map / api-layer). Рефлексия — `second-brain/05_история/2026-06-06-knowledge-access-groups-and-provenance.md`. **Открыто (за владельцем):** сам прогон backfill + перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow→enforce на проде; строка в реестр `04_не-сделано` (не тронут — правился параллельной сессией).
 **Входит:** регистрация всех seed/backfill в `apply-prod-deploy.ts` STEPS; прогон бэкфилла; перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow (сверка `kc_access_shadow_diff_total`)→enforce; обновление `prod-deploy-log.md` (Шаги 1/4/7/8/12); обновление second-brain (`rbac-access-control.md`, `security-and-152fz.md`, `company-memory-overview.md`).
 **Acceptance:** в shadow метрики идут, выдача не меняется; после enforce — e2e-предикат Ф4 зелёный на проде-смоук; прод-лог обновлён.
 **Закрывает:** R15.
@@ -330,4 +331,29 @@ AND (
 - Реестр не-сделанного: строка про доступ закрыта/обновлена; группов­ые чаты сотрудников — отдельной строкой как vNext.
 
 ## Итог
-_(заполнит `tz-orchestrator` по завершении: реализовано целиком/частично, что осталось.)_
+
+**Реализовано целиком (Ф1–Ф8), ветка `feature/knowledge-access-groups`, 9 коммитов:**
+
+| Фаза | Коммит | Закрывает |
+|---|---|---|
+| Ф1 — провенанс автора на все типы + per-adapter identity | `e253dd19` | R1, R2 |
+| Ф2 — модель групп + KnowledgeAccessResolver + флаг | `cbb1c444` | R3, R4, R9 |
+| Ф3 — ingest-вывод группы блока (BlockAccessDeriver) + бэкфилл | `0609d381` | R5, R6 |
+| Ф4 — security-гейт во ВСЕХ поверхностях retrieval (4 части A-D) | `d4aa1b3e` | R7, R10, R11 |
+| Ф5 — контекст клонов в правах спрашивающего | `b08b9ade` | R8 |
+| Ф6 — наследование группы на проекции (on-read из sourceBlockIds) | `3f055e80` | R12 |
+| Ф7a/Ф7b — backend CRUD + frontend admin UI | `2ade7365`, `a16157ef` | R13, R14 |
+| Ф8a — interview→personal дефолт + документация | `a5803ec4` | R15 (код+доки) |
+
+**Ключевые архитектурные решения оркестратора (отступления от буквы ТЗ, с обоснованием):**
+- **Ф4 расширен адверсариальной проверкой покрытия** — помимо перечисленных в ТЗ поверхностей, гейт добавлен на `entities`/`themes`/`graph`/`blocks` контроллеры (GET /blocks/:id и др. отдавали контент блоков без гейта; найдено грепом всех canonical-выдач из Pre-mortem). Это и есть «9 точек + проверь все».
+- **Ф6 — без новой модели/миграции:** группы проекции выводятся ON-READ из её `sourceBlockIds` (IdeaBlockAccess уже материализован Ф3). Проще, нет рассинхрона, нет риска пропустить create-путь. Цель R12 (строжайшее наследование) достигнута.
+- **derive() не переведён в async** — группы проекции считает отдельный резолвер-хелпер (derive остаётся sync/pure, используется широко).
+
+**Инвариант off=байт-в-байт** соблюдён и проверен на каждой фазе (при `KNOWLEDGE_ACCESS_ENFORCEMENT=off` ни один путь не резолвит/не фильтрует). Верификация: typecheck+build+тесты на каждой фазе зелёные (на финале — сотни тестов knowledge-core/rbac/clones/api/orchestrator/meetings).
+
+**Открыто (НЕ за разработкой — за владельцем/операциями):**
+- Прогон seed/backfill на проде + поэтапный перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow (сверка `kc_access_shadow_diff_total`)→enforce. Инструкция — `docs/operations/prod-deploy-log.md`.
+- Строка в реестр `second-brain/04_не-сделано/README.md` (закрыть «доступ к знаниям», добавить vNext) — файл правился параллельной сессией, НЕ тронут во избежание конфликта; внести владельцу.
+
+**vNext (вне scope ТЗ, зафиксировано):** реальный ingest групповых чатов сотрудников (коннектора нет); усиление fuzzy-имён/LLM-arbiter атрибуции; UI крутилки `defaultClosedGroupKind` по типу встречи (backend-эндпоинт готов, нет org-admin листинга типов); чтение текущего `closedGroupKind` в meeting-detail DTO (post-factum селектор сейчас write-only); фильтр проекций в dashboard-агрегатах (senior-роли).

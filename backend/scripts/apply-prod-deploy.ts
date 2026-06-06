@@ -139,6 +139,7 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-person-relationship.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-backfill-card-versions.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-document-use-cases-default.ts', skipBootstrap: true },
+  { phase: 'patch', script: 'scripts/patch-team-templates-ru.ts', hint: 'русификация ролей шаблона продаж (SDR→квалификация, BANT/CHAMP→методика)', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-org-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-person-timezone-default.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-migrate-mvs-to-company-profile.ts', args: ['--apply'], skipBootstrap: true },

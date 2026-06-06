@@ -477,4 +477,51 @@ linked-канал/`User`). Conversational доходит только до **з�
 (Ф3, `b5a07ebe`) шлёт email через `mail.sendMeetingInvite` (вкл. внешних), а
 telegram/in-app — через conversational-каскад (только для своих).
 
+### `AiResult` — два писателя, TOCTOU-гонка на `create` (класс)
+
+`AiResult.meetingId` уникален. Его создают ДВА пути: `analyze.worker`
+(`upsertEmptyAiResult`) и `meeting-report-fast.worker` (`writeSummary`). Оба
+исторически делали `findUnique`+`create` (или ветвление по snapshot-флагу
+`hasAiResult`) → при параллельном запуске второй `create` падал
+`Unique constraint failed (meetingId)`, и `summaryFast` молча терялся
+(`reportFast='partial'`). **Фикс (ТЗ 2026-06-06, `a76b0445`):** оба писателя →
+атомарный `prisma.aiResult.upsert({ where:{ meetingId }, ... })`. Prisma на
+unique-where компилирует upsert в нативный `INSERT … ON CONFLICT` (атомарно).
+**Правило:** любой второй писатель записи с unique-полем — только `upsert`, не
+`findUnique`+`create`; флаг-snapshot (`hasAiResult`) — это TOCTOU, не защита.
+
+### `x ?? fallback` НЕ ловит `x === 0` (честность длительности)
+
+`meeting.durationMs ?? recording.durationSeconds*1000` оставляло «0» как
+длительность (FSM проставил 0 при реальной записи) → UI показывал «0м».
+`??` срабатывает только на `null`/`undefined`, не на `0`. **Фикс (ТЗ
+2026-06-06, `b9d78afb`):** `meeting.durationMs && meeting.durationMs > 0 ? … :
+fallback`. Плюс `fmtDurationCompact` для суб-минутной записи (47с) показывал
+«0м» (округление в 0 минут) → теперь «<1 мин». Грабля честности любого UI с
+длительностями/счётчиками.
+
+### Vox ASR: `words` может лежать в `segments[].words`; модель может не отдавать word-ts
+
+`parseVoxResult` исторически искал пословные тайминги только под плоскими
+`words/wordsTimestamps` (top-level и `result`/`data`). Если ASR кладёт их в
+`segments[].words` (Whisper/Google/Deepgram-стиль) — пусто → merger строит 0
+turn'ов → `Transcript.totalDurationSeconds=0` → поведенческие метрики нулевые.
+**Фикс (ТЗ 2026-06-06, `c26348df`):** при отсутствии плоских words собираем из
+`segments[].words`. Корень (модель `v3_e2e_rnnt` может не отдавать word-ts by
+design; submit не шлёт флаг — угадывать имя нельзя, как было с `language`→400)
+**не подтверждён без сырого прод-ответа** → лог `vox.no_words` пишет ТОЛЬКО
+форму ответа (ключи, без текста — PII-safe) для диагностики на след. встрече.
+
+### Два разных «чата встречи»: чат комнаты ≠ AI-помощник
+
+На странице результата встречи есть ДВА чат-подобных элемента, которые легко
+спутать (и QA/ТЗ спутали): вкладка **«Чат комнаты»** (`RoomChatTab`,
+`useMeetingRoomMessages` → `roomMessagesApi.history`) — живые сообщения, что
+участники писали в чате ВО ВРЕМЯ встречи (поиск, группировка по авторам); и
+правая панель **`MeetingChatPanel`** (`useMeetingChat`) — AI-помощник (вопросы
+к встрече, suggested prompts, citations). Это РАЗНЫЕ данные. Удалять «дубль» по
+описанию ТЗ нельзя без проверки — премиса «вкладка дублирует панель» устарела
+после мержа chatBox. Решение владельца 2026-06-06: вкладку переименовать в
+«Чат комнаты», панель оставить.
+
 [[../index|← index]]

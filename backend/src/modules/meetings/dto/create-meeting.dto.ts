@@ -47,6 +47,14 @@ export const CreateMeetingForUserSchema = z.object({
   card_id: z.string().min(1).max(50).nullish(),
   record_by_default: z.boolean().optional().default(true),
   invitees: z.array(InviteeSchema).max(50).optional().default([]),
+  /**
+   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — ручная пометка закрытости
+   * встречи хостом. null/опущено = открыто; 'leadership' | 'council' |
+   * 'personal'. Читается на ingest (Ф3) для привязки блоков к закрытой группе.
+   */
+  closed_group_kind: z
+    .enum(['leadership', 'council', 'personal'])
+    .nullish(),
 });
 
 export type CreateMeetingForUserDto = z.infer<typeof CreateMeetingForUserSchema>;

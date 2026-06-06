@@ -67,6 +67,7 @@ import { InnLookupModule } from './modules/inn-lookup/inn-lookup.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { CrossmarkModule } from './modules/integrations-crossmark/crossmark.module';
 import { JobDescriptionsModule } from './modules/job-descriptions/job-descriptions.module';
+import { KnowledgeAccessModule } from './modules/knowledge-access/knowledge-access.module';
 import { KnowledgeCloneModule } from './modules/knowledge-clone/knowledge-clone.module';
 import { KnowledgeCoreApiModule } from './modules/knowledge-core/knowledge-core-api.module';
 import { KnowledgeCoreModule } from './modules/knowledge-core/knowledge-core.module';
@@ -223,6 +224,8 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     KnowledgeCoreModule,
     // HTTP-контроллеры knowledge-core (вынесены из @Global сервис-модуля).
     KnowledgeCoreApiModule,
+    // Admin REST доступа к знаниям через группы (ТЗ 2026-06-06, Фаза 7A).
+    KnowledgeAccessModule,
 
     // Бизнес-модули.
     HealthModule,

@@ -205,6 +205,38 @@ describe('MeetingsService.createForUser — pre-seed приглашённых (�
     expect(data.invitationStatus).toBeUndefined();
   });
 
+  it('Ф7A knowledge-access — closedGroupKind пробрасывается в meetings.create', async () => {
+    const { svc, repository } = makeService();
+
+    await svc.createForUser(
+      {
+        type: 'sync' as never,
+        title: 'Совет директоров',
+        closedGroupKind: 'council',
+      },
+      'host1',
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ closedGroupKind: 'council' }),
+      expect.anything(),
+    );
+  });
+
+  it('Ф7A knowledge-access — без флага в data уходит closedGroupKind:null', async () => {
+    const { svc, repository } = makeService();
+
+    await svc.createForUser(
+      { type: 'sync' as never, title: 'Обычная' },
+      'host1',
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ closedGroupKind: null }),
+      expect.anything(),
+    );
+  });
+
   it('Фаза 3 — доставка: email-инвайт с адресом → MailService.sendMeetingInvite с joinUrl(?inv=)', async () => {
     const { svc, mail, participantCreate } = makeService();
 

@@ -139,6 +139,8 @@ export class ProjectsService {
     const where: Prisma.ProjectWhereInput = {
       tenantId,
       deletedAt: null,
+      // A6 (2026-06-06): системные контейнеры «Спринт компании» скрыты из списка.
+      systemGenerated: false,
     };
     if (!query.includeArchived) where.archivedAt = null;
     if (query.ownerId) where.ownerId = query.ownerId;

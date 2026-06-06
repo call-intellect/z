@@ -35,6 +35,8 @@ import {
   X,
 } from 'lucide-react';
 
+import { mutate as globalMutate } from 'swr';
+
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { useIntake } from '@/hooks/tracker/useIntake';
@@ -121,6 +123,10 @@ export function IntakeClient() {
       await intakeApi.triage(currentOrgId, item.id, body);
       await mutate();
       toast.success(triageSuccessMessage(body.decision));
+      // A7: обновить бейдж «Входящие» (отдельный SWR-ключ счётчика).
+      void globalMutate(
+        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+      );
     } catch (e) {
       toast.error(`Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`, { duration: 5000 });
     } finally {

@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 import { Check, X, Clock } from 'lucide-react';
+import { mutate as globalMutate } from 'swr';
 import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
@@ -55,6 +56,10 @@ export function IntakeBoard({
           : {}),
       });
       await mutate();
+      // A7: обновить бейдж «Входящие» в сайдбаре (отдельный SWR-ключ счётчика).
+      void globalMutate(
+        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+      );
     } catch (e) {
       toast.error(
         `Не удалось выполнить: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`,

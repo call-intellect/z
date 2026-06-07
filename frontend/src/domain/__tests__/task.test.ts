@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { pickPrimaryTasks, type TaskDomain } from '../task';
+import { normTaskTitle, pickPrimaryTasks, type TaskDomain } from '../task';
 
 function makeTask(overrides: Partial<TaskDomain> = {}): TaskDomain {
   return {
@@ -118,5 +118,52 @@ describe('pickPrimaryTasks', () => {
     expect(result).toHaveLength(2);
     expect(result[0]).toBe(fast);
     expect(result.map((t) => t.id)).toContain('manual_1');
+  });
+
+  it('дедуп схлопывает разделитель тысяч: «…на 2 000» (main) ≡ «…на 2000» (fast) → 1 строка', () => {
+    const fast = makeTask({
+      id: 'fast_1',
+      title: 'Сделать рассылку на 2000',
+      extractorVersion: 'fast',
+    });
+    const v2Dup = makeTask({
+      id: 'v2_dup',
+      title: 'Сделать рассылку на 2 000',
+      extractorVersion: 'v2',
+    });
+
+    const result = pickPrimaryTasks([fast, v2Dup]);
+
+    // Дубль (отличается только разделителем тысяч) схлопнут к fast-версии.
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(fast);
+    expect(result.map((t) => t.id)).not.toContain('v2_dup');
+  });
+});
+
+describe('normTaskTitle', () => {
+  it('разделитель тысяч схлопывается: «2 000» ≡ «2000»', () => {
+    expect(normTaskTitle('Сделать рассылку на 2 000')).toBe(
+      normTaskTitle('Сделать рассылку на 2000'),
+    );
+  });
+
+  it('скобочное уточнение отбрасывается: «Набрать команду (3 чел)» ≡ «Набрать команду»', () => {
+    expect(normTaskTitle('Набрать команду (3 чел)')).toBe(
+      normTaskTitle('Набрать команду'),
+    );
+  });
+
+  it('многоразрядное число без пробелов между цифрами: «1 000 000» → содержит «1000000»', () => {
+    expect(normTaskTitle('1 000 000')).toContain('1000000');
+  });
+
+  it('NBSP как разделитель тысяч тоже схлопывается', () => {
+    // «2 000» (неразрывный пробел) ≡ «2000»
+    expect(normTaskTitle('Бюджет 2 000')).toBe(normTaskTitle('Бюджет 2000'));
+  });
+
+  it('negative: реально разные задачи НЕ схлопываются', () => {
+    expect(normTaskTitle('50 сделок')).not.toBe(normTaskTitle('200 встреч'));
   });
 });

@@ -156,6 +156,20 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     mutate: mutateMeeting,
   } = useMeeting(meetingId);
 
+  /**
+   * ТЗ-2 Фаза 4 — честный UI обработки. `aiProcessing` истинно, пока встреча
+   * НЕ дошла до финального AI-статуса (`ai_ready` / `ai_failed` / `failed`).
+   * Пока он истинен — показываем баннер «Отчёт готовится» и держим поллинг.
+   *
+   * Поллинг самой встречи (а значит — обновление `meeting.status`) обеспечивает
+   * внутренний `refreshInterval` хука `useMeeting` на время AI-обработки;
+   * здесь же мы поллим SWR результата, чтобы отчёт подтянулся, как только будет
+   * готов. Когда статус становится финальным → `aiProcessing=false` →
+   * `refreshInterval=0` → поллинг встаёт.
+   */
+  const aiProcessing =
+    !!meeting && !['ai_ready', 'ai_failed', 'failed'].includes(meeting.status);
+
   // Детальный «result» с aiResult и recording info.
   const {
     data: result,
@@ -164,7 +178,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   } = useSWR(
     meetingId ? ['meeting-result', meetingId] : null,
     () => meetingsApi.result(meetingId),
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: false, refreshInterval: aiProcessing ? 15000 : 0 },
   );
 
   const { chapters, mutate: mutateChapters } = useMeetingChapters(meetingId);
@@ -222,7 +236,8 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     setCurrentMs(ms);
   };
 
-  if (meetingLoading || resultLoading) {
+  // Скелетон — только истинная первичная загрузка (встречи ещё нет).
+  if (meetingLoading && !meeting) {
     return <MeetingResultSkeleton />;
   }
 
@@ -240,6 +255,13 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         </Button>
       </div>
     );
+  }
+
+  // ТЗ-2 Фаза 4 — пока встреча обрабатывается и отчёта ещё нет, показываем
+  // честный баннер «Отчёт готовится» вместо бесконечного скелетона/пустоты.
+  // Поллинг (refreshInterval выше) сам подтянет отчёт и сменит экран.
+  if (aiProcessing && !result) {
+    return <ReportProcessingBanner title={meeting.title} />;
   }
 
   const recording = result?.recording;
@@ -1781,6 +1803,33 @@ function ParticipantRow({
         )}
       </div>
     </li>
+  );
+}
+
+// ─────────────── Processing banner (отчёт готовится) ───────────────
+
+/**
+ * ТЗ-2 Фаза 4 — баннер на весь экран результата, пока встреча ещё не дошла до
+ * финального AI-статуса и отчёта пока нет. Заменяет бесконечный скелетон —
+ * страница сама обновится поллингом, когда отчёт будет готов.
+ */
+function ReportProcessingBanner({ title }: { title?: string }) {
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-10">
+      {title ? (
+        <h1 className="mb-4 text-xl font-semibold text-fg-primary">{title}</h1>
+      ) : null}
+      <div className="rounded-xl border border-border-subtle bg-bg-card px-6 py-8 text-center">
+        <div className="mb-2 flex items-center justify-center gap-2 text-base font-medium text-fg-primary">
+          <Loader2 size={16} className="animate-spin" />
+          Отчёт готовится
+        </div>
+        <div className="mx-auto max-w-md text-sm text-fg-secondary">
+          Обычно занимает несколько минут. Страница обновится автоматически,
+          когда отчёт будет готов.
+        </div>
+      </div>
+    </div>
   );
 }
 

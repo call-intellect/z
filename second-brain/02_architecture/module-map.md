@@ -2253,3 +2253,32 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`backend/src/modules/ai/services/` — `OrgContextService`** (`@Global`) — вынос `loadOrgContext` из воркеров; отдаёт контекст компании (проекты / цели / сотрудники) для инъекции в промпты summary / report (ТЗ-4). См. [[../01_projects/ai-jobs]] §«Качество извлечения».
 
 [[../index|← index]]
+
+## Оверхол цепочки агентов — наблюдаемость + recall + авто-привязка (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-07-agent-chain-overhaul.md`](../../plans/tz/2026-06-07-agent-chain-overhaul.md) (8 фаз) + точечный ТЗ D ([`plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md`](../../plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md)). Ветка `feature/retest2-agent-chain-overhaul`. AI-пайплайн — [[../01_projects/ai-jobs]] §«Оверхол цепочки агентов»; cron'ы/очереди — [[../01_projects/workers-queues]].
+
+### Наблюдаемость материализации графа (Ф0a)
+
+- **`backend/src/modules/knowledge-core/` — `GraphMaterializationService`** — on-demand сверка: доехали ли извлечённые блоки/сущности встречи до графа/проекций (расчёт расхождения по типам).
+- **`GraphDiagnosticsController` — `GET /api/v1/platform/graph/materialization?meetingId=`** (раздел `platform`, гейт SuperAdmin) — REST-обёртка над сервисом. Также доступно через CLI `diag graph --meeting <id>`.
+- **`GraphMaterializationVerifyCron`** (`@Cron` 30 мин, per-Org) — фоновая проверка → метрика `kc_materialization_gap_total{type}`.
+
+### Trace специалистов слоя 3 (Ф0b)
+
+- Диспетчер очереди `core.specialist-routing` оборачивает специалистов в pipeline-контекст `KNOWLEDGE_GRAPH` с `traceId=mtg_<id>` (раньше `block_<id>` → специалисты были невидимы в цепочке встречи `diag chain`) + логи created/skipped/merged у decisions/ideas/goals.
+
+### Авто-привязка Goal↔Theme (Ф4.2)
+
+- **`backend/src/modules/goals/ — GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет существующую модель `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. **Схема БД не менялась** (`GoalTheme` уже существовал). LLM-арбитр Goal↔Task (Ф4.1) отложен — см. реестр «не-сделано».
+
+### Прочие правки (Ф1/Ф2/Ф3/Ф5/Ф6 + ТЗ D)
+
+- `block-ingest.prompt` — маркеры decision/idea (Ф1, recall); `withAsrNote` на 10 извлекающих промптах (Ф2 C1) — code-промпты, без seed.
+- `pickPrimarySummary` (`summaryFast ?? summaryV2 ?? summary`) у потребителей + флаг `aiFeatures.summaryAgentEnabled` / ENV `SUMMARY_AGENT_ENABLED` (Ф5, дефолт TRUE).
+- `merge.worker` / `behavior-metrics.worker` + `vox.types` — ненулевые длительность/поведение при пустых пословных таймингах ASR (Ф7 + ТЗ D).
+- `tracker.autoAcceptConfidenceThreshold` (AdminSetting, дефолт 0.75; был мёртвый hardcoded 0.92) — порог авто-Issue (Ф3).
+- Patch `patch-llm-routes-report-chain-deepseek.ts` — маршруты summary/report-by-type/tasks → DeepSeek (Ф6, кэш).
+- Frontend: `useShallow` на селекторах `/tables/[id]` (ТЗ A, React #185); русские типы встреч + `<title> '%s — Кора'` + канон `/chat`→ChatV2 (ТЗ C).
+
+[[../index|← index]]

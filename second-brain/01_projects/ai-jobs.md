@@ -267,3 +267,32 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard): `backend/scripts/fixtures/agent-golden/*.json` (4 фикстуры) + `backend/scripts/_lib/agent-scoring.ts` (метрики полноты/точности/дублей) + runner `backend/scripts/agent-quality-harness.ts`. Меряет качество извлечения задач/сущностей против эталона — инструмент для регрессий, не часть прод-пайплайна.
 
 [[../index|← index]]
+
+## Оверхол цепочки агентов — наблюдаемость + recall + авто-привязка (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-07-agent-chain-overhaul.md`](../../plans/tz/2026-06-07-agent-chain-overhaul.md) (8 фаз) + точечный ТЗ D ([`plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md`](../../plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md)). Ветка `feature/retest2-agent-chain-overhaul`. Модули/контроллеры — [[../02_architecture/module-map]] §«Оверхол цепочки агентов»; cron'ы — [[workers-queues]].
+
+### Ф0a/Ф0b — наблюдаемость графа + trace специалистов
+- **`GraphMaterializationService`** + REST `GET /api/v1/platform/graph/materialization?meetingId=` (SuperAdmin, `GraphDiagnosticsController`) + `diag graph --meeting <id>` — on-demand сверка, доехали ли извлечённые блоки/сущности встречи до графа/проекций. Фоновый `GraphMaterializationVerifyCron` (`@Cron` 30 мин, per-Org) считает расхождение → метрика `kc_materialization_gap_total{type}`.
+- **Trace специалистов слоя 3** — диспетчер `core.specialist-routing` оборачивает специалистов в pipeline-контекст `KNOWLEDGE_GRAPH` с `traceId=mtg_<id>` (раньше `block_<id>` → невидимы в цепочке встречи `diag chain`) + логи created/skipped/merged у decisions/ideas/goals.
+
+### Ф1/Ф2 — recall Решений/Идей + ASR-нота (code-промпты)
+- **`block-ingest.prompt`** дополнен русскими маркерами decision/idea + дизамбигуация (защита `commitment`/`plan_item` от ложного срабатывания) — поднимает recall Решений/Идей. Golden-фикстуры `growth-funnel` закоммичены; прогон ДО/ПОСЛЕ на живом LLM отложен (golden-предусловие, см. реестр «не-сделано»).
+- **`withAsrNote`** добавлен на **10 извлекающих промптов** (расширение ТЗ-4 Ф2 C1) — инструктирует LLM восстанавливать числа/имена по контексту (компенсация ошибок ASR). Cache-friendly (стабильный SYSTEM). Это **code-промпты** (prompt registry с code-fallback) — едут с деплоем кода, отдельной seed-операции не требуют.
+
+### Ф4.2 — авто-привязка Goal↔Theme
+- **`GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. LLM-арбитр Goal↔Task (Ф4.1) отложен (golden-предусловие).
+
+### Ф5 — консолидация summary
+- **`pickPrimarySummary`** (`summaryFast ?? summaryV2 ?? summary`) у всех потребителей — единая точка выбора актуального summary встречи. Флаг summary-агента `aiFeatures.summaryAgentEnabled` (ENV `SUMMARY_AGENT_ENABLED` + AdminSetting, дефолт TRUE; при OFF потребители падают на `summaryV2 ?? summary`).
+
+### Ф6 — кэш-маршруты
+- Patch `patch-llm-routes-report-chain-deepseek.ts` — `summary` / `report-by-type` / `tasks` → DeepSeek (кэш-дружелюбная цепочка). Зарегистрирован в `apply-prod-deploy.ts` STEPS. Решение Б (shared-prefix транскрипта, router-wide) и калибровка Части 3 (smoke cache-hit WARN) — отдельным ТЗ (см. реестр «не-сделано»).
+
+### ТЗ D — поведение/длительность при пустых пословных таймингах ASR
+- **`merge.worker`** при пустых `words` даёт псевдо-слову длительность дорожки (`track.durationSeconds*1000`) → длительность/поведение участников **ненулевые**. **`behavior-metrics.worker`** определяет `wordTimingsAvailable` → помечает метрики `lowConfidence`. Контракт — `vox.types`. Реальные пословные тайминги от Vox по-прежнему пусты (submit-флаг/смена модели отложены — нужен прод-ответ Vox, см. реестр «не-сделано»).
+
+### Ф3 — порог авто-Issue
+- `tracker.autoAcceptConfidenceThreshold` (AdminSetting, дефолт **0.75**, был мёртвый hardcoded 0.92) — порог авто-принятия Issue из встречи. См. [[admin]] §AdminSetting.
+
+[[../index|← index]]

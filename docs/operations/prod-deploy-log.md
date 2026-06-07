@@ -70,6 +70,32 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-08 — Ретест №2: оверхол цепочки агентов (4 ТЗ + зонтичные 8 фаз)
+
+> Контракты: 4 точечных ТЗ ретеста `plans/tz/2026-06-07-{tables-detail-render-loop-and-route-fix, provider-smoke-test-and-alerting-fix, ui-copy-meeting-types-titles-and-anglicisms, asr-word-timestamps-duration-behavior}.md` + зонтичный `plans/tz/2026-06-07-agent-chain-overhaul.md` (8 фаз). Ветка `feature/retest2-agent-chain-overhaul`, 12 коммитов: ТЗ A `26219233`, Ф0a `b31c311f`, Ф0b `7c9d6a21`, Ф7+ТЗ D `c8cf2602`, Ф3 `4ef90bde`, ТЗ B `3a2d0ce4`, ТЗ C `f1ca83f6`, Ф1 `0c066468`, Ф2 C1 `c9339992`, Ф4.2 `5f55ee35`, Ф5 `ac3fa181`, Ф6 `c381e7c8`.
+>
+> **Зачем для прода:** ТЗ A — оживляет детальные страницы «Таблицы» (рендер-петля Zustand + 404 pending-patches); ТЗ B — глушит шум smoke-теста + чинит доставку алертинга; ТЗ C — русские типы встреч/`<title>`/убран «AI»/канон `/chat`; ТЗ D — ненулевые длительность/поведение участников при пустых пословных таймингах ASR; зонтичный — наблюдаемость графа, trace специалистов, recall Решений/Идей, ASR-нота, авто-привязка целей↔тем, консолидация summary, кэш-маршруты, порог авто-Issue. **Миграций БД НЕТ** (`GoalTheme` и все таблицы уже существовали). Фронт — пересборка.
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `SUMMARY_AGENT_ENABLED`** (`env.schema.ts`, **дефолт TRUE**) — kill-switch summary-агента (Ф5). Можно не выставлять (code-default true); читается также через AdminSetting `aiFeatures.summaryAgentEnabled`. `false` — только если summary-агент создаёт проблемы (тогда потребители падают на `summaryV2 ?? summary` через `pickPrimarySummary`).
+  - Прочие новые AdminSetting (`tracker.autoAcceptConfidenceThreshold`, `goals.themeAutolinkMinWeight`, `goals.themeAutolinkLlmEnabled`) — см. Шаг 7 (засеиваются `seed-admin-settings.ts`, code-fallback есть).
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; `GoalTheme` уже существовал, привязка целей↔тем пишет в существующую модель `GoalTheme(source='ai')`).
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-llm-routes-report-chain-deepseek.ts` — переводит маршруты `summary` / `report-by-type` / `tasks` на DeepSeek (кэш-дружелюбная цепочка, Ф6). Зарегистрирован в `apply-prod-deploy.ts` STEPS. Прогон: `docker compose exec backend bun run scripts/patch-llm-routes-report-chain-deepseek.ts` (или через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`). Не трогает маршруты с `editedByAdmin=true`.
+- **Шаг 7 — Seed** — `scripts/seed-admin-settings.ts` пополнен 4 ключами (идемпотентно, защищает admin-edited): `tracker.autoAcceptConfidenceThreshold` (дефолт **0.75**, был мёртвый hardcoded 0.92 — порог авто-принятия Issue из встречи), `goals.themeAutolinkMinWeight` + `goals.themeAutolinkLlmEnabled` (Ф4.2 авто-привязка Goal↔Theme), `aiFeatures.summaryAgentEnabled` (Ф5, дефолт **true**). Прогон: `docker compose exec backend bun run scripts/seed-admin-settings.ts` (или агрегатором `apply-prod-deploy.ts --mode update`). Без сидера все 4 работают на code-дефолте.
+- **Промпт-правки — отдельной seed-операции НЕ требуют.** Маркеры decision/idea в `block-ingest.prompt` (Ф1) и ASR-нота `withAsrNote` на 10 извлекающих промптах (Ф2 C1) — это **code-промпты** (prompt registry с code-fallback), едут с деплоем кода. Отдельный seed/patch не нужен.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `GraphMaterializationService` + `GraphDiagnosticsController` (`/api/v1/platform/graph`) + `GraphMaterializationVerifyCron`, trace специалистов в диспетчере `core.specialist-routing`, `GoalThemeLinkerService` + `GoalThemeLinkerCron`, `merge.worker`/`behavior-metrics.worker` + `vox.types`, `pickPrimarySummary` у потребителей, smoke-кламп в openai-proxy, новая ENV; frontend: `useShallow` на таблицах, русские типы встреч + `<title>` + канон `/chat`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Новые cron (grep в логах backend через ≥30 мин): `graph-materialization-verify` (`@Cron` 30 мин, per-Org) и `goal-theme-linker` (`@Cron` 30 мин) — строки запуска присутствуют, без ERROR.
+  - Новый REST: Swagger `/api/docs` показывает `GET /api/v1/platform/graph/materialization` (SuperAdmin); `diag graph --meeting <id>` отдаёт расхождения материализации.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'kc_materialization_gap_total|goal_theme_autolink_total'` → `kc_materialization_gap_total{type}` (разрыв материализации графа) и `goal_theme_autolink_total{method}` (авто-привязка Goal↔Theme) присутствуют.
+  - Таблицы: `/tables/[id]` открывается (нет белого экрана / React #185); `GET /api/v1/tables/pending-patches` не 404.
+  - Trace специалистов: на тест-встрече `diag chain --meeting <id>` → специалисты слоя 3 видны под `traceId=mtg_<id>` (раньше были невидимы под `block_`).
+  - Кэш-маршруты: `docker compose exec backend bun run scripts/diag-routes.ts` → `summary`/`report-by-type`/`tasks` ведут на DeepSeek.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🩹 2026-06-06 — Стабильность прода: 6 ТЗ (ветка `feature/prod-stability-2026-06-06`)
 
 > Контракты: `plans/tz/2026-06-06-{frontend-stability-chunk-and-video, recording-pipeline-reliability-reconcile, meeting-tasks-quality-dedup-asr, graph-arbiter-json-resilience, meeting-report-copy-download-actions, agent-quality-golden-harness}.md`.

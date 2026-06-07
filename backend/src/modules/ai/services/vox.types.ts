@@ -29,6 +29,11 @@ export interface VoxPollOptions {
 /**
  * Word-timestamp в результате Vox. `startMs/endMs` — миллисекунды от начала
  * звукового потока, который мы отправили в submit.
+ *
+ * При отсутствии `words` (Vox не вернул пословные тайминги, что бывает для
+ * коротких/части встреч) downstream `merge.worker` строит один псевдо-turn на
+ * дорожку длиной `durationSeconds`; поведенческие метрики такого расчёта
+ * помечаются `lowConfidence` (приблизительность).
  */
 export interface VoxWord {
   word: string;
@@ -42,7 +47,11 @@ export interface VoxResult {
   transcriptText: string;
   /** Длительность аудио в секундах. */
   durationSeconds: number;
-  /** Word-timestamps. Vox v3_rnnt отдаёт массив. Может отсутствовать. */
+  /**
+   * Word-timestamps. Vox v3_rnnt отдаёт массив. Может отсутствовать — тогда
+   * merge.worker использует `durationSeconds` для псевдо-turn, а поведенческие
+   * метрики помечаются `lowConfidence` (см. `VoxWord`).
+   */
   words?: VoxWord[];
   errorMessage?: string;
 }

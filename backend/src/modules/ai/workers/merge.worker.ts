@@ -141,7 +141,17 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
         rawWords.length > 0
           ? rawWords
           : track.transcriptText.trim().length > 0
-            ? [{ word: track.transcriptText, startMs: 0, endMs: 0 }]
+            ? [
+                {
+                  word: track.transcriptText,
+                  startMs: 0,
+                  // Vox без пословных таймингов → даём псевдо-слову реальную
+                  // длительность дорожки (durationSeconds надёжно отдаётся Vox),
+                  // иначе turn=0мс и поведение/длительность обнуляются. Метрики
+                  // помечаются lowConfidence (см. behavior-metrics ниже).
+                  endMs: Math.max(0, Math.round((track.durationSeconds ?? 0) * 1000)),
+                },
+              ]
             : [];
       return {
         speakerName: track.speakerName,

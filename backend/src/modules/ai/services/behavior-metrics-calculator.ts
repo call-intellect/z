@@ -52,6 +52,13 @@ export interface BehaviorCalculatorInput {
    * среднее `segment.confidence` (или 1.0, если confidence нигде нет).
    */
   diarizationConfidence?: number;
+  /**
+   * Были ли у дорожек пословные тайминги. Если `false` — поведенческие
+   * сегменты построены по длительности дорожек (приблизительно, см.
+   * merge.worker псевдо-turn), поэтому метрики помечаются `lowConfidence`.
+   * `undefined`/`true` — обычный путь (тайминги есть).
+   */
+  wordTimingsAvailable?: boolean;
 }
 
 export interface BehaviorMeetingMetrics {
@@ -217,7 +224,7 @@ export function calculateBehaviorMetrics(
       crossTalkMs,
       dominanceIndex,
       diarizationConfidence: roundFloat(diarizationConfidence),
-      lowConfidence: lowConfidenceFromDiar,
+      lowConfidence: lowConfidenceFromDiar || input.wordTimingsAvailable === false,
     },
     participants: participantMetrics,
   };

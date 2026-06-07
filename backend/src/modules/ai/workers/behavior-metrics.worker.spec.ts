@@ -115,7 +115,14 @@ describe('BehaviorMetricsWorker.process', () => {
       tenantId: 'tenant_1',
       startedAt,
       endedAt,
-      transcript: { mergedS3Url: 'meetings/mtg_test/merged.json' },
+      // Нормальная встреча: у дорожек есть пословные тайминги → wordTimingsAvailable=true
+      // → метрики считаются с полной уверенностью (lowConfidence=false).
+      transcript: {
+        mergedS3Url: 'meetings/mtg_test/merged.json',
+        tracks: [
+          { words: [{ word: 'Привет', startMs: 0, endMs: 500 }] },
+        ],
+      },
       participants: [
         {
           id: 'p_alice',

@@ -247,3 +247,23 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 - **`chatbox-analyze.worker`** (очередь `chatbox.analyze`, cron `ChatboxAnalyzeCron` каждые 5 мин) — берёт сессии `analysisStatus='pending'` с `endedAt!=null`, генерит summary, подмешивает summary **предыдущей** сессии (`previousSessionId`), ставит `done`/`failed`, проставляет `rawEventId`. Сессия → `IngestService.ingest` → `RawEvent(sourceType='chatbox', dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений). Идемпотентно: повторный анализ той же сессии не плодит `RawEvent` (стабильный `idempotencyKey` по `sourceExternalId=sessionId`).
 
 [[../index|← index]]
+
+## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
+
+**Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.
+
+### ТЗ-4 — качество извлечения задач и отчёта
+- **Усиленный дедуп задач** — `normTaskTitle` нормализует заголовок (убирает числа / скобки / пунктуацию) перед сравнением → меньше дублей «одна задача в двух формулировках».
+- **ASR-нота в SYSTEM** — хелпер `withAsrNote` добавлен в промпты `summary` / `report` / `tasks` / `extract-actions`: инструктирует LLM восстанавливать числа/имена по контексту (компенсация ошибок распознавания речи). Cache-friendly (стабильный SYSTEM).
+- **Org-контекст в summary/report** — новый `OrgContextService` (вынос `loadOrgContext` из воркеров; `@Global` в `ai/services`) инъектирует контекст компании (проекты / цели / сотрудники) в промпты summary и report — отчёт связнее и точнее по именам/проектам.
+- Opt-in патч `patch-task-extractor-route-pro.ts` — перевод извлечения задач на capable-модель (не активирован, ждёт go).
+
+### ТЗ-3 — устойчивость JSON-арбитра графа
+- **entity-graph поднят до уровня block-linker.** `entity-graph-builder` теперь парсит через `tryParseJson` (вместо голого `JSON.parse`) + ретрай ×2 при битом ответе. Метрики `kc_entity_graph_invalid_json_total`, `kc_entity_graph_fallback_none_total`.
+- **router `validate`-callback** — битый ответ primary-провайдера больше **не считается успехом**: `validate` бросает `LlmInvalidOutputError` → router падает на secondary (раньше HTTP 200 с мусором молча принимался). Метрика статуса `invalid_output`.
+- **Forced `tool_choice` для не-thinking deepseek** — за флагом `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF) принудительно вызывает tool (вместо `'auto'`) + guard-откат на `'auto'` если модель не поддержала. Грабли арбитра/router — [[../02_architecture/code-pitfalls]], [[../02_architecture/knowledge-core]] §«Устойчивость арбитра графа».
+
+### ТЗ-6 — golden-измеритель качества извлечения (QA-инструмент)
+Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard): `backend/scripts/fixtures/agent-golden/*.json` (4 фикстуры) + `backend/scripts/_lib/agent-scoring.ts` (метрики полноты/точности/дублей) + runner `backend/scripts/agent-quality-harness.ts`. Меряет качество извлечения задач/сущностей против эталона — инструмент для регрессий, не часть прод-пайплайна.
+
+[[../index|← index]]

@@ -70,6 +70,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🩹 2026-06-06 — Стабильность прода: 6 ТЗ (ветка `feature/prod-stability-2026-06-06`)
+
+> Контракты: `plans/tz/2026-06-06-{frontend-stability-chunk-and-video, recording-pipeline-reliability-reconcile, meeting-tasks-quality-dedup-asr, graph-arbiter-json-resilience, meeting-report-copy-download-actions, agent-quality-golden-harness}.md`.
+> **Зачем для прода:** ТЗ-1 убирает «белый экран» ChunkLoadError (webpack вместо Turbopack) + оживляет видео (нативный `<video>`); ТЗ-2 ограничивает 18-мин паузу пайплайна сверху ≤2 мин (composite-reconcile-крон); ТЗ-3 чинит молчаливую потерю связей графа; ТЗ-4 — качество извлечения задач; ТЗ-5 — действия отчёта; ТЗ-6 — измеритель качества. **Схема БД НЕ меняется, миграций/seed/backfill НЕТ.** Новые рискованные/внешне-наблюдаемые фичи — за флагами с дефолтом OFF (поведение прода не меняется до явного включения).
+
+- **Шаг 1 — ENV / build-arg**:
+  - **build-arg фронта `DEPLOYMENT_VERSION`** (git sha, НЕ runtime-ENV backend, в `env.schema.ts` НЕ добавляется). Выкат фронта: `DEPLOYMENT_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build frontend` (или прокинуть в `.env`). Без него `deploymentId=undefined` — не ломает, просто version-skew-защита неактивна.
+  - **ENV `RECORDING_COMPOSITE_RECONCILE_ENABLED`** (`env.schema.ts`, **дефолт ON**) — kill-switch composite-egress reconcile-крона. Можно не выставлять (code-default true). `false` — только если крон создаёт проблемы.
+  - **ENV `LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED`** (`env.schema.ts`, **дефолт OFF**) — ack-first вебхуков (200 до обработки). OFF = текущее синхронное поведение. Включать ТОЛЬКО осознанно: при рестарте в окне фоновая обработка `room_finished` теряется (крон догоняет composite/track, но НЕ room_finished). Только для замера секвенс-холда.
+  - **ENV `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED`** (`env.schema.ts`, **дефолт OFF**) — forced `tool_choice` для не-thinking deepseek (лучше JSON-compliance). OFF = текущее `tool_choice:'auto'`. Включать ПОСЛЕ прод-пробы agent-lia (принимает ли прокси forced function); guard сам откатит на 'auto' при format-400, но проба желательна. `strict:true` НЕ добавлен (нужна та же проба).
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; reconcile-крон использует существующие поля `Recording`/`Meeting.endedAt`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingFinalizationService` + `CompositeEgressReconcileCron` в webhooks, `listCompositeEgress`/`reconcileCompositeEgress` в recordings, ack-first + метрика gap, entity-graph устойчивость + router validate-callback + deepseek forced tool_choice, ASR-нота + `OrgContextService`, 3 новых ENV; frontend: webpack-сборка + `deploymentId`, нативный `<video>` вместо Vidstack, error-boundary + chunk-reload, баннер «Отчёт готовится», действия отчёта): `DEPLOYMENT_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Крон: после старта backend в логах — строка запуска `composite-egress-reconcile` (раз/мин); на застрявшей встрече пауза `completed→recording_ready` ≤ ~2 мин (лог `reconcileCompositeEgress: composite догнан кроном`). Флип `RECORDING_COMPOSITE_RECONCILE_ENABLED=false` → крон молчит.
+  - Метрики (`curl -s localhost:3000/metrics | grep ...`): `livekit_egress_ended_gap_seconds` (gap доставки egress-вебхука), `kc_entity_graph_invalid_json_total`/`kc_entity_graph_fallback_none_total` (устойчивость арбитра — fallback_none должен падать vs до выката), `incLlmRouterDispatch{status="invalid_output"}` (validate-callback пробует secondary).
+  - Фронт: `/result` с записью — `<video>` играет (readyState>0), клик по главе перематывает; на детальных страницах нет английского «This page couldn't load» (русский экран + тихий reload при version skew); заголовок ответа фронта содержит `x-deployment-id` если `DEPLOYMENT_VERSION` пробросился.
+  - Прод-верификация (владелец, см. реестр «не-сделано»): ≤2 мин пауза, падение fallback-none метрик, baseline качества (ТЗ-6 `agent-quality-harness.ts`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔐 2026-06-06 — Доступ к знаниям через группы + фундамент-провенанс (knowledge-access)
 
 > Контракт: `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`. Ветка `feature/knowledge-access-groups`. 8 фаз: Ф1 провенанс автора на все типы + per-adapter identity · Ф2 модель групп + резолвер · Ф3 ingest-вывод группы блока · Ф4 security-гейт во всех поверхностях retrieval · Ф5 контекст клонов в правах спрашивающего · Ф6 наследование группы на проекции · Ф7 frontend admin (матрица/членство/флаг встречи) · Ф8 выкат.

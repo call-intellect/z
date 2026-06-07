@@ -689,6 +689,18 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 **Эффект.** Клоны (specialist-3-7 / ExecutablePersona), `router.hasEmployeeSubject`, WHO-ось `axis-classifier`, `card-rollup-v2` и дашборд-агенты впервые получают непустую `role:'subject'` выборку. Грабля зафиксирована в [[code-pitfalls]].
 
+## Устойчивость арбитра графа + router validate-fallback (ТЗ-3, 2026-06-06)
+
+**Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ветка `feature/prod-stability-2026-06-06`. Грабли — [[code-pitfalls]].
+
+Арбитр `entity-graph-builder` исторически был **слабее** `block-linker`: парсил ответ LLM голым `JSON.parse` без ретрая, и битый JSON ронял пару связей молча. Подняли до уровня block-linker:
+
+- **`tryParseJson` вместо `JSON.parse` + ретрай ×2** в `entity-graph` — устойчивый парс ответа арбитра. Метрики `kc_entity_graph_invalid_json_total`, `kc_entity_graph_fallback_none_total` (видимость вместо тихого пропуска).
+- **router `validate`-callback** — `LlmRouterService` получил колбэк валидации результата. Битый ответ primary-провайдера (HTTP 200 с мусором) больше **не считается успехом**: `validate` бросает `LlmInvalidOutputError` → router падает на **secondary**. Раньше мусорный 200 молча принимался, secondary не пробовался. Метрика статуса `invalid_output`.
+- **Forced `tool_choice`** для не-thinking deepseek за флагом `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF) — принудительный вызов tool вместо `'auto'` + guard-откат на `'auto'`, если модель не поддержала.
+
+Полный реестр изменений AI-пайплайна — [[../01_projects/ai-jobs]] §«Устойчивость JSON-арбитра графа».
+
 ## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.

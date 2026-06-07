@@ -2243,3 +2243,13 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`meetings.controller` — PATCH `/meetings/:id/closed-group`** + `Meeting.closedGroupKind` в create; bootstrap-sync `MeetingTypesAdminService` проставляет `interview`→`defaultClosedGroupKind='personal'`.
 
 [[../index|← index]]
+
+## Стабильность записи + AI-контекст (ТЗ-2/ТЗ-4, 2026-06-06)
+
+**Источник:** ТЗ-2 (надёжность записи), ТЗ-4 (качество задач). Ветка `feature/prod-stability-2026-06-06`. Очереди/cron — [[../01_projects/workers-queues]]; AI-пайплайн — [[../01_projects/ai-jobs]].
+
+- **`backend/src/modules/webhooks/` — `MeetingFinalizationService`** — вынос промоут-логики встречи из обработчика вебхука: FSM `completed`→`recording_processing`→`recording_ready` + `enqueueTranscribe` + faststart. Единый вход и для вебхука `egress_ended`, и для reconcile-cron (раньше логика жила только в вебхуке — при потере вебхука встреча зависала).
+- **`backend/src/modules/webhooks/` — `CompositeEgressReconcileCron`** — `@Cron('*/1 * * * *')` (HTTP-процесс), pull-фоллбэк статуса composite-egress через `listEgress`, доводит запись до готовности через `MeetingFinalizationService`. Kill-switch `RECORDING_COMPOSITE_RECONCILE_ENABLED` (дефолт ON). Метрика `livekit_egress_ended_gap_seconds`. Возраст записи — по `Meeting.endedAt` (`Recording` без `createdAt`/`updatedAt`, см. [[code-pitfalls]]).
+- **`backend/src/modules/ai/services/` — `OrgContextService`** (`@Global`) — вынос `loadOrgContext` из воркеров; отдаёт контекст компании (проекты / цели / сотрудники) для инъекции в промпты summary / report (ТЗ-4). См. [[../01_projects/ai-jobs]] §«Качество извлечения».
+
+[[../index|← index]]

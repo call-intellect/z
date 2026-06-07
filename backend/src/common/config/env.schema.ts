@@ -79,6 +79,15 @@ const LiveKitSchema = z.object({
   LIVEKIT_API_SECRET: z.string().min(1),
   LIVEKIT_WEBHOOK_API_KEY: z.string().min(1),
   LIVEKIT_WEBHOOK_API_SECRET: z.string().min(1),
+  /**
+   * Ack-first обработка вебхуков: отдавать LiveKit'у 200 НЕ дожидаясь
+   * `LivekitEventsHandler.handle` (фоновая обработка). Дефолт OFF (opt-in):
+   * если backend рестартнёт в окне фоновой обработки, побочки события
+   * (FSM-переход room_finished→completed, upsert participant) потеряются,
+   * а дедуп-запись уже создана → LiveKit не приедет повторно. Composite/track
+   * догонит крон, но room_finished — нет. Корневой фикс паузы — крон (default ON).
+   */
+  LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED: zBool(false),
 });
 
 const TurnSchema = z.object({

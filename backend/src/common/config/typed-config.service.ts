@@ -210,6 +210,12 @@ export class TypedConfigService {
       apiSecret: this.get('LIVEKIT_API_SECRET'),
       webhookApiKey: this.get('LIVEKIT_WEBHOOK_API_KEY'),
       webhookApiSecret: this.get('LIVEKIT_WEBHOOK_API_SECRET'),
+      // Ack-first обработка вебхуков (opt-in, дефолт OFF). См. env.schema.ts.
+      webhookAckFirstEnabled: this.resolveSync<boolean>(
+        'livekit.webhookAckFirstEnabled',
+        'LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED',
+        false,
+      ),
     } as const;
   }
 

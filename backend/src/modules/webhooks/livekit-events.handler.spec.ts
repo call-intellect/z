@@ -299,15 +299,24 @@ describe('LivekitEventsHandler', () => {
     } as unknown as WebhookEvent;
   }
 
-  function makeEgressHandler(faststartEnabled: boolean): {
+  function makeEgressHandler(
+    faststartEnabled: boolean,
+    endedAt: Date | null = null,
+  ): {
     handler: LivekitEventsHandler;
     aiQueue: any;
+    metrics: any;
   } {
     const prisma = {
-      meeting: { findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed' })) },
+      meeting: {
+        findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed', endedAt })),
+      },
     } as unknown as PrismaService;
     const meetings = { transitionStatus: vi.fn(async () => undefined) } as unknown as MeetingsService;
-    const metrics = { incLivekitWebhookEvent: vi.fn() } as unknown as BusinessMetricsService;
+    const metrics = {
+      incLivekitWebhookEvent: vi.fn(),
+      observeEgressEndedGap: vi.fn(),
+    } as unknown as BusinessMetricsService;
     const recordings = {
       onCompositeEnded: vi.fn(async () => ({ status: 'finalizing', allReady: false })),
     } as any;
@@ -326,7 +335,7 @@ describe('LivekitEventsHandler', () => {
       cfg,
       finalization,
     );
-    return { handler, aiQueue };
+    return { handler, aiQueue, metrics };
   }
 
   it('egress_ended(composite): флаг on + размер выше порога → ставит faststart в очередь', async () => {
@@ -345,5 +354,21 @@ describe('LivekitEventsHandler', () => {
     const { handler, aiQueue } = makeEgressHandler(false);
     await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
     expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
+  });
+
+  it('egress_ended: при наличии meeting.endedAt — пишет gap-метрику', async () => {
+    const endedAt = new Date(Date.now() - 30_000); // 30 секунд назад
+    const { handler, metrics } = makeEgressHandler(true, endedAt);
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
+    expect(metrics.observeEgressEndedGap).toHaveBeenCalledTimes(1);
+    const [requestType, gap] = (metrics.observeEgressEndedGap as any).mock.calls[0];
+    expect(requestType).toBe('room_composite');
+    expect(gap).toBeGreaterThanOrEqual(29);
+  });
+
+  it('egress_ended: без meeting.endedAt — gap-метрика НЕ пишется', async () => {
+    const { handler, metrics } = makeEgressHandler(true, null);
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
+    expect(metrics.observeEgressEndedGap).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
   private livekitWebhookEventsTotal!: Counter<'type'>;
+  private livekitEgressEndedGapSeconds!: Histogram<'request_type'>;
 
   // ── llm fallback ────────────────────────────────────────────────────
   private llmFallbackTotal!: Counter<'provider'>;
@@ -1007,6 +1008,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'livekit_webhook_events_total',
       help: 'События LiveKit webhook (по типу).',
       labelNames: ['type'] as const,
+    });
+
+    this.livekitEgressEndedGapSeconds = this.getOrCreateHistogram({
+      name: 'livekit_egress_ended_gap_seconds',
+      help: 'Задержка между room_finished и egress_ended (доставка egress-вебхука)',
+      labelNames: ['request_type'] as const,
+      buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1200],
     });
 
     this.llmRouterDispatchTotal = this.getOrCreateCounter({
@@ -3515,6 +3523,16 @@ export class BusinessMetricsService implements OnModuleInit {
 
   incLivekitWebhookEvent(type: string): void {
     this.livekitWebhookEventsTotal.inc({ type });
+  }
+
+  /**
+   * Histogram `livekit_egress_ended_gap_seconds{request_type}` — задержка между
+   * `room_finished` (Meeting.endedAt) и `egress_ended`. Наблюдение за доставкой
+   * egress-вебхука; гэп растёт → egress-вебхук задерживается/теряется.
+   */
+  observeEgressEndedGap(requestType: string, gapSeconds: number): void {
+    if (gapSeconds >= 0)
+      this.livekitEgressEndedGapSeconds.observe({ request_type: requestType }, gapSeconds);
   }
 
   /**

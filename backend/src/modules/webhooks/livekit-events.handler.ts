@@ -392,6 +392,22 @@ export class LivekitEventsHandler {
     const info = this.extractEgressInfo(event);
     if (!info) return;
 
+    // Метрика доставки egress-вебхука: gap room_finished→egress_ended.
+    try {
+      const m = await this.prisma.meeting.findUnique({
+        where: { id: meetingId },
+        select: { endedAt: true },
+      });
+      if (m?.endedAt) {
+        this.metrics.observeEgressEndedGap(
+          info.requestType,
+          (Date.now() - m.endedAt.getTime()) / 1000,
+        );
+      }
+    } catch {
+      /* метрика не критична */
+    }
+
     if (info.requestType === 'room_composite' || info.requestType === 'roomComposite') {
       const file = info.fileResults[0] ?? null;
       const result = await this.recordings.onCompositeEnded(meetingId, {

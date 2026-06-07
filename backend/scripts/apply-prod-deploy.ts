@@ -171,6 +171,11 @@ const STEPS: Step[] = [
   // 2026-06-03 — восстановить secondary/tertiary fallback для meeting-report-fast
   // (нормализованный primary затенял legacy 3-провайдерную цепочку → single-provider timeout)
   { phase: 'patch', script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts', hint: 'fallback openai+ollama для meeting-report-fast', skipBootstrap: true },
+  // 2026-06-07 Ф6 agent-chain-overhaul — вернуть цепочку отчёта на DeepSeek (кэш).
+  // На проде summary/report-by-type/tasks ушли на MiniMax (0% кэш); DeepSeek
+  // кэширует 81-99% без ручного cache_control. Идемпотентен (всегда update до
+  // DeepSeek). На чистом старте дефолтный сид уже пишет DeepSeek → skipBootstrap.
+  { phase: 'patch', script: 'scripts/patch-llm-routes-report-chain-deepseek.ts', hint: 'summary/report-by-type/tasks → DeepSeek (кэш)', skipBootstrap: true },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси

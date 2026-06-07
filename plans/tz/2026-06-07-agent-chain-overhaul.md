@@ -200,7 +200,13 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф6. Кэш: вернуть цепочку на DeepSeek + общий префикс транскрипта `[ ]`
+## Ф6. Кэш: вернуть цепочку на DeepSeek + общий префикс транскрипта `[~]` (Решение А сделано; Б и smoke отложены)
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul) — **Решение А (быстрое, обязательное)**: patch `patch-llm-routes-report-chain-deepseek.ts` принудительно возвращает глобальные маршруты `summary`→deepseek-v4-flash, `report-by-type`→deepseek-v4-pro, `tasks`→deepseek-v4-flash (+ fallback openai gpt-5.4-mini / ollama). На проде они ушли на MiniMax (0% кэш, доказано trace «111»); DeepSeek кэширует 81-99% без ручного cache_control. Идемпотентен (всегда update), per-tenant не трогает, summary-v2 не трогает. Зарегистрирован в `apply-prod-deploy.ts` STEPS (phase 'patch', skipBootstrap). Верификация: typecheck+lint зелёные (прод-прогон по выкату — скрипт пишет в БД, локально без гарантии БД не гонял).
+>
+> **НЕ сделано (осознанно — в реестр «не-сделано»):**
+> - **Решение Б (общий кэш-префикс транскрипта, shared-prefix):** мастер-док сам называет это ОТДЕЛЬНЫМ отложенным ТЗ «cache-prefix-everywhere» (`llm-cache-status.md:99`). Перестройка LLM-router на shared `[преамбула+транскрипт cache_control:ephemeral][инструкция]` — затрагивает роутер для всех агентов, риск сломать индивидуальную настройку SYSTEM, нужен замер. Профильно под длинные встречи. Отдельная задача.
+> - **Часть 3 (smoke-метрика `z_llm_cache_hit_ratio ≥0.6 → WARN`):** метрика уже существует (ai-jobs.md T7 F3); добавление smoke-WARN после типовой встречи — отдельная observability-задача (нужен живой прогон встречи для калибровки порога).
 
 **Проблема (доказано эмпирикой):** DeepSeek кэширует 81–91%, но `summary`/`report-by-type`/legacy `tasks` ушли на MiniMax (0% кэш, `analyze.worker.ts:566,737,806`). Транскрипт НЕ кэшируется между агентами (у каждого свой SYSTEM) — на длинных встречах он оплачивается uncached × N агентов.
 

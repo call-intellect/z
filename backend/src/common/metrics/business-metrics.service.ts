@@ -47,6 +47,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
   private kcBlockLinkerInvalidJsonTotal!: Counter<'reason'>;
 
+  // ── entity-graph fallback на none (молчаливая деградация графа) ──────
+  private kcEntityGraphInvalidJsonTotal!: Counter<'reason'>;
+  private kcEntityGraphFallbackNoneTotal!: Counter<'reason'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -1044,6 +1048,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.kcBlockLinkerInvalidJsonTotal = this.getOrCreateCounter({
       name: 'kc_block_linker_invalid_json_total',
       help: 'block-linker: невалидный ответ арбитра на попытке (reason=parse — не распарсился JSON-вердикт; reason=llm_error — вызов LLM упал). Доля растёт → проблема с моделью/форматом; терминальные потери — в kc_block_linker_fallback_none_total.',
+      labelNames: ['reason'] as const,
+    });
+
+    this.kcEntityGraphInvalidJsonTotal = this.getOrCreateCounter({
+      name: 'kc_entity_graph_invalid_json_total',
+      help: 'entity-graph: невалидный ответ LLM-арбитра на попытке (reason=parse — не распарсился JSON; reason=llm_error — вызов LLM упал). Терминальные потери — в kc_entity_graph_fallback_none_total.',
+      labelNames: ['reason'] as const,
+    });
+
+    this.kcEntityGraphFallbackNoneTotal = this.getOrCreateCounter({
+      name: 'kc_entity_graph_fallback_none_total',
+      help: 'entity-graph не смог распарсить вердикт арбитра после ретраев → связь сущностей не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
       labelNames: ['reason'] as const,
     });
 
@@ -3704,6 +3720,25 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcBlockLinkerInvalidJson(args: { reason: string }): void {
     this.kcBlockLinkerInvalidJsonTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * entity-graph: невалидный ответ LLM-арбитра на отдельной попытке (до
+   * ретрая). reason=parse — JSON не распарсился; reason=llm_error — вызов LLM
+   * упал. Терминальные потери (после исчерпания ретраев) —
+   * в kc_entity_graph_fallback_none_total.
+   */
+  incKcEntityGraphInvalidJson(args: { reason: string }): void {
+    this.kcEntityGraphInvalidJsonTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * entity-graph не смог распарсить вердикт LLM-арбитра после ретраев →
+   * связь между сущностями не создана (молчаливая деградация графа знаний).
+   * Должно быть = 0; > 0 → проверь модель/формат ответа арбитра.
+   */
+  incKcEntityGraphFallbackNone(args: { reason: string }): void {
+    this.kcEntityGraphFallbackNoneTotal.inc({ reason: args.reason });
   }
 
   /**

@@ -7,7 +7,9 @@ import {
 import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import {
   LlmRouterService,
   maxDataClass,
@@ -166,6 +168,9 @@ export class EntityGraphService {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   /**
@@ -287,53 +292,67 @@ export class EntityGraphService {
 
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (сущности + блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
-    try {
-      const out = await this.llm.call({
-        taskType: 'entity-graph-builder',
-        tenantId: args.tenantId,
-        systemPrompt: guardOn
-          ? withInjectionGuard(ENTITY_LINK_SYSTEM_PROMPT)
-          : ENTITY_LINK_SYSTEM_PROMPT,
-        userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
-        responseFormat: {
-          type: 'json_schema',
-          name: 'EntityGraphBuilderVerdict',
-          strict: true,
-          schema: ENTITY_LINK_JSON_SCHEMA,
-        },
-        sourceRef: { type: 'entity', id: args.entityA.id },
-        // Фаза 11: dataClass — max по упомянутым блокам.
-        dataClass: maxDataClass(args.recentBlocks.map((b) => b.dataClass)),
-      });
-      const parsed = this.parseVerdict(out.text);
-      if (parsed) return parsed;
-      this.logger.warn(
-        { aId: args.entityA.id, bId: args.entityB.id },
-        'entity-graph-builder: invalid JSON LLM-арбитра — fallback на none',
-      );
-      return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
-    } catch (err) {
-      this.logger.warn(
-        {
-          aId: args.entityA.id,
-          bId: args.entityB.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'entity-graph-builder: LLM judge упал — fallback на none',
-      );
-      return { relationType: null, confidence: 0, explanation: 'LLM judge call failed' };
+
+    // Ретрай зеркалит block-linker (block-link.service.ts): 2 попытки
+    // вызов+парсинг, чтобы один невалидный JSON арбитра не терял связь молча.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const out = await this.llm.call({
+          taskType: 'entity-graph-builder',
+          tenantId: args.tenantId,
+          systemPrompt: guardOn
+            ? withInjectionGuard(ENTITY_LINK_SYSTEM_PROMPT)
+            : ENTITY_LINK_SYSTEM_PROMPT,
+          userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
+          responseFormat: {
+            type: 'json_schema',
+            name: 'EntityGraphBuilderVerdict',
+            strict: true,
+            schema: ENTITY_LINK_JSON_SCHEMA,
+          },
+          sourceRef: { type: 'entity', id: args.entityA.id },
+          // Фаза 11: dataClass — max по упомянутым блокам.
+          dataClass: maxDataClass(args.recentBlocks.map((b) => b.dataClass)),
+        });
+        const parsed = this.parseVerdict(out.text);
+        if (parsed) return parsed;
+        // Доля невалидного JSON per-attempt (видна ещё до терминального
+        // fallback). ?.(...) — метрика @Optional() + мок может не иметь метода.
+        this.metrics?.incKcEntityGraphInvalidJson?.({ reason: 'parse' });
+        this.logger.warn(
+          { aId: args.entityA.id, bId: args.entityB.id, attempt },
+          'entity-graph-builder: invalid JSON LLM-арбитра — повтор',
+        );
+      } catch (err) {
+        this.metrics?.incKcEntityGraphInvalidJson?.({ reason: 'llm_error' });
+        this.logger.warn(
+          {
+            aId: args.entityA.id,
+            bId: args.entityB.id,
+            attempt,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'entity-graph-builder: LLM judge упал — повтор',
+        );
+      }
     }
+
+    // После двух попыток — fallback на none + метрика молчаливой деградации.
+    this.metrics?.incKcEntityGraphFallbackNone?.({ reason: 'exhausted' });
+    this.logger.warn(
+      { aId: args.entityA.id, bId: args.entityB.id },
+      'entity-graph-builder: fallback на none после 2 попыток',
+    );
+    return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
   }
 
   // ─────────────────────────── helpers ─────────────────────────────────────
 
   private parseVerdict(text: string): EntityRelationVerdict | null {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      return null;
-    }
+    // `tryParseJson` снимает ```json-обёртку и вытаскивает первый {…} из
+    // прозы/преамбулы; не бросает — на мусор вернёт `{ raw }`, который не
+    // пройдёт Zod-валидацию → null (без ложных null на fenced-ответах).
+    const raw = tryParseJson(text);
     const parsed = EntityLinkResponseSchema.safeParse(raw);
     if (!parsed.success) return null;
     // KC-Temporal W3.1: для 'none' rich-edge данные не нужны (ребро не создаём).

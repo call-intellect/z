@@ -48,7 +48,14 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф1. Материализация Решений и Идей — recall классификации signalType `[ ]`
+## Ф1. Материализация Решений и Идей — recall классификации signalType `[x]` (recall-фикс; idea direct-path и golden-run — см. примечания)
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul). **Корень-фикс (primary):** описания signalType `decision`/`idea` в `block-ingest.prompt.ts` были «тонкими» (без «Маркеры:», в отличие от ~30 других типов) → LLM их не классифицировал → Решения=0/Идеи=0. Добавлены явные русские триггеры («решили что»/«остановились на»/«договорились делать», «идея:»/«а что если»/«предлагаю сделать») + **дизамбигуация, защищающая commitment/plan_item** (из них рождаются Цели — чтобы recall decision не каннибализировал их). Cache-safe (структура SYSTEM стабильна, разовая ре-инициализация per-deploy). Детерминированный регресс-гард `block-ingest.prompt.spec.ts` (маркеры + дизамбигуация). Golden-фикстуры `growth-funnel.{clean,asr_garbled}.json` закоммичены (содержат решение+идею).
+>
+> **НЕ сделано (осознанно, с причиной — в реестр «не-сделано»):**
+> - **idea direct-path (шаг 3, «рассмотреть»):** НЕ добавлен. `graph.upsertEntity` НЕ создаёт строку таблицы `Idea` (типизированы только decision/regulation; Idea рождается через `prisma.idea.create` в Specialist 3.6 с KNN-дедупом). Параллельный прямой create с дедупом по `sourceBlockId` (а не KNN) рискует дублями против Specialist 3.6 и не проверяем golden'ом в этой сессии. Recall-фикс маршрутизирует idea-блоки в существующий Specialist 3.6 — этого достаточно для материализации. Прямой путь — отдельная задача с golden-верификацией.
+> - **Golden before/after прогон (шаг 4):** требует ЖИВОГО backend+воркеров+LLM (НЕ прод): `FIXTURES_GLOB='growth-funnel' bun run scripts/agent-quality-harness.ts`. В этой сессии живого LLM нет → прогон отложен на dev ПЕРЕД прод-выкатом (мерить рост decision/idea И что Goals не упали). Фикстуры и харнесс готовы.
+> - **Прод-подтверждение распределения signalType (шаг 1):** через `diag graph --meeting` (Ф0) — после выката + явного «можно в прод».
 
 **Проблема (доказанный корень, confidence high):** Решения=0, Идеи=0 НЕ из-за роутера (маппинг есть: `router.service.ts:236-261` decision/rationale/decision_basis→DECISIONS, idea/feature_request→IDEAS) и НЕ из-за гейтов специалистов (идентичны рабочему goals; `decision.create`/`idea.create` безусловны при confidence≥0.4). Для Decision есть даже ДВА пути (`block-ingest.worker.ts:547-649` direct + Specialist 3.3) — оба дали 0. **Корень — LLM block-ingest не классифицирует блоки как `signalType='decision'/'idea'`**: один промпт на 60+ типов enum, «договорились/я сделаю» уходит в `commitment`/`plan_item` (→ Цели работают), а формальные decision/idea теряются среди конкурирующих типов (`block-ingest.prompt.ts:8-75,404-462`).
 

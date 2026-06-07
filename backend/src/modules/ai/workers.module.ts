@@ -22,6 +22,7 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
 import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
@@ -177,6 +178,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // → метрика kc_materialization_gap_total + WARN-лог. GraphMaterializationService
     // берётся из @Global KnowledgeCoreModule.
     GraphMaterializationVerifyCron,
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
+    // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
+    // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых
+    // strategic-alignment.worker делал ранний return. GoalThemeLinkerService
+    // берётся из @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
+    GoalThemeLinkerCron,
     ReframingCron,
     ThemeClustererCron,
     CardRollupV2Worker,

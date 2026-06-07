@@ -27,6 +27,7 @@ import { EntityResolutionService } from './services/entity-resolution.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
+import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
@@ -258,6 +259,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // встречи». Инжектится платформенным контроллером (KnowledgeCoreApiModule)
     // и cron'ом graph-materialization-verify (WorkersModule).
     GraphMaterializationService,
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — GoalThemeLinkerService.
+    // Детерминированная авто-привязка Goal↔Theme (провенанс + co-mention,
+    // GoalTheme source='ai'). Закрывает «0 тем» у AI-целей. Инжектится
+    // Specialist314GoalsService (on-event) и GoalThemeLinkerCron (WorkersModule).
+    GoalThemeLinkerService,
   ],
   exports: [
     SegmentBuilderService,
@@ -369,6 +375,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Agent-chain overhaul Фаза 0a (2026-06-07) — экспорт для платформенного
     // контроллера (graph-diagnostics) и cron'а graph-materialization-verify.
     GraphMaterializationService,
+    // Agent-chain overhaul Фаза 4.2 — экспорт для Specialist314GoalsService
+    // (on-event хук) и GoalThemeLinkerCron (WorkersModule, догоночный sweep).
+    GoalThemeLinkerService,
   ],
 })
 export class KnowledgeCoreModule {}

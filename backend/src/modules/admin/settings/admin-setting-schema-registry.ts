@@ -142,6 +142,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],
 
+  // ── Agent-chain overhaul Фаза 4.2 — авто-привязка тем к целям (goals.*) ──
+  ['goals.themeAutolinkMinWeight', UNIT_INTERVAL],
+  ['goals.themeAutolinkLlmEnabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

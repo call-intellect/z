@@ -405,6 +405,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // (decision/idea) есть, а соответствующая запись (Decision/Idea) не
   // материализовалась. Эмитит cron graph-materialization-verify (type).
   private kcMaterializationGapTotal!: Counter<'type'>;
+  // Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированная авто-привязка
+  // Goal↔Theme. method: 'provenance' (блоки-источники цели уже в теме) |
+  // 'comention' (тема упоминает те же сущности). Эмитит GoalThemeLinkerService.
+  private goalThemeAutolinkTotal!: Counter<'method'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -1996,6 +2000,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_materialization_gap_total',
       help: 'knowledge-core — встречи, где блоки с signalType (decision/idea) есть, а соответствующая запись (Decision/Idea) не материализовалась (type).',
       labelNames: ['type'] as const,
+    });
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — авто-привязка Goal↔Theme.
+    this.goalThemeAutolinkTotal = this.getOrCreateCounter({
+      name: 'goal_theme_autolink_total',
+      help: 'knowledge-core — детерминированные авто-привязки Goal↔Theme (GoalTheme source=ai). method: provenance (блоки-источники цели уже в теме) | comention (тема упоминает те же сущности).',
+      labelNames: ['method'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -4844,6 +4854,15 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcMaterializationGap(args: { type: string }): void {
     this.kcMaterializationGapTotal.inc({ type: args.type });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированная авто-привязка
+   * Goal↔Theme (GoalTheme source='ai'). Эмитит GoalThemeLinkerService по каждой
+   * реально созданной связи. method ∈ provenance | comention.
+   */
+  incGoalThemeAutolink(args: { method: string }): void {
+    this.goalThemeAutolinkTotal.inc({ method: args.method });
   }
 
   /**

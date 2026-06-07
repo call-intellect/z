@@ -1382,6 +1382,32 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── goals (OKR) ───────────────────────────────────
+  /**
+   * Крутилки целей (OKR). Admin-editable (resolveSync: cacheMap → ENV → default).
+   *
+   *   - `themeAutolinkMinWeight` — порог веса детерминированной авто-привязки
+   *     темы к цели (провенанс + co-mention). Кандидаты с weight < порога
+   *     отбрасываются. Сидится `goals.themeAutolinkMinWeight` (UNIT_INTERVAL).
+   *   - `themeAutolinkLlmEnabled` — вкл LLM-дозор серой зоны авто-привязки
+   *     (agent-chain overhaul Фаза 4.2 step 3). Default false; ветка не
+   *     реализована (golden-gated отдельной задачей) — флаг существует, no-op.
+   */
+  get goals() {
+    return {
+      themeAutolinkMinWeight: this.resolveSync<number>(
+        'goals.themeAutolinkMinWeight',
+        undefined,
+        0.15,
+      ),
+      themeAutolinkLlmEnabled: this.resolveSync<boolean>(
+        'goals.themeAutolinkLlmEnabled',
+        undefined,
+        false,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── insights (SBA β-4) ──────────────
   /**
    * Параметры Specialist 3.5 (Insights Radar). См.

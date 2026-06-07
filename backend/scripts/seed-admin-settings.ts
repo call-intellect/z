@@ -320,6 +320,15 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'integrations', section: 'tracker', severity, description });
   }
 
+  // ── Goals: авто-привязка тем к целям (goals.*) — Ф4.2 agent-chain-overhaul.
+  const goals: Array<[string, unknown, Severity, string]> = [
+    ['goals.themeAutolinkMinWeight', envFloat('GOAL_THEME_AUTOLINK_MIN_WEIGHT', 0.15), 'medium', 'Порог веса авто-привязки темы к цели (провенанс/co-mention)'],
+    ['goals.themeAutolinkLlmEnabled', envBool('GOAL_THEME_AUTOLINK_LLM_ENABLED', false), 'medium', 'Вкл LLM-дозор для серой зоны авто-привязки тем к целям'],
+  ];
+  for (const [key, value, severity, description] of goals) {
+    out.push({ key, value, category: 'ai', section: 'goals', severity, description });
+  }
+
   // ── Feature-flags (feature.*) — продуктовые тумблеры.
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
   // Default OFF: фича включается super_admin'ом из админки после готовности UI.

@@ -33,6 +33,7 @@ import {
 } from '../prompts/goal-hierarchy-link.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
 /** Метрика-тип для core_specialist_*. */
 const METRIC_TYPE = 'goal';
@@ -82,6 +83,16 @@ export class Specialist314GoalsService {
   private static readonly AUTO_PROMOTE_CONFIDENCE = 0.8;
   /** Cap фокуса: > N active+suggested целей одного горизонта — не плодим. */
   private static readonly MAX_ACTIVE_GOALS_PER_HORIZON = 7;
+
+  /**
+   * Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированный линкер
+   * Goal↔Theme. Инжектится property-injection'ом (не через конструктор), чтобы
+   * не сдвигать позиционные аргументы существующих unit-тестов. @Optional:
+   * в spec-конструкторе (positional) сервис не передаётся — хук тогда no-op.
+   */
+  @Optional()
+  @Inject(GoalThemeLinkerService)
+  private readonly goalThemeLinker?: GoalThemeLinkerService;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -276,6 +287,24 @@ export class Specialist314GoalsService {
           measurable: draft.measurable,
           createdById: ownerUserId,
         });
+      }
+
+      // Agent-chain overhaul Фаза 4.2 — on-event авто-привязка тем к новой
+      // AI-цели (провенанс + co-mention). Best-effort: не критично для создания
+      // цели, ошибка только логируется. Без тем strategic-alignment.worker
+      // делает ранний return (themesCount===0) → cachedAlignment не считается.
+      if (this.goalThemeLinker) {
+        try {
+          await this.goalThemeLinker.linkGoalThemes(block.tenantId, goal.id);
+        } catch (err) {
+          this.logger.warn(
+            {
+              goalId: goal.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'goal-theme-linker on-event: ошибка (не критично)',
+          );
+        }
       }
 
       this.logger.log(

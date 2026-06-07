@@ -120,7 +120,13 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф4. Цели связаны с задачами/решениями и темами `[ ]`
+## Ф4. Цели связаны с задачами/решениями и темами `[~]` (Ф4.2 goal-theme-linker сделан; Ф4.1 goal-task-link отложен)
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul) — **Ф4.2 goal-theme-linker (детерминированный, закрывает «0 тем»)**: `GoalThemeLinkerService.linkGoalThemes` = провенанс (`ThemeIdeaBlock.blockId ∈ Goal.sourceBlockIds`, weight=hits/blocks) + co-mention (сущности блоков цели ∩ `ThemeEntity`, weight=covered/entities), порог `goals.themeAutolinkMinWeight` (AdminSetting, дефолт 0.15), запись `GoalTheme(source='ai', weight)` идемпотентно (`createMany skipDuplicates` по PK), **`enqueueStrategicAlignment` после привязки** (закрывает ранний return worker при themesCount=0). Триггеры: on-event в specialist-3-14 после createGoal (property-injection, best-effort) + догоночный cron `goal-theme-linker` (@Cron 30m, per-Org, WorkerOrgGate, цели `source='ai' && sourceBlockIds≠[] && themes none`). Метрика `goal_theme_autolink_total{method}`. LLM-дозор (step 3) — флаг `goals.themeAutolinkLlmEnabled` (default OFF) создан, ветка НЕ активна (golden-gated). Тесты: linker 5 + cron 3 + specialist-3-14 9 = 17 зелёных; build (DI) зелёный.
+>
+> **НЕ сделано (осознанно — в реестр «не-сделано»):**
+> - **Ф4.1 goal↔task↔decision linking (новый LLM-арбитр `goal-task-link`):** НЕ реализован. Это новый LLM-агент, чьё качество (к какой цели отнести задачу при нескольких целях встречи) требует golden-верификации (Принцип 4) + живого LLM, которого в сессии нет. Ф4.2 закрывает headline-пробел «0 тем» (высшая ценность); goal-task-link — отдельная задача с golden. Детерминированный частный случай (одна цель встречи → все задачи к ней) можно добавить позже без LLM.
+> - **Шаг 3 (draft→canonical промоушн проверка):** через `diag graph`/прод — после выката.
 
 **Проблема:**
 - **Цель ↔ задачи/решения не связаны** (Р1 мастер-дока): `specialist-3-14-goals` строит только иерархию Goal↔Goal, но НЕ связывает Goal с Issue/Task/Decision из того же разговора. Декомпозиция «5000→100→10» висит отдельно.

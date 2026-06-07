@@ -38,6 +38,7 @@ export class ProviderSmokeTestCron {
   private readonly lastAlertAt = new Map<string, number>();
   private static readonly ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
   private static readonly SMOKE_PROMPT = 'Reply with the single word OK.';
+  private static readonly SMOKE_MAX_TOKENS = 64; // > OpenAI floor (16) + запас на reasoning-вывод
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -79,13 +80,22 @@ export class ProviderSmokeTestCron {
     });
     let successes = 0;
     let failures = 0;
+    let scanned = 0;
     for (const p of providers) {
+      // Без baseUrl провайдер заведомо упадёт — это конфиг, а не сбой; пропускаем со скипом.
+      if (!p.baseUrl || p.baseUrl.trim().length === 0) {
+        this.logger.debug(
+          `provider-smoke-test: skip ${p.name} — нет baseUrl (не сконфигурирован)`,
+        );
+        continue;
+      }
+      scanned++;
       const r = await this.testProvider(p.name);
       if (r.success) successes++;
       else failures++;
     }
     return {
-      providersScanned: providers.length,
+      providersScanned: scanned,
       successes,
       failures,
     };
@@ -115,7 +125,7 @@ export class ProviderSmokeTestCron {
         input: {
           system: { text: 'You are a smoke-test responder.' },
           user: ProviderSmokeTestCron.SMOKE_PROMPT,
-          maxTokens: 8,
+          maxTokens: ProviderSmokeTestCron.SMOKE_MAX_TOKENS,
         },
       });
       success = typeof out.text === 'string' && out.text.length > 0;
@@ -193,11 +203,9 @@ export class ProviderSmokeTestCron {
           recipientUserId: r.userId,
           eventType: 'system.message',
           payload: {
-            kind: 'provider_smoke_test_failed',
-            provider: providerName,
-            streak,
-            error,
-            message: `LLM-провайдер ${providerName} провалил ${streak} smoke-теста подряд: ${error}`,
+            title: `LLM-провайдер ${providerName} недоступен`,
+            body: `Провалил ${streak} smoke-теста подряд. Последняя ошибка: ${error}`,
+            severity: 'error',
           },
           dataClass: 'internal',
           critical: true,
@@ -219,9 +227,9 @@ export class ProviderSmokeTestCron {
           recipientUserId: r.userId,
           eventType: 'system.message',
           payload: {
-            kind: 'provider_smoke_test_recovered',
-            provider: providerName,
-            message: `LLM-провайдер ${providerName} восстановился после провалов.`,
+            title: `LLM-провайдер ${providerName} восстановился`,
+            body: `Провайдер ${providerName} снова отвечает на smoke-тест.`,
+            severity: 'info',
           },
           dataClass: 'internal',
         });

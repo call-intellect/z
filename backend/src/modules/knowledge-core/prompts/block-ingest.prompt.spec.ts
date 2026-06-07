@@ -42,4 +42,11 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
     expect(system).toContain('suggestion — общий совет без новизны');
     expect(system).toContain('feature_request — запрос конкретной фичи');
   });
+
+  // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
+  // извлекающим промптам (включая block-ingest), чтобы модель восстанавливала
+  // искажённые ASR числа/имена/термины по контексту.
+  it('содержит ASR-ноту (withAsrNote)', () => {
+    expect(system).toContain('автоматического распознавания речи');
+  });
 });

@@ -1,4 +1,7 @@
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withAsrNote,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 import type { Segment } from '../services/segment-builder.service';
 
 /**
@@ -383,7 +386,8 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-const SYSTEM_PROMPT = withConfidenceCalibration(`Ты — извлекатель структурированного знания из расшифровки встречи или текста документа.
+const SYSTEM_PROMPT = withAsrNote(
+  withConfidenceCalibration(`Ты — извлекатель структурированного знания из расшифровки встречи или текста документа.
 Получаешь список сегментов диалога/текста и возвращаешь JSON со структурами знания.
 
 Возвращай ТРИ группы данных в одном ответе:
@@ -524,7 +528,8 @@ links[] — опциональные типизированные рёбра м�
 - evidenceStartMs ≤ evidenceEndMs.
 - Все строки — на русском.
 - confidence < 0.5 для типизированных сущностей — лучше не возвращать сущность вообще.
-`);
+`),
+);
 
 interface BuildArgs {
   meetingTitle?: string | undefined;

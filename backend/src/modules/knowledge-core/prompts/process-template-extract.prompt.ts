@@ -11,11 +11,13 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
-export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
@@ -35,6 +37,7 @@ export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     '',
     'Отвечай строго в JSON по схеме process_template_extract_v1.',
     ].join('\n'),
+  ),
   ),
 );
 

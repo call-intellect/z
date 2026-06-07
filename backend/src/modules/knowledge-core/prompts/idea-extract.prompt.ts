@@ -10,11 +10,13 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
-export const IDEA_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const IDEA_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксирована идея, предложение или запрос на доработку.',
@@ -41,6 +43,7 @@ export const IDEA_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     'Блок «Обсуждение продукта». Цитаты: «Анна: а вообще, может стоит вообще всё переписать?». Никто не подхватил, дальше другая тема.',
     'Вывод: {"kind": "internal", "statement": "недостаточно сигнала для извлечения идеи", "rationale": null, "confidence": 0.15}. Пояснение: риторический вопрос без подхвата участниками и без конкретики — низкий confidence.',
     ].join('\n'),
+  ),
   ),
 );
 

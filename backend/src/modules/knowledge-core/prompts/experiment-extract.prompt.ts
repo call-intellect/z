@@ -7,6 +7,7 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
@@ -15,7 +16,8 @@ import {
 // 0.85+) удалены — теперь общий источник правды — `CONFIDENCE_CALIBRATION`.
 // F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика пустых
 // входов и относительных сроков.
-export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — аналитик корпоративных экспериментов. Тебе дают один атом знаний (IdeaBlock).',
@@ -34,6 +36,7 @@ export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     '',
     'Отвечай СТРОГО валидным JSON по схеме. Никакого текста снаружи.',
     ].join('\n'),
+  ),
   ),
 );
 

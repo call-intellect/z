@@ -15,11 +15,13 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
-export const DECISION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксировано решение, либо обоснование решения.',
@@ -47,6 +49,7 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     'Блок «Дизайн админки» (idea?). Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
     'Вывод: {"statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
     ].join('\n'),
+  ),
   ),
 );
 

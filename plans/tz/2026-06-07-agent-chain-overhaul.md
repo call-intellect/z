@@ -72,7 +72,15 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф2. Классовые фиксы промптов (C1–C8) + готовые улучшения `[ ]`
+## Ф2. Классовые фиксы промптов (C1–C8) + готовые улучшения `[~]` (C1 сделан; C2–C8 + 6 переписанных — golden-gated, см. примечания)
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul) — только **C1** (самый безопасный/additive класс). `withAsrNote` применён к 10 извлекающим промптам, у которых её не было: decision/idea/insight/regulation/process-template/goal/experiment/skill-trait/block-ingest/table-extract-rows. ASR-нота — стабильная константа в КОНЦЕ SYSTEM (cache-friendly), модель восстанавливает искажённые ASR числа/имена/термины. Снапшот-спеки обновлены (decision/idea/skill-trait + block-ingest prompt-spec). Прецедент без golden: ТЗ-4 уже применил ASR-ноту к summary/report/tasks.
+>
+> **НЕ сделано (осознанно — нарушило бы Принцип 4 «golden перед промпт-правками»; нет живого LLM в сессии):**
+> - **C2 (meetingDateIso мёртвая ветка):** активация (передавать meetingDateIso в USER) — поведенческое изменение (включает ISO-нормализацию сроков) + плумбинг по call-site'ам; нужен golden. Удаление мёртвого правила — нулевая ценность. Отложено в golden-пасс.
+> - **C3 (булев гейт isDecision/isIdea/hasSignal), C4 (few-shot 16/22), C5 (калибровка), C6 (анти-галлюцинация участников), C7 (injection-guard sync), C8 (SYSTEM↔контракт entity-merge/specialists-combined):** ВСЕ меняют поведение классификации/извлечения → требуют golden ДО/ПОСЛЕ (Принцип 4). Без живого LLM применять вслепую безответственно (риск тихой деградации). 
+> - **6 готовых промптов (meeting-report-fast/chapters-v2/block-ingest/axis-classify/knowledge-clone-extract/goal-hierarchy-link):** «полные тексты» в мастер-доке §5 даны лишь эскизно (одна meeting-report-fast описана списком улучшений, без verbatim) — переписывать пришлось бы заново + golden.
+> - **Готово к одному golden-пассу на dev:** харнесс `agent-quality-harness.ts` + фикстуры (growth-funnel, sales-kickoff, team-planning) на месте (Ф1). C2–C8 + переписи — отдельной задачей с обязательным golden ДО/ПОСЛЕ. → реестр «не-сделано».
 
 **Проблема:** аудит 22 промптов выявил сквозные дыры (чинить КЛАСС, не кейс — `feedback_fix_the_whole_class`).
 

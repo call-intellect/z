@@ -2,14 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  MediaPlayer,
-  MediaProvider,
-} from '@vidstack/react';
-import {
-  defaultLayoutIcons,
-  DefaultVideoLayout,
-} from '@vidstack/react/player/layouts/default';
 
 import { publicShareApi, type PublicShareClipApi } from '@/api/public-share.api';
 import { ApiError } from '@/api/api-error';
@@ -103,18 +95,15 @@ export function ShareClipClient({ token }: { token: string }) {
         </h1>
       </header>
       <div className="overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
-        <MediaPlayer
-          title={highlight.title}
-          // Явный type: presigned S3-URL (`...mp4?X-Amz-...`) не определяется
-          // Vidstack по расширению из-за query → без type плеер виснет без запроса.
-          src={{ src: videoUrl, type: 'video/mp4' }}
+        <video
+          src={videoUrl}
+          controls
           autoPlay
+          preload="auto"
           playsInline
-          className="aspect-video w-full"
-        >
-          <MediaProvider />
-          <DefaultVideoLayout icons={defaultLayoutIcons} />
-        </MediaPlayer>
+          className="aspect-video w-full bg-black"
+          aria-label={highlight.title}
+        />
       </div>
       <footer className="mt-6 text-center text-xs text-fg-tertiary">
         Создано в{' '}

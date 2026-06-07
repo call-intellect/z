@@ -62,7 +62,7 @@ import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
 import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
 import { useMeetingHighlights } from '@/hooks/use-meeting-highlights';
 import { useMeetingRoomMessages } from '@/hooks/use-meeting-room-messages';
-import { useVidstackPlayer } from '@/hooks/use-vidstack-player';
+import { useVideoPlayer } from '@/hooks/use-video-player';
 
 import type { RoomMessageDomain } from '@/domain/room-message';
 
@@ -172,7 +172,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const { highlights, mutate: mutateHighlights } = useMeetingHighlights(meetingId);
   const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
 
-  const player = useVidstackPlayer();
+  const player = useVideoPlayer();
   const [currentMs, setCurrentMs] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [shareOpen, setShareOpen] = useState(false);

@@ -76,7 +76,6 @@ const nextConfig = {
     '@livekit/components-react',
     '@livekit/components-styles',
     'livekit-client',
-    '@vidstack/react',
   ],
   async headers() {
     return [

@@ -87,7 +87,9 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф3. Задачи доходят до трекера — порог авто-Issue в AdminSetting `[ ]`
+## Ф3. Задачи доходят до трекера — порог авто-Issue в AdminSetting `[x]`
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul). Мёртвый hardcoded `AUTO_ACCEPT_CONFIDENCE_THRESHOLD=0.92` заменён на admin-editable крутилку `tracker.autoAcceptConfidenceThreshold` (дефолт **0.75**): getter `cfg.tracker.autoAcceptConfidenceThreshold` (resolveSync, cacheMap→default), ключ в `admin-setting-schema-registry.ts` (UNIT_INTERVAL), seed в `seed-admin-settings.ts` (category integrations/tracker). Жёсткие гейты (source=meeting + assignee + project) остаются страховкой. **Без ENV** — крутилка только в AdminSetting [[feedback_admin_settings_not_env_or_code]]. Тесты: config-spec (default 0.75 + hydrateSync override), intake worker spec обновлён (cfg-мок). Двухступенчатость (опц.) НЕ делал — текущий порог 0.75 + гейты достаточны; усложнение отложено.
 
 **Проблема (доказано, confidence high):** `AUTO_ACCEPT_CONFIDENCE_THRESHOLD=0.92` — **единственный реально мёртвый порог**: hardcoded `static readonly` (`intake-auto-triage.worker.ts:99`), нет ни ENV, ни AdminSetting, ни в реестре крутилок. При реальных уверенностях LLM 35–75% — 100% задач остаются `pending` (ручной триаж), Issue не создаётся (`:291-295`).
 

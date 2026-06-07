@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
@@ -140,11 +141,18 @@ function mkWorker(opts?: MkOpts): {
 
   const redis = { client: {} as unknown } as unknown as RedisService;
 
+  // Ф3 (2026-06-07): порог авто-Issue читается из AdminSetting-крутилки
+  // (cfg.tracker.autoAcceptConfidenceThreshold, дефолт 0.75).
+  const cfg = {
+    tracker: { autoAcceptConfidenceThreshold: 0.75 },
+  } as unknown as TypedConfigService;
+
   const worker = new IntakeAutoTriageWorker(
     redis,
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
     issues as unknown as IssuesService,
+    cfg,
     metrics as unknown as BusinessMetricsService,
   );
   return { worker, prisma, llm, issues, metrics };

@@ -2067,6 +2067,16 @@ export class TypedConfigService {
       webhookRetryBackoffInitialMs: this.get(
         'TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS',
       ),
+      // Ф3 agent-chain-overhaul (2026-06-07): порог авто-создания Issue из
+      // триажа встречи — admin-editable крутилка (resolveSync: cacheMap →
+      // default). Дефолт 0.75 под живую речь (реальные confidence LLM 35–75%);
+      // раньше hardcoded 0.92 → 100% задач застревали в ручном триаже.
+      // Жёсткие гейты (source=meeting + assignee + project) остаются страховкой.
+      autoAcceptConfidenceThreshold: this.resolveSync<number>(
+        'tracker.autoAcceptConfidenceThreshold',
+        undefined,
+        0.75,
+      ),
     } as const;
   }
 

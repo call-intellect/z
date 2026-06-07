@@ -133,6 +133,11 @@ const registry = new Map<string, ZodTypeAny>([
   // Порог cosine-схожести схем: ≥ порога → предлагаем «слить» с таблицей.
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
+  // ── Trekker: авто-триаж задач из встреч (tracker.*) ──────────────────
+  // Ф3 agent-chain-overhaul (2026-06-07): порог авто-создания Issue из триажа.
+  // Дефолт 0.75 (живая речь). Жёсткие гейты source=meeting+assignee+project.
+  ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
+
   // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей (goals.pulse.*) ────
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],

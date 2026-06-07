@@ -10,6 +10,7 @@ import { Prisma, type IntakeIssue } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -93,11 +94,12 @@ export class IntakeAutoTriageWorker
   implements OnModuleInit, OnModuleDestroy
 {
   /**
-   * Порог автоматического создания Issue. По ТЗ §3 — ≥ 0.92.
-   * Вынесен в константу, чтобы один раз менять (и переиспользовать в тестах).
+   * Порог авто-создания Issue из триажа — теперь admin-editable крутилка
+   * `tracker.autoAcceptConfidenceThreshold` (читается через
+   * `this.cfg.tracker.autoAcceptConfidenceThreshold`, дефолт 0.75). Был
+   * мёртвый hardcoded 0.92 (Ф3 agent-chain-overhaul, 2026-06-07):
+   * при реальных confidence LLM 35–75% ВСЕ задачи застревали в триаже.
    */
-  static readonly AUTO_ACCEPT_CONFIDENCE_THRESHOLD = 0.92;
-
   private readonly logger = new Logger(IntakeAutoTriageWorker.name);
   private worker: Worker<IntakeAutoTriageJobData> | null = null;
 
@@ -109,6 +111,7 @@ export class IntakeAutoTriageWorker
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -289,7 +292,7 @@ export class IntakeAutoTriageWorker
 
     // 5. Auto-create Issue или просто update suggested*.
     const canAutoAccept =
-      confidence >= IntakeAutoTriageWorker.AUTO_ACCEPT_CONFIDENCE_THRESHOLD &&
+      confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold &&
       intake.source === 'meeting' &&
       suggestedAssigneeId !== null &&
       suggestedProjectId !== null;

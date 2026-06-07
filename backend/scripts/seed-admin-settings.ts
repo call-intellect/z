@@ -312,6 +312,14 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
   }
 
+  // ── Trekker: авто-триаж задач из встреч (tracker.*) — Ф3 agent-chain-overhaul.
+  const tracker: Array<[string, unknown, Severity, string]> = [
+    ['tracker.autoAcceptConfidenceThreshold', envFloat('AUTO_ACCEPT_CONFIDENCE_THRESHOLD', 0.75), 'high', 'Порог авто-создания Issue из триажа встречи (confidence LLM 0..1). Дефолт 0.75 под живую речь; жёсткие гейты source=meeting+assignee+project остаются страховкой.'],
+  ];
+  for (const [key, value, severity, description] of tracker) {
+    out.push({ key, value, category: 'integrations', section: 'tracker', severity, description });
+  }
+
   // ── Feature-flags (feature.*) — продуктовые тумблеры.
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
   // Default OFF: фича включается super_admin'ом из админки после готовности UI.

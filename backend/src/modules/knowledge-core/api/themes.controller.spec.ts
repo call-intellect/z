@@ -14,8 +14,10 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import {
   checkDbAvailable,
   closePrismaClient,
@@ -24,6 +26,10 @@ import {
 import { buildKnowledgeCoreFixture } from '../../../../test/integration/knowledge-core/fixtures';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
+import type {
+  KnowledgeAccessContext,
+  KnowledgeAccessResolver,
+} from '../../rbac/knowledge-access-resolver.service';
 import type { RbacService } from '../../rbac/rbac.service';
 
 import {
@@ -206,5 +212,173 @@ describe('KnowledgeThemesController (integration)', () => {
 
     // BadRequestException не выбрасывается т.к. wrapper в zod — лишний sanity-check.
     expect(BadRequestException).toBeDefined();
+  });
+});
+
+// ─────────────────── Ф4 knowledge-access — гейт деталки темы ────────────────
+//
+// Юнит-тесты (без БД): мокаем prisma/resolver/cfg/metrics. Проверяем
+// гейт-семантику off/enforce/bypass/shadow на GET /themes/:id.
+
+const GATE_USER: CurrentUserPayload = {
+  id: 'theme-gate-user',
+  email: 'gate@test',
+  role: 'user',
+};
+const TENANT = 'theme-gate-org';
+
+interface ThemeBlockRow {
+  block: { id: string } & Record<string, unknown>;
+}
+
+function mkBlock(id: string): ThemeBlockRow {
+  return {
+    block: {
+      id,
+      name: `block ${id}`,
+      criticalQuestion: 'q',
+      trustedAnswer: 'a',
+      tags: [] as string[],
+      signalType: 'fact',
+      confidence: 0.9,
+      evidenceCount: 1,
+      status: 'canonical',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  };
+}
+
+function buildGateThemes(opts: {
+  enforcement: 'off' | 'shadow' | 'enforce';
+  blockRows: ThemeBlockRow[];
+  ctx: KnowledgeAccessContext | null;
+  partition?: { accessible: string[]; denied: number };
+}): {
+  ctrl: KnowledgeThemesController;
+  resolveSpy: ReturnType<typeof vi.fn>;
+  partitionSpy: ReturnType<typeof vi.fn>;
+  incDenied: ReturnType<typeof vi.fn>;
+  incShadow: ReturnType<typeof vi.fn>;
+} {
+  const prisma = {
+    theme: {
+      findUnique: vi.fn(async () => ({
+        id: 't-1',
+        tenantId: TENANT,
+        name: 'Theme',
+        description: '',
+        branch: null,
+        status: 'active',
+        weight: 1,
+        confidence: 1,
+        dynamic: 'stable',
+        lastSignalAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        mergedIntoId: null,
+        _count: { blocks: opts.blockRows.length, entities: 0 },
+      })),
+    },
+    themeIdeaBlock: { findMany: vi.fn(async () => opts.blockRows) },
+    themeEntity: { findMany: vi.fn(async () => []) },
+  } as unknown as PrismaService;
+
+  const rbac = { canRead: async () => true } as unknown as RbacService;
+
+  const resolveSpy = vi.fn(async () => opts.ctx);
+  const partitionSpy = vi.fn(
+    async () => opts.partition ?? { accessible: [], denied: 0 },
+  );
+  const accessResolver = {
+    resolveAccessibleGroups: resolveSpy,
+    partitionBlockIdsByAccess: partitionSpy,
+  } as unknown as KnowledgeAccessResolver;
+
+  const cfg = {
+    knowledgeAccess: { enforcement: opts.enforcement },
+  } as unknown as TypedConfigService;
+
+  const incDenied = vi.fn();
+  const incShadow = vi.fn();
+  const metrics = {
+    incAccessDenied: incDenied,
+    incAccessShadowDiff: incShadow,
+  } as unknown as BusinessMetricsService;
+
+  const ctrl = new KnowledgeThemesController(
+    prisma,
+    rbac,
+    accessResolver,
+    cfg,
+    metrics,
+  );
+  return { ctrl, resolveSpy, partitionSpy, incDenied, incShadow };
+}
+
+describe('KnowledgeThemesController — Ф4 гейт доступа (unit)', () => {
+  it('off → resolver не вызывается, выдача = все блоки', async () => {
+    const { ctrl, resolveSpy, partitionSpy } = buildGateThemes({
+      enforcement: 'off',
+      blockRows: [mkBlock('b1'), mkBlock('b2')],
+      ctx: null,
+    });
+    const res = await ctrl.byId('t-1', GATE_USER, TENANT);
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(partitionSpy).not.toHaveBeenCalled();
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+  });
+
+  it('enforce → недоступный блок исключён из ответа + incAccessDenied', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { ctrl, partitionSpy, incDenied, incShadow } = buildGateThemes({
+      enforcement: 'enforce',
+      blockRows: [mkBlock('b1'), mkBlock('b2')],
+      ctx,
+      partition: { accessible: ['b1'], denied: 1 },
+    });
+    const res = await ctrl.byId('t-1', GATE_USER, TENANT);
+    expect(partitionSpy).toHaveBeenCalledWith(ctx, ['b1', 'b2']);
+    expect(res.blocks.map((b) => b.id)).toEqual(['b1']);
+    expect(incDenied).toHaveBeenCalledWith({ surface: 'themes' }, 1);
+    expect(incShadow).not.toHaveBeenCalled();
+  });
+
+  it('bypass → все блоки (partition не вызывается)', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: true,
+    };
+    const { ctrl, partitionSpy } = buildGateThemes({
+      enforcement: 'enforce',
+      blockRows: [mkBlock('b1'), mkBlock('b2')],
+      ctx,
+    });
+    const res = await ctrl.byId('t-1', GATE_USER, TENANT);
+    expect(partitionSpy).not.toHaveBeenCalled();
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+  });
+
+  it('shadow → выдача не меняется + incAccessShadowDiff', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { ctrl, incDenied, incShadow } = buildGateThemes({
+      enforcement: 'shadow',
+      blockRows: [mkBlock('b1'), mkBlock('b2')],
+      ctx,
+      partition: { accessible: ['b1'], denied: 1 },
+    });
+    const res = await ctrl.byId('t-1', GATE_USER, TENANT);
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+    expect(incShadow).toHaveBeenCalledWith({ surface: 'themes' }, 1);
+    expect(incDenied).not.toHaveBeenCalled();
   });
 });

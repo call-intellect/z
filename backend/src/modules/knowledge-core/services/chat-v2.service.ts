@@ -13,6 +13,10 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 
 import {
   ChatV2RetrievalService,
@@ -184,6 +188,10 @@ export class ChatV2Service {
     private readonly retrieval: ChatV2RetrievalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // Ф4 (knowledge-access) — резолвер групп доступа для гейта chat-v2.
+    // RbacModule @Global, поэтому импорт не нужен.
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver,
     // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
     @Optional()
     @Inject(DataClassPolicyService)
@@ -220,6 +228,17 @@ export class ChatV2Service {
     const topK = this.cfg.knowledgeCore.chatV2TopBlocks;
     const graphHops = this.cfg.knowledgeCore.chatV2GraphHops;
 
+    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
+    const kaEnforcement = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      kaEnforcement !== 'off'
+        ? await this.accessResolver.resolveAccessibleGroups({ tenantId, userId: input.userId })
+        : null;
+    const accessWhere =
+      kaEnforcement === 'enforce' && accessCtx
+        ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<string, unknown>)
+        : undefined;
+
     // 1) Retrieval blockId'ов под scope.
     //
     // SBA α-5 dialog-layer:
@@ -253,6 +272,7 @@ export class ChatV2Service {
           limit: perQueryLimit,
           graphHops,
           validAt: input.validAt ?? null,
+          accessWhere,
         });
         // Приоритет первой query (originalOrStandalone): её score
         // повышается за счёт rank-boost'а.
@@ -270,9 +290,13 @@ export class ChatV2Service {
     }
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
+    //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
     const contextBlocks = await this.loadContextBlocks(
       tenantId,
       rankedBlockIds,
+      accessCtx,
+      kaEnforcement,
+      'chat',
     );
 
     // 3) Если контекст пуст — отвечаем без LLM.
@@ -296,6 +320,7 @@ export class ChatV2Service {
     // по факту прикрепления.
     const reasoningChains = await this.buildReasoningChains(
       contextBlocks,
+      accessWhere,
     );
 
     // KC-Temporal W3.3 (2026-05-25) — counter-evidence.
@@ -305,6 +330,8 @@ export class ChatV2Service {
     const contradictingBlocks = await this.loadContradictingBlocks(
       tenantId,
       contextBlocks,
+      accessCtx,
+      kaEnforcement,
     );
 
     // 4) Готовим prompt.
@@ -417,12 +444,34 @@ export class ChatV2Service {
   private async loadContextBlocks(
     tenantId: string,
     blockIds: string[],
+    accessCtx: KnowledgeAccessContext | null,
+    enforcement: 'off' | 'shadow' | 'enforce',
+    surface: string,
   ): Promise<ContextBlock[]> {
     if (blockIds.length === 0) return [];
 
+    // Ф4 knowledge-access — выходной шлюз. off (accessCtx=null) или bypass →
+    // НИ одного нового запроса, effectiveIds = blockIds (байт-в-байт). При
+    // shadow считаем denied (метрика), выдачу НЕ меняем. При enforce —
+    // отбрасываем недоступные блоки.
+    let effectiveIds = blockIds;
+    if (accessCtx && !accessCtx.isBypass) {
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockIds,
+      );
+      if (enforcement === 'enforce') {
+        effectiveIds = accessible;
+        this.metrics.incAccessDenied({ surface }, denied);
+      } else {
+        // shadow — выдачу НЕ меняем, только метрика расхождения.
+        this.metrics.incAccessShadowDiff({ surface }, denied);
+      }
+    }
+
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
-        id: { in: blockIds },
+        id: { in: effectiveIds },
         tenantId,
         status: 'canonical',
       },
@@ -668,17 +717,21 @@ export class ChatV2Service {
    */
   private async buildReasoningChains(
     blocks: ReadonlyArray<ContextBlock>,
+    accessWhere?: Record<string, unknown>,
   ): Promise<RenderedReasoningChain[]> {
     if (!this.reasoningChain) return [];
     if (blocks.length === 0) return [];
     const topBlocks = blocks.slice(0, 3);
 
     // Шаг 1: пробуем depth=2 для каждого top-блока.
+    // Ф4 — при enforce передаём accessWhere в buildChain: BFS не подгружает
+    // недоступные соседние блоки (R11 — граф reasoning не протаскивает закрытого).
+    // off/shadow → accessWhere undefined → поведение байт-в-байт.
     const depth2Chains: RenderedReasoningChain[] = [];
     let totalChars = 0;
     for (const b of topBlocks) {
       try {
-        const chain = await this.reasoningChain.buildChain(b.id, 2);
+        const chain = await this.reasoningChain.buildChain(b.id, 2, accessWhere);
         if (chain.nodes.length <= 1) continue; // только seed — не интересно.
         const rendered = {
           seedBlockId: b.id,
@@ -706,7 +759,7 @@ export class ChatV2Service {
     const depth1Chains: RenderedReasoningChain[] = [];
     for (const b of topBlocks) {
       try {
-        const chain = await this.reasoningChain.buildChain(b.id, 1);
+        const chain = await this.reasoningChain.buildChain(b.id, 1, accessWhere);
         if (chain.nodes.length <= 1) continue;
         depth1Chains.push({
           seedBlockId: b.id,
@@ -748,6 +801,8 @@ export class ChatV2Service {
   private async loadContradictingBlocks(
     tenantId: string,
     blocks: ReadonlyArray<ContextBlock>,
+    accessCtx: KnowledgeAccessContext | null,
+    enforcement: 'off' | 'shadow' | 'enforce',
   ): Promise<RenderedContradictingBlock[]> {
     if (blocks.length === 0) {
       this.metrics.observeChatV2ContradictingBlocksInContext(0);
@@ -804,10 +859,35 @@ export class ChatV2Service {
       return [];
     }
 
+    // Ф4 knowledge-access — counter-evidence блоки приходят через граф
+    // (contradicts-рёбра) → R11: граф НЕ протаскивает недоступного. Гейтим
+    // otherId до выборки. off (accessCtx=null) / bypass → effectivePairs=pairs
+    // (байт-в-байт). enforce — отбрасываем недоступные; shadow — метрика.
+    let effectivePairs = pairs;
+    if (accessCtx && !accessCtx.isBypass) {
+      const otherIds = [...new Set(pairs.map((p) => p.otherId))];
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        otherIds,
+      );
+      if (enforcement === 'enforce') {
+        const allowed = new Set(accessible);
+        effectivePairs = pairs.filter((p) => allowed.has(p.otherId));
+        this.metrics.incAccessDenied({ surface: 'chat' }, denied);
+      } else {
+        // shadow — выдачу НЕ меняем, только метрика расхождения.
+        this.metrics.incAccessShadowDiff({ surface: 'chat' }, denied);
+      }
+    }
+    if (effectivePairs.length === 0) {
+      this.metrics.observeChatV2ContradictingBlocksInContext(0);
+      return [];
+    }
+
     // Подгружаем сами contradicting blocks (canonical, того же tenant'а).
     const fetched = await this.prisma.ideaBlock.findMany({
       where: {
-        id: { in: pairs.map((p) => p.otherId) },
+        id: { in: effectivePairs.map((p) => p.otherId) },
         tenantId,
         status: 'canonical',
       },
@@ -821,7 +901,7 @@ export class ChatV2Service {
     const byId = new Map(fetched.map((b) => [b.id, b]));
 
     const out: RenderedContradictingBlock[] = [];
-    for (const p of pairs) {
+    for (const p of effectivePairs) {
       const b = byId.get(p.otherId);
       if (!b) continue;
       out.push({

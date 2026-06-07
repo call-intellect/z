@@ -23,6 +23,7 @@ interface ConfigRow {
   reportPromptKey: string | null;
   isActive: boolean;
   sortOrder: number;
+  defaultClosedGroupKind: string | null;
   updatedBy: string | null;
   updatedAt: Date;
 }
@@ -46,6 +47,7 @@ function buildPrisma(state: { rows: ConfigRow[] }): PrismaService {
       reportPromptKey: data.reportPromptKey ?? null,
       isActive: data.isActive ?? true,
       sortOrder: data.sortOrder ?? 0,
+      defaultClosedGroupKind: data.defaultClosedGroupKind ?? null,
       updatedBy: data.updatedBy ?? null,
       updatedAt: new Date(),
     };
@@ -85,6 +87,7 @@ function buildPrisma(state: { rows: ConfigRow[] }): PrismaService {
           reportPromptKey: createData.reportPromptKey ?? null,
           isActive: createData.isActive ?? true,
           sortOrder: createData.sortOrder ?? 0,
+          defaultClosedGroupKind: createData.defaultClosedGroupKind ?? null,
           updatedBy: createData.updatedBy ?? null,
           updatedAt: new Date(),
         };
@@ -111,6 +114,21 @@ describe('MeetingTypesAdminService', () => {
     expect(res.items.every((i) => typeof i.sortOrder === 'number')).toBe(true);
     // Все элементы изначально активны.
     expect(res.items.every((i) => i.isActive === true)).toBe(true);
+  });
+
+  it('bootstrap (Ф8 knowledge-access): interview → defaultClosedGroupKind=personal, остальные null', async () => {
+    const state = { rows: [] as ConfigRow[] };
+    const svc = new MeetingTypesAdminService(buildPrisma(state));
+    await svc.list(); // триггерит ensureBootstrap
+
+    const interview = state.rows.find((r) => r.id === 'interview');
+    expect(interview).toBeDefined();
+    expect(interview?.defaultClosedGroupKind).toBe('personal');
+
+    // Все прочие типы — открыты по умолчанию (null).
+    const others = state.rows.filter((r) => r.id !== 'interview');
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((r) => r.defaultClosedGroupKind === null)).toBe(true);
   });
 
   it('create(): создаёт MeetingTypeConfig; 400 если id занят', async () => {
@@ -190,6 +208,7 @@ function makeRow(over: Partial<ConfigRow>): ConfigRow {
     reportPromptKey: over.reportPromptKey ?? null,
     isActive: over.isActive ?? true,
     sortOrder: over.sortOrder ?? 0,
+    defaultClosedGroupKind: over.defaultClosedGroupKind ?? null,
     updatedBy: over.updatedBy ?? null,
     updatedAt: over.updatedAt ?? new Date(),
   };

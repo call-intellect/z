@@ -83,7 +83,7 @@ export class RegulationsController {
     // Проще всего проверить regulation/process/policy и считать, что
     // если есть read на любую — пускаем (фильтр kind у нас единый).
     await this.requireReadAny(user.id, t);
-    return this.svc.list({ tenantId: t, query: q });
+    return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get(':id')

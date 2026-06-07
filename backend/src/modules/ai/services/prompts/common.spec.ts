@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ASR_NOTE,
   EDGE_CASE_POLICY,
   Z_GLOBAL_PREAMBLE,
+  formatOrgContextForPrompt,
+  withAsrNote,
   withEdgeCasePolicy,
+  withOrgContextNote,
   withZPreamble,
 } from './common';
 
@@ -63,5 +67,84 @@ describe('withEdgeCasePolicy', () => {
     // оптимизация в виде «уберём дубль» не прошла без явного решения.
     const count = twice.split(EDGE_CASE_POLICY).length - 1;
     expect(count).toBe(2);
+  });
+});
+
+describe('withAsrNote', () => {
+  const SYSTEM = 'Ты — деловой ассистент. Составь summary встречи.';
+
+  it('дописывает ASR_NOTE в КОНЕЦ system-промпта', () => {
+    const out = withAsrNote(SYSTEM);
+    // Нота — самый последний блок (cache-friendly суффикс).
+    expect(out.endsWith(ASR_NOTE)).toBe(true);
+    expect(out).toContain(ASR_NOTE);
+    expect(out.indexOf(ASR_NOTE)).toBeGreaterThan(0);
+  });
+
+  it('исходный system-префикс не изменён (cache-friendly)', () => {
+    const out = withAsrNote(SYSTEM);
+    // Стабильный SYSTEM в начале — кэш промпта не ломается.
+    expect(out.startsWith(SYSTEM)).toBe(true);
+    expect(out).toBe(`${SYSTEM}\n\n${ASR_NOTE}`);
+  });
+
+  it('нота покрывает ключевые правила (ASR / числа-имена / контекст / не выдумывать)', () => {
+    expect(ASR_NOTE).toContain('ASR');
+    expect(ASR_NOTE).toContain('распознавания речи');
+    expect(ASR_NOTE.toLowerCase()).toContain('числ');
+    expect(ASR_NOTE).toContain('контекст');
+    expect(ASR_NOTE).toContain('Не выдумывай');
+  });
+});
+
+describe('formatOrgContextForPrompt', () => {
+  it('пустой ctx → пустая строка', () => {
+    expect(formatOrgContextForPrompt({})).toBe('');
+    expect(
+      formatOrgContextForPrompt({ projects: [], goals: [], people: [] }),
+    ).toBe('');
+  });
+
+  it('проект с identifier → "name (identifier)", без identifier → name', () => {
+    const out = formatOrgContextForPrompt({
+      projects: [
+        { identifier: 'DEV', name: 'Команда разработки' },
+        { identifier: null, name: 'Маркетинг' },
+      ],
+    });
+    expect(out).toBe('Проекты компании: Команда разработки (DEV), Маркетинг.');
+  });
+
+  it('цели и сотрудники — отдельными строками', () => {
+    const out = formatOrgContextForPrompt({
+      goals: [{ name: 'Запуск v2' }, { name: 'Рост MRR' }],
+      people: [{ name: 'Иванов Сергей' }, { name: 'Петров Олег' }],
+    });
+    expect(out).toContain('Активные цели: Запуск v2, Рост MRR.');
+    expect(out).toContain('Сотрудники: Иванов Сергей, Петров Олег.');
+  });
+});
+
+describe('withOrgContextNote', () => {
+  const SYSTEM = 'Ты — деловой ассистент. Составь summary встречи.';
+
+  it('пустой ctx → возвращает system без изменений (no-op)', () => {
+    expect(withOrgContextNote(SYSTEM, {})).toBe(SYSTEM);
+    expect(
+      withOrgContextNote(SYSTEM, { projects: [], goals: [], people: [] }),
+    ).toBe(SYSTEM);
+  });
+
+  it('непустой ctx → дописывает блок в КОНЕЦ, system-префикс не изменён', () => {
+    const out = withOrgContextNote(SYSTEM, {
+      projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
+      people: [{ name: 'Иванов Сергей' }],
+    });
+    // Стабильный SYSTEM-префикс остаётся в начале (cache-friendly).
+    expect(out.startsWith(SYSTEM)).toBe(true);
+    expect(out).toContain('Контекст компании');
+    expect(out).toContain('Проекты компании: Команда разработки (DEV).');
+    expect(out).toContain('Сотрудники: Иванов Сергей.');
+    expect(out.length).toBeGreaterThan(SYSTEM.length);
   });
 });

@@ -1475,4 +1475,22 @@ enum SourceType { meeting chat phone_call bot email web_form external conversati
 
 К `model Org` добавлена обратная связь `chatboxIntegration ChatboxIntegration?`. HNSW/GIN не требуются (полнотекст по сообщениям — vNext).
 
+## Группы доступа к знаниям (knowledge-access, 2026-06-06)
+
+**Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Ветка `feature/knowledge-access-groups`. Профильные заметки — [[../01_projects/rbac-access-control]] §«Группы доступа к знаниям», [[knowledge-core]] §«Группы доступа при ingest», [[security-and-152fz]] §6. Миграция `20260606114416_knowledge_access_groups` (4 модели + enum + 2 поля), применяется авто через `migrate deploy`. Новая ось доступа поверх `tenantId` — НЕ путать с `dataClass` (LLM-routing/egress).
+
+### 4 модели + enum `KnowledgeGroupKind` (department/leadership/council/personal)
+
+- **`KnowledgeGroup`** — группа доступа, tenant-scoped (`@@unique([tenantId, kind, refId])`, `@@index([tenantId, kind])`): `kind` (enum), `refId?` (departmentId | personId | null), `name` (VarChar 200), `isClosed` (закрытая «вертикаль» — видна только прямым членам). department ссылается на существующий `Department` (оргдерево не дублируется); leadership/council — синглтоны на Org (refId=null); personal — refId=personId. Relations: `members`, `blockLinks`, `org → Org` (Cascade).
+- **`KnowledgeGroupMember`** — членство (`@@id([groupId, personId])`, `@@index([personId])`): `source` (VarChar 10: 'auto' из должности | 'manual' override). Relation `group` (Cascade).
+- **`IdeaBlockAccess`** — M:N блок↔группа (`@@id([blockId, groupId])`, `@@index([groupId])`): `via` (VarChar 12: 'department' горизонталь | 'closed' вертикаль). Блок может быть и «логистика», и «совет» одновременно. Relations `block → IdeaBlock` (Cascade) + `group` (Cascade). Проставляется детерминированно при ingest (`BlockAccessDeriverService`).
+- **`GroupVisibilityPolicy`** — направленная матрица «отдел-субъект видит отдел-объект» (`@@unique([subjectGroupId, visibleGroupId])`, `@@index([tenantId, subjectGroupId])`): `subjectGroupId`/`visibleGroupId`. Образец — `DepartmentDomainLink`. Relation `org → Org` (Cascade).
+
+К `model IdeaBlock` добавлена обратная связь `blockAccess IdeaBlockAccess[]`; к `model Org` — обратные связи на группы/матрицу.
+
+### Поля закрытости встречи
+
+- **`Meeting.closedGroupKind String? @db.VarChar(20)`** — ручной флаг закрытости встречи: null = открыто; 'leadership' | 'council' | 'personal'. Ставит хост (UI Ф7) при создании или постфактум; на ingest читается в payload адаптера встречи.
+- **`MeetingTypeConfig.defaultClosedGroupKind String? @db.VarChar(20)`** — admin-editable дефолт закрытости по типу встречи. null = открыто; `interview`→'personal' (засидено: bootstrap-sync + патч `patch-meeting-type-closed-defaults.ts`).
+
 [[../index|← index]]

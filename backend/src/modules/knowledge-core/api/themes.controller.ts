@@ -7,6 +7,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   Post,
   Query,
@@ -15,6 +16,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -25,6 +28,7 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 
 import type { BlockSearchItemDto, EntityItemDto } from './dto/search.dto';
@@ -57,6 +61,19 @@ export class KnowledgeThemesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
+    // Ф4 (knowledge-access) — гейт доступа в деталке темы. RbacModule/Metrics/
+    // Config @Global. @Optional, чтобы legacy-тесты, создающие контроллер
+    // позиционно (без этих сервисов), не падали — при null гейт не активируется
+    // (поведение = off).
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
   @Get()
@@ -136,6 +153,20 @@ export class KnowledgeThemesController {
       });
     }
 
+    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null
+    // (поведение байт-в-байт текущее).
+    const enf: 'off' | 'shadow' | 'enforce' =
+      this.cfg && this.accessResolver
+        ? this.cfg.knowledgeAccess.enforcement
+        : 'off';
+    const accessCtx =
+      enf !== 'off' && this.accessResolver
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId,
+            userId: user.id,
+          })
+        : null;
+
     const theme = await this.prisma.theme.findUnique({
       where: { id },
       include: {
@@ -164,9 +195,28 @@ export class KnowledgeThemesController {
       }),
     ]);
 
+    // Ф4 (knowledge-access) — post-filter блоков темы по группам пользователя.
+    // enforce → исключаем недоступные; shadow → только метрика, выдача неизменна;
+    // bypass (owner/admin/super) → видит всё.
+    let visibleBlockRows = blockRows;
+    if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
+      const { accessible, denied } =
+        await this.accessResolver.partitionBlockIdsByAccess(
+          accessCtx,
+          blockRows.map((r) => r.block.id),
+        );
+      if (enf === 'enforce') {
+        const allow = new Set(accessible);
+        visibleBlockRows = blockRows.filter((r) => allow.has(r.block.id));
+        this.metrics.incAccessDenied({ surface: 'themes' }, denied);
+      } else {
+        this.metrics.incAccessShadowDiff({ surface: 'themes' }, denied);
+      }
+    }
+
     return {
       theme: this.mapTheme(theme, theme._count.blocks, theme._count.entities),
-      blocks: blockRows.map((r): BlockSearchItemDto => this.mapBlock(r.block)),
+      blocks: visibleBlockRows.map((r): BlockSearchItemDto => this.mapBlock(r.block)),
       entities: entityRows.map(
         (r): EntityItemDto => ({
           id: r.entity.id,

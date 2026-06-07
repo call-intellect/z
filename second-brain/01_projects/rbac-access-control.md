@@ -406,6 +406,40 @@ policy.csv (роль + видимость + кому_принадлежит + р
 
 ---
 
+## Группы доступа к знаниям (knowledge-access, 2026-06-06)
+
+Новая **ось доступа поверх `tenantId`** — управляет видимостью знаний ВНУТРИ компании («менеджер низшего звена не видит знания совета директоров»). Это отдельное измерение от ролевого RBAC: RBAC решает «можно ли вызвать эндпоинт», группы доступа решают «какие блоки знаний попадут в выдачу AI-чата/поиска/клона».
+
+ТЗ: [plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md).
+
+### Модель групп
+- **department** — горизонталь, ссылается на существующий `Department` (refId=departmentId, оргдерево не дублируется). Мягкий фильтр: видимость через направленную матрицу `GroupVisibilityPolicy`.
+- **leadership / council** («Руководство» / «Совет») — закрытые «верхние» группы (синглтоны на Org, `isClosed=true`). Вертикаль: видна ТОЛЬКО прямым членам, НЕ через матрицу отделов.
+- **personal** — личный сейф (refId=personId), создаётся лениво.
+
+Принцип: **дефолт — знание видно всей компании** (ценность памяти не ломаем). Группа лишь сужает. Вертикаль (closed) главнее горизонтали (department).
+
+### `KnowledgeAccessResolver`
+[backend/src/modules/rbac/knowledge-access-resolver.service.ts](../../backend/src/modules/rbac/knowledge-access-resolver.service.ts) — резолвит группы пользователя из должности (`Person`/`PersonRole`/`Department`/`Membership`) с кэшем (TTL 60с, `invalidateAll()`):
+- `resolveAccessibleGroups({tenantId,userId})` → `{deptGroupIds[], closedGroupIds[], isBypass}`.
+- `buildAccessWhere(ctx)` — Prisma-фрагмент для `findMany` (bypass → пустой фильтр `{}`).
+- `buildAccessSqlPredicate(...)` — SQL-предикат для raw-SQL поверхностей (retrieval).
+- `partitionBlockIdsByAccess(...)` / `partitionProjectionsByAccess(...)` — defense-in-depth фильтр финального набора.
+- `RbacService.canAccessKnowledgeGroup(...)` — чистая ABAC-функция по образцу `canViewEmployeeFullCard`.
+
+### Флаг выката `KNOWLEDGE_ACCESS_ENFORCEMENT`
+ENV `z.enum(['off','shadow','enforce']).default('off')`:
+- **off** (дефолт) — поведение байт-в-байт текущее (no-op гейт);
+- **shadow** — выдача не меняется, но считается метрика `kc_access_shadow_diff_total{surface}` (сколько блоков было бы отфильтровано);
+- **enforce** — фильтр применяется, `kc_access_denied_total{surface}` растёт.
+
+**Bypass:** owner / admin / super_admin видят всё (как и в ролевом RBAC).
+
+> **Уточнение к «Knowledge-core исключение».** Раньше граф знаний фильтровался только по `tenantId` (все члены Org видели весь граф). Теперь это исключение **опционально гейтится** при `enforce`: пользователь получает только блоки своих групп. При `off`/`shadow` исключение сохраняется (всё видят все).
+
+### Admin-CRUD
+Модуль `knowledge-access` ([knowledge-access-admin.controller.ts](../../backend/src/modules/knowledge-access/knowledge-access-admin.controller.ts), `/api/v1/knowledge-access`) — направленная матрица отделов, членство групп (override + clearance), дефолт закрытости по типу встречи. UI: `frontend/app/(admin)/company-admin/access-groups`.
+
 ## Версионирование и miграции
 
 ### Добавление нового ResourceType
@@ -441,6 +475,7 @@ Policy.csv уже совместима с Casbin. Если потребуетс�
 | **δ-2** | TBD | ProactiveNotification |
 | **δ-3** | TBD | Voice endpoint доступ |
 | **Фаза 7** | TBD | SuperAdminAccessLog |
+| **knowledge-access** | 2026-06-06 | Группы доступа к знаниям поверх tenantId (department/leadership/council/personal) + `KnowledgeAccessResolver` + флаг `KNOWLEDGE_ACCESS_ENFORCEMENT` (off→shadow→enforce); см. раздел выше |
 
 ---
 

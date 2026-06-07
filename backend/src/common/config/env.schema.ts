@@ -79,6 +79,15 @@ const LiveKitSchema = z.object({
   LIVEKIT_API_SECRET: z.string().min(1),
   LIVEKIT_WEBHOOK_API_KEY: z.string().min(1),
   LIVEKIT_WEBHOOK_API_SECRET: z.string().min(1),
+  /**
+   * Ack-first обработка вебхуков: отдавать LiveKit'у 200 НЕ дожидаясь
+   * `LivekitEventsHandler.handle` (фоновая обработка). Дефолт OFF (opt-in):
+   * если backend рестартнёт в окне фоновой обработки, побочки события
+   * (FSM-переход room_finished→completed, upsert participant) потеряются,
+   * а дедуп-запись уже создана → LiveKit не приедет повторно. Composite/track
+   * догонит крон, но room_finished — нет. Корневой фикс паузы — крон (default ON).
+   */
+  LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED: zBool(false),
 });
 
 const TurnSchema = z.object({
@@ -138,6 +147,13 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com/v1'),
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
+  // ТЗ-3 Фаза 3 — форсить вызов synthetic-tool (`tool_choice:{type:function}`)
+  // вместо 'auto' при autoConvert (json_schema → tool) для НЕ-thinking
+  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу. ДЕФОЛТ OFF:
+  // forced tool_choice — внешне-наблюдаемое поведение LLM-API, требует прод-пробу
+  // agent-lia; включает владелец после пробы. При OFF поведение = текущее ('auto').
+  // Guard в deepseek.service сам откатывает на 'auto' при format-400 от прокси.
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
 });
 
 const OllamaSchema = z.object({
@@ -233,6 +249,15 @@ const RecordingReliabilitySchema = z.object({
   RECORDING_TRACK_RECONCILE_ENABLED: zBool(true),
   RECORDING_FASTSTART_ENABLED: zBool(true),
   RECORDING_FASTSTART_MIN_BYTES: z.coerce.number().int().nonnegative().default(52_428_800),
+  /**
+   * Pull-фоллбэк на потерянный/задержанный composite egress-вебхук
+   * (cron `composite-egress-reconcile`, ТЗ 2026-06-06). Раз в минуту тянет
+   * статус composite-egress из LiveKit и, если он COMPLETE, сам финализирует
+   * встречу (реюз `onCompositeEnded` + промоут), ограничивая «паузу» сверху
+   * интервалом крона. Дефолт ON. Kill-switch — выставить false, если pull
+   * создаёт нагрузку на LiveKit API (защищено идемпотентностью).
+   */
+  RECORDING_COMPOSITE_RECONCILE_ENABLED: zBool(true),
 });
 
 /** Базовые лимиты MVP. */
@@ -1649,6 +1674,14 @@ const TrackerSchema = z.object({
     .enum(['off', 'shadow', 'enforce'])
     .default('shadow'),
   DATACLASS_POLICY_VERSION: z.string().min(1).default('v1'),
+  // ── Ф2 knowledge-access-groups (2026-06-06) — режим гейта доступа к знаниям.
+  //   * off (default) — фильтр НЕ применяется, поведение байт-в-байт текущее.
+  //   * shadow — считаются метрики расхождения, выдача НЕ меняется.
+  //   * enforce — фильтр доступа применяется во всех поверхностях retrieval.
+  // Читается через cfg.knowledgeAccess.enforcement.
+  KNOWLEDGE_ACCESS_ENFORCEMENT: z
+    .enum(['off', 'shadow', 'enforce'])
+    .default('off'),
   // ── W4.2 (2026-05-25) — DataClassPolicy enforce + audit-trail ─────────
   // Если true и `DATACLASS_POLICY_ENFORCEMENT === 'enforce'` — persist
   // проекций без `dataClassAudit` фейлится с ошибкой. На shadow/off — не

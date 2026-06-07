@@ -307,6 +307,8 @@ export class MeetingsService {
         email?: string | null;
         sendVia?: ('email' | 'telegram')[];
       }>;
+      /** ТЗ 2026-06-06 knowledge-access (Ф7A) — закрытость встречи. */
+      closedGroupKind?: 'leadership' | 'council' | 'personal' | null;
     },
     userId: string,
   ): Promise<Meeting> {
@@ -351,6 +353,7 @@ export class MeetingsService {
           customPrompt: input.customPrompt ?? null,
           cardId: resolvedCardId,
           recordByDefault: input.recordByDefault ?? true,
+          closedGroupKind: input.closedGroupKind ?? null,
         },
         tx,
       );
@@ -762,6 +765,30 @@ export class MeetingsService {
     this.logger.log(
       `participant renamed: meeting=${args.meetingId} pid=${args.participantId} ` +
         `oldName="${participant.name}" newName="${trimmed}" by=${args.actorUserId}`,
+    );
+    return updated;
+  }
+
+  /**
+   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — пометить закрытость встречи
+   * постфактум. Доступ: только хост (через `getForUser`, который бросит
+   * `NotAuthorizedError('not_meeting_host')` или `MeetingNotFoundError`).
+   * null = открыто; 'leadership' | 'council' | 'personal'.
+   */
+  async setClosedGroupKind(
+    meetingId: string,
+    closedGroupKind: 'leadership' | 'council' | 'personal' | null,
+    actorUserId: string,
+  ): Promise<{ id: string; closedGroupKind: string | null }> {
+    await this.getForUser(meetingId, actorUserId);
+    const updated = await this.prisma.meeting.update({
+      where: { id: meetingId },
+      data: { closedGroupKind },
+      select: { id: true, closedGroupKind: true },
+    });
+    this.logger.log(
+      `meeting closedGroupKind set: meeting=${meetingId} ` +
+        `kind=${closedGroupKind ?? 'открыто'} by=${actorUserId}`,
     );
     return updated;
   }

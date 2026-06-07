@@ -6,6 +6,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { MeetingsService } from '../meetings/meetings.service';
 
 import { LivekitEventsHandler } from './livekit-events.handler';
+import { MeetingFinalizationService } from './meeting-finalization.service';
 
 /**
  * Тестируем LivekitEventsHandler как чистую функцию.
@@ -60,7 +61,16 @@ function makeHandler(
     incMeetingFinished: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  const handler = new LivekitEventsHandler(prisma, meetings, metrics);
+  const finalization = new MeetingFinalizationService(prisma, meetings);
+  const handler = new LivekitEventsHandler(
+    prisma,
+    meetings,
+    metrics,
+    null,
+    null,
+    null,
+    finalization,
+  );
   return { handler, prisma, meetings, metrics };
 }
 
@@ -289,22 +299,43 @@ describe('LivekitEventsHandler', () => {
     } as unknown as WebhookEvent;
   }
 
-  function makeEgressHandler(faststartEnabled: boolean): {
+  function makeEgressHandler(
+    faststartEnabled: boolean,
+    endedAt: Date | null = null,
+  ): {
     handler: LivekitEventsHandler;
     aiQueue: any;
+    metrics: any;
   } {
     const prisma = {
-      meeting: { findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed' })) },
+      meeting: {
+        findUnique: vi.fn(async () => ({ id: 'm-1', status: 'completed', endedAt })),
+      },
     } as unknown as PrismaService;
     const meetings = { transitionStatus: vi.fn(async () => undefined) } as unknown as MeetingsService;
-    const metrics = { incLivekitWebhookEvent: vi.fn() } as unknown as BusinessMetricsService;
+    const metrics = {
+      incLivekitWebhookEvent: vi.fn(),
+      observeEgressEndedGap: vi.fn(),
+    } as unknown as BusinessMetricsService;
     const recordings = {
       onCompositeEnded: vi.fn(async () => ({ status: 'finalizing', allReady: false })),
     } as any;
-    const aiQueue = { enqueueRecordingFaststart: vi.fn(async () => undefined) } as any;
+    const aiQueue = {
+      enqueueRecordingFaststart: vi.fn(async () => undefined),
+      enqueueTranscribe: vi.fn(async () => undefined),
+    } as any;
     const cfg = { recording: { faststartEnabled, faststartMinBytes: 52_428_800 } } as any;
-    const handler = new LivekitEventsHandler(prisma, meetings, metrics, recordings, aiQueue, cfg);
-    return { handler, aiQueue };
+    const finalization = new MeetingFinalizationService(prisma, meetings, aiQueue, cfg);
+    const handler = new LivekitEventsHandler(
+      prisma,
+      meetings,
+      metrics,
+      recordings,
+      aiQueue,
+      cfg,
+      finalization,
+    );
+    return { handler, aiQueue, metrics };
   }
 
   it('egress_ended(composite): флаг on + размер выше порога → ставит faststart в очередь', async () => {
@@ -323,5 +354,21 @@ describe('LivekitEventsHandler', () => {
     const { handler, aiQueue } = makeEgressHandler(false);
     await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
     expect(aiQueue.enqueueRecordingFaststart).not.toHaveBeenCalled();
+  });
+
+  it('egress_ended: при наличии meeting.endedAt — пишет gap-метрику', async () => {
+    const endedAt = new Date(Date.now() - 30_000); // 30 секунд назад
+    const { handler, metrics } = makeEgressHandler(true, endedAt);
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
+    expect(metrics.observeEgressEndedGap).toHaveBeenCalledTimes(1);
+    const [requestType, gap] = (metrics.observeEgressEndedGap as any).mock.calls[0];
+    expect(requestType).toBe('room_composite');
+    expect(gap).toBeGreaterThanOrEqual(29);
+  });
+
+  it('egress_ended: без meeting.endedAt — gap-метрика НЕ пишется', async () => {
+    const { handler, metrics } = makeEgressHandler(true, null);
+    await handler.handle(egressEndedEvt('m-1', 400 * 1024 * 1024));
+    expect(metrics.observeEgressEndedGap).not.toHaveBeenCalled();
   });
 });

@@ -1,26 +1,18 @@
 'use client';
 
 /**
- * Vidstack-плеер встречи. Кастомизирован под mint-акцент Z.
+ * Плеер встречи на нативном `<video>` (Vidstack не инициализировался в
+ * prod-сборке → вечная крутилка; нативный `<video>` доказанно играет).
  *
  * Источник видео: presigned URL из `meeting.recording.mainVideoUrl`.
  * Если запись не готова — placeholder.
  *
- * Маркеры:
+ * Маркеры (отдельная тонкая полоса НАД видео, не оверлей на скраббер):
  *   - Главы: вертикальные mint-glow линии в `chapter.startMs`.
  *   - Highlights: золотые точки в `highlight.startMs`.
  */
 
-import { useEffect, useRef } from 'react';
-import {
-  MediaPlayer,
-  MediaProvider,
-  type MediaPlayerInstance,
-} from '@vidstack/react';
-import {
-  defaultLayoutIcons,
-  DefaultVideoLayout,
-} from '@vidstack/react/player/layouts/default';
+import { useRef } from 'react';
 
 import type { ChapterDomain } from '@/domain/chapter';
 import type { HighlightDomain } from '@/domain/highlight';
@@ -34,8 +26,8 @@ export type MeetingPlayerProps = {
   chapters: ChapterDomain[];
   /** Хайлайты для рендера маркеров. */
   highlights: HighlightDomain[];
-  /** Ref на инстанс плеера (см. `useVidstackPlayer`). */
-  playerRef?: React.MutableRefObject<MediaPlayerInstance | null>;
+  /** Ref на нативный `<video>` (см. `useVideoPlayer`). */
+  playerRef?: React.MutableRefObject<HTMLVideoElement | null>;
   /** Колбэк при изменении текущей позиции воспроизведения. */
   onTimeUpdate?: (ms: number) => void;
   /** Заголовок встречи (для accessibility). */
@@ -51,17 +43,7 @@ export function MeetingPlayer({
   onTimeUpdate,
   title,
 }: MeetingPlayerProps) {
-  const internalRef = useRef<MediaPlayerInstance | null>(null);
-
-  // Подписка на time-updates через onTimeUpdate prop
-  useEffect(() => {
-    const player = playerRef?.current ?? internalRef.current;
-    if (!player || !onTimeUpdate) return;
-    const off = player.subscribe(({ currentTime }) => {
-      onTimeUpdate(currentTime * 1000);
-    });
-    return off;
-  }, [onTimeUpdate, playerRef]);
+  const internalRef = useRef<HTMLVideoElement | null>(null);
 
   if (!videoUrl) {
     return (
@@ -82,42 +64,33 @@ export function MeetingPlayer({
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
-      <MediaPlayer
+      {/* Маркеры глав/хайлайтов — тонкой полосой НАД видео (нативный скраббер не оверлеить). */}
+      <PlayerMarkers
+        chapters={chapters}
+        highlights={highlights}
+        durationMs={durationMs}
+      />
+      <video
         ref={(node) => {
           internalRef.current = node;
           if (playerRef) playerRef.current = node;
         }}
-        title={title ?? 'Запись встречи'}
-        // Явный тип источника обязателен: presigned S3-URL оканчивается на
-        // `composite.mp4?X-Amz-...`, и Vidstack не может определить провайдера по
-        // расширению из-за query-строки → без `type` плеер не создаёт <video> и
-        // виснет на «вечной крутилке» БЕЗ сетевого запроса к файлу.
-        src={{ src: videoUrl, type: 'video/mp4' }}
-        // Дефолт Vidstack `load="visible"` (грузить по входу в зону видимости через
-        // IntersectionObserver) на странице результата НЕ срабатывает: плеер навсегда
-        // остаётся `aria-busy` с пустым <video src=""> — «вечная крутилка» БЕЗ запроса к
-        // файлу (диагностика 2026-06-06). Запись — основной контент страницы (выше сгиба),
-        // поэтому грузим сразу: `load="eager"`.
-        load="eager"
+        src={videoUrl}
+        controls
+        preload="auto"
         playsInline
-        className="aspect-video w-full"
-      >
-        <MediaProvider />
-        <DefaultVideoLayout icons={defaultLayoutIcons} />
-        {/* Кастомные маркеры на таймлайне */}
-        <PlayerMarkers
-          chapters={chapters}
-          highlights={highlights}
-          durationMs={durationMs}
-        />
-      </MediaPlayer>
+        onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime * 1000)}
+        className="aspect-video w-full bg-black"
+        aria-label={title ?? 'Запись встречи'}
+      />
     </div>
   );
 }
 
 /**
- * Накладывает маркеры (главы + highlights) поверх Vidstack-таймлайна.
- * Используется position:absolute с z-index выше дефолтного контролл-бара.
+ * Маркеры (главы + highlights) — тонкой полосой над нативным `<video>`.
+ * Нативный скраббер не поддаётся точному CSS-оверлею, поэтому полоса идёт
+ * сверху на всю ширину; позиция каждого маркера — доля от `durationMs`.
  */
 function PlayerMarkers({
   chapters,
@@ -134,7 +107,7 @@ function PlayerMarkers({
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-3 bottom-[60px] z-20 h-1.5"
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 h-1.5"
     >
       {chapters.map((c) => {
         const left = Math.min(100, Math.max(0, (c.startMs / durationMs) * 100));

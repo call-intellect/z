@@ -210,6 +210,12 @@ export class TypedConfigService {
       apiSecret: this.get('LIVEKIT_API_SECRET'),
       webhookApiKey: this.get('LIVEKIT_WEBHOOK_API_KEY'),
       webhookApiSecret: this.get('LIVEKIT_WEBHOOK_API_SECRET'),
+      // Ack-first обработка вебхуков (opt-in, дефолт OFF). См. env.schema.ts.
+      webhookAckFirstEnabled: this.resolveSync<boolean>(
+        'livekit.webhookAckFirstEnabled',
+        'LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED',
+        false,
+      ),
     } as const;
   }
 
@@ -275,6 +281,15 @@ export class TypedConfigService {
         apiKey: this.get('DEEPSEEK_API_KEY'),
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
         defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
+        // ТЗ-3 Фаза 3 — форс synthetic-tool через tool_choice для не-thinking
+        // моделей при autoConvert. Дефолт OFF (см. env.schema.ts): включает
+        // владелец после прод-пробы agent-lia. Guard в deepseek.service
+        // откатывает на 'auto' при format-400 прокси.
+        forceToolChoiceEnabled: this.resolveSync<boolean>(
+          'ai.deepseek.forceToolChoiceEnabled',
+          'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
+          false,
+        ),
       },
       ollama: {
         baseUrl: this.get('OLLAMA_BASE_URL'),
@@ -1579,6 +1594,8 @@ export class TypedConfigService {
    *   - faststartEnabled      — faststart-постобработка composite MP4 (P1, ON).
    *   - faststartMinBytes     — порог: ниже него composite не ремуксится (мелкий
    *     файл и так играет мгновенно). Дефолт 50 МиБ.
+   *   - compositeReconcileEnabled — pull-фоллбэк на потерянный composite
+   *     egress-вебхук (cron `composite-egress-reconcile`, ТЗ 2026-06-06, ON).
    */
   get recording() {
     return {
@@ -1596,6 +1613,11 @@ export class TypedConfigService {
         'recording.faststartMinBytes',
         'RECORDING_FASTSTART_MIN_BYTES',
         52_428_800,
+      ),
+      compositeReconcileEnabled: this.resolveSync<boolean>(
+        'recording.compositeReconcileEnabled',
+        'RECORDING_COMPOSITE_RECONCILE_ENABLED',
+        true,
       ),
     } as const;
   }
@@ -2077,6 +2099,22 @@ export class TypedConfigService {
         this.get('DATACLASS_OUTBOUND_GATING_ENABLED') ?? true,
       ),
     } as const;
+  }
+
+  // ─────────────────── Ф2 knowledge-access groups ──────────────────────
+  /**
+   * Режим гейта доступа к знаниям (группы). off (default) — фильтр не
+   * применяется, поведение текущее. shadow — метрики расхождения. enforce —
+   * фильтр во всех поверхностях retrieval. См. ТЗ
+   * plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md.
+   */
+  get knowledgeAccess() {
+    const mode = this.get('KNOWLEDGE_ACCESS_ENFORCEMENT') as
+      | 'off'
+      | 'shadow'
+      | 'enforce'
+      | undefined;
+    return { enforcement: mode ?? 'off' } as const;
   }
 
   // ─────────────────── W2.2 calibrated confidence (KC-Temporal) ───────

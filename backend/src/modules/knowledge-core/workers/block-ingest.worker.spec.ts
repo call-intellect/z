@@ -89,6 +89,7 @@ function buildWorker(cfgEnabled: boolean) {
     // (диспатч специалистов перенесён в block-distill на canonical-переход).
     {} as any, // axisClassifier
     cfg,
+    {} as any, // blockAccessDeriver (Ф3 — не дёргается в persistBlock)
   );
   return { worker, fakeTx };
 }

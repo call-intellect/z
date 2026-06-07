@@ -94,6 +94,7 @@ export class KnowledgeSnapshotController {
 
     return this.svc.getSnapshot({
       tenantId,
+      userId: user.id,
       at: new Date(query.at),
       entityId: query.entityId,
       signalTypes: query.signalTypes,

@@ -10,8 +10,10 @@
  *   - 403 cross-tenant, 403 forbidden, 404, Zod 400, tenant_required.
  */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import {
   checkDbAvailable,
   closePrismaClient,
@@ -20,9 +22,14 @@ import {
 import { buildKnowledgeCoreFixture } from '../../../../test/integration/knowledge-core/fixtures';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
+import type {
+  KnowledgeAccessContext,
+  KnowledgeAccessResolver,
+} from '../../rbac/knowledge-access-resolver.service';
 import type { RbacService } from '../../rbac/rbac.service';
 
 import { ListEntitiesQuerySchema } from './dto/entity.dto';
+import { EntityGraphQuerySchema } from './dto/graph.dto';
 import { KnowledgeEntitiesController } from './entities.controller';
 
 const PREFIX = 'kc-entities-spec';
@@ -167,5 +174,368 @@ describe('KnowledgeEntitiesController (integration)', () => {
   it('Zod-400 на limit > 100', () => {
     const r = ListEntitiesQuerySchema.safeParse({ limit: 999 });
     expect(r.success).toBe(false);
+  });
+});
+
+// ───────────────── Ф4 knowledge-access — гейт сущности (unit) ───────────────
+//
+// Юнит-тесты (без БД): мокаем prisma/resolver/cfg/metrics. Проверяем
+// GET /entities/:id (блоки-упоминания) и GET /entities/:id/graph (evidence
+// блоков на рёбрах + удаление рёбер/осиротевших узлов при enforce).
+
+const GATE_USER: CurrentUserPayload = {
+  id: 'ent-gate-user',
+  email: 'gate@test',
+  role: 'user',
+};
+const TENANT = 'ent-gate-org';
+
+function gateRbac(): RbacService {
+  return { canRead: async () => true, canWrite: async () => true } as unknown as RbacService;
+}
+
+function gateMetrics(): {
+  metrics: BusinessMetricsService;
+  incDenied: ReturnType<typeof vi.fn>;
+  incShadow: ReturnType<typeof vi.fn>;
+} {
+  const incDenied = vi.fn();
+  const incShadow = vi.fn();
+  const metrics = {
+    incAccessDenied: incDenied,
+    incAccessShadowDiff: incShadow,
+  } as unknown as BusinessMetricsService;
+  return { metrics, incDenied, incShadow };
+}
+
+function gateCfg(enf: 'off' | 'shadow' | 'enforce'): TypedConfigService {
+  return { knowledgeAccess: { enforcement: enf } } as unknown as TypedConfigService;
+}
+
+function gateResolver(opts: {
+  ctx: KnowledgeAccessContext | null;
+  partition?: { accessible: string[]; denied: number };
+}): {
+  resolver: KnowledgeAccessResolver;
+  resolveSpy: ReturnType<typeof vi.fn>;
+  partitionSpy: ReturnType<typeof vi.fn>;
+} {
+  const resolveSpy = vi.fn(async () => opts.ctx);
+  const partitionSpy = vi.fn(
+    async () => opts.partition ?? { accessible: [], denied: 0 },
+  );
+  const resolver = {
+    resolveAccessibleGroups: resolveSpy,
+    partitionBlockIdsByAccess: partitionSpy,
+  } as unknown as KnowledgeAccessResolver;
+  return { resolver, resolveSpy, partitionSpy };
+}
+
+function mentionPrisma(blockIds: string[]): PrismaService {
+  return {
+    entity: {
+      findUnique: vi.fn(async () => ({
+        id: 'e-1',
+        tenantId: TENANT,
+        type: 'project',
+        canonicalName: 'E1',
+        aliases: [] as string[],
+        mentionsCount: 1,
+        metadata: null,
+        mergedIntoId: null,
+      })),
+    },
+    ideaBlockEntity: {
+      findMany: vi.fn(async () =>
+        blockIds.map((id) => ({
+          block: {
+            id,
+            name: `block ${id}`,
+            criticalQuestion: 'q',
+            trustedAnswer: 'a',
+            tags: [] as string[],
+            signalType: 'fact',
+            confidence: 0.9,
+            evidenceCount: 1,
+            status: 'canonical',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        })),
+      ),
+    },
+  } as unknown as PrismaService;
+}
+
+describe('KnowledgeEntitiesController.byId — Ф4 гейт (unit)', () => {
+  const NOCTX: KnowledgeAccessContext | null = null;
+
+  it('off → resolver не вызывается, все блоки', async () => {
+    const { resolver, resolveSpy } = gateResolver({ ctx: NOCTX });
+    const { metrics } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      mentionPrisma(['b1', 'b2']),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('off'),
+      metrics,
+    );
+    const res = await ctrl.byId('e-1', GATE_USER, TENANT);
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+  });
+
+  it('enforce → недоступный блок исключён + incAccessDenied', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { resolver, partitionSpy } = gateResolver({
+      ctx,
+      partition: { accessible: ['b1'], denied: 1 },
+    });
+    const { metrics, incDenied } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      mentionPrisma(['b1', 'b2']),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('enforce'),
+      metrics,
+    );
+    const res = await ctrl.byId('e-1', GATE_USER, TENANT);
+    expect(partitionSpy).toHaveBeenCalledWith(ctx, ['b1', 'b2']);
+    expect(res.blocks.map((b) => b.id)).toEqual(['b1']);
+    expect(incDenied).toHaveBeenCalledWith({ surface: 'entities' }, 1);
+  });
+
+  it('bypass → все блоки (partition не вызывается)', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: true,
+    };
+    const { resolver, partitionSpy } = gateResolver({ ctx });
+    const { metrics } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      mentionPrisma(['b1', 'b2']),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('enforce'),
+      metrics,
+    );
+    const res = await ctrl.byId('e-1', GATE_USER, TENANT);
+    expect(partitionSpy).not.toHaveBeenCalled();
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+  });
+
+  it('shadow → выдача не меняется + incAccessShadowDiff', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { resolver } = gateResolver({
+      ctx,
+      partition: { accessible: ['b1'], denied: 1 },
+    });
+    const { metrics, incShadow, incDenied } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      mentionPrisma(['b1', 'b2']),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('shadow'),
+      metrics,
+    );
+    const res = await ctrl.byId('e-1', GATE_USER, TENANT);
+    expect(res.blocks.map((b) => b.id).sort()).toEqual(['b1', 'b2']);
+    expect(incShadow).toHaveBeenCalledWith({ surface: 'entities' }, 1);
+    expect(incDenied).not.toHaveBeenCalled();
+  });
+});
+
+// Граф сущности: центр E0 → E1 (ребро edgeAB, source=['b1']) и
+// E0 → E2 (ребро edgeAC, source=['b2']). b1 недоступен, b2 доступен.
+function graphPrisma(): PrismaService {
+  const center = {
+    id: 'E0',
+    type: 'project',
+    canonicalName: 'E0',
+    tenantId: TENANT,
+  };
+  const links = [
+    {
+      id: 'edgeAB',
+      fromEntityId: 'E0',
+      toEntityId: 'E1',
+      relationType: 'relates',
+      confidence: 0.9,
+      attributes: null,
+      validFrom: new Date(),
+      validUntil: null,
+      sourceBlockIds: ['b1'],
+      fromType: 'entity',
+      toType: 'entity',
+    },
+    {
+      id: 'edgeAC',
+      fromEntityId: 'E0',
+      toEntityId: 'E2',
+      relationType: 'relates',
+      confidence: 0.9,
+      attributes: null,
+      validFrom: new Date(),
+      validUntil: null,
+      sourceBlockIds: ['b2'],
+      fromType: 'entity',
+      toType: 'entity',
+    },
+  ];
+  const peers = [
+    { id: 'E1', type: 'project', canonicalName: 'E1' },
+    { id: 'E2', type: 'project', canonicalName: 'E2' },
+  ];
+  const blocks = [
+    { id: 'b1', name: 'B1', trustedAnswer: 'secret', createdAt: new Date(), evidence: [] },
+    { id: 'b2', name: 'B2', trustedAnswer: 'public', createdAt: new Date(), evidence: [] },
+  ];
+  let entityFindManyCall = 0;
+  let linkFindManyCall = 0;
+  return {
+    entity: {
+      findUnique: vi.fn(async () => center),
+      findMany: vi.fn(async () => {
+        // 1-й вызов — peers по entityLink; дальше пусто (frontier исчерпан).
+        entityFindManyCall += 1;
+        return entityFindManyCall === 1 ? peers : [];
+      }),
+    },
+    entityLink: {
+      findMany: vi.fn(async (args: { where?: { id?: unknown } }) => {
+        // Вызовы 1-2 — outgoing/incoming на BFS; 3-й — fullEdges (по id IN).
+        linkFindManyCall += 1;
+        if (args?.where && 'id' in args.where) {
+          return links.map((l) => ({ id: l.id, sourceBlockIds: l.sourceBlockIds }));
+        }
+        // outgoing для frontier E0 → оба ребра; incoming → пусто.
+        return linkFindManyCall === 1 ? links : [];
+      }),
+    },
+    ideaBlock: { findMany: vi.fn(async () => blocks) },
+  } as unknown as PrismaService;
+}
+
+describe('KnowledgeEntitiesController.getGraph — Ф4 гейт (unit)', () => {
+  const QUERY = EntityGraphQuerySchema.parse({ depth: 1 });
+
+  it('off → все рёбра и evidence обоих блоков', async () => {
+    const { resolver, resolveSpy } = gateResolver({ ctx: null });
+    const { metrics } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      graphPrisma(),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('off'),
+      metrics,
+    );
+    const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
+    expect(resolveSpy).not.toHaveBeenCalled();
+    const edgeIds = res.edges.map((e) => e.edgeId).sort();
+    expect(edgeIds).toEqual(['edgeAB', 'edgeAC']);
+    const allEvidenceBlockIds = res.edges
+      .flatMap((e) => e.evidence.map((ev) => ev.blockId))
+      .sort();
+    expect(allEvidenceBlockIds).toEqual(['b1', 'b2']);
+  });
+
+  it('enforce → ребро с недоступным блоком удалено + узел осиротевший убран + incAccessDenied', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { resolver } = gateResolver({
+      ctx,
+      partition: { accessible: ['b2'], denied: 1 }, // b1 недоступен
+    });
+    const { metrics, incDenied } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      graphPrisma(),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('enforce'),
+      metrics,
+    );
+    const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
+    // Ребро edgeAB (source=['b1']) удалено целиком; edgeAC осталось.
+    expect(res.edges.map((e) => e.edgeId)).toEqual(['edgeAC']);
+    // evidence ребра edgeAC — только b2 (b1 не утёк).
+    const allEvidenceBlockIds = res.edges.flatMap((e) =>
+      e.evidence.map((ev) => ev.blockId),
+    );
+    expect(allEvidenceBlockIds).toEqual(['b2']);
+    // E1 (только через удалённое ребро) — осиротел и убран; E0 (центр) и E2 — есть.
+    const nodeIds = res.nodes.map((n) => n.id).sort();
+    expect(nodeIds).toContain('E0');
+    expect(nodeIds).toContain('E2');
+    expect(nodeIds).not.toContain('E1');
+    expect(incDenied).toHaveBeenCalledWith({ surface: 'entities' }, 1);
+  });
+
+  it('bypass → все рёбра, evidence обоих блоков', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: true,
+    };
+    const { resolver, partitionSpy } = gateResolver({ ctx });
+    const { metrics } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      graphPrisma(),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('enforce'),
+      metrics,
+    );
+    const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
+    expect(partitionSpy).not.toHaveBeenCalled();
+    expect(res.edges.map((e) => e.edgeId).sort()).toEqual(['edgeAB', 'edgeAC']);
+  });
+
+  it('shadow → выдача не меняется + incAccessShadowDiff', async () => {
+    const ctx: KnowledgeAccessContext = {
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    };
+    const { resolver } = gateResolver({
+      ctx,
+      partition: { accessible: ['b2'], denied: 1 },
+    });
+    const { metrics, incShadow, incDenied } = gateMetrics();
+    const ctrl = new KnowledgeEntitiesController(
+      graphPrisma(),
+      gateRbac(),
+      null,
+      resolver,
+      gateCfg('shadow'),
+      metrics,
+    );
+    const res = await ctrl.getGraph('E0', QUERY, GATE_USER, TENANT);
+    // Обе грани и оба evidence остаются (выдача байт-в-байт).
+    expect(res.edges.map((e) => e.edgeId).sort()).toEqual(['edgeAB', 'edgeAC']);
+    const allEvidenceBlockIds = res.edges
+      .flatMap((e) => e.evidence.map((ev) => ev.blockId))
+      .sort();
+    expect(allEvidenceBlockIds).toEqual(['b1', 'b2']);
+    expect(incShadow).toHaveBeenCalledWith({ surface: 'entities' }, 1);
+    expect(incDenied).not.toHaveBeenCalled();
   });
 });

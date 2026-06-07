@@ -1,8 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ChatV2RetrievalService } from '../../knowledge-core/services/chat-v2-retrieval.service';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   OrchestratorAgentType,
   OrchestratorPlanStep,
@@ -35,6 +38,14 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
     @Inject(LlmRouterService) protected readonly llm: LlmRouterService,
     @Inject(ChatV2RetrievalService)
     protected readonly retrieval: ChatV2RetrievalService,
+    // Ф4 (knowledge-access) — гейт доступа в orchestrator-стратегиях.
+    // RbacModule @Global. Наследники не объявляют свой constructor → получают
+    // эти зависимости автоматически (NestJS читает param-types базового класса).
+    @Inject(KnowledgeAccessResolver)
+    protected readonly accessResolver: KnowledgeAccessResolver,
+    @Inject(TypedConfigService) protected readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    protected readonly metrics: BusinessMetricsService,
   ) {
     this.logger = new Logger(`${this.constructor.name}`);
   }
@@ -54,6 +65,20 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
   async execute(args: SubagentExecuteInput): Promise<OrchestratorSubagentResult> {
     const start = Date.now();
 
+    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off'
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.userId,
+          })
+        : null;
+    const accessWhere =
+      enf === 'enforce' && accessCtx && !accessCtx.isBypass
+        ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<string, unknown>)
+        : undefined;
+
     let blockIds: string[] = [];
     try {
       const ranked = await this.retrieval.fetchCandidates({
@@ -63,6 +88,7 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
         query: this.buildRetrievalQuery(args.step),
         limit: 20,
         graphHops: 1,
+        accessWhere,
       });
       blockIds = ranked.map((r) => r.blockId).slice(0, 20);
     } catch (err) {
@@ -72,10 +98,21 @@ export abstract class BaseRetrievalStrategy implements SubagentStrategy {
       );
     }
 
+    // Ф4 knowledge-access — shadow: считаем, сколько блоков было бы
+    // отфильтровано (выдачу НЕ меняем). enforce фильтрует уже в fetchCandidates
+    // (accessWhere) + findMany ниже.
+    if (enf === 'shadow' && accessCtx && !accessCtx.isBypass && blockIds.length > 0) {
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockIds,
+      );
+      this.metrics.incAccessShadowDiff({ surface: 'orchestrator' }, denied);
+    }
+
     let blocksContext = '';
     if (blockIds.length > 0) {
       const blocks = await this.prisma.ideaBlock.findMany({
-        where: { id: { in: blockIds }, tenantId: args.tenantId },
+        where: { id: { in: blockIds }, tenantId: args.tenantId, ...(accessWhere ?? {}) },
         select: {
           id: true,
           name: true,

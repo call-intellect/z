@@ -4,12 +4,16 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { type Idea, Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
 import { Specialist36Service } from '../../knowledge-core/services/specialist-3-6-ideas.service';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import {
   type ChangeIdeaStatusBody,
   type IdeaClusterDto,
@@ -32,10 +36,58 @@ export class IdeasService {
     @Inject(Specialist36Service)
     private readonly specialist36: Specialist36Service,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
+    /**
+     * Ф6 knowledge-access (R12) — гейт проекций по группам спрашивающего.
+     * @Optional — spec-и конструируют сервис позиционно; null → гейт off.
+     */
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
+
+  /**
+   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
+   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
+   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
+   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
+   * страница может стать короче, total остаётся посчитанным до фильтра —
+   * лёгкий over-count; приемлемый трейд-офф on-read подхода.
+   */
+  private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
+    items: T[],
+    args: { tenantId: string; userId?: string; surface: string },
+  ): Promise<T[]> {
+    const enf = this.cfg?.knowledgeAccess.enforcement ?? 'off';
+    if (enf === 'off' || !this.accessResolver || !args.userId || items.length === 0) {
+      return items;
+    }
+    const accessCtx = await this.accessResolver.resolveAccessibleGroups({
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
+    if (accessCtx.isBypass) return items;
+    const { accessibleIds, denied } =
+      await this.accessResolver.partitionProjectionsByAccess(
+        accessCtx,
+        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+      );
+    if (enf === 'enforce') {
+      this.metrics?.incAccessDenied({ surface: args.surface }, denied);
+      return items.filter((i) => accessibleIds.has(i.id));
+    }
+    this.metrics?.incAccessShadowDiff({ surface: args.surface }, denied);
+    return items;
+  }
 
   async list(args: {
     tenantId: string;
+    userId?: string;
     query: ListIdeasQuery;
   }): Promise<ListIdeasResponse> {
     const q = args.query;
@@ -61,8 +113,14 @@ export class IdeasService {
       }),
       this.prisma.idea.count({ where }),
     ]);
+    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'ideas',
+    });
     return {
-      items: items.map((i) => this.toListItem(i)),
+      items: visible.map((i) => this.toListItem(i)),
       total,
       page: q.page,
       limit: q.limit,
@@ -112,8 +170,14 @@ export class IdeasService {
       }),
       this.prisma.idea.count({ where }),
     ]);
+    // Ф6 — гейт доступа (мои идеи тоже user-facing листинг проекций).
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'ideas',
+    });
     return {
-      items: items.map((i) => this.toListItem(i)),
+      items: visible.map((i) => this.toListItem(i)),
       total,
       page: q.page,
       limit: q.limit,

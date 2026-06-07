@@ -13,9 +13,76 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type {
+  KnowledgeAccessContext,
+  KnowledgeAccessResolver,
+} from '../../rbac/knowledge-access-resolver.service';
 
 import { SnapshotService } from './snapshot.service';
+
+/**
+ * Ф4 (knowledge-access) — фабрики DI-заглушек. По умолчанию режим гейта `off`,
+ * поэтому accessResolver/metrics НЕ должны вызываться (поведение байт-в-байт).
+ */
+function makeCfg(
+  enforcement: 'off' | 'shadow' | 'enforce' = 'off',
+): TypedConfigService {
+  return {
+    knowledgeAccess: { enforcement },
+  } as unknown as TypedConfigService;
+}
+
+function makeResolver(overrides: Partial<KnowledgeAccessResolver> = {}): {
+  resolver: KnowledgeAccessResolver;
+  resolveSpy: ReturnType<typeof vi.fn>;
+  buildWhereSpy: ReturnType<typeof vi.fn>;
+  partitionSpy: ReturnType<typeof vi.fn>;
+} {
+  const resolveSpy = vi.fn(
+    async (): Promise<KnowledgeAccessContext> => ({
+      deptGroupIds: [],
+      closedGroupIds: [],
+      isBypass: false,
+    }),
+  );
+  const buildWhereSpy = vi.fn(() => ({ blockAccessGate: true }));
+  const partitionSpy = vi.fn(async (_ctx: unknown, ids: string[]) => ({
+    accessible: ids,
+    denied: 0,
+  }));
+  const resolver = {
+    resolveAccessibleGroups: resolveSpy,
+    buildAccessWhere: buildWhereSpy,
+    partitionBlockIdsByAccess: partitionSpy,
+    ...overrides,
+  } as unknown as KnowledgeAccessResolver;
+  return { resolver, resolveSpy, buildWhereSpy, partitionSpy };
+}
+
+function makeMetrics(): {
+  metrics: BusinessMetricsService;
+  shadowSpy: ReturnType<typeof vi.fn>;
+} {
+  const shadowSpy = vi.fn();
+  const metrics = {
+    incAccessShadowDiff: shadowSpy,
+    incAccessDenied: vi.fn(),
+  } as unknown as BusinessMetricsService;
+  return { metrics, shadowSpy };
+}
+
+/** Конструктор сервиса со стандартными off-заглушками (для legacy-тестов). */
+function makeService(prisma: PrismaService): SnapshotService {
+  return new SnapshotService(
+    prisma,
+    makeCfg('off'),
+    makeResolver().resolver,
+    makeMetrics().metrics,
+  );
+}
 
 
 interface FakeBlock {
@@ -225,11 +292,12 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
   it('asOf=now: возвращает блок с validFrom=null,validUntil=null (legacy)', async () => {
     const block = makeBlock({ id: 'b-active' });
     const prisma = buildFakePrisma({ blocks: [block], links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
     const at = new Date('2026-05-25T12:00:00Z');
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at,
       limit: 100,
     });
@@ -245,11 +313,12 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
     const validFrom = new Date('2026-05-25T10:00:00Z');
     const block = makeBlock({ id: 'b-future', validFrom });
     const prisma = buildFakePrisma({ blocks: [block], links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const beforeBirth = new Date(validFrom.getTime() - 1000);
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: beforeBirth,
       limit: 100,
     });
@@ -262,10 +331,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
     const validUntil = new Date('2026-05-20T00:00:00Z');
     const block = makeBlock({ id: 'b-expired', validFrom, validUntil });
     const prisma = buildFakePrisma({ blocks: [block], links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date('2026-05-25T00:00:00Z'),
       limit: 100,
     });
@@ -280,10 +350,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       validUntil: new Date('2026-06-01T00:00:00Z'),
     });
     const prisma = buildFakePrisma({ blocks: [block], links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date('2026-05-25T00:00:00Z'),
       limit: 100,
     });
@@ -297,10 +368,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       makeBlock({ id: `b-${i}` }),
     );
     const prisma = buildFakePrisma({ blocks, links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date(),
       limit: 3,
     });
@@ -314,10 +386,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       makeBlock({ id: `b-${i}` }),
     );
     const prisma = buildFakePrisma({ blocks, links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date(),
       limit: 3,
     });
@@ -341,10 +414,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       blocks: [],
       links: [active, expired],
     });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date('2026-05-25T00:00:00Z'),
       limit: 100,
     });
@@ -375,10 +449,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
         },
       ],
     });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date(),
       entityId: 'e-X',
       limit: 100,
@@ -394,10 +469,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
     const b1 = makeBlock({ id: 'b-ins', signalType: 'idea' });
     const b2 = makeBlock({ id: 'b-dec', signalType: 'decision' });
     const prisma = buildFakePrisma({ blocks: [b1, b2], links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date(),
       signalTypes: ['decision'],
       limit: 100,
@@ -416,10 +492,11 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       makeBlock({ id: 'b-c' }),
     ];
     const prisma = buildFakePrisma({ blocks, links: [] });
-    const svc = new SnapshotService(prisma);
+    const svc = makeService(prisma);
 
     const res = await svc.getSnapshot({
       tenantId: 't-A',
+      userId: 'u-1',
       at: new Date(),
       limit: 100,
     });
@@ -430,5 +507,113 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
       'b-b',
       'b-c',
     ]);
+  });
+});
+
+describe('SnapshotService — Ф4 гейт доступа (knowledge-access)', () => {
+  it('off: resolver НЕ вызывается, where без access-фрагмента (байт-в-байт)', async () => {
+    const block = makeBlock({ id: 'b-1' });
+    const prisma = buildFakePrisma({ blocks: [block], links: [] });
+    const findManySpy = prisma.ideaBlock.findMany as ReturnType<typeof vi.fn>;
+    const { resolver, resolveSpy } = makeResolver();
+    const { metrics, shadowSpy } = makeMetrics();
+    const svc = new SnapshotService(prisma, makeCfg('off'), resolver, metrics);
+
+    await svc.getSnapshot({ tenantId: 't-A', userId: 'u-1', at: new Date(), limit: 100 });
+
+    expect(resolveSpy).not.toHaveBeenCalled();
+    expect(shadowSpy).not.toHaveBeenCalled();
+    // where.AND содержит ровно 2 bi-temporal-условия, без access-gate.
+    expect(findManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't-A',
+          status: 'canonical',
+          AND: expect.not.arrayContaining([
+            expect.objectContaining({ blockAccessGate: true }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('enforce: where.AND содержит фрагмент buildAccessWhere', async () => {
+    const block = makeBlock({ id: 'b-1' });
+    const prisma = buildFakePrisma({ blocks: [block], links: [] });
+    const findManySpy = prisma.ideaBlock.findMany as ReturnType<typeof vi.fn>;
+    const { resolver, resolveSpy, buildWhereSpy } = makeResolver();
+    const { metrics } = makeMetrics();
+    const svc = new SnapshotService(prisma, makeCfg('enforce'), resolver, metrics);
+
+    await svc.getSnapshot({ tenantId: 't-A', userId: 'u-1', at: new Date(), limit: 100 });
+
+    expect(resolveSpy).toHaveBeenCalledWith({ tenantId: 't-A', userId: 'u-1' });
+    expect(buildWhereSpy).toHaveBeenCalled();
+    expect(findManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ blockAccessGate: true }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('enforce + bypass: where без access-фрагмента (owner видит всё)', async () => {
+    const block = makeBlock({ id: 'b-1' });
+    const prisma = buildFakePrisma({ blocks: [block], links: [] });
+    const findManySpy = prisma.ideaBlock.findMany as ReturnType<typeof vi.fn>;
+    const { resolver, buildWhereSpy } = makeResolver({
+      resolveAccessibleGroups: vi.fn(
+        async (): Promise<KnowledgeAccessContext> => ({
+          deptGroupIds: [],
+          closedGroupIds: [],
+          isBypass: true,
+        }),
+      ) as unknown as KnowledgeAccessResolver['resolveAccessibleGroups'],
+    });
+    const { metrics } = makeMetrics();
+    const svc = new SnapshotService(prisma, makeCfg('enforce'), resolver, metrics);
+
+    await svc.getSnapshot({ tenantId: 't-A', userId: 'u-1', at: new Date(), limit: 100 });
+
+    expect(buildWhereSpy).not.toHaveBeenCalled();
+    expect(findManySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.not.arrayContaining([
+            expect.objectContaining({ blockAccessGate: true }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('shadow: выдача не меняется, считается метрика denied', async () => {
+    const block = makeBlock({ id: 'b-1' });
+    const prisma = buildFakePrisma({ blocks: [block], links: [] });
+    const partitionSpy = vi.fn(async (_ctx: unknown, ids: string[]) => ({
+      accessible: ids,
+      denied: 1,
+    }));
+    const { resolver } = makeResolver({
+      partitionBlockIdsByAccess:
+        partitionSpy as unknown as KnowledgeAccessResolver['partitionBlockIdsByAccess'],
+    });
+    const { metrics, shadowSpy } = makeMetrics();
+    const svc = new SnapshotService(prisma, makeCfg('shadow'), resolver, metrics);
+
+    const res = await svc.getSnapshot({
+      tenantId: 't-A',
+      userId: 'u-1',
+      at: new Date(),
+      limit: 100,
+    });
+
+    // Выдача НЕ меняется (блок остаётся).
+    expect(res.blocks).toHaveLength(1);
+    expect(partitionSpy).toHaveBeenCalled();
+    expect(shadowSpy).toHaveBeenCalledWith({ surface: 'snapshot' }, 1);
   });
 });

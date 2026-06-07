@@ -70,6 +70,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-chatbox.ts', hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[
@@ -274,6 +275,18 @@ const STEPS: Step[] = [
     hint: 'удалить фантомных Participant с identity не host:/guest: (egress)',
     skipBootstrap: true, // На чистой БД фантомов нет.
   },
+  // 2026-06-06 — Ф8 (knowledge-access-groups-and-provenance): дефолт закрытости
+  // типа встречи interview → 'personal' (В6). На чистом старте bootstrap-sync
+  // создаёт interview с этим дефолтом сам → skipBootstrap. На проде, где
+  // bootstrap прошёл до фичи, строка interview имеет NULL — патч добивает.
+  // Идемпотентен (WHERE defaultClosedGroupKind IS NULL, safe-seed override).
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 8.
+  {
+    phase: 'patch',
+    script: 'scripts/patch-meeting-type-closed-defaults.ts',
+    hint: 'interview → defaultClosedGroupKind=personal (Ф8 knowledge-access)',
+    skipBootstrap: true,
+  },
 
   // === Backfill ===
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
@@ -387,6 +400,33 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-subject-attribution.ts',
     hint: 'role=subject для исторических reasoning-блоков + rebuild клонов (Ф1.3)',
+    skipBootstrap: true,
+  },
+  // 2026-06-06 — Ф1 (knowledge-access-groups-and-provenance): расширение
+  // subject-атрибуции на ВСЕ типы знания (не только reasoning) + per-adapter
+  // identity (tracker/chatbox/dump/email). Добивает role='subject' для
+  // исторических canonical-блоков любого типа без subject-связи. Идемпотентен
+  // (кандидаты — только блоки без subject-связи). Уважает флаги
+  // knowledge.subjectAttributionEnabled + knowledge.subjectAttributionAllTypes.
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 1.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-subject-attribution-all-types.ts',
+    hint: 'role=subject для исторических блоков ВСЕХ типов + per-adapter identity (Ф1 knowledge-access)',
+    skipBootstrap: true,
+  },
+  // 2026-06-06 — Ф3 (knowledge-access-groups-and-provenance): department-группы
+  // (IdeaBlockAccess) для исторических canonical-блоков из существующих
+  // functional axisLabels (+ участники/автор). closed задним числом НЕ
+  // назначается (В5: историческое знание = открыто). Идемпотентен (кандидаты —
+  // блоки без IdeaBlockAccess). Без --departments скрипт no-op — поэтому
+  // прогон через STEPS осмысленный только с args=['--departments'].
+  // ТЗ: plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md Фаза 3.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-block-access.ts',
+    args: ['--departments'],
+    hint: 'department-группы для исторических блоков по флагу --departments (Ф3 knowledge-access)',
     skipBootstrap: true,
   },
   {

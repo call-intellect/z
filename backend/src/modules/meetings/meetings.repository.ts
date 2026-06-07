@@ -73,6 +73,8 @@ export class MeetingsRepository {
       customPrompt: string | null;
       cardId?: string | null;
       recordByDefault?: boolean;
+      /** ТЗ 2026-06-06 knowledge-access (Ф7A) — закрытость встречи. */
+      closedGroupKind?: 'leadership' | 'council' | 'personal' | null;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<Meeting> {
@@ -89,6 +91,9 @@ export class MeetingsRepository {
         recordByDefault: data.recordByDefault ?? true,
         ...(data.cardId !== undefined && data.cardId !== null
           ? { cardId: data.cardId }
+          : {}),
+        ...(data.closedGroupKind != null
+          ? { closedGroupKind: data.closedGroupKind }
           : {}),
         status: 'scheduled',
       },

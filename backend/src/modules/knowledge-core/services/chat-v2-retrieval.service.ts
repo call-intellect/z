@@ -39,6 +39,9 @@ export interface RetrievalInput {
    * NULL = `now()` (без temporal-фильтра).
    */
   validAt?: Date | null;
+  /** Ф4 — Prisma-фрагмент доступа (buildAccessWhere). Применяется к pool-запросам.
+   *  undefined/{} = без фильтра (off/shadow). Только при enforce передаётся непустой. */
+  accessWhere?: Record<string, unknown>;
 }
 
 export interface RankedBlockId {
@@ -164,6 +167,7 @@ export class ChatV2RetrievalService {
             knownIds: new Set(ranked.map((r) => r.blockId)),
             extraLimit: input.graphHops * 5,
             validAt: input.validAt ?? null,
+            accessWhere: input.accessWhere,
           })
         : [];
 
@@ -197,11 +201,12 @@ export class ChatV2RetrievalService {
 
   private async collectPool(input: RetrievalInput): Promise<string[]> {
     const { tenantId, scope, scopeId } = input;
+    const accessWhere = input.accessWhere;
     if (scope === 'org') {
       // Для org pool — все canonical-блоки тенанта. Дальше rankByCosineOrRecency
       // обрежет до limit'а через ORDER BY embedding<->qvec.
       const rows = await this.prisma.ideaBlock.findMany({
-        where: { tenantId, status: 'canonical' },
+        where: { tenantId, status: 'canonical', ...(accessWhere ?? {}) },
         select: { id: true },
         // Лимит pool'а: 5000 — защита от org с десятками тысяч блоков.
         // Дальнейший ранжирующий SQL уже идёт по этому подмножеству.
@@ -219,16 +224,16 @@ export class ChatV2RetrievalService {
     }
 
     if (scope === 'meeting') {
-      return this.poolByMeeting(tenantId, scopeId);
+      return this.poolByMeeting(tenantId, scopeId, accessWhere);
     }
     if (scope === 'card') {
-      return this.poolByCard(tenantId, scopeId);
+      return this.poolByCard(tenantId, scopeId, accessWhere);
     }
     if (scope === 'theme') {
-      return this.poolByTheme(tenantId, scopeId);
+      return this.poolByTheme(tenantId, scopeId, accessWhere);
     }
     if (scope === 'entity') {
-      return this.poolByEntity(tenantId, scopeId);
+      return this.poolByEntity(tenantId, scopeId, accessWhere);
     }
     const _exhaustive: never = scope;
     throw new Error(`chat-v2 retrieval: unknown scope ${String(_exhaustive)}`);
@@ -242,6 +247,7 @@ export class ChatV2RetrievalService {
   private async poolByMeeting(
     tenantId: string,
     meetingId: string,
+    accessWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: {
@@ -255,7 +261,7 @@ export class ChatV2RetrievalService {
     const evRows = await this.prisma.ideaBlockEvidence.findMany({
       where: {
         rawEventId: { in: rawEvents.map((r) => r.id) },
-        block: { status: 'canonical', tenantId },
+        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
       },
       select: { blockId: true },
       take: 1000,
@@ -273,6 +279,7 @@ export class ChatV2RetrievalService {
   private async poolByCard(
     tenantId: string,
     cardId: string,
+    accessWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
@@ -305,7 +312,7 @@ export class ChatV2RetrievalService {
             sourceType: 'meeting',
             sourceExternalId: { in: meetingIds },
           },
-          block: { status: 'canonical', tenantId },
+          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
         },
         select: { blockId: true },
         take: 1000,
@@ -321,7 +328,7 @@ export class ChatV2RetrievalService {
       const entRows = await this.prisma.ideaBlockEntity.findMany({
         where: {
           entityId: { in: candidateEntityIds },
-          block: { status: 'canonical', tenantId },
+          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
         },
         select: { blockId: true },
         take: 1000,
@@ -339,12 +346,13 @@ export class ChatV2RetrievalService {
   private async poolByTheme(
     tenantId: string,
     themeId: string,
+    accessWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rows = await this.prisma.themeIdeaBlock.findMany({
       where: {
         themeId,
         theme: { tenantId, status: 'active' },
-        block: { status: 'canonical', tenantId },
+        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
       },
       select: { blockId: true },
       take: 1000,
@@ -359,6 +367,7 @@ export class ChatV2RetrievalService {
   private async poolByEntity(
     tenantId: string,
     entityId: string,
+    accessWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     // Проверим, что Entity принадлежит тенанту.
     const ent = await this.prisma.entity.findUnique({
@@ -370,7 +379,7 @@ export class ChatV2RetrievalService {
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         entityId,
-        block: { status: 'canonical', tenantId },
+        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
       },
       select: { blockId: true },
       take: 1000,
@@ -457,6 +466,7 @@ export class ChatV2RetrievalService {
     knownIds: Set<string>;
     extraLimit: number;
     validAt: Date | null;
+    accessWhere?: Record<string, unknown>;
   }): Promise<RankedBlockId[]> {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
@@ -536,6 +546,7 @@ export class ChatV2RetrievalService {
         tenantId,
         status: 'canonical',
         ...(validAt ? { createdAt: { lte: validAt } } : {}),
+        ...(args.accessWhere ?? {}),
       },
       select: { id: true },
     });

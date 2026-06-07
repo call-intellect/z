@@ -32,6 +32,7 @@ import {
   SIGNAL_TYPE_VALUES,
 } from '../prompts/block-ingest.prompt';
 import { AxisClassifierService } from '../services/axis-classifier.service';
+import { BlockAccessDeriverService } from '../services/block-access-deriver.service';
 import {
   BlockExtractionService,
   type ExtractedBlock,
@@ -203,6 +204,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(AxisClassifierService)
     private readonly axisClassifier: AxisClassifierService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // Ф3 (knowledge-access) — детерминированный вывод групп доступа блока.
+    @Inject(BlockAccessDeriverService)
+    private readonly blockAccessDeriver: BlockAccessDeriverService,
   ) {}
 
   onModuleInit(): void {
@@ -261,8 +265,15 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const payload = await this.loadPayload(event);
       const segments = this.segments.buildSegments(payload);
-      // Фаза 1.2 — автор текстовых каналов (free_note/in_app): payload.userId.
-      const authorUserId = this.tryGetAuthorUserId(payload);
+      // Ф1 (knowledge-access) — per-adapter identity автора события
+      // (tracker/chatbox/dump/free_note/email). Заменяет узкий tryGetAuthorUserId.
+      const authorIdentity = this.tryGetActorIdentity(payload);
+      // Ф1 — флаг расширенной привязки автора на ВСЕ signalType (code-fallback true).
+      const subjectAllTypes = await this.cfg.getDynamic<boolean>(
+        'knowledge.subjectAttributionAllTypes',
+        undefined,
+        true,
+      );
       const meetingTitle = this.tryGetMeetingTitle(payload);
       const extraction = await this.extractor.extractFull({
         tenantId: event.tenantId,
@@ -340,7 +351,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           roleRelevant: block.role_relevant && roleId !== null,
           roleId,
           segments,
-          authorUserId,
+          authorUserId: authorIdentity.authorUserId,
+          authorPersonId: authorIdentity.authorPersonId,
+          authorEmail: authorIdentity.authorEmail,
+          subjectAllTypes,
         });
         if (blockId) {
           blockIds.push(blockId);
@@ -700,6 +714,26 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
               'block-ingest: AxisClassifier.classify упал — продолжаем без axis-меток',
             );
           });
+
+        // Ф3 knowledge-access — детерминированный вывод групп доступа блока
+        // (department из домена/участников/автора + closed из типа/флага встречи).
+        // Пишется ВСЕГДА (не за enforcement) — данные готовы к будущему enforce.
+        // best-effort: ошибка не валит ingest. ВАЖНО: после classify — чтобы
+        // functional-axis-метки уже были записаны (department-путь читает их).
+        await this.blockAccessDeriver
+          .deriveForBlock({
+            tenantId: event.tenantId,
+            blockId,
+            sourceType: event.sourceType,
+            sourceExternalId: event.sourceExternalId ?? '',
+            payload,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              { blockId, err: err instanceof Error ? err.message : String(err) },
+              'block-ingest: deriveBlockAccess упал — продолжаем без групп доступа',
+            );
+          });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -751,6 +785,65 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (typeof payload !== 'object' || payload === null) return null;
     const v = (payload as { userId?: unknown }).userId;
     return typeof v === 'string' && v.trim().length > 0 ? v : null;
+  }
+
+  /**
+   * Ф1 (knowledge-access) — извлечение identity АВТОРА события из payload для
+   * детерминированной subject-атрибуции на ВСЕ типы знания. Per-adapter формы:
+   *   - tracker:   payload.actor.userId   → authorUserId
+   *   - chatbox:   payload.responsible.personId (linkedPersonId менеджера) → authorPersonId
+   *   - dump/text: payload.uploaderId (Person.id) → authorPersonId
+   *   - free_note/in_app: payload.userId (User.id) → authorUserId (как раньше)
+   *   - email:     payload.from.address (почта) → authorEmail
+   * Возвращает все три поля (null если не найдено). Резолв в Person/Entity —
+   * EntityResolutionService.resolveSubjectEntityId (best-effort).
+   */
+  private tryGetActorIdentity(payload: unknown): {
+    authorUserId: string | null;
+    authorPersonId: string | null;
+    authorEmail: string | null;
+  } {
+    const empty = {
+      authorUserId: null,
+      authorPersonId: null,
+      authorEmail: null,
+    };
+    if (typeof payload !== 'object' || payload === null) return empty;
+    const p = payload as Record<string, unknown>;
+
+    // tracker — actor.userId
+    const actor = p['actor'];
+    if (actor && typeof actor === 'object') {
+      const uid = (actor as { userId?: unknown }).userId;
+      if (typeof uid === 'string' && uid.trim().length > 0) {
+        return { ...empty, authorUserId: uid };
+      }
+    }
+    // chatbox — responsible.personId (linkedPersonId)
+    const resp = p['responsible'];
+    if (resp && typeof resp === 'object') {
+      const pid = (resp as { personId?: unknown }).personId;
+      if (typeof pid === 'string' && pid.trim().length > 0) {
+        return { ...empty, authorPersonId: pid };
+      }
+    }
+    // dump/text — uploaderId (Person.id)
+    const uploaderId = p['uploaderId'];
+    if (typeof uploaderId === 'string' && uploaderId.trim().length > 0) {
+      return { ...empty, authorPersonId: uploaderId };
+    }
+    // free_note/in_app — userId (как было)
+    const userId = this.tryGetAuthorUserId(payload);
+    if (userId) return { ...empty, authorUserId: userId };
+    // email — from.address
+    const from = p['from'];
+    if (from && typeof from === 'object') {
+      const addr = (from as { address?: unknown }).address;
+      if (typeof addr === 'string' && addr.includes('@')) {
+        return { ...empty, authorEmail: addr };
+      }
+    }
+    return empty;
   }
 
   /**
@@ -847,6 +940,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     roleId: string | null;
     segments: Segment[];
     authorUserId: string | null;
+    authorPersonId?: string | null;
+    authorEmail?: string | null;
+    subjectAllTypes?: boolean;
   }): Promise<string | null> {
     const { event, block, embedding, roleRelevant, roleId } = args;
     try {
@@ -973,6 +1069,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           blockId,
           segments: args.segments,
           authorUserId: args.authorUserId,
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
         }).catch((err) => {
           this.logger.warn(
             {
@@ -988,13 +1086,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // блоков-рассуждений. Best-effort: ошибка/выключенный kill-switch не
       // валит persist основного блока. LLM-промпт НЕ трогается — атрибуция
       // идёт по identity сегмента (meeting) / payload.userId (text).
-      if (blockId && REASONING_SUBJECT_SIGNAL_TYPES.has(block.signalType)) {
+      if (
+        blockId &&
+        (args.subjectAllTypes === true ||
+          REASONING_SUBJECT_SIGNAL_TYPES.has(block.signalType))
+      ) {
         await this.attributeSubject({
           event,
           block,
           blockId,
           segments: args.segments,
           authorUserId: args.authorUserId,
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
         }).catch((err) => {
           this.logger.warn(
             {
@@ -1024,9 +1128,10 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
    * `IdeaBlockEntity.role='subject'` (БЕЗ LLM, prompt-cache сохранён).
    *
    * Источник identity:
+   *   - per-adapter (Ф1): authorPersonId (chatbox/dump) / authorEmail (email) /
+   *     authorUserId (tracker/free_note) — из `tryGetActorIdentity`.
    *   - meeting: сегмент, перекрывающий evidence по времени, даёт
    *     `speakerParticipantId` (+ `speakers[0]` как fallback-имя).
-   *   - text (free_note/in_app): `authorUserId` (`payload.userId`).
    *
    * `resolveSubjectEntityId` лениво создаёт person-Entity и возвращает его id.
    * upsert по композитному PK `@@id([blockId,entityId])` — апгрейд связи
@@ -1041,6 +1146,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     blockId: string;
     segments: Segment[];
     authorUserId: string | null;
+    authorPersonId?: string | null;
+    authorEmail?: string | null;
   }): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'knowledge.subjectAttributionEnabled',
@@ -1065,11 +1172,32 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     const subjectEntityId = await this.entities.resolveSubjectEntityId(
       args.event.tenantId,
       {
+        authorPersonId: args.authorPersonId ?? null,
+        authorEmail: args.authorEmail ?? null,
         speakerParticipantId,
         speakerName,
         authorUserId: args.authorUserId,
       },
     );
+
+    // Ф1 — метрика доли субъект-атрибуций по источнику identity. Считается и при
+    // null-результате (via='none'), но ПОСЛЕ kill-switch (выключенная атрибуция
+    // не считается). via — по приоритету фактически присутствующего источника.
+    const via: string = subjectEntityId
+      ? args.authorPersonId
+        ? 'personId'
+        : args.authorUserId
+          ? 'userId'
+          : args.authorEmail
+            ? 'email'
+            : speakerParticipantId
+              ? 'participant'
+              : speakerName
+                ? 'name'
+                : 'none'
+      : 'none';
+    this.metrics.incSubjectAttribution({ via });
+
     if (!subjectEntityId) return;
 
     await this.prisma.ideaBlockEntity.upsert({
@@ -1115,6 +1243,8 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     blockId: string;
     segments: Segment[];
     authorUserId: string | null;
+    authorPersonId?: string | null;
+    authorEmail?: string | null;
   }): Promise<void> {
     const enabled = await this.cfg.getDynamic<boolean>(
       'knowledge.commitmentAuthorAttributionEnabled',
@@ -1135,7 +1265,13 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
 
     const authorPersonId = await this.entities.resolveSubjectPersonId(
       args.event.tenantId,
-      { speakerParticipantId, speakerName, authorUserId: args.authorUserId },
+      {
+        speakerParticipantId,
+        speakerName,
+        authorUserId: args.authorUserId,
+        authorPersonId: args.authorPersonId ?? null,
+        authorEmail: args.authorEmail ?? null,
+      },
     );
     if (!authorPersonId) return;
 

@@ -74,12 +74,20 @@ function makeService(args: {
     fetchCandidates: vi.fn(),
   } as unknown as ChatV2RetrievalService;
 
+  // Ф4 — accessResolver обязателен в конструкторе. Здесь null-ctx гейт не
+  // используется (loadContradictingBlocks зовётся с accessCtx=null), поэтому
+  // достаточно stub без реальных методов.
+  const accessResolver = {
+    partitionBlockIdsByAccess: vi.fn(),
+  } as unknown as import('../../rbac/knowledge-access-resolver.service').KnowledgeAccessResolver;
+
   const svc = new ChatV2Service(
     prisma,
     cfg,
     llm,
     retrieval,
     metrics,
+    accessResolver,
     // dataClassPolicy: undefined (optional)
     undefined,
     // reasoningChain: undefined (optional) — отдельный тест W3.2
@@ -139,9 +147,11 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
         loadContradictingBlocks: (
           t: string,
           b: typeof contextBlocks,
+          accessCtx: null,
+          enforcement: 'off',
         ) => Promise<unknown[]>;
       }
-    ).loadContradictingBlocks('org-1', contextBlocks);
+    ).loadContradictingBlocks('org-1', contextBlocks, null, 'off');
 
     expect(prisma.ideaBlockLinkFindMany).toHaveBeenCalledTimes(1);
     const linkCall = prisma.ideaBlockLinkFindMany.mock.calls[0]?.[0];
@@ -180,9 +190,11 @@ describe('ChatV2Service — counter-evidence (W3.3)', () => {
         loadContradictingBlocks: (
           t: string,
           b: typeof contextBlocks,
+          accessCtx: null,
+          enforcement: 'off',
         ) => Promise<unknown[]>;
       }
-    ).loadContradictingBlocks('org-1', contextBlocks);
+    ).loadContradictingBlocks('org-1', contextBlocks, null, 'off');
 
     expect(result).toEqual([]);
     expect(

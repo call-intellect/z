@@ -524,4 +524,56 @@ design; submit не шлёт флаг — угадывать имя нельзя
 после мержа chatBox. Решение владельца 2026-06-06: вкладку переименовать в
 «Чат комнаты», панель оставить.
 
+## Стабильность фронта + надёжность записи + арбитр (ТЗ-1/2/3, 2026-06-06)
+
+### Turbopack в prod-сборке Next 16 → ChunkLoadError при HTTP 200 + Vidstack не инициализируется
+
+Прод-сборка через Turbopack (`next build` без `--webpack`) в Next 16 давала
+`ChunkLoadError` у пользователей даже при **HTTP 200** на JS-чанк (несовпадение
+хеша/манифеста после деплоя — version skew). Параллельно web-компонент Vidstack
+(`@vidstack/react`) **не инициализировался** в части браузеров (плеер не
+появлялся). **Фикс (ТЗ-1):** прод-сборка переведена на **webpack**
+(`next build --webpack`), `deploymentId` зафиксирован из build-arg
+`DEPLOYMENT_VERSION`; плеер заменён на **нативный `<video>`** во всех 3 местах
+(`MeetingPlayer`/`ShareMeeting`/`ShareClip`), хук `use-video-player.ts`,
+зависимость `@vidstack/react` удалена. Anti-loop авто-reload при `ChunkLoadError`
+— по временно́му окну 10с (`src/lib/chunk-reload.ts`), иначе при битом чанке
+страница уходит в бесконечную перезагрузку.
+
+### Удаление зависимости из frontend `package.json` требует `bun install`
+
+Dockerfile фронта ставит зависимости с `--frozen-lockfile`. Если убрать пакет
+(напр. `@vidstack/react`) из `package.json`, но **не** перегенерировать `bun.lock`
+(`bun install`) — Docker-сборка падает на рассинхроне lock↔manifest. **Правило:**
+любое добавление/удаление dep в `frontend/package.json` → сразу `bun install` +
+коммит обновлённого `bun.lock`.
+
+### router считал «битый JSON = успех» (HTTP 200) и не пробовал secondary
+
+`LlmRouterService` принимал ответ primary-провайдера как успех по HTTP-статусу
+200, **не валидируя содержимое**. Битый/неполный JSON от арбитра графа считался
+успехом → secondary не пробовался → пара связей терялась молча. **Фикс (ТЗ-3):**
+router получил `validate`-callback; невалидный вывод → `LlmInvalidOutputError`
+→ падение на secondary. Метрика статуса `invalid_output`. **Правило:** для
+LLM-вызовов со структурным выводом всегда передавать `validate` — HTTP 200 ≠
+валидный результат.
+
+### entity-graph-арбитр был без ретрая (в отличие от block-linker)
+
+Два почти одинаковых арбитра графа разошлись по надёжности: `block-linker` парсил
+через `tryParseJson` + ретраил, а `entity-graph-builder` дёргал голый `JSON.parse`
+без ретрая. Один битый ответ LLM ронял пару связей молча. **Фикс (ТЗ-3):**
+entity-graph поднят до уровня block-linker (`tryParseJson` + ретрай ×2, метрики
+`kc_entity_graph_invalid_json_total`/`kc_entity_graph_fallback_none_total`).
+**Правило (класс):** нашёл два почти-дублёра одного механизма — выровняй
+надёжность обоих, не чини только тот, что упал.
+
+### `Recording` НЕ имеет `updatedAt`/`createdAt` — «возраст» считать по `Meeting.endedAt`
+
+Модель `Recording` (Prisma) не несёт временны́х меток `createdAt`/`updatedAt`.
+Для отбора «зависших» записей в reconcile-cron (`CompositeEgressReconcileCron`,
+ТЗ-2) возраст берётся по **`Meeting.endedAt`** (всегда проставляется при
+`room_finished`), а не по полю `Recording`. **Правило:** для «как давно» по записи
+— через связанную встречу, не по самой `Recording`.
+
 [[../index|← index]]

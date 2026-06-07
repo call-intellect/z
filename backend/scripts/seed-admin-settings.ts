@@ -270,6 +270,9 @@ function buildSettings(): SettingSeed[] {
     // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
     // Дефолт TRUE — атрибуция критична для skill/persona/clone-проекций.
     ['knowledge.subjectAttributionEnabled', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ENABLED', true), 'high', 'Kill-switch атрибуции авторства IdeaBlock (false = subject не проставляется)'],
+    // Ф1 (knowledge-access) — расширенная привязка автора на ВСЕ типы знания.
+    // Дефолт TRUE — who-ось должна быть непуста и для не-reasoning фактов.
+    ['knowledge.subjectAttributionAllTypes', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ALL_TYPES', true), 'high', 'Привязка автора (subject) на ВСЕ типы знания, не только reasoning (false = только reasoning-семейство)'],
     // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — поэтапная раскатка единой
     // видимой задачи из встречи. Дефолт FALSE — текущее поведение (Task создаётся,
     // потребители читают Task). true = из встречи рождается только tracker Issue;

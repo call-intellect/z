@@ -39,6 +39,12 @@ export class DeepSeekService {
   private readonly client: OpenAI;
   private readonly defaultModel: string;
   private readonly retryDelaysMs = [500, 1000, 2000];
+  /**
+   * ТЗ-3 Фаза 3 — модели, на которых прокси НЕ принял forced tool_choice
+   * (format-400). Память per-process: однажды откатив модель на 'auto', больше
+   * не форсим её до перезапуска. Заполняется guard'ом в `complete()`.
+   */
+  private readonly forceUnsupportedModels = new Set<string>();
 
   constructor(
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -55,7 +61,10 @@ export class DeepSeekService {
 
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model ?? this.defaultModel;
-    const { params, autoConvertedToolName } = this.buildParams(input, model);
+    const { params, autoConvertedToolName, usedForce } = this.buildParams(
+      input,
+      model,
+    );
 
     if (autoConvertedToolName) {
       this.metrics?.incDeepseekSchemaToToolConversion({ model });
@@ -70,6 +79,45 @@ export class DeepSeekService {
       );
     }
 
+    try {
+      return await this.sendWithRetry(params, model, autoConvertedToolName);
+    } catch (err) {
+      // ТЗ-3 Фаза 3 — guard-откат: forced tool_choice не принят прокси
+      // (format-400 / LlmFormatNotSupportedError) И мы его форсили → помечаем
+      // модель как unsupported, метрика + warn, пересобираем tool_choice='auto'
+      // и повторяем ОДИН раз. Не-format ошибки (network/500/таймаут уже
+      // отретраены внутри) сюда тоже долетают, но повтор делаем ТОЛЬКО на
+      // format-ошибку при usedForce.
+      if (usedForce && err instanceof LlmFormatNotSupportedError) {
+        this.forceUnsupportedModels.add(model);
+        this.metrics?.incLlmThinkingModelGuard?.({
+          kind: 'tool-choice-relaxed',
+          model,
+        });
+        this.logger.warn(
+          `DeepSeek: forced tool_choice не принят прокси — откат на 'auto', model=${model}: ${errMsg(err)}`,
+        );
+        // Новый объект params (не мутируем исходный — он уже отправлен первым
+        // вызовом): меняем только tool_choice на 'auto', tools остаются.
+        const relaxedParams = { ...params, tool_choice: 'auto' };
+        return this.sendWithRetry(relaxedParams, model, autoConvertedToolName);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Один логический вызов прокси с retry [500,1000,2000]ms на 429/5xx.
+   * Format-400 (response_format / json_schema / tool_choice / function) →
+   * `LlmFormatNotSupportedError` (router трактует как retriable-переключение
+   * провайдера; `complete()` использует его для guard-отката forced tool_choice).
+   * Прочие ошибки после исчерпания retry → `LlmError`.
+   */
+  private async sendWithRetry(
+    params: Record<string, unknown>,
+    model: string,
+    autoConvertedToolName: string | undefined,
+  ): Promise<LlmCompleteOutput> {
     let lastErr: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
       try {
@@ -107,7 +155,11 @@ export class DeepSeekService {
   private buildParams(
     input: LlmCompleteInput,
     model: string,
-  ): { params: Record<string, unknown>; autoConvertedToolName?: string } {
+  ): {
+    params: Record<string, unknown>;
+    autoConvertedToolName?: string;
+    usedForce: boolean;
+  } {
     // T7-F3: LlmUserInput может быть string или {text, cacheControl?}. DeepSeek
     // не поддерживает Anthropic-style cache_control, поэтому распаковываем в
     // строку и полагаемся на их автоматический prompt caching (см.
@@ -144,6 +196,7 @@ export class DeepSeekService {
     const autoConvert = fmt?.type === 'json_schema' && !callerHasTools;
 
     let autoConvertedToolName: string | undefined;
+    let usedForce = false;
 
     if (autoConvert && fmt?.type === 'json_schema') {
       autoConvertedToolName = `submit_${fmt.name}`;
@@ -157,7 +210,19 @@ export class DeepSeekService {
           },
         },
       ];
-      params['tool_choice'] = 'auto';
+      // ТЗ-3 Фаза 3 — за флагом форсим вызов synthetic-tool вместо 'auto', чтобы
+      // не-thinking flash возвращал структуру, а не прозу. Thinking-модели НЕ
+      // форсим (они 400'ят на forced tool_choice). Если модель уже 400'нула на
+      // форс ранее — не форсим её до перезапуска (forceUnsupportedModels).
+      // Флаг OFF (дефолт) → 'auto' = текущее поведение без изменений.
+      const canForce =
+        this.cfg.ai.deepseek.forceToolChoiceEnabled &&
+        !isThinking &&
+        !this.forceUnsupportedModels.has(model);
+      usedForce = canForce;
+      params['tool_choice'] = canForce
+        ? { type: 'function', function: { name: autoConvertedToolName } }
+        : 'auto';
       // Подмешиваем hint, иначе модель может ответить свободным текстом.
       const lastMsg = messages[messages.length - 1];
       if (lastMsg && lastMsg.role === 'user') {
@@ -217,7 +282,7 @@ export class DeepSeekService {
     if (input.reasoningEffort && isThinking) {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
-    return { params, autoConvertedToolName };
+    return { params, autoConvertedToolName, usedForce };
   }
 
   /**
@@ -308,7 +373,12 @@ export class DeepSeekService {
     return (
       msg.includes('response_format') ||
       msg.includes('json_schema') ||
-      msg.includes('schema')
+      msg.includes('schema') ||
+      // ТЗ-3 Фаза 3 — forced tool_choice ({type:'function'}) тоже формат-ошибка
+      // прокси: классифицируем как LlmFormatNotSupportedError, чтобы guard в
+      // complete() мог откатить на 'auto' (и router — переключить провайдера).
+      msg.includes('tool_choice') ||
+      msg.includes('function')
     );
   }
 }

@@ -41,6 +41,7 @@ describe('KnowledgeSnapshotController', () => {
     const res = await ctrl.snapshot(query, userA, 't-A');
     expect(svc.getSnapshot).toHaveBeenCalledWith({
       tenantId: 't-A',
+      userId: 'u-A',
       at: new Date(AT),
       entityId: undefined,
       signalTypes: undefined,

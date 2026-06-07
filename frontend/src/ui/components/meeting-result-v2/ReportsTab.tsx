@@ -35,6 +35,7 @@ import {
   isEmptyStructuredValue,
   StructuredFieldValue,
 } from './structured-report';
+import { ReportActions } from './ReportActions';
 
 export type ReportsTabProps = {
   meetingId: string;
@@ -492,7 +493,12 @@ function ReportDetailDialog({
           <ReportOutputRenderer output={data.output} />
         </div>
       )}
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        {data ? (
+          <ReportActions output={data.output} title={data.templateName} />
+        ) : (
+          <span />
+        )}
         <Button variant="secondary" onClick={onClose}>
           Закрыть
         </Button>

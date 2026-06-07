@@ -7,6 +7,7 @@ import { S3Service } from '../recordings/s3.service';
 
 import { SearchService } from './api/search.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
+import { BlockAccessDeriverService } from './services/block-access-deriver.service';
 import { BlockExtractionService } from './services/block-extraction.service';
 import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetch.service';
 import { BlockLinkService } from './services/block-link.service';
@@ -141,6 +142,10 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     RouterService,
     // SBA α-3 wave 3: AxisClassifierService — fan-out IdeaBlock по 4 осям.
     AxisClassifierService,
+    // Ф3 (knowledge-access, 2026-06-06): BlockAccessDeriverService —
+    // детерминированный вывод групп доступа блока (IdeaBlockAccess) при ingest.
+    // Воркер (BlockIngestWorker, WorkersModule) и backfill инжектят этот сервис.
+    BlockAccessDeriverService,
     // SBA α-6: Specialist34ProbeService — probe-events специалиста 3.4.
     Specialist34ProbeService,
     // SBA α-7: Specialist31Service — extraction/dedupe/triage для регламентов
@@ -280,6 +285,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // SBA α-3 wave 3: экспортируем AxisClassifierService — block-ingest worker
     // дёргает его сразу после router.dispatch.
     AxisClassifierService,
+    // Ф3 (knowledge-access): экспортируем — BlockIngestWorker (WorkersModule) и
+    // backfill-block-access.ts инжектят BlockAccessDeriverService.
+    BlockAccessDeriverService,
     // SBA α-6: экспортируем для CardSpecialistRegistry-регистрации и тестов.
     Specialist34ProbeService,
     // SBA α-7: экспортируем для Worker'а и тестов.

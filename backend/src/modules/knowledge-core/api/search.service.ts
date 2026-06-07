@@ -2,7 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  KnowledgeAccessResolver,
+  type KnowledgeAccessContext,
+} from '../../rbac/knowledge-access-resolver.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 
 import type {
@@ -58,12 +63,29 @@ export class SearchService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
+    // Ф4 (knowledge-access) — гейт доступа в /search. RbacModule @Global.
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   async search(
-    args: SearchRequestDto & { tenantId: string },
+    args: SearchRequestDto & { tenantId: string; userId?: string },
   ): Promise<SearchResultsDto> {
     const startedAt = Date.now();
+
+    // Ф4 knowledge-access — режим гейта. off → ctx=null (поведение неизменно).
+    // userId опционален для обратной совместимости тестов — без него гейт не
+    // активируется (нельзя резолвить группы анонимного запроса).
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off' && args.userId
+        ? await this.accessResolver.resolveAccessibleGroups({
+            tenantId: args.tenantId,
+            userId: args.userId,
+          })
+        : null;
 
     let qvec: number[] | null = null;
     try {
@@ -95,6 +117,8 @@ export class SearchService {
       dateTo: args.dateTo ?? null,
       limit: args.limit,
       bitemporalActiveOnly,
+      accessCtx,
+      enforcement: enf,
     });
 
     if (rows.length === 0) {
@@ -102,6 +126,17 @@ export class SearchService {
     }
 
     const blockIds = rows.map((r) => r.id);
+
+    // Ф4 knowledge-access — shadow: считаем, сколько блоков было бы
+    // отфильтровано (выдачу НЕ меняем). enforce фильтрует уже на уровне SQL
+    // (runHybridQuery), bypass → ничего не считаем.
+    if (enf === 'shadow' && accessCtx && !accessCtx.isBypass) {
+      const { denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockIds,
+      );
+      this.metrics.incAccessShadowDiff({ surface: 'search' }, denied);
+    }
     const [evidenceMap, entitiesMap] = await Promise.all([
       this.loadEvidence(blockIds),
       this.loadEntities(blockIds),
@@ -141,6 +176,10 @@ export class SearchService {
     limit: number;
     /** KC-Temporal W1.1 — отфильтровать активные на «сейчас» (validUntil IS NULL). */
     bitemporalActiveOnly?: boolean;
+    /** Ф4 (knowledge-access) — контекст групп пользователя (null при off / нет userId). */
+    accessCtx: KnowledgeAccessContext | null;
+    /** Ф4 (knowledge-access) — режим гейта. */
+    enforcement: 'off' | 'shadow' | 'enforce';
   }): Promise<RawSearchRow[]> {
     const params: unknown[] = [];
     const pushParam = (v: unknown): string => {
@@ -198,6 +237,23 @@ export class SearchService {
       filters.push(
         `EXISTS (SELECT 1 FROM "IdeaBlockEvidence" ev WHERE ev."blockId" = b.id AND ${parts.join(' AND ')})`,
       );
+    }
+
+    // Ф4 (knowledge-access) — enforce: добавляем SQL-предикат доступа (алиас
+    // блока в этом запросе — `b`, как требует buildAccessSqlPredicate). pred
+    // начинается с " AND ..."; оборачиваем `(1=1 ${pred})`, чтобы корректно
+    // встать в общий join(' AND ') как одно условие. Полный скан (ORDER BY
+    // combined_score) → точный фильтр НЕ роняет recall (iterative_scan не нужен).
+    if (
+      args.enforcement === 'enforce' &&
+      args.accessCtx &&
+      !args.accessCtx.isBypass
+    ) {
+      const pred = this.accessResolver.buildAccessSqlPredicate(
+        args.accessCtx,
+        pushParam,
+      );
+      if (pred) filters.push(`(1=1 ${pred})`);
     }
 
     const pLimit = pushParam(args.limit);

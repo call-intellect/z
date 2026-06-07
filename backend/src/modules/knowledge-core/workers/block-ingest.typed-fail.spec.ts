@@ -103,6 +103,7 @@ function buildWorkerWithMetrics() {
     metrics as any, // metrics
     {} as any, // axisClassifier
     {} as any, // cfg
+    {} as any, // blockAccessDeriver (Ф3 — не дёргается в warnTypedFail)
   );
   return { worker, metrics };
 }

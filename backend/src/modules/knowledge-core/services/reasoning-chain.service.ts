@@ -90,6 +90,7 @@ export class ReasoningChainService {
   async buildChain(
     blockId: string,
     maxDepth = 3,
+    accessWhere?: Record<string, unknown>,
   ): Promise<ReasoningChain> {
     const depthLimit = Math.max(0, Math.min(3, maxDepth));
 
@@ -183,11 +184,16 @@ export class ReasoningChainService {
       if (newNeighbours.size === 0) break;
 
       // Подгружаем самих новых соседей.
+      // Ф4 knowledge-access — при enforce caller передаёт accessWhere
+      // (buildAccessWhere): BFS не подгружает недоступные блоки (R11 — граф
+      // reasoning не протаскивает закрытого). off/shadow → accessWhere
+      // undefined → `...({})` ничего не меняет (байт-в-байт).
       const neighbourBlocks = await this.prisma.ideaBlock.findMany({
         where: {
           id: { in: [...newNeighbours] },
           tenantId,
           status: 'canonical',
+          ...(accessWhere ?? {}),
         },
         select: {
           id: true,

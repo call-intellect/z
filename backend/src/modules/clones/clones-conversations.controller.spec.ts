@@ -177,6 +177,8 @@ function buildService(opts: {
   } as unknown as TypedConfigService;
 
   // Остальные зависимости — undefined; метод их не трогает.
+  // Порядок: prisma, aiChatQuota, cfg, llm, metrics, personaBuilder,
+  // personaVersioning, rbac, accessResolver (Ф5), embedder, dialog.
   const svc = new ClonesService(
     prisma,
     undefined as never,
@@ -186,6 +188,7 @@ function buildService(opts: {
     undefined as never,
     undefined as never,
     rbac,
+    undefined as never,
     undefined as never,
     undefined as never,
   );

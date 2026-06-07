@@ -171,6 +171,9 @@ export class MeetingTypesAdminService {
             displayName: id,
             isActive: true,
             sortOrder: order++,
+            // Ф8 knowledge-access — дефолт закрытости по типу: найм (interview)
+            // → «личный сейф» (personal); остальные типы открыты (null).
+            defaultClosedGroupKind: id === 'interview' ? 'personal' : null,
           },
           update: {},
         });

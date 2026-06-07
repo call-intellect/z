@@ -29,6 +29,7 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── integrations ────────────────────────────────────────────────────
   private crossmarkApiRequestsTotal!: Counter<'endpoint' | 'status'>;
   private livekitWebhookEventsTotal!: Counter<'type'>;
+  private livekitEgressEndedGapSeconds!: Histogram<'request_type'>;
 
   // ── llm fallback ────────────────────────────────────────────────────
   private llmFallbackTotal!: Counter<'provider'>;
@@ -45,6 +46,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── block-linker fallback на none (молчаливая деградация графа) ──────
   private kcBlockLinkerFallbackNoneTotal!: Counter<'reason'>;
   private kcBlockLinkerInvalidJsonTotal!: Counter<'reason'>;
+
+  // ── entity-graph fallback на none (молчаливая деградация графа) ──────
+  private kcEntityGraphInvalidJsonTotal!: Counter<'reason'>;
+  private kcEntityGraphFallbackNoneTotal!: Counter<'reason'>;
 
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
@@ -389,6 +394,13 @@ export class BusinessMetricsService implements OnModuleInit {
   // 'validation_error' / 'idempotent_skip' (P2002 гонка concurrency — норма) /
   // 'other'. Раньше любой провал глушился warn'ом без метрики.
   private kcTypedEntityFailedTotal!: Counter<'type' | 'reason'>;
+  // Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания
+  // по источнику identity (via). Покрывает ВСЕ типы знания (не только reasoning).
+  private kcSubjectAttributionTotal!: Counter<'via'>;
+  // Ф4 (knowledge-access) — гейт доступа к знаниям. shadow: сколько блоков
+  // было бы отфильтровано (сверка перед enforce); enforce: сколько исключено.
+  private kcAccessShadowDiffTotal!: Counter<'surface'>;
+  private kcAccessDeniedTotal!: Counter<'surface'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -1002,6 +1014,13 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['type'] as const,
     });
 
+    this.livekitEgressEndedGapSeconds = this.getOrCreateHistogram({
+      name: 'livekit_egress_ended_gap_seconds',
+      help: 'Задержка между room_finished и egress_ended (доставка egress-вебхука)',
+      labelNames: ['request_type'] as const,
+      buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1200],
+    });
+
     this.llmRouterDispatchTotal = this.getOrCreateCounter({
       name: 'llm_router_dispatch_total',
       help: 'Диспетчеризация задач по провайдерам в LlmRouter (status: success/fallback/failed).',
@@ -1029,6 +1048,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.kcBlockLinkerInvalidJsonTotal = this.getOrCreateCounter({
       name: 'kc_block_linker_invalid_json_total',
       help: 'block-linker: невалидный ответ арбитра на попытке (reason=parse — не распарсился JSON-вердикт; reason=llm_error — вызов LLM упал). Доля растёт → проблема с моделью/форматом; терминальные потери — в kc_block_linker_fallback_none_total.',
+      labelNames: ['reason'] as const,
+    });
+
+    this.kcEntityGraphInvalidJsonTotal = this.getOrCreateCounter({
+      name: 'kc_entity_graph_invalid_json_total',
+      help: 'entity-graph: невалидный ответ LLM-арбитра на попытке (reason=parse — не распарсился JSON; reason=llm_error — вызов LLM упал). Терминальные потери — в kc_entity_graph_fallback_none_total.',
+      labelNames: ['reason'] as const,
+    });
+
+    this.kcEntityGraphFallbackNoneTotal = this.getOrCreateCounter({
+      name: 'kc_entity_graph_fallback_none_total',
+      help: 'entity-graph не смог распарсить вердикт арбитра после ретраев → связь сущностей не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
       labelNames: ['reason'] as const,
     });
 
@@ -1938,6 +1969,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_typed_entity_failed_total',
       help: 'Ф5 МТЗ — провалы записи типизированной сущности группы Б в block-ingest (type × reason). type: process/regulation/policy/tool/metric/decision. reason: age_unavailable (системный отказ графа) / validation_error / idempotent_skip (P2002 гонка — норма) / other. age_unavailable блокирует пометку RawEvent ingested → failed+ретрай.',
       labelNames: ['type', 'reason'] as const,
+    });
+    // Ф1 (knowledge-access) — субъект-атрибуция автора знания по источнику identity.
+    this.kcSubjectAttributionTotal = this.getOrCreateCounter({
+      name: 'kc_subject_attribution_total',
+      help: 'Ф1 (knowledge-access) — детерминированная subject-атрибуция автора знания по источнику identity. via: participant (speakerParticipantId) / userId / personId / email / name (fuzzy) / none (автор не определён).',
+      labelNames: ['via'] as const,
+    });
+    // Ф4 (knowledge-access) — гейт доступа к знаниям (shadow / enforce).
+    this.kcAccessShadowDiffTotal = this.getOrCreateCounter({
+      name: 'kc_access_shadow_diff_total',
+      help: 'Ф4 knowledge-access — в shadow-режиме: сколько блоков было бы отфильтровано гейтом доступа (по поверхности). Сверка перед переводом в enforce.',
+      labelNames: ['surface'] as const,
+    });
+    this.kcAccessDeniedTotal = this.getOrCreateCounter({
+      name: 'kc_access_denied_total',
+      help: 'Ф4 knowledge-access — в enforce-режиме: сколько блоков исключено гейтом доступа (по поверхности).',
+      labelNames: ['surface'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -3494,6 +3542,16 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   /**
+   * Histogram `livekit_egress_ended_gap_seconds{request_type}` — задержка между
+   * `room_finished` (Meeting.endedAt) и `egress_ended`. Наблюдение за доставкой
+   * egress-вебхука; гэп растёт → egress-вебхук задерживается/теряется.
+   */
+  observeEgressEndedGap(requestType: string, gapSeconds: number): void {
+    if (gapSeconds >= 0)
+      this.livekitEgressEndedGapSeconds.observe({ request_type: requestType }, gapSeconds);
+  }
+
+  /**
    * Goals OKR v2 Фаза 3 — попытка авто-пересчёта currentValue одного KR.
    *   status='ok'        — значение изменилось, checkpoint записан;
    *   status='unchanged' — значение не изменилось (no-op);
@@ -3530,14 +3588,16 @@ export class BusinessMetricsService implements OnModuleInit {
 
   /**
    * Диспетчеризация задачи в LlmRouter.
-   *   status='success'  — провайдер вернул валидный ответ.
-   *   status='fallback' — провайдер упал, перешли к следующему.
-   *   status='failed'   — все провайдеры упали.
+   *   status='success'        — провайдер вернул валидный ответ.
+   *   status='fallback'       — провайдер упал, перешли к следующему.
+   *   status='failed'         — все провайдеры упали.
+   *   status='invalid_output' — ответ не прошёл caller-`validate` (ТЗ-3 Ф2);
+   *                             трактуется как retriable → следующий провайдер.
    */
   incLlmRouterDispatch(args: {
     taskType: string;
     provider: string;
-    status: 'success' | 'fallback' | 'failed';
+    status: 'success' | 'fallback' | 'failed' | 'invalid_output';
   }): void {
     this.llmRouterDispatchTotal.inc({
       task_type: args.taskType,
@@ -3662,6 +3722,25 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcBlockLinkerInvalidJson(args: { reason: string }): void {
     this.kcBlockLinkerInvalidJsonTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * entity-graph: невалидный ответ LLM-арбитра на отдельной попытке (до
+   * ретрая). reason=parse — JSON не распарсился; reason=llm_error — вызов LLM
+   * упал. Терминальные потери (после исчерпания ретраев) —
+   * в kc_entity_graph_fallback_none_total.
+   */
+  incKcEntityGraphInvalidJson(args: { reason: string }): void {
+    this.kcEntityGraphInvalidJsonTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * entity-graph не смог распарсить вердикт LLM-арбитра после ретраев →
+   * связь между сущностями не создана (молчаливая деградация графа знаний).
+   * Должно быть = 0; > 0 → проверь модель/формат ответа арбитра.
+   */
+  incKcEntityGraphFallbackNone(args: { reason: string }): void {
+    this.kcEntityGraphFallbackNoneTotal.inc({ reason: args.reason });
   }
 
   /**
@@ -4759,6 +4838,30 @@ export class BusinessMetricsService implements OnModuleInit {
       type: args.type,
       reason: args.reason,
     });
+  }
+
+  /**
+   * Ф1 (knowledge-access) — инкремент субъект-атрибуции автора знания.
+   * via ∈ participant | userId | personId | email | name | none.
+   */
+  incSubjectAttribution(args: { via: string }): void {
+    this.kcSubjectAttributionTotal.inc({ via: args.via });
+  }
+
+  /**
+   * Ф4 (knowledge-access) — shadow-режим: сколько блоков было бы отфильтровано
+   * гейтом доступа (по поверхности). Сверка перед переводом в enforce.
+   */
+  incAccessShadowDiff(args: { surface: string }, count = 1): void {
+    if (count > 0) this.kcAccessShadowDiffTotal.inc({ surface: args.surface }, count);
+  }
+
+  /**
+   * Ф4 (knowledge-access) — enforce-режим: сколько блоков исключено гейтом
+   * доступа (по поверхности).
+   */
+  incAccessDenied(args: { surface: string }, count = 1): void {
+    if (count > 0) this.kcAccessDeniedTotal.inc({ surface: args.surface }, count);
   }
 
   /**

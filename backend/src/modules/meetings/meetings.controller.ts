@@ -64,6 +64,15 @@ const UpdateParticipantSchema = z.object({
 type UpdateParticipantBody = z.infer<typeof UpdateParticipantSchema>;
 
 /**
+ * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — установка закрытости встречи
+ * постфактум. null = открыто; 'leadership' | 'council' | 'personal'.
+ */
+const SetClosedGroupSchema = z.object({
+  closedGroupKind: z.enum(['leadership', 'council', 'personal']).nullable(),
+});
+type SetClosedGroupBody = z.infer<typeof SetClosedGroupSchema>;
+
+/**
  * Cookie endpoints для встреч (для фронта).
  *
  *   GET /api/v1/meetings/:id/access — optional cookie. Возвращает роль,
@@ -144,6 +153,7 @@ export class MeetingsController {
         cardId: body.card_id ?? null,
         recordByDefault: body.record_by_default,
         invitees: body.invitees,
+        closedGroupKind: body.closed_group_kind ?? null,
       },
       user.id,
     );
@@ -360,6 +370,30 @@ export class MeetingsController {
       actorUserId: user.id,
     });
     return { id: updated.id, name: updated.name };
+  }
+
+  /**
+   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — пометить закрытость встречи
+   * постфактум (host-only). null = открыто; 'leadership' | 'council' |
+   * 'personal'. Читается на ingest (Ф3) для привязки блоков к закрытой группе.
+   *
+   *   - 403 `not_meeting_host` — actor не хост встречи (через `getForUser`);
+   *   - 404 `meeting_not_found` — встреча не найдена.
+   */
+  @Patch(':id/closed-group')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.OK)
+  async setClosedGroup(
+    @Param('id') meetingId: string,
+    @Body(new ZodValidationPipe(SetClosedGroupSchema)) body: SetClosedGroupBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ id: string; closedGroupKind: string | null }> {
+    const updated = await this.meetings.setClosedGroupKind(
+      meetingId,
+      body.closedGroupKind,
+      user.id,
+    );
+    return { id: updated.id, closedGroupKind: updated.closedGroupKind };
   }
 
   /**

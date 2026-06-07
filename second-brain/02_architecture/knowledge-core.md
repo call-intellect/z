@@ -689,5 +689,33 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 **Эффект.** Клоны (specialist-3-7 / ExecutablePersona), `router.hasEmployeeSubject`, WHO-ось `axis-classifier`, `card-rollup-v2` и дашборд-агенты впервые получают непустую `role:'subject'` выборку. Грабля зафиксирована в [[code-pitfalls]].
 
+## Устойчивость арбитра графа + router validate-fallback (ТЗ-3, 2026-06-06)
+
+**Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ветка `feature/prod-stability-2026-06-06`. Грабли — [[code-pitfalls]].
+
+Арбитр `entity-graph-builder` исторически был **слабее** `block-linker`: парсил ответ LLM голым `JSON.parse` без ретрая, и битый JSON ронял пару связей молча. Подняли до уровня block-linker:
+
+- **`tryParseJson` вместо `JSON.parse` + ретрай ×2** в `entity-graph` — устойчивый парс ответа арбитра. Метрики `kc_entity_graph_invalid_json_total`, `kc_entity_graph_fallback_none_total` (видимость вместо тихого пропуска).
+- **router `validate`-callback** — `LlmRouterService` получил колбэк валидации результата. Битый ответ primary-провайдера (HTTP 200 с мусором) больше **не считается успехом**: `validate` бросает `LlmInvalidOutputError` → router падает на **secondary**. Раньше мусорный 200 молча принимался, secondary не пробовался. Метрика статуса `invalid_output`.
+- **Forced `tool_choice`** для не-thinking deepseek за флагом `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF) — принудительный вызов tool вместо `'auto'` + guard-откат на `'auto'`, если модель не поддержала.
+
+Полный реестр изменений AI-пайплайна — [[../01_projects/ai-jobs]] §«Устойчивость JSON-арбитра графа».
+
+## Группы доступа к знаниям при ingest + расширение провенанса (knowledge-access, 2026-06-06)
+
+**Источник:** [`plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`](../../plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md). Полная модель доступа и резолвер — [[../01_projects/rbac-access-control]]; разведение с `dataClass` — [[security-and-152fz]] §6.
+
+### Привязка блок↔группа при ingest (`IdeaBlockAccess`, Ф3)
+После `AxisClassifier.classify` в `block-ingest.worker` шаг `deriveBlockAccess` (сервис [`BlockAccessDeriverService`](../../backend/src/modules/knowledge-core/services/block-access-deriver.service.ts)) детерминированно выводит группы блока и пишет `IdeaBlockAccess` (m:n, `via='department'|'closed'`):
+- **department** — из (а) functional-метки → `FunctionalDomain`→`DepartmentDomainLink`→`Department` и (б) отделов участников (`payload.participants[].userId/personId`→`Person.primaryDepartmentId`).
+- **closed** — из источника-события: `Meeting.closedGroupKind` / `MeetingTypeConfig.defaultClosedGroupKind` (`interview`→personal). Метка приходит в payload адаптера встречи.
+- Блок без домена/участников/closed → без access-строк = **открыт всей Org** (дефолт памяти). Историческое знание задним числом в closed НЕ переводится (бэкфилл `backfill-block-access.ts --departments` только проставляет department).
+
+### Субъект-атрибуция на ВСЕ типы знания (Ф1)
+Узкий гейт reasoning-семейства снят: `attributeSubject` вызывается для блоков **любого** `signalType` (флаг `AdminSetting knowledge.subjectAttributionAllTypes`, code-fallback `true`; master-выключатель `knowledge.subjectAttributionEnabled` сохранён). Добавлена per-adapter identity (tracker/chatbox/dump/email), метрика `kc_subject_attribution_total{via}`. Бэкфилл — `backfill-subject-attribution-all-types.ts`. Эффект: WHO-ось непуста и для не-reasoning, «что Иван говорил по факту» работает для клонов.
+
+### Выходной шлюз retrieval (Ф4)
+При `KNOWLEDGE_ACCESS_ENFORCEMENT='enforce'` финальный набор блоков фильтруется на **выходном шлюзе** `loadContextBlocks`/`loadContradictingBlocks` (chat-v2) + pre-filter в pool/SQL во всех поверхностях retrieval (chat/search/snapshot/graph/reasoning-chain/проекции/контекст клонов). Defense-in-depth: даже precomputed-путь и кэш перефильтровываются на шлюзе. При `off` выдача байт-в-байт текущая.
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

@@ -31,15 +31,22 @@ import { AiUsageLogService } from '../services/ai-usage-log.service';
 import { LlmFallbackService } from '../services/llm-fallback.service';
 import type { LlmCompleteOutput, LlmTool } from '../services/llm.types';
 import { calcCostUsd } from '../services/model-prices';
+import { OrgContextService } from '../services/org-context.service';
 import { PromptResolverService } from '../services/prompt-resolver.service';
 import type { ResolvedPrompt } from '../services/prompt-resolver.types';
 import {
   ROOM_CHAT_SYSTEM_NOTE,
   formatChatTime,
+  withAsrNote,
   withInjectionGuard,
+  withOrgContextNote,
   wrapUserData,
 } from '../services/prompts/common';
-import type { DialogTurn, RoomChatMessage } from '../services/prompts/common';
+import type {
+  DialogTurn,
+  OrgContextForPrompt,
+  RoomChatMessage,
+} from '../services/prompts/common';
 import {
   FOLLOW_UP_SCHEMA,
   FOLLOW_UP_TOOL,
@@ -125,6 +132,14 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
+    // ТЗ-4 Ф3 — компактный org-контекст (проекты/цели/сотрудники) для инъекции
+    // в SYSTEM summary + report-by-type (cache-friendly суффикс). @Optional:
+    // в старых unit-тестах analyze.worker сервис не передаётся — инъекция
+    // просто пропускается (no-op), поведение остаётся идентичным. В проде
+    // резолвится из @Global AiModule.
+    @Optional()
+    @Inject(OrgContextService)
+    private readonly orgContext?: OrgContextService,
   ) {}
 
   onModuleInit(): void {
@@ -533,7 +548,17 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     // ТЗ 2026-05-24 §4 (F1) — prompt-injection guard. При выключенном флаге
     // используем оригинальные system/user (rollback по §13).
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const systemText = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
+    // ТЗ-4 Ф3 — org-контекст компании (стабильный per-tenant блок) внутри
+    // ASR-обёртки, чтобы ASR-нота оставалась самым последним блоком system.
+    const orgCtx = await this.loadOrgContextSafe(args.meeting);
+    // ТЗ-4 Ф2 — ASR-нота дописывается СНАРУЖИ guard'а (самым последним блоком
+    // system), чтобы оставаться стабильным cache-friendly суффиксом.
+    const systemText = withAsrNote(
+      withOrgContextNote(
+        guardOn ? withInjectionGuard(prompt.system) : prompt.system,
+        orgCtx,
+      ),
+    );
     const userText = guardOn ? wrapUserData(prompt.user) : prompt.user;
     return this.callLlm({
       meeting: args.meeting,
@@ -689,7 +714,17 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     // СНАРУЖИ маркеров (это системное сообщение оркестратора, а не
     // пользовательские данные).
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const wrappedSystem = guardOn ? withInjectionGuard(systemText) : systemText;
+    // ТЗ-4 Ф3 — org-контекст компании грузим ОДИН раз (до retry-loop), внутри
+    // ASR-обёртки, чтобы ASR-нота оставалась самым последним блоком system.
+    const orgCtx = await this.loadOrgContextSafe(args.meeting);
+    // ТЗ-4 Ф2 — ASR-нота в ЕДИНОЙ точке: покрывает обе ветки (DB-resolved и
+    // code-built), дописывается СНАРУЖИ guard'а самым последним блоком system.
+    const wrappedSystem = withAsrNote(
+      withOrgContextNote(
+        guardOn ? withInjectionGuard(systemText) : systemText,
+        orgCtx,
+      ),
+    );
     const wrappedUserBase = guardOn ? wrapUserData(codeBuilt.user) : codeBuilt.user;
     for (let attempt = 0; attempt < 3; attempt++) {
       const userExtra =
@@ -728,6 +763,29 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         lastError instanceof Error ? lastError.message : String(lastError)
       }`,
     );
+  }
+
+  /**
+   * ТЗ-4 Ф3 — безопасная загрузка компактного org-контекста для инъекции в
+   * SYSTEM (summary / report-by-type). Никогда не бросает и не падает:
+   *   - сервис не подключён (старые unit-тесты) → пустой ctx (no-op);
+   *   - у встречи нет tenantId → пустой ctx (withOrgContextNote → no-op);
+   *   - ошибка БД → warn + пустой ctx (контекст — обогащение, не критичен).
+   * Загружается ОДИН раз на метод (не в retry-loop), чтобы не дёргать БД.
+   */
+  private async loadOrgContextSafe(meeting: Meeting): Promise<OrgContextForPrompt> {
+    if (!this.orgContext) return {};
+    const tenantId = (meeting as unknown as { tenantId?: string | null }).tenantId;
+    if (!tenantId) return {};
+    try {
+      return await this.orgContext.load(tenantId, meeting.startedAt ?? null);
+    } catch (e) {
+      this.logger.warn(
+        { meetingId: meeting.id, err: e instanceof Error ? e.message : String(e) },
+        'analyze: загрузка org-контекста упала — продолжаем без него (best-effort)',
+      );
+      return {};
+    }
   }
 
   /**
@@ -814,7 +872,12 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   ): Promise<T | null> {
     // ТЗ 2026-05-24 §4 (F1) — обернуть system + user; retry-suffix снаружи маркеров.
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const wrappedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
+    const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
+    // ТЗ-4 Ф2 — ASR-нота только для tasks (follow-up не извлекает факты из
+    // сырого ASR — ему нота не нужна). Дописывается СНАРУЖИ guard'а самым
+    // последним блоком system (cache-friendly).
+    const wrappedSystem =
+      agentType === 'tasks' ? withAsrNote(guardedSystem) : guardedSystem;
     const wrappedUser = guardOn ? wrapUserData(prompt.user) : prompt.user;
     for (let attempt = 0; attempt < 2; attempt++) {
       const out = await this.callLlm({

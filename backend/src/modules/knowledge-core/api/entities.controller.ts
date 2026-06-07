@@ -16,6 +16,8 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -26,6 +28,7 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurationService } from '../../curation/services/curation.service';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
 
 import {
@@ -77,6 +80,19 @@ export class KnowledgeEntitiesController {
     @Optional()
     @Inject(CurationService)
     private readonly curation: CurationService | null = null,
+    // Ф4 (knowledge-access) — гейт доступа в деталке/графе сущности.
+    // RbacModule/MetricsModule/Config @Global. @Optional, чтобы legacy-тесты,
+    // создающие контроллер позиционно (без этих сервисов), не падали —
+    // при null гейт не активируется (поведение = off).
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
   @Get('entities')
@@ -163,6 +179,9 @@ export class KnowledgeEntitiesController {
       });
     }
 
+    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
+    const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
+
     const entity = await this.prisma.entity.findUnique({ where: { id } });
     if (!entity || entity.tenantId !== tenantId) {
       throw new NotFoundException({
@@ -183,6 +202,23 @@ export class KnowledgeEntitiesController {
       take: 20,
     });
 
+    // Ф4 (knowledge-access) — post-filter блоков-упоминаний по группам.
+    let visibleMentionRows = mentionRows;
+    if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
+      const { accessible, denied } =
+        await this.accessResolver.partitionBlockIdsByAccess(
+          accessCtx,
+          mentionRows.map((r) => r.block.id),
+        );
+      if (enf === 'enforce') {
+        const allow = new Set(accessible);
+        visibleMentionRows = mentionRows.filter((r) => allow.has(r.block.id));
+        this.metrics.incAccessDenied({ surface: 'entities' }, denied);
+      } else {
+        this.metrics.incAccessShadowDiff({ surface: 'entities' }, denied);
+      }
+    }
+
     return {
       entity: {
         id: entity.id,
@@ -192,7 +228,9 @@ export class KnowledgeEntitiesController {
         mentionsCount: entity.mentionsCount,
         metadata: this.jsonObj(entity.metadata),
       },
-      blocks: mentionRows.map((r): BlockSearchItemDto => this.mapBlock(r.block)),
+      blocks: visibleMentionRows.map(
+        (r): BlockSearchItemDto => this.mapBlock(r.block),
+      ),
       ...(entity.mergedIntoId ? { mergedIntoId: entity.mergedIntoId } : {}),
     };
   }
@@ -362,6 +400,9 @@ export class KnowledgeEntitiesController {
       });
     }
 
+    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
+    const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
+
     const center = await this.prisma.entity.findUnique({
       where: { id },
       select: { id: true, type: true, canonicalName: true, tenantId: true },
@@ -507,6 +548,33 @@ export class KnowledgeEntitiesController {
       ]);
       const blockMap = new Map(blocks.map((b) => [b.id, b]));
 
+      // Ф4 (knowledge-access) — узлы графа — сущности, но КОНТЕНТ блоков утекает
+      // через edge.evidence[]. Партиционируем source-блоки по группам:
+      //   enforce — убираем недоступные из blockMap (их quote/name не попадут в
+      //     evidence) и копим denied-set, чтобы дропнуть рёбра, чьи ВСЕ source-
+      //     блоки недоступны (ребро целиком выведено из закрытого знания);
+      //   shadow — только метрика, выдачу не меняем.
+      const deniedBlockIds = new Set<string>();
+      if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
+        const { accessible, denied } =
+          await this.accessResolver.partitionBlockIdsByAccess(
+            accessCtx,
+            Array.from(allSourceBlockIds),
+          );
+        if (enf === 'enforce') {
+          const allow = new Set(accessible);
+          for (const id of allSourceBlockIds) {
+            if (!allow.has(id)) {
+              deniedBlockIds.add(id);
+              blockMap.delete(id);
+            }
+          }
+          this.metrics.incAccessDenied({ surface: 'entities' }, denied);
+        } else {
+          this.metrics.incAccessShadowDiff({ surface: 'entities' }, denied);
+        }
+      }
+
       for (const fe of fullEdges) {
         const edge = edgesById.get(fe.id);
         if (!edge) continue;
@@ -526,7 +594,32 @@ export class KnowledgeEntitiesController {
           if (evList.length >= ENTITY_GRAPH_EVIDENCE_PER_EDGE) break;
         }
         edge.evidence = evList;
+
+        // enforce — ребро, ВСЕ source-блоки которого недоступны, удаляем
+        // целиком (выведено только из закрытого знания). Рёбра с >=1 доступным
+        // блоком остаются с отфильтрованным evidence.
+        if (
+          enf === 'enforce' &&
+          deniedBlockIds.size > 0 &&
+          fe.sourceBlockIds.length > 0 &&
+          fe.sourceBlockIds.every((bid) => deniedBlockIds.has(bid))
+        ) {
+          edgesById.delete(fe.id);
+        }
       }
+    }
+
+    // Ф4 (knowledge-access) — после удаления рёбер дропаем осиротевшие узлы
+    // (сущности, оставшиеся без связей), кроме центра. Центр оставляем всегда.
+    let resultNodes = Array.from(nodesById.values());
+    const resultEdges = Array.from(edgesById.values());
+    if (enf === 'enforce' && accessCtx && !accessCtx.isBypass) {
+      const connected = new Set<string>([center.id]);
+      for (const e of resultEdges) {
+        connected.add(e.from);
+        connected.add(e.to);
+      }
+      resultNodes = resultNodes.filter((n) => connected.has(n.id));
     }
 
     return {
@@ -536,8 +629,8 @@ export class KnowledgeEntitiesController {
         entityType: center.type,
         name: center.canonicalName,
       },
-      nodes: Array.from(nodesById.values()),
-      edges: Array.from(edgesById.values()),
+      nodes: resultNodes,
+      edges: resultEdges,
       truncated,
     };
   }
@@ -650,6 +743,31 @@ export class KnowledgeEntitiesController {
       });
 
     return { ok: true, curationItemId, curationDecisionId };
+  }
+
+  /**
+   * Ф4 (knowledge-access) — резолв режима гейта + контекста групп пользователя.
+   * Если сервисы не подключены (legacy позиционные тесты) или флаг off —
+   * возвращает enf='off' + ctx=null (поведение байт-в-байт текущее).
+   */
+  private async resolveAccess(
+    tenantId: string,
+    userId: string,
+  ): Promise<{
+    enf: 'off' | 'shadow' | 'enforce';
+    accessCtx: Awaited<
+      ReturnType<KnowledgeAccessResolver['resolveAccessibleGroups']>
+    > | null;
+  }> {
+    if (!this.cfg || !this.accessResolver) {
+      return { enf: 'off', accessCtx: null };
+    }
+    const enf = this.cfg.knowledgeAccess.enforcement;
+    const accessCtx =
+      enf !== 'off'
+        ? await this.accessResolver.resolveAccessibleGroups({ tenantId, userId })
+        : null;
+    return { enf, accessCtx };
   }
 
   private mapBlock(b: {

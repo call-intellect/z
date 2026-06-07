@@ -46,7 +46,7 @@ describe('InsightsController (IDOR fence)', () => {
     const { ctrl, svc } = build();
     const q = ListInsightsQuerySchema.parse({});
     await ctrl.list(q, userA, 'org-A');
-    expect(svc.list).toHaveBeenCalledWith({ tenantId: 'org-A', query: q });
+    expect(svc.list).toHaveBeenCalledWith({ tenantId: 'org-A', userId: 'u-1', query: q });
   });
 
   it('byId 403 cross-tenant', async () => {

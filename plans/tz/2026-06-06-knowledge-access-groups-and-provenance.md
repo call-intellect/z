@@ -193,7 +193,7 @@ AND (
 
 Граф зависимостей: **Ф1 ∥ Ф2 → Ф3 → Ф4 → Ф5 ∥ Ф6 → Ф7 → Ф8**. (Ф1 и Ф2 независимы; Ф5 и Ф6 после Ф4 параллельны.)
 
-### Фаза 1 — Фундамент-провенанс: привязка автора на все типы + per-adapter identity
+### Фаза 1 — Фундамент-провенанс: привязка автора на все типы + per-adapter identity ✅ РЕАЛИЗОВАНО
 **Цель:** «кто сказал / из какого источника» проставляется для всех типов знания и всех источников.
 **Входит:**
 - Снять узкий гейт: вызывать `attributeSubject` для всех `signalType`, а не только 6 reasoning ([block-ingest.worker.ts:991](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L991); Set на :53). Новый AdminSetting `knowledge.subjectAttributionAllTypes` (code-fallback true); master `knowledge.subjectAttributionEnabled` сохранить.
@@ -205,7 +205,7 @@ AND (
 **Acceptance:** греп — `attributeSubject` вызывается без сужения на REASONING-Set (или Set расширен/обойдён флагом); юнит: блок `signalType='fact'` со `speakerParticipantId` → создаётся `IdeaBlockEntity{role='subject'}`; who-ось непуста для не-reasoning ([axis-classifier.service.ts:236](../../backend/src/modules/knowledge-core/services/axis-classifier.service.ts#L236)); backfill повторно = no-op; `bun run typecheck/lint/test:unit` зелёные.
 **Закрывает:** R1, R2.
 
-### Фаза 2 — Модель групп + резолв групп пользователя (схема + RBAC)
+### Фаза 2 — Модель групп + резолв групп пользователя (схема + RBAC) ✅ РЕАЛИЗОВАНО
 **Цель:** появились сущности групп и метод «какие группы у пользователя / доступен ли блок».
 **Входит:**
 - Prisma-модели из «Контракт-first» (`KnowledgeGroup`, `KnowledgeGroupMember`, `IdeaBlockAccess`, `GroupVisibilityPolicy`, enum `KnowledgeGroupKind`; обратная связь в `IdeaBlock`). Миграция (`prisma:migrate -- --name knowledge-access-groups`), `prisma:generate`. Индексы заданы в моделях (обычные btree; pgvector не затрагивается).
@@ -219,7 +219,7 @@ AND (
 **Acceptance:** `prisma:generate` ок; `resolveAccessibleGroups` юнит (member отдела → его dept-группа; owner → isBypass=true); `buildAccessWhere` для bypass = пустой фильтр; миграция повторно = no-op (Prisma migrate deploy идемпотентен); типы/линт/билд зелёные.
 **Закрывает:** R3, R4, R9.
 
-### Фаза 3 — Ingest-вывод группы блока + бэкфилл (детерминированно)
+### Фаза 3 — Ingest-вывод группы блока + бэкфилл (детерминированно) ✅ РЕАЛИЗОВАНО
 **Цель:** каждый новый блок получает свои группы; старое знание = «открыто».
 **Входит:**
 - После `AxisClassifier.classify` ([block-ingest.worker.ts:683](../../backend/src/modules/knowledge-core/workers/block-ingest.worker.ts#L683)) — шаг `deriveBlockAccess`: department-группа из (а) functional-метки → `FunctionalDomain`→`DepartmentDomainLink`→Department ([schema.prisma:5131](../../backend/prisma/schema.prisma#L5131)) И (б) отделов участников (`payload.participants[].userId/personId`→`Person.primaryDepartmentId`). closed-группа из источника: `Meeting.closedGroupKind` / `MeetingTypeConfig.defaultClosedGroupKind` (interview→personal) / null. Запись в `IdeaBlockAccess` (via='department'|'closed').
@@ -230,8 +230,9 @@ AND (
 **Acceptance:** встреча отдела «Логистика» → блок получает `IdeaBlockAccess{department=Логистика}`; встреча с `closedGroupKind='council'` → блок получает `{closed=Совет}`; `interview` → personal; блок без домена/участников → без access-строк (открыт); backfill повторно = no-op; тесты зелёные.
 **Закрывает:** R5, R6.
 
-### Фаза 4 — Pre-filter доступа во всех поверхностях retrieval + фикс кэша (security-гейт)
+### Фаза 4 — Pre-filter доступа во всех поверхностях retrieval + фикс кэша (security-гейт) ✅ РЕАЛИЗОВАНО
 **Цель:** при `enforce` пользователь получает только доступные ему блоки во всех каналах выдачи.
+> **Реализация (4 части):** A — chat-v2 (выходной шлюз loadContextBlocks/loadContradictingBlocks + pool pre-filter + reasoning-chain) + хелперы резолвера (buildAccessSqlPredicate/loadBlockAccessGroups/partitionBlockIdsByAccess) + метрики kc_access_shadow_diff_total/kc_access_denied_total. B — /search (SQL-предикат, recall ок: full-scan), /snapshot (Prisma where), orchestrator base-retrieval-strategy. C — entities/themes/graph контроллеры (найдены адверсариальной проверкой покрытия). D — blocks.controller (GET /blocks/:id + /links + /reasoning-chain, найдено адверсариально). Кэш RetrievalCache закрыт выходным шлюзом (R10, без правок кэша). block-fetch (машинный путь) — без гейта (dataClass-floor). Полный DB-e2e «логист≠совет» — прод-смоук Ф8.
 **Входит (каждая точка — `...buildAccessWhere(ctx)` при enforce; при off/shadow — без изменения выдачи, shadow считает метрику):**
 - chat-v2 pool org/meeting/card/theme/entity ([chat-v2-retrieval.service.ts:203,242,273,339,359](../../backend/src/modules/knowledge-core/services/chat-v2-retrieval.service.ts#L203)); cosine raw-SQL + recency (:411,:430) — SQL-предикат; graph 1-hop (:533).
 - **Обязательный выходной шлюз** `loadContextBlocks` + `loadContradictingBlocks` ([chat-v2.service.ts:423,808](../../backend/src/modules/knowledge-core/services/chat-v2.service.ts#L423)) — defense-in-depth, ловит и precomputed-путь.
@@ -245,8 +246,9 @@ AND (
 **Acceptance (ключевой e2e-предикат метрики «решено»):** при `enforce` запрос члена «Логистики» НЕ возвращает блок с `IdeaBlockAccess{closed=Совет}` ни в одной поверхности (chat/search/snapshot/graph); owner — возвращает; при `off` выдача идентична baseline (golden-тест на наборе блоков); cache-hit не отдаёт чужой доступ; `kc_access_denied_total` растёт при enforce. Тесты per-поверхность.
 **Закрывает:** R7, R10, R11.
 
-### Фаза 5 — Контекст клонов в правах спрашивающего
+### Фаза 5 — Контекст клонов в правах спрашивающего ✅ РЕАЛИЗОВАНО
 **Цель:** клон не цитирует знание вне групп спрашивающего.
+> Реализация: `loadPersonSubgraph`/`loadRoleSubgraph` фильтруют reasoning-блоки по accessCtx спрашивающего (DB-фильтр buildAccessWhere в mentions + defense-in-depth post-filter `applyAccessToReasoningBlocks`); accessCtx резолвится из `requesterUserId` во всех 4 respond-путях. assertTopicDensity естественно считает по доступным (корректный topic_starved). off=байт-в-байт. decisions в контексте клона — фильтр перенесён в Ф6 (проекционный доступ), помечено TODO.
 **Входит:**
 - Прокинуть `accessCtx` спрашивающего в `loadPersonSubgraph`/`loadRoleSubgraph` ([clones.service.ts:234,453,710,908](../../backend/src/modules/clones/services/clones.service.ts#L234)); фильтр `where` блоков (:2173,:2227,:2281) `...buildAccessWhere(ctx)`; defense-in-depth — отбросить недоступное перед `callCloneRespond` (:2515).
 - Учесть `assertTopicDensity` (:2363): фильтр ДО density-guard → корректный отказ `topic_starved`, если после фильтра контекста мало.
@@ -255,8 +257,9 @@ AND (
 **Acceptance:** при enforce клон роли, запрошенный членом «Логистики», не отдаёт reasoning-блок с `closed=Совет`; при off — контекст идентичен; тест на оба scope (person/role).
 **Закрывает:** R8.
 
-### Фаза 6 — Наследование группы на проекции (показываются пользователю напрямую)
+### Фаза 6 — Наследование группы на проекции (показываются пользователю напрямую) ✅ РЕАЛИЗОВАНО
 **Цель:** проекции (Decision/Insight/Idea/Regulation/Process/Policy/Card) несут группу источников и фильтруются на своих листингах.
+> Реализация (ON-READ, без новой модели/миграции): группы проекции выводятся из её `sourceBlockIds` (IdeaBlockAccess блоков-источников, материализован Ф3). Новый метод `KnowledgeAccessResolver.partitionProjectionsByAccess(ctx, items[{id,sourceBlockIds}])` — union групп блоков-источников, строжайшее (любой council-source → проекция council); один DB-запрос на страницу. Гейт `gateProjections()` (off=байт-в-байт, shadow=метрика, enforce=фильтр) применён ПОСЛЕ выборки страницы в листингах: decisions (`list` + `getSupersedeChain` ancestors/descendants, surface='decisions'), insights (`list` + `getTop`, surface='insights'), ideas (`list` + `listMine`, surface='ideas'), regulations/processes/policies (`list` merged + `listRegulations`/`listProcesses`/`listPolicies`, surface='regulations'). `userId` прокинут из контроллеров. Закрыт TODO Ф6 в `clones.loadPersonSubgraph` (decisions клона фильтруются по `partitionProjectionsByAccess`, surface='clone'). DI — `@Optional()` (KnowledgeAccessResolver+TypedConfigService+BusinessMetricsService), spec-и конструируют позиционно. Пагинация: при enforce страница может стать короче, total — over-count (приемлемо для on-read). Theme/IdeaBlockLink/dashboard/cards НЕ трогаем (вне Ф6).
 **Входит:**
 - Расширить `DataClassPolicyService.derive()` ([dataclass-policy.service.ts:181](../../backend/src/modules/knowledge-core/services/dataclass-policy.service.ts#L181)) результатом `groups`: closed = union(source closed) (строжайшее — любой source council → проекция council), dept = union(source dept). Все ~5 callers уже зовут derive ([specialist-3-5-insights.service.ts:762](../../backend/src/modules/knowledge-core/services/specialist-3-5-insights.service.ts#L762), 3-1/3-3/3-6, card-rollup-v2:450) — писать в новую связь (проекция↔группа) тем же enforcement-флагом.
 - Листинг-эндпоинты проекций — `buildAccessWhere(ctx)`.
@@ -266,8 +269,9 @@ AND (
 **Acceptance:** проекция из блока `closed=Совет` → помечена council, не видна не-члену при enforce; при off — без изменений; derive юнит на union-правило.
 **Закрывает:** R12.
 
-### Фаза 7 — Frontend admin: матрица отделов, флаг встречи, членство, advisory-подсказка
+### Фаза 7 — Frontend admin: матрица отделов, флаг встречи, членство, advisory-подсказка ✅ РЕАЛИЗОВАНО
 **Цель:** админ настраивает «кто что видит»; хост помечает закрытые встречи.
+> Реализация: **7a (backend)** — `KnowledgeAccessAdminController` (/api/v1/knowledge-access): GET /groups, GET+PUT /matrix (направленно), GET/POST/DELETE members (членство + clearance-override), PATCH /meeting-types/:id/closed-default; Meeting.closedGroupKind в create + PATCH /meetings/:id/closed-group; все мутации → resolver.invalidateAll(). **7b (frontend)** — `src/api/knowledge-access.api.ts` + `src/domain/knowledge-access.ts` + `company-admin/access-groups` (матрица + членство) + сайдбар + селектор закрытости в форме встречи + advisory-баннер (эвристик, не замок). Упрощения (honest): UI крутилки defaultClosedGroupKind по типу встречи — контракт готов, отдельной org-admin поверхности списка типов нет (вне scope); post-factum селектор write-only (meeting-detail DTO не отдаёт closedGroupKind). interview→personal дефолт — засидить в Ф8.
 **Входит (слои `ApiDto→DomainModel→UiModel`, App Router `(admin)`, только русский, парные токены):**
 - UI направленной матрицы `GroupVisibilityPolicy` («отдел → видит отделы», несимметрично) — образец взаимодействия `DepartmentDomainLink`.
 - Селектор закрытой группы на встрече (`Meeting.closedGroupKind`: нет/Руководство/Совет/Личное), при создании и постфактум.
@@ -278,8 +282,9 @@ AND (
 **Acceptance:** админ задаёт «продажи→[логистика,продажи,маркетинг]» направленно; хост ставит закрытость встречи; UI без английских слов; SWR-загрузка; `bun run typecheck/lint/build` (frontend) зелёные.
 **Закрывает:** R13, R14.
 
-### Фаза 8 — Выкат: shadow→enforce, метрики, прод-операции
+### Фаза 8 — Выкат: shadow→enforce, метрики, прод-операции ✅ РЕАЛИЗОВАНО (код+доки; сам перевод флага на проде — за владельцем)
 **Цель:** включить безопасно и наблюдаемо.
+> Реализация: все seed/backfill/patch зарегистрированы в `apply-prod-deploy.ts` STEPS (seed-knowledge-groups · backfill-subject-attribution-all-types · backfill-block-access --departments · patch-meeting-type-closed-defaults). interview→personal дефолт засижен (bootstrap MeetingTypeConfig + patch). `prod-deploy-log.md` обновлён (ENV-флаг, миграция, seed, backfill, patch, smoke off→shadow→enforce). second-brain обновлён (rbac-access-control / security-and-152fz / knowledge-core / data-model / module-map / api-layer). Рефлексия — `second-brain/05_история/2026-06-06-knowledge-access-groups-and-provenance.md`. **Открыто (за владельцем):** сам прогон backfill + перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow→enforce на проде; строка в реестр `04_не-сделано` (не тронут — правился параллельной сессией).
 **Входит:** регистрация всех seed/backfill в `apply-prod-deploy.ts` STEPS; прогон бэкфилла; перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow (сверка `kc_access_shadow_diff_total`)→enforce; обновление `prod-deploy-log.md` (Шаги 1/4/7/8/12); обновление second-brain (`rbac-access-control.md`, `security-and-152fz.md`, `company-memory-overview.md`).
 **Acceptance:** в shadow метрики идут, выдача не меняется; после enforce — e2e-предикат Ф4 зелёный на проде-смоук; прод-лог обновлён.
 **Закрывает:** R15.
@@ -326,4 +331,29 @@ AND (
 - Реестр не-сделанного: строка про доступ закрыта/обновлена; группов­ые чаты сотрудников — отдельной строкой как vNext.
 
 ## Итог
-_(заполнит `tz-orchestrator` по завершении: реализовано целиком/частично, что осталось.)_
+
+**Реализовано целиком (Ф1–Ф8), ветка `feature/knowledge-access-groups`, 9 коммитов:**
+
+| Фаза | Коммит | Закрывает |
+|---|---|---|
+| Ф1 — провенанс автора на все типы + per-adapter identity | `e253dd19` | R1, R2 |
+| Ф2 — модель групп + KnowledgeAccessResolver + флаг | `cbb1c444` | R3, R4, R9 |
+| Ф3 — ingest-вывод группы блока (BlockAccessDeriver) + бэкфилл | `0609d381` | R5, R6 |
+| Ф4 — security-гейт во ВСЕХ поверхностях retrieval (4 части A-D) | `d4aa1b3e` | R7, R10, R11 |
+| Ф5 — контекст клонов в правах спрашивающего | `b08b9ade` | R8 |
+| Ф6 — наследование группы на проекции (on-read из sourceBlockIds) | `3f055e80` | R12 |
+| Ф7a/Ф7b — backend CRUD + frontend admin UI | `2ade7365`, `a16157ef` | R13, R14 |
+| Ф8a — interview→personal дефолт + документация | `a5803ec4` | R15 (код+доки) |
+
+**Ключевые архитектурные решения оркестратора (отступления от буквы ТЗ, с обоснованием):**
+- **Ф4 расширен адверсариальной проверкой покрытия** — помимо перечисленных в ТЗ поверхностей, гейт добавлен на `entities`/`themes`/`graph`/`blocks` контроллеры (GET /blocks/:id и др. отдавали контент блоков без гейта; найдено грепом всех canonical-выдач из Pre-mortem). Это и есть «9 точек + проверь все».
+- **Ф6 — без новой модели/миграции:** группы проекции выводятся ON-READ из её `sourceBlockIds` (IdeaBlockAccess уже материализован Ф3). Проще, нет рассинхрона, нет риска пропустить create-путь. Цель R12 (строжайшее наследование) достигнута.
+- **derive() не переведён в async** — группы проекции считает отдельный резолвер-хелпер (derive остаётся sync/pure, используется широко).
+
+**Инвариант off=байт-в-байт** соблюдён и проверен на каждой фазе (при `KNOWLEDGE_ACCESS_ENFORCEMENT=off` ни один путь не резолвит/не фильтрует). Верификация: typecheck+build+тесты на каждой фазе зелёные (на финале — сотни тестов knowledge-core/rbac/clones/api/orchestrator/meetings).
+
+**Открыто (НЕ за разработкой — за владельцем/операциями):**
+- Прогон seed/backfill на проде + поэтапный перевод `KNOWLEDGE_ACCESS_ENFORCEMENT` off→shadow (сверка `kc_access_shadow_diff_total`)→enforce. Инструкция — `docs/operations/prod-deploy-log.md`.
+- Строка в реестр `second-brain/04_не-сделано/README.md` (закрыть «доступ к знаниям», добавить vNext) — файл правился параллельной сессией, НЕ тронут во избежание конфликта; внести владельцу.
+
+**vNext (вне scope ТЗ, зафиксировано):** реальный ingest групповых чатов сотрудников (коннектора нет); усиление fuzzy-имён/LLM-arbiter атрибуции; UI крутилки `defaultClosedGroupKind` по типу встречи (backend-эндпоинт готов, нет org-admin листинга типов); чтение текущего `closedGroupKind` в meeting-detail DTO (post-factum селектор сейчас write-only); фильтр проекций в dashboard-агрегатах (senior-роли).

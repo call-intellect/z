@@ -12,14 +12,15 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { OrgContextService } from '../../ai/services/org-context.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type {
   DialogTurn,
   RoomChatMessage,
 } from '../../ai/services/prompts/common';
+import { withAsrNote } from '../../ai/services/prompts/common';
 import {
   buildMeetingExtractActionsPrompt,
-  type MeetingExtractActionsContext,
   TASKS_SCHEMA,
   TASKS_TOOL_NAME,
 } from '../../ai/services/prompts/tasks';
@@ -63,6 +64,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
     // `meeting-report-fast.worker.ts`.
     @Inject(ParticipantContextService)
     private readonly participantContext: ParticipantContextService,
+    // ТЗ-4 Ф3 — общий загрузчик org-контекста (вынесен из приватного
+    // loadOrgContext). Чистый реюз: поведение tasks-пути не меняется.
+    @Inject(OrgContextService)
+    private readonly orgContext: OrgContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
     @Optional()
@@ -120,7 +125,7 @@ export class MeetingExtractActionsService implements OnModuleInit {
     }
 
     // 2. Контекст организации (проекты, цели, известные сотрудники).
-    const ctx = await this.loadOrgContext(tenantId, meeting.startedAt);
+    const ctx = await this.orgContext.load(tenantId, meeting.startedAt);
 
     // 2b. Участники встречи (с identity — после Ф0.2 включает приглашённых
     // сотрудников). Используются для жёсткого резолва исполнителя задачи:
@@ -165,7 +170,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
         taskType: 'meeting-extract-actions',
         tenantId,
         meetingId,
-        systemPrompt: prompt.system,
+        // ТЗ-4 Ф2 — ASR-нота дописывается В КОНЕЦ system (cache-friendly):
+        // вход — сырое распознавание речи, просим восстанавливать смысл по
+        // контексту и нормализовать числа.
+        systemPrompt: withAsrNote(prompt.system),
         userMessage: prompt.user,
         responseFormat: {
           type: 'json_schema',
@@ -408,44 +416,6 @@ export class MeetingExtractActionsService implements OnModuleInit {
       if (p) return p.id;
     }
     return null;
-  }
-
-  private async loadOrgContext(
-    tenantId: string,
-    meetingStartedAt: Date | null,
-  ): Promise<MeetingExtractActionsContext> {
-    const [projects, goals, people] = await Promise.all([
-      this.prisma.project.findMany({
-        where: { tenantId, deletedAt: null, archivedAt: null },
-        select: { identifier: true, name: true },
-        take: 40,
-        orderBy: { updatedAt: 'desc' },
-      }),
-      this.prisma.goal.findMany({
-        where: {
-          tenantId,
-          archivedAt: null,
-          status: 'active',
-        },
-        select: { name: true },
-        take: 30,
-        orderBy: { updatedAt: 'desc' },
-      }),
-      this.prisma.person.findMany({
-        where: { tenantId, deletedAt: null, relationship: 'employee' },
-        select: { name: true },
-        take: 60,
-        orderBy: { name: 'asc' },
-      }),
-    ]);
-    return {
-      projects,
-      goals,
-      people: people.map((p) => ({ name: p.name, role: null })),
-      meetingDateIso: meetingStartedAt
-        ? meetingStartedAt.toISOString().slice(0, 10)
-        : new Date().toISOString().slice(0, 10),
-    };
   }
 
   private parseIsoDate(s: string | null | undefined): Date | null {

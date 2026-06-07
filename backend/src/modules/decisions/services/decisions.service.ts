@@ -13,9 +13,12 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import type {
   ChangeStatusBody,
   CreateDecisionBody,
@@ -56,12 +59,61 @@ export class DecisionsService {
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
+    /**
+     * Ф6 knowledge-access (R12) — наследование группы на проекции. @Optional —
+     * spec-и конструируют сервис позиционно; null → гейт не активируется.
+     */
+    @Optional()
+    @Inject(KnowledgeAccessResolver)
+    private readonly accessResolver: KnowledgeAccessResolver | null = null,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService | null = null,
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService | null = null,
   ) {}
+
+  /**
+   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
+   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
+   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
+   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
+   * страница может стать короче (denied-элементы убираются), а total остаётся
+   * посчитанным до фильтра — лёгкий over-count; приемлемый трейд-офф on-read
+   * подхода.
+   */
+  private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
+    items: T[],
+    args: { tenantId: string; userId?: string; surface: string },
+  ): Promise<T[]> {
+    const enf = this.cfg?.knowledgeAccess.enforcement ?? 'off';
+    if (enf === 'off' || !this.accessResolver || !args.userId || items.length === 0) {
+      return items;
+    }
+    const accessCtx = await this.accessResolver.resolveAccessibleGroups({
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
+    if (accessCtx.isBypass) return items;
+    const { accessibleIds, denied } =
+      await this.accessResolver.partitionProjectionsByAccess(
+        accessCtx,
+        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+      );
+    if (enf === 'enforce') {
+      this.metrics?.incAccessDenied({ surface: args.surface }, denied);
+      return items.filter((i) => accessibleIds.has(i.id));
+    }
+    this.metrics?.incAccessShadowDiff({ surface: args.surface }, denied);
+    return items;
+  }
 
   // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
+    userId?: string;
     query: ListDecisionsQuery;
   }): Promise<ListDecisionsResponse> {
     const q = args.query;
@@ -76,8 +128,14 @@ export class DecisionsService {
       }),
       this.prisma.decision.count({ where }),
     ]);
+    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'decisions',
+    });
     return {
-      items: items.map((d) =>
+      items: visible.map((d) =>
         this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
       ),
       total,
@@ -133,6 +191,7 @@ export class DecisionsService {
 
   async getSupersedeChain(args: {
     tenantId: string;
+    userId?: string;
     id: string;
   }): Promise<DecisionSupersedeChainResponse> {
     type DecisionWithTier = Decision & {
@@ -182,11 +241,24 @@ export class DecisionsService {
       }
     }
 
+    // Ф6 — supersede-цепочка тоже user-facing деталь: гейтим соседние решения.
+    const [visAncestors, visDescendants] = await Promise.all([
+      this.gateProjections(ancestors, {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        surface: 'decisions',
+      }),
+      this.gateProjections(descendants, {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        surface: 'decisions',
+      }),
+    ]);
     return {
-      ancestors: ancestors.map((d) =>
+      ancestors: visAncestors.map((d) =>
         this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
       ),
-      descendants: descendants.map((d) =>
+      descendants: visDescendants.map((d) =>
         this.toListItem(d, d.currentVersion?.trustTier ?? 'human'),
       ),
     };

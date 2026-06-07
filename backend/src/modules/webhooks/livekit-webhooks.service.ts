@@ -4,6 +4,7 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { type WebhookEvent } from 'livekit-server-sdk';
 import { Counter } from 'prom-client';
 
+import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { LivekitEventsHandler } from './livekit-events.handler';
@@ -38,6 +39,7 @@ export class LivekitWebhooksService {
     private readonly eventsTotal: Counter<'type' | 'dedup'>,
     @Inject(LivekitEventsHandler)
     private readonly eventsHandler: LivekitEventsHandler,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async handle(rawBody: Buffer, authHeader: string | undefined): Promise<void> {
@@ -94,15 +96,29 @@ export class LivekitWebhooksService {
 
     // Фаза 3.3: маршрутизация в FSM-переходы и upsert participant'ов.
     // Хэндлер сам решает, надо ли что-то делать по типу события.
-    try {
-      await this.eventsHandler.handle(event);
-    } catch (err) {
-      // Логируем, но не валим обработку — webhook уже дедуплицирован.
-      // LiveKit не будет ретраить (мы вернули 200).
-      this.logger.error(
-        { err, eventType, eventId },
-        'LivekitEventsHandler упал — событие уже зафиксировано в meeting_event',
-      );
+    if (this.cfg.livekit.webhookAckFirstEnabled) {
+      // ack-first: не ждём обработку, отдаём 200 сразу. ВНИМАНИЕ: при рестарте
+      // в окне фоновая обработка теряется (дедуп уже записан) — поэтому флаг
+      // дефолт OFF; composite/track догонит крон, но НЕ room_finished.
+      // Корневой фикс паузы — крон Ф1.
+      void this.eventsHandler.handle(event).catch((err) => {
+        this.logger.error(
+          { err, eventType, eventId },
+          'LivekitEventsHandler упал (ack-first фон) — событие зафиксировано в meeting_event',
+        );
+      });
+    } else {
+      // Дефолт: синхронно (текущее безопасное поведение).
+      try {
+        await this.eventsHandler.handle(event);
+      } catch (err) {
+        // Логируем, но не валим обработку — webhook уже дедуплицирован.
+        // LiveKit не будет ретраить (мы вернули 200).
+        this.logger.error(
+          { err, eventType, eventId },
+          'LivekitEventsHandler упал — событие уже зафиксировано в meeting_event',
+        );
+      }
     }
   }
 

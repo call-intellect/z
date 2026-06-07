@@ -62,6 +62,60 @@ docker compose run --rm --no-deps backend \
 
 > Все рабочие директории — внутри контейнера `backend` (`/app`). На хосте оставайся в корне репо `~/work/z` (или где у тебя `docker-compose.yml`).
 
+### 🎛️ Опциональные ручные операции (вне авто-аггрегатора)
+
+> Эти скрипты **НЕ зарегистрированы** в `apply-prod-deploy.ts` STEPS и **НЕ выполняются** на `docker compose ... apply-prod-deploy`. Запускать **только вручную, осознанно владельцем** (бюджетные / cost-решения). Все идемпотентны (повторный прогон = no-op).
+
+- **(опц., owner cost-decision)** `docker compose exec backend bun run scripts/patch-task-extractor-route-pro.ts` — перевести task-экстракторы (`tasks`, `meeting-extract-actions`) с дефолтной `deepseek-v4-flash` на capable `deepseek-v4-pro` (точнее, но дороже). Не входит в авто-выкат. Откат — вернуть `deepseek-v4-flash` через `/admin/ai-models/[taskType]` или обратным патчем. Не трогает маршруты с `editedByAdmin=true`.
+
+---
+
+### 🩹 2026-06-06 — Стабильность прода: 6 ТЗ (ветка `feature/prod-stability-2026-06-06`)
+
+> Контракты: `plans/tz/2026-06-06-{frontend-stability-chunk-and-video, recording-pipeline-reliability-reconcile, meeting-tasks-quality-dedup-asr, graph-arbiter-json-resilience, meeting-report-copy-download-actions, agent-quality-golden-harness}.md`.
+> **Зачем для прода:** ТЗ-1 убирает «белый экран» ChunkLoadError (webpack вместо Turbopack) + оживляет видео (нативный `<video>`); ТЗ-2 ограничивает 18-мин паузу пайплайна сверху ≤2 мин (composite-reconcile-крон); ТЗ-3 чинит молчаливую потерю связей графа; ТЗ-4 — качество извлечения задач; ТЗ-5 — действия отчёта; ТЗ-6 — измеритель качества. **Схема БД НЕ меняется, миграций/seed/backfill НЕТ.** Новые рискованные/внешне-наблюдаемые фичи — за флагами с дефолтом OFF (поведение прода не меняется до явного включения).
+
+- **Шаг 1 — ENV / build-arg**:
+  - **build-arg фронта `DEPLOYMENT_VERSION`** (git sha, НЕ runtime-ENV backend, в `env.schema.ts` НЕ добавляется). Выкат фронта: `DEPLOYMENT_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build frontend` (или прокинуть в `.env`). Без него `deploymentId=undefined` — не ломает, просто version-skew-защита неактивна.
+  - **ENV `RECORDING_COMPOSITE_RECONCILE_ENABLED`** (`env.schema.ts`, **дефолт ON**) — kill-switch composite-egress reconcile-крона. Можно не выставлять (code-default true). `false` — только если крон создаёт проблемы.
+  - **ENV `LIVEKIT_WEBHOOK_ACK_FIRST_ENABLED`** (`env.schema.ts`, **дефолт OFF**) — ack-first вебхуков (200 до обработки). OFF = текущее синхронное поведение. Включать ТОЛЬКО осознанно: при рестарте в окне фоновая обработка `room_finished` теряется (крон догоняет composite/track, но НЕ room_finished). Только для замера секвенс-холда.
+  - **ENV `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED`** (`env.schema.ts`, **дефолт OFF**) — forced `tool_choice` для не-thinking deepseek (лучше JSON-compliance). OFF = текущее `tool_choice:'auto'`. Включать ПОСЛЕ прод-пробы agent-lia (принимает ли прокси forced function); guard сам откатит на 'auto' при format-400, но проба желательна. `strict:true` НЕ добавлен (нужна та же проба).
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; reconcile-крон использует существующие поля `Recording`/`Meeting.endedAt`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingFinalizationService` + `CompositeEgressReconcileCron` в webhooks, `listCompositeEgress`/`reconcileCompositeEgress` в recordings, ack-first + метрика gap, entity-graph устойчивость + router validate-callback + deepseek forced tool_choice, ASR-нота + `OrgContextService`, 3 новых ENV; frontend: webpack-сборка + `deploymentId`, нативный `<video>` вместо Vidstack, error-boundary + chunk-reload, баннер «Отчёт готовится», действия отчёта): `DEPLOYMENT_VERSION=$(git rev-parse --short HEAD) docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Крон: после старта backend в логах — строка запуска `composite-egress-reconcile` (раз/мин); на застрявшей встрече пауза `completed→recording_ready` ≤ ~2 мин (лог `reconcileCompositeEgress: composite догнан кроном`). Флип `RECORDING_COMPOSITE_RECONCILE_ENABLED=false` → крон молчит.
+  - Метрики (`curl -s localhost:3000/metrics | grep ...`): `livekit_egress_ended_gap_seconds` (gap доставки egress-вебхука), `kc_entity_graph_invalid_json_total`/`kc_entity_graph_fallback_none_total` (устойчивость арбитра — fallback_none должен падать vs до выката), `incLlmRouterDispatch{status="invalid_output"}` (validate-callback пробует secondary).
+  - Фронт: `/result` с записью — `<video>` играет (readyState>0), клик по главе перематывает; на детальных страницах нет английского «This page couldn't load» (русский экран + тихий reload при version skew); заголовок ответа фронта содержит `x-deployment-id` если `DEPLOYMENT_VERSION` пробросился.
+  - Прод-верификация (владелец, см. реестр «не-сделано»): ≤2 мин пауза, падение fallback-none метрик, baseline качества (ТЗ-6 `agent-quality-harness.ts`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔐 2026-06-06 — Доступ к знаниям через группы + фундамент-провенанс (knowledge-access)
+
+> Контракт: `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md`. Ветка `feature/knowledge-access-groups`. 8 фаз: Ф1 провенанс автора на все типы + per-adapter identity · Ф2 модель групп + резолвер · Ф3 ingest-вывод группы блока · Ф4 security-гейт во всех поверхностях retrieval · Ф5 контекст клонов в правах спрашивающего · Ф6 наследование группы на проекции · Ф7 frontend admin (матрица/членство/флаг встречи) · Ф8 выкат.
+>
+> **Зачем для прода:** 1 аддитивная миграция (4 модели + 2 поля) + 1 seed (группы) + 2 backfill (subject-атрибуция всех типов, department-группы) + 1 patch (interview→personal) + 2 новых флага. **Гейт по умолчанию OFF — поведение байт-в-байт текущее.** Выкат безопасно поэтапный: off → shadow (сверка метрик) → enforce.
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `KNOWLEDGE_ACCESS_ENFORCEMENT`** = `off` | `shadow` | `enforce`, **дефолт `off`** (`env.schema.ts`). Режим гейта доступа к знаниям. На выкате оставить `off`; перевод в `shadow`/`enforce` — см. Шаг 12. owner/admin/super — bypass всегда.
+  - **AdminSetting `knowledge.subjectAttributionAllTypes`** (bool, **default TRUE**, code-fallback TRUE через `TypedConfigService.getDynamic`) — расширенная привязка автора знания на ВСЕ типы (не только reasoning). Master-выключатель `knowledge.subjectAttributionEnabled` сохранён. Засеивается идемпотентно `seed-admin-settings.ts` (уже в агрегаторе, phase `seed-base`); без сидера работает на code-дефолте.
+- **Шаг 4 — Prisma миграция** — **обязательно, автоматически** (аддитивно, без data-loss). Миграция **`20260606114416_knowledge_access_groups`** = 4 новые модели (`KnowledgeGroup`, `KnowledgeGroupMember`, `IdeaBlockAccess`, `GroupVisibilityPolicy`) + enum `KnowledgeGroupKind` + поля `Meeting.closedGroupKind String?` и `MeetingTypeConfig.defaultClosedGroupKind String?`. Едет файлом миграции, применяется **автоматически** на `docker compose up -d` через `prisma migrate deploy` (migrate-контейнер). Проверка: `docker compose run --rm --no-deps backend sh -c 'bunx prisma migrate status'` → миграция в списке applied.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-meeting-type-closed-defaults.ts` — `MeetingTypeConfig.defaultClosedGroupKind='personal'` для типа `interview` (В6), если ещё NULL (на проде, где bootstrap прошёл до фичи). Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'patch'`, `skipBootstrap: true`). Прогон: `docker compose exec backend bun run scripts/patch-meeting-type-closed-defaults.ts --dry-run` → без флага. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный**: `scripts/seed-knowledge-groups.ts` — синглтон-группы «Руководство»/«Совет» + department-группы из существующих `Department` + leadership-членство из owner/admin. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase: 'seed-base'`). Прогон: `docker compose exec backend bun run scripts/seed-knowledge-groups.ts` (или агрегатором `apply-prod-deploy.ts --mode update`).
+- **Шаг 8 — Backfill** — **2 новых, идемпотентных**:
+  - `scripts/backfill-subject-attribution-all-types.ts` — добивает `IdeaBlockEntity{role='subject'}` для исторических canonical-блоков ВСЕХ типов (не только reasoning) + per-adapter identity (tracker/chatbox/dump/email). Уважает флаги `knowledge.subjectAttributionEnabled` + `knowledge.subjectAttributionAllTypes`. Сначала `--dry-run`, затем без флага. STEPS (`phase: backfill`, `skipBootstrap`).
+  - `scripts/backfill-block-access.ts --departments` — department-группы (`IdeaBlockAccess`) для исторических блоков из functional axisLabels (+ участники/автор). closed задним числом НЕ назначается (В5: историческое знание = открыто). **Без `--departments` скрипт no-op** — в STEPS прописан с `args:['--departments']`. Сначала `--dry-run --departments`, затем `--departments`. STEPS (`phase: backfill`, `skipBootstrap`).
+  - Оба — через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый модуль `knowledge-access`, `KnowledgeAccessResolver` в rbac, `BlockAccessDeriverService` + гейт во всех retrieval-поверхностях, `env.schema.ts` новый флаг; frontend: `company-admin/access-groups`, селектор закрытости встречи): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (поэтапный перевод флага):
+  1. После выката `KNOWLEDGE_ACCESS_ENFORCEMENT` остаётся `off` — выдача идентична baseline. Swagger `/api/docs` показывает `/api/v1/knowledge-access/*` и `PATCH /meetings/:id/closed-group`.
+  2. Перевести в **`shadow`** (выдача не меняется), дать набежать данным, сверить метрики: `curl -s localhost:3000/metrics | grep kc_access_shadow_diff_total` — по `{surface}` видно, сколько блоков было бы отфильтровано. Также `kc_subject_attribution_total{via}` растёт (провенанс работает).
+  3. Если расхождение ожидаемое — перевести в **`enforce`**. Проверить e2e-предикат «логист не видит блок Совета» во всех поверхностях: chat / search / snapshot / blocks / контекст клона — член «Логистики» НЕ получает блок с `IdeaBlockAccess{closed=Совет}`; owner — получает. `curl -s localhost:3000/metrics | grep kc_access_denied_total` → счётчик `{surface}` растёт.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
 ---
 
 ### 🧩 2026-06-06 — Трекер + Встречи (sergdev)

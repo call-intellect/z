@@ -2,14 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  MediaPlayer,
-  MediaProvider,
-} from '@vidstack/react';
-import {
-  defaultLayoutIcons,
-  DefaultVideoLayout,
-} from '@vidstack/react/player/layouts/default';
 import { Clock, ListChecks, MessageCircle, Sparkles } from 'lucide-react';
 
 import { publicShareApi, type PublicShareMeetingApi } from '@/api/public-share.api';
@@ -128,17 +120,14 @@ function SharedMeetingView({ data }: { data: PublicShareMeetingApi }) {
 
       {data.permissions.allowVideo && data.videoUrl && (
         <div className="mb-6 overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
-          <MediaPlayer
-            title={m.title}
-            // Явный type: presigned S3-URL (`...mp4?X-Amz-...`) не определяется
-            // Vidstack по расширению из-за query → без type плеер виснет без запроса.
-            src={{ src: data.videoUrl, type: 'video/mp4' }}
+          <video
+            src={data.videoUrl}
+            controls
+            preload="auto"
             playsInline
-            className="aspect-video w-full"
-          >
-            <MediaProvider />
-            <DefaultVideoLayout icons={defaultLayoutIcons} />
-          </MediaPlayer>
+            className="aspect-video w-full bg-black"
+            aria-label={m.title}
+          />
         </div>
       )}
 

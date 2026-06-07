@@ -33,6 +33,7 @@ import {
   FileText,
   ListChecks,
   Loader2,
+  Lock,
   MessageCircle,
   MessageSquareText,
   MoreHorizontal,
@@ -61,12 +62,16 @@ import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
 import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
 import { useMeetingHighlights } from '@/hooks/use-meeting-highlights';
 import { useMeetingRoomMessages } from '@/hooks/use-meeting-room-messages';
-import { useVidstackPlayer } from '@/hooks/use-vidstack-player';
+import { useVideoPlayer } from '@/hooks/use-video-player';
 
 import type { RoomMessageDomain } from '@/domain/room-message';
 
 import { aiResultFromApi, pickPrimarySummary } from '@/domain/ai-result';
 import { pickPrimaryChapters } from '@/domain/chapter';
+import {
+  CLOSED_GROUP_OPTIONS,
+  type ClosedGroupKind,
+} from '@/domain/knowledge-access';
 import type { MeetingDomain } from '@/domain/meeting';
 import { meetingStatusView } from '@/domain/meeting';
 import { templateFromApi } from '@/domain/template';
@@ -114,6 +119,7 @@ import {
   isEmptyStructuredValue,
   StructuredFieldValue,
 } from './structured-report';
+import { ReportActions } from './ReportActions';
 
 const MEETING_TYPE_LABELS: Record<string, string> = {
   team: 'Team sync',
@@ -151,6 +157,20 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     mutate: mutateMeeting,
   } = useMeeting(meetingId);
 
+  /**
+   * ТЗ-2 Фаза 4 — честный UI обработки. `aiProcessing` истинно, пока встреча
+   * НЕ дошла до финального AI-статуса (`ai_ready` / `ai_failed` / `failed`).
+   * Пока он истинен — показываем баннер «Отчёт готовится» и держим поллинг.
+   *
+   * Поллинг самой встречи (а значит — обновление `meeting.status`) обеспечивает
+   * внутренний `refreshInterval` хука `useMeeting` на время AI-обработки;
+   * здесь же мы поллим SWR результата, чтобы отчёт подтянулся, как только будет
+   * готов. Когда статус становится финальным → `aiProcessing=false` →
+   * `refreshInterval=0` → поллинг встаёт.
+   */
+  const aiProcessing =
+    !!meeting && !['ai_ready', 'ai_failed', 'failed'].includes(meeting.status);
+
   // Детальный «result» с aiResult и recording info.
   const {
     data: result,
@@ -159,7 +179,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   } = useSWR(
     meetingId ? ['meeting-result', meetingId] : null,
     () => meetingsApi.result(meetingId),
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: false, refreshInterval: aiProcessing ? 15000 : 0 },
   );
 
   const { chapters, mutate: mutateChapters } = useMeetingChapters(meetingId);
@@ -167,7 +187,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   const { highlights, mutate: mutateHighlights } = useMeetingHighlights(meetingId);
   const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
 
-  const player = useVidstackPlayer();
+  const player = useVideoPlayer();
   const [currentMs, setCurrentMs] = useState(0);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [shareOpen, setShareOpen] = useState(false);
@@ -217,7 +237,8 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     setCurrentMs(ms);
   };
 
-  if (meetingLoading || resultLoading) {
+  // Скелетон — только истинная первичная загрузка (встречи ещё нет).
+  if (meetingLoading && !meeting) {
     return <MeetingResultSkeleton />;
   }
 
@@ -235,6 +256,13 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         </Button>
       </div>
     );
+  }
+
+  // ТЗ-2 Фаза 4 — пока встреча обрабатывается и отчёта ещё нет, показываем
+  // честный баннер «Отчёт готовится» вместо бесконечного скелетона/пустоты.
+  // Поллинг (refreshInterval выше) сам подтянет отчёт и сменит экран.
+  if (aiProcessing && !result) {
+    return <ReportProcessingBanner title={meeting.title} />;
   }
 
   const recording = result?.recording;
@@ -523,6 +551,22 @@ function MeetingHeader({
     }
   };
 
+  // ТЗ 2026-06-06 knowledge-access (Ф7) — пометить закрытость встречи постфактум.
+  const onSetClosedGroup = async (value: ClosedGroupKind | 'none') => {
+    const label =
+      CLOSED_GROUP_OPTIONS.find((o) => o.value === value)?.label ?? '';
+    try {
+      await meetingsApi.setClosedGroup(
+        meeting.id,
+        value === 'none' ? null : value,
+      );
+      toast.success(`Доступ обновлён: ${label}`);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Не удалось изменить доступ';
+      toast.error(msg);
+    }
+  };
+
   return (
     <header className="flex flex-col gap-3 border-b border-border-subtle pb-5">
       <nav className="flex items-center gap-1.5 text-xs text-fg-tertiary">
@@ -629,6 +673,24 @@ function MeetingHeader({
                   Открыть в новой вкладке
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Lock size={14} />
+                  Кто видит знания встречи
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuLabel>Пометить доступ</DropdownMenuLabel>
+                  {CLOSED_GROUP_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onSelect={() => void onSetClosedGroup(opt.value)}
+                    >
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={() => void onDelete()}
@@ -954,17 +1016,23 @@ function StructuredDataCard({ data }: { data: unknown }) {
   }, [data]);
   if (entries.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {entries.map(([k, v]) => (
-        <Card key={k}>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-            {structuredFieldLabel(k)}
-          </div>
-          <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
-            <StructuredFieldValue value={v} />
-          </div>
-        </Card>
-      ))}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 text-sm font-semibold text-fg-primary">Обзор</h3>
+        <ReportActions output={data} title="Отчёт встречи" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {entries.map(([k, v]) => (
+          <Card key={k}>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+              {structuredFieldLabel(k)}
+            </div>
+            <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+              <StructuredFieldValue value={v} />
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1742,6 +1810,33 @@ function ParticipantRow({
         )}
       </div>
     </li>
+  );
+}
+
+// ─────────────── Processing banner (отчёт готовится) ───────────────
+
+/**
+ * ТЗ-2 Фаза 4 — баннер на весь экран результата, пока встреча ещё не дошла до
+ * финального AI-статуса и отчёта пока нет. Заменяет бесконечный скелетон —
+ * страница сама обновится поллингом, когда отчёт будет готов.
+ */
+function ReportProcessingBanner({ title }: { title?: string }) {
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-10">
+      {title ? (
+        <h1 className="mb-4 text-xl font-semibold text-fg-primary">{title}</h1>
+      ) : null}
+      <div className="rounded-xl border border-border-subtle bg-bg-card px-6 py-8 text-center">
+        <div className="mb-2 flex items-center justify-center gap-2 text-base font-medium text-fg-primary">
+          <Loader2 size={16} className="animate-spin" />
+          Отчёт готовится
+        </div>
+        <div className="mx-auto max-w-md text-sm text-fg-secondary">
+          Обычно занимает несколько минут. Страница обновится автоматически,
+          когда отчёт будет готов.
+        </div>
+      </div>
+    </div>
   );
 }
 

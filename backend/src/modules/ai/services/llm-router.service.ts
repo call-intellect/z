@@ -19,6 +19,7 @@ import { BudgetGuardService } from './budget-guard.service';
 import { DeepSeekService } from './deepseek.service';
 import { GrsaiService } from './grsai.service';
 import { KieService } from './kie.service';
+import { LlmInvalidOutputError } from './llm.types';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
@@ -911,6 +912,8 @@ export interface LlmCallParams {
    * через tool `submit_meeting_analysis`.
    */
   tools?: LlmTool[];
+  /** Опц. валидатор вывода. Если вернул false — router бросит LlmInvalidOutputError и попробует следующего провайдера. */
+  validate?: (text: string) => boolean;
 }
 
 export interface LlmCallResult {
@@ -1393,6 +1396,21 @@ export class LlmRouterService implements OnModuleInit {
             ),
           ),
         ]);
+        // ТЗ-3 Ф2 (router-validate-callback): caller-валидатор вывода. HTTP 200
+        // с битым телом (не JSON-вердикт) раньше считался успехом и secondary
+        // не пробовался. Теперь — throw в существующий catch ниже → следующий
+        // провайдер (secondary с настоящим strict). Проверка ДО записи success.
+        if (params.validate && !params.validate(out.text)) {
+          this.metrics?.incLlmRouterDispatch({
+            taskType: params.taskType,
+            provider: entry.provider,
+            status: 'invalid_output',
+          });
+          throw new LlmInvalidOutputError(
+            `${entry.provider}/${entry.model ?? ''}: ответ не прошёл validate caller'а`,
+            out.text,
+          );
+        }
         const durationMs = Date.now() - startedAt;
         this.metrics?.incLlmRouterDispatch({
           taskType: params.taskType,

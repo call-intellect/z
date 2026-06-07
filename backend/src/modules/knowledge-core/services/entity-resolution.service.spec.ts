@@ -307,3 +307,82 @@ describe('EntityResolutionService (integration)', () => {
     });
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Ф1 (knowledge-access, 2026-06-06) — новые ветки resolveSubjectEntityId:
+// authorPersonId (прямой Person.id) и authorEmail (Person по email,
+// case-insensitive), оба с приоритетом над authorUserId. Юнит-тесты с
+// моканым prisma — БД не нужна (в отличие от integration-блоков выше).
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter identity (unit)', () => {
+  function buildSvc(personFindFirst: ReturnType<typeof vi.fn>): EntityResolutionService {
+    const prisma = {
+      person: { findFirst: personFindFirst },
+    } as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    return new EntityResolutionService(prisma, embed);
+  }
+
+  it('authorPersonId → Person с entityId → возвращает entityId (без ensure)', async () => {
+    const findFirst = vi.fn(async () => ({ id: 'pers-1', entityId: 'ent-1' }));
+    const svc = buildSvc(findFirst);
+
+    const res = await svc.resolveSubjectEntityId('tenant-1', {
+      authorPersonId: 'pers-1',
+    });
+
+    expect(res).toBe('ent-1');
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'pers-1',
+          tenantId: 'tenant-1',
+          deletedAt: null,
+        }),
+      }),
+    );
+  });
+
+  it('authorEmail → Person по email (case-insensitive) → возвращает entityId', async () => {
+    const findFirst = vi.fn(async () => ({ id: 'pers-2', entityId: 'ent-2' }));
+    const svc = buildSvc(findFirst);
+
+    const res = await svc.resolveSubjectEntityId('tenant-1', {
+      authorEmail: 'Ivan@Example.COM',
+    });
+
+    expect(res).toBe('ent-2');
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          email: expect.objectContaining({
+            equals: 'Ivan@Example.COM',
+            mode: 'insensitive',
+          }),
+          deletedAt: null,
+        }),
+      }),
+    );
+  });
+
+  it('authorPersonId имеет приоритет над authorUserId (первый успех возвращается)', async () => {
+    // Первый вызов (ветка authorPersonId) находит Person → дальше не идём.
+    const findFirst = vi.fn(async () => ({ id: 'pers-3', entityId: 'ent-3' }));
+    const svc = buildSvc(findFirst);
+
+    const res = await svc.resolveSubjectEntityId('tenant-1', {
+      authorPersonId: 'pers-3',
+      authorUserId: 'user-x',
+    });
+
+    expect(res).toBe('ent-3');
+    // Ровно один lookup — ветка authorUserId не достигнута.
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'pers-3' }),
+      }),
+    );
+  });
+});

@@ -10,6 +10,8 @@ import { PipelineRunner, SystemLogPipeline, traceForMeeting } from '../logging/l
 import { MeetingsService } from '../meetings/meetings.service';
 import { RecordingsService } from '../recordings/recordings.service';
 
+import { MeetingFinalizationService } from './meeting-finalization.service';
+
 /**
  * Маппинг числовых значений `ParticipantInfo.Kind` (proto enum) к именам.
  * Значения по @livekit/protocol: STANDARD=0, INGRESS=1, EGRESS=2, SIP=3,
@@ -85,6 +87,13 @@ export class LivekitEventsHandler {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService | null = null,
+    /**
+     * `MeetingFinalizationService` — тот же модуль (Webhooks). Содержит
+     * вынесенную промоут-логику (FSM `completed → recording_ready` +
+     * enqueueTranscribe + faststart-enqueue), которую затем переиспользует крон.
+     */
+    @Inject(MeetingFinalizationService)
+    private readonly finalization: MeetingFinalizationService,
   ) {}
 
   async handle(event: WebhookEvent): Promise<void> {
@@ -383,6 +392,22 @@ export class LivekitEventsHandler {
     const info = this.extractEgressInfo(event);
     if (!info) return;
 
+    // Метрика доставки egress-вебхука: gap room_finished→egress_ended.
+    try {
+      const m = await this.prisma.meeting.findUnique({
+        where: { id: meetingId },
+        select: { endedAt: true },
+      });
+      if (m?.endedAt) {
+        this.metrics.observeEgressEndedGap(
+          info.requestType,
+          (Date.now() - m.endedAt.getTime()) / 1000,
+        );
+      }
+    } catch {
+      /* метрика не критична */
+    }
+
     if (info.requestType === 'room_composite' || info.requestType === 'roomComposite') {
       const file = info.fileResults[0] ?? null;
       const result = await this.recordings.onCompositeEnded(meetingId, {
@@ -393,29 +418,10 @@ export class LivekitEventsHandler {
             ? Math.round(file.duration / 1_000_000_000) // ns → s
             : null,
       });
-      // Фаза 3 (recording-reliability): faststart-постобработка composite MP4,
-      // чтобы браузер играл видео прогрессивно. За флагом RECORDING_FASTSTART_ENABLED
-      // (дефолт on) + порог по размеру (мелкие файлы не ремуксим). Non-fatal —
-      // не блокирует FSM-переход в ready. Размер неизвестен → ставим (воркер
-      // перепроверит по bytesTotal).
-      const compositeBytes = file?.size ?? null;
-      const faststartMinBytes = this.cfg?.recording.faststartMinBytes ?? 0;
-      if (
-        this.cfg?.recording.faststartEnabled &&
-        this.aiQueue &&
-        (compositeBytes === null || compositeBytes >= faststartMinBytes)
-      ) {
-        try {
-          await this.aiQueue.enqueueRecordingFaststart(meetingId);
-          this.logger.log({ meetingId }, 'egress_ended: faststart-постобработка composite поставлена в очередь');
-        } catch (qerr) {
-          this.logger.warn(
-            { meetingId, err: qerr instanceof Error ? qerr.message : String(qerr) },
-            'egress_ended: enqueue faststart не удался (non-fatal)',
-          );
-        }
-      }
-      await this.maybePromoteMeetingToReady(meetingId, result.allReady);
+      // Faststart-постобработка composite MP4 + промоут FSM — вынесены в
+      // MeetingFinalizationService (общий код для вебхука и крона).
+      await this.finalization.enqueueFaststartIfNeeded(meetingId, file?.size ?? null);
+      await this.finalization.promoteMeetingToReady(meetingId, result.allReady);
       return;
     }
 
@@ -430,7 +436,7 @@ export class LivekitEventsHandler {
             : null,
         endedAt: new Date(),
       });
-      await this.maybePromoteMeetingToReady(meetingId, result.allReady);
+      await this.finalization.promoteMeetingToReady(meetingId, result.allReady);
     }
   }
 
@@ -461,67 +467,6 @@ export class LivekitEventsHandler {
           'egress_failed: переход в failed не выполнен',
         );
       }
-    }
-  }
-
-  /**
-   * После egress_ended: если recording.status стал `ready` — переводим встречу
-   * `completed → recording_processing → recording_ready`. Делаем оба перехода
-   * одним вызовом, потому что FSM их связывает.
-   */
-  private async maybePromoteMeetingToReady(
-    meetingId: string,
-    allReady: boolean,
-  ): Promise<void> {
-    if (!allReady) return;
-    const meeting = await this.prisma.meeting.findUnique({
-      where: { id: meetingId },
-      select: { status: true },
-    });
-    if (!meeting) return;
-
-    try {
-      // completed → recording_processing → recording_ready (если ещё в completed).
-      if (meeting.status === 'completed') {
-        await this.meetings.transitionStatus(meetingId, 'recording_processing', {
-          reason: 'livekit:egress_ended',
-        });
-      }
-      const cur = await this.prisma.meeting.findUnique({
-        where: { id: meetingId },
-        select: { status: true },
-      });
-      if (cur?.status === 'recording_processing') {
-        await this.meetings.transitionStatus(meetingId, 'recording_ready', {
-          reason: 'livekit:egress_ended',
-        });
-      }
-
-      // Фаза 5: ставим BullMQ job на транскрибацию.
-      if (this.aiQueue) {
-        try {
-          await this.aiQueue.enqueueTranscribe(meetingId);
-          this.logger.log(
-            { meetingId },
-            'recording_ready: AI-pipeline (transcribe) поставлен в очередь',
-          );
-        } catch (qerr) {
-          this.logger.warn(
-            { meetingId, err: qerr instanceof Error ? qerr.message : String(qerr) },
-            'recording_ready: enqueueTranscribe не удался',
-          );
-        }
-      } else {
-        this.logger.warn(
-          { meetingId },
-          'recording_ready: AiQueueService недоступен (нет AiModule в контексте)',
-        );
-      }
-    } catch (err) {
-      this.logger.warn(
-        { meetingId, err: err instanceof Error ? err.message : String(err) },
-        'maybePromoteMeetingToReady: FSM-переход не удался',
-      );
     }
   }
 

@@ -8,6 +8,7 @@ import {
   LIVEKIT_WEBHOOK_EVENTS_TOTAL,
   LivekitWebhooksService,
 } from './livekit-webhooks.service';
+import { MeetingFinalizationService } from './meeting-finalization.service';
 
 /**
  * Webhooks-модуль. Содержит endpoint `/webhooks/livekit` и счётчик
@@ -23,6 +24,7 @@ import {
     LivekitWebhooksService,
     LivekitSignatureVerifier,
     LivekitEventsHandler,
+    MeetingFinalizationService,
     makeCounterProvider({
       name: LIVEKIT_WEBHOOK_EVENTS_TOTAL,
       help: 'Количество принятых LiveKit-вебхуков по типам и факту дубликата',

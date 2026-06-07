@@ -6,6 +6,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { MeetingsService } from '../meetings/meetings.service';
 
 import { LivekitEventsHandler } from './livekit-events.handler';
+import { MeetingFinalizationService } from './meeting-finalization.service';
 
 /**
  * Тестируем LivekitEventsHandler как чистую функцию.
@@ -60,7 +61,16 @@ function makeHandler(
     incMeetingFinished: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  const handler = new LivekitEventsHandler(prisma, meetings, metrics);
+  const finalization = new MeetingFinalizationService(prisma, meetings);
+  const handler = new LivekitEventsHandler(
+    prisma,
+    meetings,
+    metrics,
+    null,
+    null,
+    null,
+    finalization,
+  );
   return { handler, prisma, meetings, metrics };
 }
 
@@ -301,9 +311,21 @@ describe('LivekitEventsHandler', () => {
     const recordings = {
       onCompositeEnded: vi.fn(async () => ({ status: 'finalizing', allReady: false })),
     } as any;
-    const aiQueue = { enqueueRecordingFaststart: vi.fn(async () => undefined) } as any;
+    const aiQueue = {
+      enqueueRecordingFaststart: vi.fn(async () => undefined),
+      enqueueTranscribe: vi.fn(async () => undefined),
+    } as any;
     const cfg = { recording: { faststartEnabled, faststartMinBytes: 52_428_800 } } as any;
-    const handler = new LivekitEventsHandler(prisma, meetings, metrics, recordings, aiQueue, cfg);
+    const finalization = new MeetingFinalizationService(prisma, meetings, aiQueue, cfg);
+    const handler = new LivekitEventsHandler(
+      prisma,
+      meetings,
+      metrics,
+      recordings,
+      aiQueue,
+      cfg,
+      finalization,
+    );
     return { handler, aiQueue };
   }
 

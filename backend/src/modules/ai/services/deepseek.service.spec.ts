@@ -43,13 +43,15 @@ vi.mock('openai', () => {
 // Импорт после vi.mock, иначе мок не подхватится.
 import { DeepSeekService } from './deepseek.service';
 
-function makeCfg(): TypedConfigService {
+function makeCfg(opts?: { forceToolChoiceEnabled?: boolean }): TypedConfigService {
   return {
     ai: {
       deepseek: {
         apiKey: 'sk-deepseek-test',
         baseUrl: 'https://api.deepseek.com/v1',
         defaultModel: 'deepseek-v4-flash',
+        // ТЗ-3 Фаза 3 — дефолт OFF (поведение не меняется). Тесты включают явно.
+        forceToolChoiceEnabled: opts?.forceToolChoiceEnabled ?? false,
       },
     },
   } as unknown as TypedConfigService;
@@ -409,5 +411,157 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
         messages: Array<{ role: string; content: string }>;
       };
     expect(callArgs.messages[0]!.content).toBe('Верни ответ в JSON.');
+  });
+});
+
+/**
+ * ТЗ-3 Фаза 3 — forced tool_choice за флагом
+ * `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (дефолт OFF).
+ *
+ * Для НЕ-thinking deepseek-моделей при autoConvert (json_schema → synthetic
+ * tool) форсим `tool_choice:{type:'function',function:{name}}` вместо 'auto',
+ * чтобы flash возвращал структуру, а не прозу. Thinking-модели НЕ форсим.
+ * Guard в complete() откатывает на 'auto' при format-400 прокси и повторяет раз.
+ */
+describe('DeepSeekService.buildParams — forced tool_choice (ТЗ-3 Фаза 3)', () => {
+  beforeEach(() => {
+    lastSdkInstance = null;
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const JSON_SCHEMA_INPUT = {
+    system: { text: 'sys' },
+    user: 'извлеки факты',
+    responseFormat: {
+      type: 'json_schema' as const,
+      name: 'facts',
+      schema: FACTS_SCHEMA,
+      strict: true,
+    },
+  };
+
+  /** Имитация ошибки прокси формата (OpenAI SDK кладёт код в `.status`). */
+  function formatError(message: string): Error & { status: number } {
+    const e = new Error(message) as Error & { status: number };
+    e.status = 400;
+    return e;
+  }
+
+  it('флаг OFF (дефолт) + non-thinking + json_schema → tool_choice="auto" (поведение не изменилось)', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(makeCfg(), metrics); // forceToolChoiceEnabled=false
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      }),
+    );
+
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0];
+    expect(callArgs.tool_choice).toBe('auto');
+  });
+
+  it('флаг ON + non-thinking + json_schema → tool_choice форсится на synthetic-tool', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(
+      makeCfg({ forceToolChoiceEnabled: true }),
+      metrics,
+    );
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      }),
+    );
+
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0];
+    expect(callArgs.tool_choice).toEqual(
+      expect.objectContaining({
+        type: 'function',
+        function: { name: 'submit_facts' },
+      }),
+    );
+  });
+
+  it('флаг ON + thinking-модель → tool_choice="auto" (thinking не форсим)', async () => {
+    const { metrics } = makeMetricsMock();
+    const svc = new DeepSeekService(
+      makeCfg({ forceToolChoiceEnabled: true }),
+      metrics,
+    );
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    lastSdkInstance.chat.completions.create.mockResolvedValueOnce(
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+      }),
+    );
+
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-pro' });
+
+    const callArgs =
+      lastSdkInstance.chat.completions.create.mock.calls[0]![0];
+    expect(callArgs.tool_choice).toBe('auto');
+  });
+
+  it('флаг ON + форс + прокси бросает format-400 → откат на auto, guard tool-choice-relaxed, повтор; вторая модель сразу auto', async () => {
+    const { metrics, guard } = makeMetricsMock();
+    const svc = new DeepSeekService(
+      makeCfg({ forceToolChoiceEnabled: true }),
+      metrics,
+    );
+    if (!lastSdkInstance) throw new Error('sdk not constructed');
+    const create = lastSdkInstance.chat.completions.create;
+    // 1-й вызов — форс tool_choice, прокси 400 «tool_choice ... function»;
+    // 2-й вызов (после отката) — успех.
+    create
+      .mockRejectedValueOnce(
+        formatError('tool_choice with type function is not supported'),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["a"]}' }],
+        }),
+      );
+
+    const out = await svc.complete({
+      ...JSON_SCHEMA_INPUT,
+      model: 'deepseek-v4-flash',
+    });
+
+    expect(out.text).toBe('{"facts":["a"]}');
+    // повтор был — ровно 2 вызова прокси.
+    expect(create).toHaveBeenCalledTimes(2);
+    // первый — форс, второй — откат на 'auto'.
+    expect(create.mock.calls[0]![0].tool_choice).toEqual(
+      expect.objectContaining({ type: 'function' }),
+    );
+    expect(create.mock.calls[1]![0].tool_choice).toBe('auto');
+    // guard зафиксировал откат.
+    expect(guard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'tool-choice-relaxed',
+        model: 'deepseek-v4-flash',
+      }),
+    );
+
+    // Вторая отправка на ТУ ЖЕ модель — сразу 'auto' (модель в
+    // forceUnsupportedModels), без форса и без второго отката.
+    create.mockReset();
+    create.mockResolvedValueOnce(
+      okResponse({
+        toolCalls: [{ name: 'submit_facts', arguments: '{"facts":["b"]}' }],
+      }),
+    );
+    await svc.complete({ ...JSON_SCHEMA_INPUT, model: 'deepseek-v4-flash' });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![0].tool_choice).toBe('auto');
   });
 });

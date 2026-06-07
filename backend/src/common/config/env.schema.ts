@@ -147,6 +147,13 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com/v1'),
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
+  // ТЗ-3 Фаза 3 — форсить вызов synthetic-tool (`tool_choice:{type:function}`)
+  // вместо 'auto' при autoConvert (json_schema → tool) для НЕ-thinking
+  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу. ДЕФОЛТ OFF:
+  // forced tool_choice — внешне-наблюдаемое поведение LLM-API, требует прод-пробу
+  // agent-lia; включает владелец после пробы. При OFF поведение = текущее ('auto').
+  // Guard в deepseek.service сам откатывает на 'auto' при format-400 от прокси.
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
 });
 
 const OllamaSchema = z.object({

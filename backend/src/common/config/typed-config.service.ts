@@ -281,6 +281,15 @@ export class TypedConfigService {
         apiKey: this.get('DEEPSEEK_API_KEY'),
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
         defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
+        // ТЗ-3 Фаза 3 — форс synthetic-tool через tool_choice для не-thinking
+        // моделей при autoConvert. Дефолт OFF (см. env.schema.ts): включает
+        // владелец после прод-пробы agent-lia. Guard в deepseek.service
+        // откатывает на 'auto' при format-400 прокси.
+        forceToolChoiceEnabled: this.resolveSync<boolean>(
+          'ai.deepseek.forceToolChoiceEnabled',
+          'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
+          false,
+        ),
       },
       ollama: {
         baseUrl: this.get('OLLAMA_BASE_URL'),

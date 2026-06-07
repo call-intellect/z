@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ASR_NOTE,
   EDGE_CASE_POLICY,
   Z_GLOBAL_PREAMBLE,
+  withAsrNote,
   withEdgeCasePolicy,
   withZPreamble,
 } from './common';
@@ -63,5 +65,32 @@ describe('withEdgeCasePolicy', () => {
     // оптимизация в виде «уберём дубль» не прошла без явного решения.
     const count = twice.split(EDGE_CASE_POLICY).length - 1;
     expect(count).toBe(2);
+  });
+});
+
+describe('withAsrNote', () => {
+  const SYSTEM = 'Ты — деловой ассистент. Составь summary встречи.';
+
+  it('дописывает ASR_NOTE в КОНЕЦ system-промпта', () => {
+    const out = withAsrNote(SYSTEM);
+    // Нота — самый последний блок (cache-friendly суффикс).
+    expect(out.endsWith(ASR_NOTE)).toBe(true);
+    expect(out).toContain(ASR_NOTE);
+    expect(out.indexOf(ASR_NOTE)).toBeGreaterThan(0);
+  });
+
+  it('исходный system-префикс не изменён (cache-friendly)', () => {
+    const out = withAsrNote(SYSTEM);
+    // Стабильный SYSTEM в начале — кэш промпта не ломается.
+    expect(out.startsWith(SYSTEM)).toBe(true);
+    expect(out).toBe(`${SYSTEM}\n\n${ASR_NOTE}`);
+  });
+
+  it('нота покрывает ключевые правила (ASR / числа-имена / контекст / не выдумывать)', () => {
+    expect(ASR_NOTE).toContain('ASR');
+    expect(ASR_NOTE).toContain('распознавания речи');
+    expect(ASR_NOTE.toLowerCase()).toContain('числ');
+    expect(ASR_NOTE).toContain('контекст');
+    expect(ASR_NOTE).toContain('Не выдумывай');
   });
 });

@@ -17,6 +17,7 @@ import type {
   DialogTurn,
   RoomChatMessage,
 } from '../../ai/services/prompts/common';
+import { withAsrNote } from '../../ai/services/prompts/common';
 import {
   buildMeetingExtractActionsPrompt,
   type MeetingExtractActionsContext,
@@ -165,7 +166,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
         taskType: 'meeting-extract-actions',
         tenantId,
         meetingId,
-        systemPrompt: prompt.system,
+        // ТЗ-4 Ф2 — ASR-нота дописывается В КОНЕЦ system (cache-friendly):
+        // вход — сырое распознавание речи, просим восстанавливать смысл по
+        // контексту и нормализовать числа.
+        systemPrompt: withAsrNote(prompt.system),
         userMessage: prompt.user,
         responseFormat: {
           type: 'json_schema',

@@ -53,8 +53,38 @@ describe('SpecialistRoutingDispatcherWorker', () => {
    * `{ handle: vi.fn() }`, плюс на класс навешан правильный static-ключ
    * (берём из самого класса, чтобы карта совпадала с продакшеном).
    */
-  function build() {
+  function build(opts?: {
+    meetingExternalId?: string | null;
+    hasEvidence?: boolean;
+  }) {
     const make = () => ({ handle: vi.fn(async () => undefined) });
+
+    // PipelineRunner-мок: прозрачно исполняет fn (как withPipelineJob), но
+    // фиксирует переданную meta — чтобы проверить traceId.
+    const pipe = {
+      run: vi.fn(
+        async (_meta: unknown, fn: () => Promise<unknown>) => fn(),
+      ),
+    };
+
+    // PrismaService-мок: evidence → rawEvent(sourceType='meeting').
+    const hasEvidence = opts?.hasEvidence ?? true;
+    const meetingExternalId =
+      opts?.meetingExternalId === undefined ? 'mtg-1' : opts.meetingExternalId;
+    const prisma = {
+      ideaBlockEvidence: {
+        findMany: vi.fn(async () =>
+          hasEvidence ? [{ rawEventId: 're1' }] : [],
+        ),
+      },
+      rawEvent: {
+        findFirst: vi.fn(async () =>
+          meetingExternalId
+            ? { sourceExternalId: meetingExternalId }
+            : null,
+        ),
+      },
+    };
 
     const regulations = make();
     const knowledgeClone = make();
@@ -75,6 +105,8 @@ describe('SpecialistRoutingDispatcherWorker', () => {
 
     const dispatcher = new SpecialistRoutingDispatcherWorker(
       redis as never,
+      pipe as never,
+      prisma as never,
       regulations as never,
       knowledgeClone as never,
       decisions as never,
@@ -95,6 +127,8 @@ describe('SpecialistRoutingDispatcherWorker', () => {
 
     return {
       dispatcher,
+      pipe,
+      prisma,
       handlers: {
         regulations,
         knowledgeClone,
@@ -183,5 +217,32 @@ describe('SpecialistRoutingDispatcherWorker', () => {
       dispatcher as unknown as { handlers: Map<string, unknown> }
     ).handlers;
     expect(map.size).toBe(14);
+  });
+
+  it('блок из встречи → pipe.run вызван с traceId="mtg_<meetingId>" и оборачивает handler', async () => {
+    const { handlers, pipe } = build({ meetingExternalId: 'M-42' });
+    const processor = getProcessor();
+
+    await processor(jobOf(Specialist314GoalsWorker.SPECIALIST_NAME));
+
+    expect(pipe.run).toHaveBeenCalledTimes(1);
+    expect(pipe.run).toHaveBeenCalledWith(
+      expect.objectContaining({ traceId: 'mtg_M-42' }),
+      expect.any(Function),
+    );
+    // Обёртка прозрачна: handler всё равно вызван ровно один раз.
+    expect(handlers.goals.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('блок не из встречи → pipe.run вызван с fallback-traceId (block_<id>)', async () => {
+    const { pipe } = build({ hasEvidence: false });
+    const processor = getProcessor();
+
+    await processor(jobOf(Specialist314GoalsWorker.SPECIALIST_NAME));
+
+    expect(pipe.run).toHaveBeenCalledWith(
+      expect.objectContaining({ traceId: 'block_b1' }),
+      expect.any(Function),
+    );
   });
 });

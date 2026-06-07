@@ -17,6 +17,8 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { SystemLogPipeline } from '../../logging/log-pipeline';
+import { LogService } from '../../logging/log.service';
 import {
   GOAL_EXTRACT_JSON_SCHEMA,
   GOAL_EXTRACT_SCHEMA_NAME,
@@ -88,6 +90,7 @@ export class Specialist314GoalsService {
     private readonly embedder: KnowledgeEmbeddingService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(LogService) private readonly logs: LogService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -126,7 +129,18 @@ export class Specialist314GoalsService {
     if (block.tenantId !== args.tenantId) return;
 
     const draft = await this.extractGoalDraft(block);
-    if (!draft) return;
+    if (!draft) {
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-14-goals',
+        action: 'skipped',
+        message: 'Goal не извлечена (не цель / низкий confidence)',
+        orgId: block.tenantId,
+        details: { type: 'goal', reason: 'no_draft', blockId: block.id },
+      });
+      return;
+    }
 
     try {
       const queryText = `${draft.statement} ${draft.description ?? ''}`;
@@ -156,6 +170,19 @@ export class Specialist314GoalsService {
           tenantId: block.tenantId,
           targetId: verdict.targetId,
         });
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'merged',
+          message: `Goal-дубликат слит в существующую ${verdict.targetId}`,
+          orgId: block.tenantId,
+          details: {
+            type: 'goal',
+            intoId: verdict.targetId,
+            blockId: block.id,
+          },
+        });
         return;
       }
 
@@ -181,6 +208,15 @@ export class Specialist314GoalsService {
           { blockId: block.id, horizon: draft.horizon },
           'specialist-3-14: cap фокуса по горизонту достигнут — цель не создаём',
         );
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'skipped',
+          message: 'Goal не создана: достигнут cap фокуса по горизонту',
+          orgId: block.tenantId,
+          details: { type: 'goal', reason: 'focus_cap', blockId: block.id },
+        });
         return;
       }
 
@@ -191,6 +227,15 @@ export class Specialist314GoalsService {
           { blockId: block.id, tenantId: block.tenantId },
           'specialist-3-14: не найден owner Org — пропускаю создание цели',
         );
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'skipped',
+          message: 'Goal не создана: не найден owner Org',
+          orgId: block.tenantId,
+          details: { type: 'goal', reason: 'no_owner', blockId: block.id },
+        });
         return;
       }
 
@@ -206,6 +251,16 @@ export class Specialist314GoalsService {
         promotionState,
         createdById: ownerUserId,
         sourceBlockIds: [block.id],
+      });
+
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-14-goals',
+        action: 'created',
+        message: `создана Goal ${goal.id}`,
+        orgId: block.tenantId,
+        details: { type: 'goal', entityId: goal.id, blockId: block.id },
       });
 
       this.metrics.incCoreSpecialistCards({

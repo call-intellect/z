@@ -25,6 +25,8 @@ import {
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { SystemLogPipeline } from '../../logging/log-pipeline';
+import { LogService } from '../../logging/log.service';
 import {
   DECISION_EXTRACT_JSON_SCHEMA,
   DECISION_EXTRACT_SCHEMA_NAME,
@@ -88,6 +90,7 @@ export class Specialist33Service {
     private readonly probes: Specialist33ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(LogService) private readonly logs: LogService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -140,7 +143,18 @@ export class Specialist33Service {
 
     const contextQuotes = await this.loadContextQuotes(block);
     const draft = await this.extractDraft(block, contextQuotes);
-    if (!draft) return;
+    if (!draft) {
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-3-decisions',
+        action: 'skipped',
+        message: 'Decision не извлечён (нет черновика / низкий confidence)',
+        orgId: block.tenantId,
+        details: { type: 'decision', reason: 'no_draft', blockId: block.id },
+      });
+      return;
+    }
 
     try {
       // Резолв decidedByPersonIds (через name-hints + linkPersonEntity).
@@ -206,6 +220,19 @@ export class Specialist33Service {
             affectsEntityIds,
             sourceBlockIds,
             personSubjectIds,
+          });
+          this.logs.write({
+            level: 'INFO',
+            pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+            module: 'specialist-3-3-decisions',
+            action: 'merged',
+            message: `Decision слит в существующий ${existing.id}`,
+            orgId: block.tenantId,
+            details: {
+              type: 'decision',
+              intoId: existing.id,
+              blockId: block.id,
+            },
           });
         }
       } else if (verdict.verdict === 'supersedes' && verdict.targetId) {
@@ -318,6 +345,22 @@ export class Specialist33Service {
         dataClass: block.dataClass,
         conflictSignal: verdict.verdict === 'supersedes' ? 'hard' : 'none',
       });
+
+      if (createdNew) {
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-3-decisions',
+          action: 'created',
+          message: `создан Decision ${decision.id}`,
+          orgId: block.tenantId,
+          details: {
+            type: 'decision',
+            entityId: decision.id,
+            blockId: block.id,
+          },
+        });
+      }
 
       // Probe-events (на новый и на merge — но только trigger'ы про текущее
       // состояние карточки, а не общестояночные).

@@ -7,8 +7,15 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { CORE_QUEUE_NAMES } from '../../core-queue/queues';
+import {
+  deriveTraceFromJob,
+  PipelineRunner,
+  SystemLogPipeline,
+  traceForMeeting,
+} from '../../logging/log-pipeline';
 import { PersonalRelationBuilderWorker } from '../../operations/workers/personal-relation-builder.worker';
 import { RoleMapBuilderWorker } from '../../role-map/workers/role-map-builder.worker';
 import { Specialist38HelpfulnessWorker } from '../../specialist-3-8-helpfulness/workers/specialist-3-8-helpfulness.worker';
@@ -66,6 +73,8 @@ export class SpecialistRoutingDispatcherWorker
 
   constructor(
     @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(PipelineRunner) private readonly pipe: PipelineRunner,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(Specialist31RegulationsWorker)
     private readonly regulations: Specialist31RegulationsWorker,
     @Inject(Specialist32KnowledgeCloneWorker)
@@ -169,8 +178,35 @@ export class SpecialistRoutingDispatcherWorker
   }
 
   /**
+   * Резолвит meetingId блока: evidence -> rawEvent(sourceType='meeting').sourceExternalId.
+   * null если не из встречи.
+   */
+  private async resolveMeetingId(
+    blockId: string | undefined,
+  ): Promise<string | null> {
+    if (!blockId) return null;
+    const ev = await this.prisma.ideaBlockEvidence.findMany({
+      where: { blockId },
+      select: { rawEventId: true },
+    });
+    if (ev.length === 0) return null;
+    const raw = await this.prisma.rawEvent.findFirst({
+      where: { id: { in: ev.map((e) => e.rawEventId) }, sourceType: 'meeting' },
+      orderBy: { occurredAt: 'desc' }, // самая свежая встреча-источник
+      select: { sourceExternalId: true },
+    });
+    return raw?.sourceExternalId ?? null;
+  }
+
+  /**
    * Делегирование job'а нужному специалисту по `job.name`. Неизвестный
    * jobName → throw (попадает в `failed`, виден; не теряется как completed).
+   *
+   * Ф0b «agent-chain-overhaul» — каждый специалист исполняется в pipeline-
+   * контексте `KNOWLEDGE_GRAPH` с traceId=`mtg_<meetingId>` (если блок из
+   * встречи). Это делает milestone start/done/failed и любые LogService-логи
+   * внутри специалиста видимыми в трассе встречи (`diag chain --trace mtg_*`).
+   * Контрол-флоу НЕ меняется: ошибка по-прежнему пробрасывается → BullMQ retry.
    */
   private async dispatch(job: Job): Promise<void> {
     const handler = this.handlers.get(job.name);
@@ -179,6 +215,20 @@ export class SpecialistRoutingDispatcherWorker
         `specialist-routing: неизвестный jobName '${job.name}'`,
       );
     }
-    await handler.handle(job);
+    const blockId = (job.data as { blockId?: string })?.blockId;
+    // Резолв meetingId не должен ронять обработку → проглатываем ошибку.
+    const meetingId = await this.resolveMeetingId(blockId).catch(() => null);
+    const traceId = meetingId
+      ? traceForMeeting(meetingId)
+      : deriveTraceFromJob(job);
+    await this.pipe.run(
+      {
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: `specialist:${job.name}`,
+        ...(traceId ? { traceId } : {}),
+        details: { blockId, jobName: job.name },
+      },
+      () => handler.handle(job),
+    );
   }
 }

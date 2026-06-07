@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { LlmRouterService } from '../../ai/services/llm-router.service';
+import type { OrgContextService } from '../../ai/services/org-context.service';
 import type { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
-import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
   ResolvedTaskAssignee,
   TaskAssigneeResolverService,
@@ -40,6 +41,7 @@ function mkService(opts?: {
   prisma: MockPrisma;
   llm: { call: ReturnType<typeof vi.fn> };
   participantContext: { loadForMeeting: ReturnType<typeof vi.fn> };
+  orgContext: { load: ReturnType<typeof vi.fn> };
   assigneeResolver: { resolve: ReturnType<typeof vi.fn> };
   metrics: {
     incAiMeetingActionsExtracted: ReturnType<typeof vi.fn>;
@@ -137,6 +139,22 @@ function mkService(opts?: {
       .mockResolvedValue(opts?.participants ?? []),
   };
 
+  // ТЗ-4 Ф3 — общий загрузчик org-контекста (вынесен из приватного
+  // loadOrgContext). Возвращает ту же форму, что исторический метод:
+  // те же проекты/цели/сотрудники + meetingDateIso от даты встречи (мок
+  // meeting.startedAt = 2026-05-24).
+  const orgContext = {
+    load: vi.fn().mockResolvedValue({
+      projects: [{ identifier: 'DEV', name: 'Команда разработки' }],
+      goals: [{ name: 'Запуск v2' }],
+      people: [
+        { name: 'Иванов Сергей', role: null },
+        { name: 'Петров Олег', role: null },
+      ],
+      meetingDateIso: '2026-05-24',
+    }),
+  };
+
   // Резолвер детерминирован: возвращает заданный массив, иначе для каждой
   // входной задачи — null (нет матча среди участников). Сохраняем
   // assigneeRaw из входа, чтобы форма совпадала с реальным сервисом.
@@ -163,6 +181,7 @@ function mkService(opts?: {
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
     participantContext as unknown as ParticipantContextService,
+    orgContext as unknown as OrgContextService,
     assigneeResolver as unknown as TaskAssigneeResolverService,
     metrics as unknown as BusinessMetricsService,
     queue as unknown as IntakeAutoTriageQueueService,
@@ -172,6 +191,7 @@ function mkService(opts?: {
     prisma,
     llm,
     participantContext,
+    orgContext,
     assigneeResolver,
     metrics,
     queue,
@@ -197,7 +217,7 @@ describe('MeetingExtractActionsService', () => {
   });
 
   it('извлекает задачу из встречи и создаёт IntakeIssue с suggested* + enqueue auto-triage', async () => {
-    const { service, prisma, llm, metrics, queue } = mkService({
+    const { service, prisma, llm, metrics, queue, orgContext } = mkService({
       // Резолвер находит Иванова среди участников встречи.
       resolveResult: [
         { assigneeRaw: 'Иванов Сергей', assigneeUserId: 'user-ivanov', ambiguous: false },
@@ -213,6 +233,14 @@ describe('MeetingExtractActionsService', () => {
     expect(llm.call).toHaveBeenCalledTimes(1);
     const callArgs = llm.call.mock.calls[0]?.[0] as { taskType: string };
     expect(callArgs.taskType).toBe('meeting-extract-actions');
+
+    // ТЗ-4 Ф3 — org-контекст грузится через общий OrgContextService.load
+    // (реюз), с tenantId и датой начала встречи. Приватного loadOrgContext
+    // больше нет.
+    expect(orgContext.load).toHaveBeenCalledWith(
+      'org-1',
+      new Date('2026-05-24T10:00:00Z'),
+    );
 
     expect(prisma.intakeIssue.create).toHaveBeenCalledTimes(1);
     const createArg = prisma.intakeIssue.create.mock.calls[0]?.[0] as {

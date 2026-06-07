@@ -211,6 +211,58 @@ export function withAsrNote(systemBody: string): string {
   return `${systemBody}\n\n${ASR_NOTE}`;
 }
 
+// ─────────────────── org-контекст компании (ТЗ-4 Ф3) ──────────────────────
+//
+// Компактная сводка компании (проекты / активные цели / сотрудники) для
+// инъекции в SYSTEM промптов summary и report-by-type. Цель — дать модели
+// якоря для связывания имён, проектов и терминов в транскрипте.
+//
+// Дописывается В КОНЕЦ system (после guard'а, ПЕРЕД ASR-нотой, см.
+// analyze.worker). Данные стабильны per-tenant и меняются редко, поэтому
+// блок cache-friendly: кэш SYSTEM живёт между встречами одной org.
+//
+// Источник данных — `OrgContextService.load` (тот же загрузчик, что у
+// tasks-пути meeting-extract-actions). No-op, если контекст пуст.
+
+/** Компактный shape org-контекста для форматтера (совместим с OrgContextService.load). */
+export interface OrgContextForPrompt {
+  projects?: Array<{ identifier?: string | null; name: string }>;
+  goals?: Array<{ name: string }>;
+  people?: Array<{ name: string }>;
+}
+
+/** Компактные строки org-контекста для SYSTEM. Пустой ctx → пустая строка. */
+export function formatOrgContextForPrompt(ctx: OrgContextForPrompt): string {
+  const parts: string[] = [];
+  if (ctx.projects?.length) {
+    parts.push(
+      `Проекты компании: ${ctx.projects
+        .map((p) => (p.identifier ? `${p.name} (${p.identifier})` : p.name))
+        .join(', ')}.`,
+    );
+  }
+  if (ctx.goals?.length) {
+    parts.push(`Активные цели: ${ctx.goals.map((g) => g.name).join(', ')}.`);
+  }
+  if (ctx.people?.length) {
+    parts.push(`Сотрудники: ${ctx.people.map((p) => p.name).join(', ')}.`);
+  }
+  return parts.join('\n');
+}
+
+/**
+ * Дописывает блок org-контекста в КОНЕЦ system (стабильно per-tenant →
+ * cache-friendly). No-op, если контекст пуст.
+ */
+export function withOrgContextNote(
+  systemBody: string,
+  ctx: OrgContextForPrompt,
+): string {
+  const block = formatOrgContextForPrompt(ctx);
+  if (!block) return systemBody;
+  return `${systemBody}\n\nКонтекст компании (для связывания имён, проектов и терминов — не выдумывай то, чего нет в диалоге):\n${block}`;
+}
+
 // ─────────────────── prompt-injection guard (ТЗ 2026-05-24 §4) ─────────────
 //
 // Защита от prompt-injection через customPrompt и пользовательский ввод

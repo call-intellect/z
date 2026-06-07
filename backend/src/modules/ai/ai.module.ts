@@ -20,6 +20,7 @@ import { MinimaxService } from './services/minimax.service';
 import { MultiAgentDebateService } from './services/multi-agent-debate.service';
 import { OllamaService } from './services/ollama.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
+import { OrgContextService } from './services/org-context.service';
 import { ParticipantContextService } from './services/participant-context.service';
 import { PromptResolverService } from './services/prompt-resolver.service';
 import { AnthropicMessagesProtocolAdapter } from './services/protocol-adapter/adapters/anthropic-messages.adapter';
@@ -104,6 +105,11 @@ import { VoxService } from './services/vox.service';
     // ТЗ 2026-05-25 hard-participant-identification — загрузка списка
     // участников встречи (с userId/fullName) для AI-промптов задач.
     ParticipantContextService,
+    // ТЗ-4 Ф3 — компактный org-контекст (проекты/цели/сотрудники) для инъекции
+    // в SYSTEM summary + report-by-type. Реюз загрузчика, который раньше жил
+    // приватным в MeetingExtractActionsService. @Global-экспорт ниже делает его
+    // доступным и analyze.worker (ai), и meeting-extract-actions (tracker).
+    OrgContextService,
     RegenerateService,
     // Card-rollup — синхронный вызов из endpoint'а на странице карточки
     // (опционально), и из воркера (см. WorkersModule).
@@ -134,6 +140,7 @@ import { VoxService } from './services/vox.service';
     ChapterExtractionService,
     TaskExtractionService,
     ParticipantContextService,
+    OrgContextService,
     CardRollupService,
     PromptResolverService,
     BehaviorMetricsCalculator,

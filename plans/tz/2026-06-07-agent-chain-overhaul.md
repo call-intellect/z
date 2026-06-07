@@ -177,7 +177,12 @@ workflows_evidence: 3 многоагентных прогона (аудит 22 �
 
 ---
 
-## Ф5. Консолидация путей: задачи и summary `[ ]`
+## Ф5. Консолидация путей: задачи и summary `[~]` (summary-консолидация сделана; семантический дедуп задач отложен)
+
+> **Реализовано 2026-06-07** (feature/retest2-agent-chain-overhaul) — **summary-консолидация (Р6)**: backend-селектор `pickPrimarySummary(r) = summaryFast ?? summaryV2 ?? summary` (`src/modules/ai/utils/pick-primary-summary.ts`), на него переключены ВСЕ прямые потребители `AiResult.summary` (card-rollup [крит], exports MD/DOCX, shares, crossmark, public-api, meeting-reports, cards.controller, single-meeting-context) — где нужно, в Prisma-`select` добавлены summaryFast/summaryV2; фронт `MeetingsJournalReal` через `pickPrimarySummary`. Конец видимого «дубля сводок». **Флаг `aiFeatures.summaryAgentEnabled` (ENV `SUMMARY_AGENT_ENABLED` + AdminSetting, дефолт TRUE):** при false analyze.worker НЕ зовёт runSummary (−1 MiniMax-вызов, 0% кэш), пишет `summary=''`. Дефолт ВКЛ — Шаг 1 (read-switch) ушёл с нулевым риском; отключение runSummary — ops-флип после подтверждения покрытия summaryFast. Тесты: pick-primary-summary + analyze (флаг) + shares = 28 зелёных; build зелёный.
+>
+> **НЕ сделано (осознанно — в реестр «не-сделано»):**
+> - **Р2 (один canonical-путь задач + СЕМАНТИЧЕСКИЙ дедуп):** новый LLM-арбитр `task-dedupe` (embedding KNN ~0.85 + серая зона LLM) — качество требует golden+живого LLM (Принцип 4), которого в сессии нет. Строковый дедуп уже усилен ТЗ-4 Ф1 (числа/скобки/пунктуация). Семантический дедуп + выбор canonical-источника задач — отдельная golden-gated задача.
 
 **Проблема:** два пути задач (meeting-report-fast `fast` vs analyze `structured`) расходятся на витрине (дубли под счётчиком «5»); строковый дедуп `normTaskTitle` не схлопывает семантические дубли; отдельный summary-агент (MiniMax) дублирует `summary_markdown` от meeting-report-fast и даёт 0% кэша.
 

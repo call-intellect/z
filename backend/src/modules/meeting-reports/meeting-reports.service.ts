@@ -28,6 +28,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { AiQueueService } from '../ai/ai-queue.service';
+import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 import { EntitlementService } from '../entitlements/entitlement.service';
 
 import type {
@@ -97,7 +98,7 @@ export class MeetingReportsService {
           aiResult.promptTemplateVersion?.template.name ??
           `Системный шаблон ${meeting.type}`,
         status: 'ready',
-        outputPreview: makePreview(aiResult.summary),
+        outputPreview: makePreview(pickPrimarySummary(aiResult)),
         createdAt: aiResult.createdAt.toISOString(),
         completedAt: aiResult.updatedAt.toISOString(),
         llmCostUsd: null,
@@ -129,9 +130,10 @@ export class MeetingReportsService {
       include: { promptTemplateVersion: { include: { template: true } } },
     });
     if (aiResult && reportId === aiResult.id) {
+      const canonicalSummary = pickPrimarySummary(aiResult);
       const output =
         (aiResult.structuredData as unknown) ??
-        (aiResult.summary ? { summary: aiResult.summary } : null);
+        (canonicalSummary ? { summary: canonicalSummary } : null);
       return {
         kind: 'primary',
         id: aiResult.id,
@@ -141,7 +143,7 @@ export class MeetingReportsService {
           aiResult.promptTemplateVersion?.template.name ??
           `Системный шаблон ${meeting.type}`,
         status: 'ready',
-        outputPreview: makePreview(aiResult.summary),
+        outputPreview: makePreview(canonicalSummary),
         createdAt: aiResult.createdAt.toISOString(),
         completedAt: aiResult.updatedAt.toISOString(),
         llmCostUsd: null,

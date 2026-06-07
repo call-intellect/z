@@ -301,12 +301,15 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'embeddings', severity, description });
   }
 
-  // ── AI feature flags (aiFeatures.*) — 4. Фаза 4 миграции call-sites.
+  // ── AI feature flags (aiFeatures.*) — 5. Фаза 4 миграции call-sites.
   const aiFeatures: Array<[string, unknown, Severity, string]> = [
     ['aiFeatures.includeRoomChat', envBool('INCLUDE_ROOM_CHAT_IN_AI', true), 'medium', 'Включать room-chat в AI-анализ'],
     ['aiFeatures.transcriptCleaningLlmRefine', envBool('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED', true), 'medium', 'LLM-refine в transcript-clean (уровень 2)'],
     ['aiFeatures.behaviorMetricsLlmRefine', envBool('BEHAVIOR_METRICS_LLM_REFINE_ENABLED', false), 'medium', 'LLM-refine в behavior-metrics (Фаза B)'],
     ['aiFeatures.promptInjectionGuardEnabled', envBool('PROMPT_INJECTION_GUARD_ENABLED', true), 'high', 'Защита от prompt-injection в customPrompt (F1)'],
+    // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — legacy summary-агент (MiniMax,
+    // 0% кэш). Дефолт ВКЛ — обратимо; false = −1 LLM-вызов, сводка из summaryFast.
+    ['aiFeatures.summaryAgentEnabled', envBool('SUMMARY_AGENT_ENABLED', true), 'medium', 'Legacy summary-агент в analyze.worker (false = сводка только из summaryFast / meeting-report-fast)'],
   ];
   for (const [key, value, severity, description] of aiFeatures) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });

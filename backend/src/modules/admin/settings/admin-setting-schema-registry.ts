@@ -108,6 +108,12 @@ const registry = new Map<string, ZodTypeAny>([
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],
 
+  // ── AI feature-flags (aiFeatures.*) ──────────────────────────────────
+  // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — флаг legacy summary-агента
+  // (analyze.worker runSummary, MiniMax). Дефолт TRUE — обратимо; false = −1
+  // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
+  ['aiFeatures.summaryAgentEnabled', z.boolean()],
+
   // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],

@@ -21,6 +21,7 @@ import type { Card, Meeting } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 import {
   CurrentUser,
   type CurrentUserPayload,
@@ -228,7 +229,10 @@ export class CardsController {
         skip,
         take: limit,
         include: {
-          aiResult: { select: { summary: true } },
+          // Р6: тянем все три summary-поля для pickPrimarySummary.
+          aiResult: {
+            select: { summaryFast: true, summaryV2: true, summary: true },
+          },
         },
       }),
       this.prisma.meeting.count({ where }),
@@ -356,7 +360,13 @@ export class CardsController {
   }
 
   private mapMeetingItem(
-    m: Meeting & { aiResult: { summary: string } | null },
+    m: Meeting & {
+      aiResult: {
+        summaryFast: string | null;
+        summaryV2: string | null;
+        summary: string;
+      } | null;
+    },
   ): {
     id: string;
     title: string;
@@ -376,7 +386,7 @@ export class CardsController {
       startedAt: m.startedAt?.toISOString() ?? null,
       endedAt: m.endedAt?.toISOString() ?? null,
       durationMs: m.durationMs,
-      summary: m.aiResult?.summary ?? null,
+      summary: m.aiResult ? pickPrimarySummary(m.aiResult) || null : null,
       createdAt: m.createdAt.toISOString(),
     };
   }

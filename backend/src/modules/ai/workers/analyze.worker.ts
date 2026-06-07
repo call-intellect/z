@@ -208,27 +208,42 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     // 3. создаём/находим AiResult (placeholder для постепенного заполнения).
     let aiResult: AiResult = await this.upsertEmptyAiResult(meeting);
 
-    // 4. Summary (всегда).
+    // 4. Summary (legacy summary-агент за флагом). Каноническая сводка теперь
+    //    идёт из meeting-report-fast (`summaryFast`); все потребители читают её
+    //    через pickPrimarySummary (Р6). При выключенном флаге НЕ зовём runSummary
+    //    (−1 LLM-вызов MiniMax) и пишем пустой `summary` (колонка non-null;
+    //    fast-воркер тоже пишет '' при create — тип не ломается).
     const summaryStarted = Date.now();
-    const summary = await this.runSummary({
-      meeting,
-      dialog,
-      roomChat,
-      jobId: job.id ?? null,
-    });
-    aiResult = await this.prisma.aiResult.update({
-      where: { id: aiResult.id },
-      data: {
-        summary: summary.text || '(пустое саммари)',
-        modelUsed: summary.model,
-      },
-    });
-    this.metrics.observeAiPipelineDuration({
-      stage: 'analyze.summary',
-      type: meeting.type,
-      model: summary.model,
-      seconds: (Date.now() - summaryStarted) / 1000,
-    });
+    if (this.isSummaryAgentEnabled()) {
+      const summary = await this.runSummary({
+        meeting,
+        dialog,
+        roomChat,
+        jobId: job.id ?? null,
+      });
+      aiResult = await this.prisma.aiResult.update({
+        where: { id: aiResult.id },
+        data: {
+          summary: summary.text || '(пустое саммари)',
+          modelUsed: summary.model,
+        },
+      });
+      this.metrics.observeAiPipelineDuration({
+        stage: 'analyze.summary',
+        type: meeting.type,
+        model: summary.model,
+        seconds: (Date.now() - summaryStarted) / 1000,
+      });
+    } else {
+      this.logger.log(
+        { meetingId },
+        'analyze: summary-агент выключен (Р6) — пишем summary="" , каноническая сводка из summaryFast',
+      );
+      aiResult = await this.prisma.aiResult.update({
+        where: { id: aiResult.id },
+        data: { summary: '' },
+      });
+    }
 
     // 5. customPrompt OR promptByType.
     if (meeting.customPrompt && meeting.customPrompt.trim().length > 0) {
@@ -659,6 +674,22 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       const features = this.cfg.aiFeatures;
       // Если поле существует и === false → выкл. Иначе — вкл.
       return features.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * ТЗ 2026-06-07 agent-chain-overhaul, Фаза 5 / Р6 — флаг legacy summary-агента.
+   * Defensive (как `isPromptInjectionGuardEnabled`): в старых unit-тестах cfg
+   * инжектится как `{ ai: {}, aiFeatures: { promptInjectionGuardEnabled } }` без
+   * `summaryAgentEnabled`, поэтому при отсутствии — возвращаем true (дефолт ВКЛ:
+   * summary-агент продолжает работать). При явном false — runSummary не зовётся.
+   */
+  private isSummaryAgentEnabled(): boolean {
+    try {
+      const features = this.cfg.aiFeatures as { summaryAgentEnabled?: boolean };
+      return features.summaryAgentEnabled !== false;
     } catch {
       return true;
     }

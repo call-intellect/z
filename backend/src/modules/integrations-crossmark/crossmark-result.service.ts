@@ -3,6 +3,7 @@ import type { MeetingStatus, MeetingType } from '@prisma/client';
 
 import { MeetingNotFoundError } from '../../common/errors/domain-errors';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 
 /**
  * Снэпшот результата встречи для Crossmark API.
@@ -90,7 +91,7 @@ export class CrossmarkResultService {
           name: meeting.owner.name,
         },
       },
-      summary: meeting.aiResult?.summary ?? null,
+      summary: meeting.aiResult ? pickPrimarySummary(meeting.aiResult) || null : null,
       structuredData: meeting.aiResult?.structuredData ?? null,
       customOutputMd: meeting.aiResult?.customOutputMd ?? null,
       followUpEmail: meeting.aiResult?.followUpEmail ?? null,

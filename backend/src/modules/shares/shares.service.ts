@@ -14,6 +14,7 @@ import type { HighlightShare, MeetingShare } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 import { AuditLogService } from '../audit/audit-log.service';
 import { extractKeyFromUrl } from '../recordings/s3-keys';
 import { S3Service } from '../recordings/s3.service';
@@ -239,7 +240,9 @@ export class SharesService {
       include: {
         chapters: { orderBy: { order: 'asc' } },
         tasks: true,
-        aiResult: { select: { summary: true } },
+        aiResult: {
+          select: { summaryFast: true, summaryV2: true, summary: true },
+        },
         transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } },
         recording: { select: { mainVideoUrl: true, status: true } },
       },
@@ -277,8 +280,9 @@ export class SharesService {
       }));
     }
 
-    if (meeting.aiResult?.summary) {
-      payload.summary = meeting.aiResult.summary;
+    const summary = meeting.aiResult ? pickPrimarySummary(meeting.aiResult) : '';
+    if (summary) {
+      payload.summary = summary;
     }
 
     if (share.allowChapters) {

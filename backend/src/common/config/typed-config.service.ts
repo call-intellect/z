@@ -632,6 +632,19 @@ export class TypedConfigService {
         'PROMPT_INJECTION_GUARD_ENABLED',
         true,
       ),
+      /**
+       * ТЗ 2026-06-07 agent-chain-overhaul, Фаза 5 / Р6 — флаг legacy
+       * summary-агента (analyze.worker `runSummary`, MiniMax, 0% кэш). При
+       * `true` (default) агент работает как раньше — обратимо, ничего не ломает.
+       * Каноническая сводка теперь идёт из meeting-report-fast (`summaryFast`);
+       * после подтверждения покрытия `summaryFast` можно выставить `false` —
+       * это `−1` LLM-вызов MiniMax (ops-решение).
+       */
+      summaryAgentEnabled: this.resolveSync<boolean>(
+        'aiFeatures.summaryAgentEnabled',
+        'SUMMARY_AGENT_ENABLED',
+        true,
+      ),
     } as const;
   }
 

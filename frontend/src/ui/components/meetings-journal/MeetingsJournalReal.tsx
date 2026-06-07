@@ -41,6 +41,7 @@ import {
   isJoinableStatus,
   MEETING_TYPE_LABEL_RU,
 } from '@/domain/meeting';
+import { pickPrimarySummary } from '@/domain/ai-result';
 import { tagFromApi, type TagDomain } from '@/domain/tag';
 import { pickPrimaryTasks } from '@/domain/task';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -953,7 +954,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
-  const summary = aiResult?.summary ?? null;
+  // Р6: единый селектор канонической сводки (summaryFast ?? summaryV2 ?? summary),
+  // чтобы превью журнала совпадало со страницей результата (конец «дубля сводок»).
+  const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
   // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
   // а НЕ из устаревшего пустого aiResult.tasks. pickPrimaryTasks объединяет fast+main.
   const tasks = pickPrimaryTasks(taskRows);

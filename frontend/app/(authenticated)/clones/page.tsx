@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ClonesMarketplaceClient } from './ClonesMarketplaceClient';
 
 export const metadata: Metadata = {
-  title: 'Клоны должностей — Кора',
+  title: 'Клоны должностей',
 };
 
 /**

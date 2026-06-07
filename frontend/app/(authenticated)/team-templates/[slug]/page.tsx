@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { TeamTemplateDetailClient } from './TeamTemplateDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Шаблон команды — Кора',
+  title: 'Шаблон команды',
 };
 
 export default async function TeamTemplateDetailPage({

@@ -427,7 +427,7 @@ export function CreateMeetingFormV2() {
                 onChange={(e) => setCustomPrompt(e.target.value)}
                 rows={5}
                 maxLength={10000}
-                placeholder="Дополнительные инструкции для AI: на чём акцентировать, какой стиль..."
+                placeholder="Дополнительные инструкции для Коры: на чём акцентировать, какой стиль..."
               />
             )}
           </div>

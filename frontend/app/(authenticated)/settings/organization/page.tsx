@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { OrganizationClient } from './OrganizationClient';
 
 export const metadata: Metadata = {
-  title: 'Организация — Кора',
+  title: 'Организация',
 };
 
 export default function OrganizationPage() {

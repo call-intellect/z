@@ -371,12 +371,12 @@ export function DirectorDashboardClient() {
           <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
             <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
               <Sparkles size={12} aria-hidden />
-              <span>AI-сводка</span>
+              <span>Сводка Коры</span>
             </div>
             {data?.narrativeSummary ? (
               <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
             ) : (
-              <p className="text-xs text-fg-tertiary">AI-сводка появится после первой встречи или анализа знаний.</p>
+              <p className="text-xs text-fg-tertiary">Сводка Коры появится после первой встречи или анализа знаний.</p>
             )}
           </div>
 
@@ -584,7 +584,7 @@ function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
             pageSize={5}
             liveUpdate
             drillDownHref="/me/notifications"
-            title="Вопросы AI команде"
+            title="Вопросы Коры команде"
             emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
           />
         </div>
@@ -624,7 +624,7 @@ function KnowledgeTab({
       <TabEmptyState
         tabLabel="Знания"
         icon={Brain}
-        hint="Раздел заполнится после первой встречи или загрузки документов — AI извлечёт темы и сущности."
+        hint="Раздел заполнится после первой встречи или загрузки документов — Кора извлечёт темы и сущности."
       />
     );
   }
@@ -864,7 +864,7 @@ function WhatLearnedWidget({
             </h3>
             {loading && <SkeletonList />}
             {!loading && newThemes.length === 0 && (
-              <EmptyHint text="Пока недостаточно данных. Появятся, как только AI-кластеризатор обработает новые блоки." />
+              <EmptyHint text="Пока недостаточно данных. Появятся, как только Кора обработает новые блоки." />
             )}
             {!loading &&
               newThemes.length > 0 &&

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RoleDetailClient } from './RoleDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Должность — Кора',
+  title: 'Должность',
 };
 
 export default async function RoleDetailPage({

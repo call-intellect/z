@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Политика конфиденциальности — Кора',
+  title: 'Политика конфиденциальности',
   description: 'Политика конфиденциальности и обработки персональных данных сервиса Кора.',
 };
 

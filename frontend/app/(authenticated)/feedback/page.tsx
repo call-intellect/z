@@ -4,7 +4,7 @@ import { FeedbackForm } from './components/FeedbackForm';
 import { FeedbackHistory } from './components/FeedbackHistory';
 
 export const metadata: Metadata = {
-  title: 'Ваши предложения — Кора',
+  title: 'Ваши предложения',
 };
 
 /**

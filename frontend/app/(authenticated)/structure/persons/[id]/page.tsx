@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PersonCardClient } from './PersonCardClient';
 
 export const metadata: Metadata = {
-  title: 'Сотрудник — Кора',
+  title: 'Сотрудник',
 };
 
 export default async function PersonCardPage({

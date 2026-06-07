@@ -220,7 +220,7 @@ export function OperationsDashboardClient() {
           feedTypes={['probe_question']}
           scope="company"
           pageSize={10}
-          title="Вопросы AI команде"
+          title="Вопросы Коры команде"
         />
       </div>
 

@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Договор оферты партнёрской программы — Кора',
+  title: 'Договор оферты партнёрской программы',
   description: 'Документ готовится. Если ссылка нужна для подписи — обратись в поддержку.',
 };
 

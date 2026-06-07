@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { CloneDetailClient } from './CloneDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Клон должности — Кора',
+  title: 'Клон должности',
 };
 
 /**

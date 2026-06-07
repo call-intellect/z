@@ -30,10 +30,10 @@ export function CardThemesSection({ cardId }: { cardId: string }) {
     <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
       <div className="mb-3 flex items-center gap-2">
         <Sparkles size={16} className="text-accent" />
-        <h3 className="text-sm font-medium">AI обнаружил эти темы</h3>
+        <h3 className="text-sm font-medium">Кора обнаружила эти темы</h3>
         <span
           className="ml-auto inline-flex text-fg-tertiary"
-          title="Темы — это AI-кластеры идей из ваших встреч"
+          title="Темы — это кластеры идей из ваших встреч"
         >
           <HelpCircle size={14} />
         </span>

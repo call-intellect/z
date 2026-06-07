@@ -73,7 +73,7 @@ export function ActivityFeedWidget({
   liveUpdate = false,
   emptyHint = 'Пока вопросов нет.',
   drillDownHref = '/me/notifications',
-  title = 'Вопросы AI команде',
+  title = 'Вопросы Коры команде',
   icon = 'help-circle',
   className,
 }: ActivityFeedWidgetProps) {

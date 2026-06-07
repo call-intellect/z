@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PushSubscriptionToggle } from '@/ui/settings/PushSubscriptionToggle';
 
 export const metadata: Metadata = {
-  title: 'Уведомления — Кора',
+  title: 'Уведомления',
 };
 
 export default function NotificationsSettingsPage() {

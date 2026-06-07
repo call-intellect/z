@@ -5,7 +5,7 @@ import { TierGate } from '@/ui/components/TierGate';
 import { ThemesClient } from './ThemesClient';
 
 export const metadata: Metadata = {
-  title: 'AI-темы',
+  title: 'Темы',
 };
 
 export default function ThemesPage() {

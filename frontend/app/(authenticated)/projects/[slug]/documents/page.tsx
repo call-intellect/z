@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../ProjectViewShell';
 import { ProjectDocumentsClient } from './ProjectDocumentsClient';
 
 export const metadata: Metadata = {
-  title: 'Документы проекта — Кора',
+  title: 'Документы проекта',
 };
 
 export default async function ProjectDocumentsPage({

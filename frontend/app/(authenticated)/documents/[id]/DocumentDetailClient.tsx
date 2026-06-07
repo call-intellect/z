@@ -250,7 +250,7 @@ function Detail({
                   <CardContent className="p-4">
                     {entityGroups.length === 0 ? (
                       <p className="text-sm text-fg-tertiary">
-                        Сущности появятся после парсинга и AI-разметки.
+                        Сущности появятся после разбора и разметки Корой.
                       </p>
                     ) : (
                       <div className="space-y-4">

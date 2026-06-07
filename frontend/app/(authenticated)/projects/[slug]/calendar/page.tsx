@@ -5,7 +5,7 @@ import { CalendarView } from '@/ui/calendar/CalendarView';
 import { ProjectViewShell } from '../ProjectViewShell';
 
 export const metadata: Metadata = {
-  title: 'Календарь проекта — Кора',
+  title: 'Календарь проекта',
 };
 
 export default async function ProjectCalendarPage({

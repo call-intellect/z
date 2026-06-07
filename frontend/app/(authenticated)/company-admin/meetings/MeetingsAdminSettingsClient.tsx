@@ -104,7 +104,7 @@ export function MeetingsAdminSettingsClient() {
       <header>
         <h1 className="text-xl font-semibold text-fg-primary">Встречи</h1>
         <p className="text-sm text-fg-secondary">
-          Настройки AI-оценки качества встреч для организации.
+          Настройки оценки качества встреч для организации.
         </p>
       </header>
 
@@ -114,8 +114,8 @@ export function MeetingsAdminSettingsClient() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-fg-secondary">
-            Снимите галочку с типов, для которых AI-оценка качества не нужна
-            (например, custdev — это исследование, а не управленческая встреча).
+            Снимите галочку с типов, для которых оценка качества не нужна
+            (например, кастдев — это исследование, а не управленческая встреча).
           </p>
           <ul className="space-y-2">
             {MEETING_TYPES.map((t) => {

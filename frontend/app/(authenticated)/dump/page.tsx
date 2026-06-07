@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DumpClient } from './DumpClient';
 
 export const metadata: Metadata = {
-  title: 'Дамп мысли — Кора',
+  title: 'Дамп мысли',
 };
 
 /**

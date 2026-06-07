@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RoleCloneHistoryClient } from './RoleCloneHistoryClient';
 
 export const metadata: Metadata = {
-  title: 'История клона должности — Кора',
+  title: 'История клона должности',
 };
 
 /**

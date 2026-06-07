@@ -2,6 +2,23 @@ import { MEETING_STATUSES } from './enums';
 import type { MeetingStatus, MeetingType, ParticipantRole } from './enums';
 
 /**
+ * Единый русский справочник подписей типов встреч.
+ * Источник правды для UI (журнал встреч, страница результата, фильтры).
+ * Раньше дублировался локально в MeetingsJournalReal и MeetingResultPageReal.
+ */
+export const MEETING_TYPE_LABEL_RU: Record<MeetingType, string> = {
+  team: 'Командная',
+  standup: 'Планёрка',
+  plan_fact: 'План-факт',
+  project: 'Проект',
+  sales: 'Продажи',
+  custdev: 'Кастдев',
+  partner: 'Партнёр',
+  interview: 'Интервью',
+  customer_success: 'Работа с клиентом',
+};
+
+/**
  * Статус под-этапа AI-pipeline (chapters/tasks/embeddings).
  * Используется в meeting.chaptersStatus / tasksStatus / embeddingsStatus.
  */

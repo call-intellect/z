@@ -771,7 +771,7 @@ function IdeaDetailPane({
       </section>
 
       <section className="text-xs text-fg-tertiary">
-        Источников: {idea.sourceBlockIds.length} · Уверенность AI:{' '}
+        Источников: {idea.sourceBlockIds.length} · Уверенность Коры:{' '}
         {(idea.confidence * 100).toFixed(0)}%
       </section>
 

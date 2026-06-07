@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PersonSocialContributionClient } from './PersonSocialContributionClient';
 
 export const metadata: Metadata = {
-  title: 'Вклад в команду — Кора',
+  title: 'Вклад в команду',
 };
 
 /**

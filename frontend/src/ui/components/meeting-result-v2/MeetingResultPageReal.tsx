@@ -73,7 +73,8 @@ import {
   type ClosedGroupKind,
 } from '@/domain/knowledge-access';
 import type { MeetingDomain } from '@/domain/meeting';
-import { meetingStatusView } from '@/domain/meeting';
+import { meetingStatusView, MEETING_TYPE_LABEL_RU } from '@/domain/meeting';
+import type { MeetingType } from '@/domain/enums';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
 import { pickPrimaryTasks } from '@/domain/task';
@@ -120,18 +121,6 @@ import {
   StructuredFieldValue,
 } from './structured-report';
 import { ReportActions } from './ReportActions';
-
-const MEETING_TYPE_LABELS: Record<string, string> = {
-  team: 'Team sync',
-  standup: 'Standup',
-  plan_fact: 'План-факт',
-  project: 'Проект',
-  sales: 'Sales',
-  custdev: 'Custdev',
-  partner: 'Партнёр',
-  interview: 'Интервью',
-  customer_success: 'Customer Success',
-};
 
 type TabKey =
   | 'overview'
@@ -477,7 +466,7 @@ function MeetingHeader({
   onMutateMeeting: () => void;
 }) {
   const router = useRouter();
-  const typeLabel = MEETING_TYPE_LABELS[meeting.type] ?? meeting.type;
+  const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   // Список юзерских и системных шаблонов для regenerate sub-menu.
@@ -717,7 +706,7 @@ function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
   return (
     <div className="flex items-center gap-3 rounded-md border border-accent-border bg-accent-muted px-4 py-2.5 text-sm text-accent">
       <Loader2 size={14} className="animate-spin" />
-      AI обрабатывает встречу. Эта страница обновится сама — можно подождать.
+      Кора обрабатывает встречу. Эта страница обновится сама — можно подождать.
     </div>
   );
 }
@@ -750,7 +739,7 @@ function AiFailedBanner({
     >
       <AlertTriangle size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
       <div>
-        <div className="font-medium">AI-отчёт не сформирован</div>
+        <div className="font-medium">Отчёт не сформирован</div>
         <div className="mt-0.5 opacity-90">
           Запись встречи готова и доступна ниже. Автоматический отчёт собрать не
           удалось — можно запустить регенерацию вручную.
@@ -960,7 +949,7 @@ function OverviewTab({
       {!primarySummary && !customMd && (
         <Card>
           <div className="text-sm text-fg-secondary">
-            AI ещё не сформировал краткое содержание этой встречи.
+            Кора ещё не сформировала краткое содержание этой встречи.
           </div>
         </Card>
       )}
@@ -1474,7 +1463,7 @@ function TasksTab({
       {tasks.length === 0 && !adding && (
         <Card>
           <div className="py-6 text-center text-sm text-fg-secondary">
-            Задач пока нет. AI определит их при следующем анализе или добавьте вручную.
+            Задач пока нет. Кора определит их при следующем анализе или добавьте вручную.
           </div>
         </Card>
       )}
@@ -1520,7 +1509,7 @@ function TasksTab({
                 )}
                 {typeof t.confidence === 'number' && (
                   <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
-                    AI · {(t.confidence * 100).toFixed(0)}%
+                    Кора · {(t.confidence * 100).toFixed(0)}%
                   </span>
                 )}
                 {typeof t.sourceStartMs === 'number' && (

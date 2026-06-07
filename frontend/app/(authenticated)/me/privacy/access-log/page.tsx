@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AccessLogClient } from './AccessLogClient';
 
 export const metadata: Metadata = {
-  title: 'Приватность · история просмотров — Кора',
+  title: 'Приватность · история просмотров',
 };
 
 /**

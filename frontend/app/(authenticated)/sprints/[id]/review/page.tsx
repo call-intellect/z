@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SprintReviewClient } from './SprintReviewClient';
 
 export const metadata: Metadata = {
-  title: 'Итоги спринта — Кора',
+  title: 'Итоги спринта',
 };
 
 export default async function SprintReviewPage({

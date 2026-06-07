@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ConsentsListClient } from './ConsentsListClient';
 
 export const metadata: Metadata = {
-  title: 'Приватность · мои согласия — Кора',
+  title: 'Приватность · мои согласия',
 };
 
 /**

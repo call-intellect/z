@@ -79,7 +79,7 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
     return (
       <button
         type="button"
-        aria-label="Открыть AI-помощника"
+        aria-label="Открыть помощника"
         onClick={toggleCollapsed}
         className="sticky top-24 grid h-14 w-14 place-items-center self-start rounded-xl border border-accent-border bg-accent-muted text-accent transition-colors hover:bg-accent-muted-strong"
       >
@@ -91,7 +91,7 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
   return (
     <aside
       className="sticky top-24 flex h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-xl border border-border-subtle bg-bg-card"
-      aria-label="AI-чат по встрече"
+      aria-label="Чат по встрече"
     >
       {/* Header */}
       <div className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3">
@@ -100,7 +100,7 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-fg-primary">
-            AI-чат по встрече
+            Чат по встрече
           </div>
           <div className="text-xs text-fg-tertiary">контекст · эта встреча</div>
         </div>
@@ -214,7 +214,7 @@ function EmptyChat({ onPick }: { onPick: (p: string) => void }) {
   return (
     <div className="flex flex-col gap-3 py-6 text-center">
       <div className="text-sm text-fg-secondary">
-        Спросите AI-ассистента про эту встречу. Ответы будут со ссылками на моменты записи.
+        Спросите помощника про эту встречу. Ответы будут со ссылками на моменты записи.
       </div>
       <div className="mx-auto flex flex-wrap justify-center gap-1.5">
         {SUGGESTED_PROMPTS.map((p) => (

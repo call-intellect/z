@@ -59,7 +59,7 @@ describe('PaywallModal', () => {
     render(<PaywallModal />);
     expect(screen.getByText('150 видеовстреч в месяц')).toBeInTheDocument();
     expect(screen.getByText('31 место для пользователей')).toBeInTheDocument();
-    expect(screen.getByText('AI-отчёты и граф знаний')).toBeInTheDocument();
+    expect(screen.getByText('Отчёты Коры и граф знаний')).toBeInTheDocument();
   });
 
   it('обе кнопки ведут на /settings/subscription', () => {

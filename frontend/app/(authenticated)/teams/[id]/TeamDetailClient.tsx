@@ -292,7 +292,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           scope="team"
           scopeId={departmentId}
           pageSize={10}
-          title="Вопросы AI команде"
+          title="Вопросы Коры команде"
           drillDownHref={`/me/notifications?team=${encodeURIComponent(departmentId)}`}
           emptyHint="Пока нет открытых вопросов команде."
         />

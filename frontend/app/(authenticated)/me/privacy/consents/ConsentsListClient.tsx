@@ -34,7 +34,7 @@ const CONSENT_META: readonly ConsentMeta[] = [
     type: 'risk_analysis',
     title: 'Анализ сигналов риска',
     description:
-      'AI ищет сигналы перегруза, выгорания и конфликтов и подсказывает руководителю.',
+      'Кора ищет сигналы перегруза, выгорания и конфликтов и подсказывает руководителю.',
   },
   {
     type: 'card_visible_to_manager',

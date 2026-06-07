@@ -1,11 +1,16 @@
 import type { Metadata } from 'next';
 
-import { ChatClient } from './ChatClient';
+import { ChatV2Client } from '../chat-v2/ChatV2Client';
+import { TierGate } from '@/ui/components/TierGate';
 
 export const metadata: Metadata = {
-  title: 'Помощник компании — Кора',
+  title: 'Помощник компании',
 };
 
 export default function ChatPage() {
-  return <ChatClient />;
+  return (
+    <TierGate feature="feature.chat_org">
+      <ChatV2Client />
+    </TierGate>
+  );
 }

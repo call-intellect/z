@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { NotificationsClient } from './NotificationsClient';
 
 export const metadata: Metadata = {
-  title: 'Уведомления — Кора',
+  title: 'Уведомления',
 };
 
 /**

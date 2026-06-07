@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Newspaper } from 'lucide-react';
 
 export const metadata: Metadata = {
-  title: 'Лента — Кора',
+  title: 'Лента',
 };
 
 export default function FeedPage() {

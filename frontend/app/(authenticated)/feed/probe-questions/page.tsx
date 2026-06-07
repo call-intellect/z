@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Вопросы агентов — Кора',
+  title: 'Вопросы агентов',
 };
 
 /**
@@ -20,7 +20,7 @@ export default function ProbeQuestionsPage() {
         Вопросы агентов
       </h1>
       <p className="text-sm text-fg-tertiary">
-        AI-агенты задают уточняющие вопросы, чтобы поддержать актуальность памяти.
+        Агенты Коры задают уточняющие вопросы, чтобы поддержать актуальность памяти.
       </p>
       <div className="mt-4 space-y-2 rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-8 text-sm text-fg-secondary">
         <p>

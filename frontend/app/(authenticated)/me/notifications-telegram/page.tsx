@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { NotificationsTelegramClient } from './NotificationsTelegramClient';
 
 export const metadata: Metadata = {
-  title: 'Уведомления в Telegram — Кора',
+  title: 'Уведомления в Telegram',
 };
 
 /**

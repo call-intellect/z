@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PersonAppointmentsClient } from './PersonAppointmentsClient';
 
 export const metadata: Metadata = {
-  title: 'История назначений — Кора',
+  title: 'История назначений',
 };
 
 /**

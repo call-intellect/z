@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { ResetPasswordForm } from './ResetPasswordForm';
 
 export const metadata: Metadata = {
-  title: 'Сброс пароля — Кора',
+  title: 'Сброс пароля',
 };
 
 export default function ResetPasswordPage() {

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AcceptInviteMagicClient } from './AcceptInviteMagicClient';
 
 export const metadata: Metadata = {
-  title: 'Приглашение в компанию — Кора',
+  title: 'Приглашение в компанию',
 };
 
 /**

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DailyDigestClient } from './DailyDigestClient';
 
 export const metadata: Metadata = {
-  title: 'Ежедневный отчёт — Кора',
+  title: 'Ежедневный отчёт',
 };
 
 /**

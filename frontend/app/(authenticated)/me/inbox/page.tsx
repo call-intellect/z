@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { InboxClient } from './InboxClient';
 
 export const metadata: Metadata = {
-  title: 'Инбокс — Кора',
+  title: 'Инбокс',
 };
 
 export default function MyInboxPage() {

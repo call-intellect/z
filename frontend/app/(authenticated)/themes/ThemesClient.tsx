@@ -76,9 +76,9 @@ export function ThemesClient() {
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
-          <h1 className="text-2xl font-semibold">AI-темы</h1>
+          <h1 className="text-2xl font-semibold">Темы</h1>
           <p className="text-sm text-fg-tertiary">
-            Темы — это кластеры идей, которые AI собрал из ваших встреч.
+            Темы — это кластеры идей, которые Кора собрала из ваших встреч.
             Когда тема становится важной для бизнеса — сохраните её как
             карточку и продолжайте работать в привычной структуре.
           </p>
@@ -123,8 +123,8 @@ export function ThemesClient() {
         isEmpty={themes.length === 0}
         empty={
           <SharedEmptyState
-            title="Пока нет AI-тем"
-            description="AI ещё не обнаружил темы. Накопится примерно 100 блоков идей из ваших встреч — здесь появятся первые кластеры."
+            title="Пока нет тем"
+            description="Кора ещё не обнаружила темы. Накопится примерно 100 блоков идей из ваших встреч — здесь появятся первые кластеры."
           />
         }
       >

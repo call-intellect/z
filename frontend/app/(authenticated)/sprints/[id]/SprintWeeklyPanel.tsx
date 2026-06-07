@@ -144,7 +144,7 @@ function AiNarrative({ narrative }: { narrative: string | null }) {
     <section className="rounded-2xl border border-accent/20 bg-bg-card p-5 shadow-lg shadow-accent/15">
       <div className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
         <Sparkles size={12} aria-hidden />
-        <span>AI-сводка</span>
+        <span>Сводка Коры</span>
       </div>
       <div className="flex items-start gap-3">
         <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg">

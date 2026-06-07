@@ -10,7 +10,10 @@ import { ThemeProvider } from '@/ui/components/theme/ThemeProvider';
 import { Toaster } from '@/ui/shadcn/toast';
 
 export const metadata: Metadata = {
-  title: 'Кора — память компании',
+  title: {
+    default: 'Кора — память компании',
+    template: '%s — Кора',
+  },
   description: 'Память вашей компании. То, что было сказано, решено и сделано — теперь не теряется.',
   applicationName: 'Кора',
   appleWebApp: {

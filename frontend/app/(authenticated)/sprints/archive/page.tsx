@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SprintArchiveClient } from './SprintArchiveClient';
 
 export const metadata: Metadata = {
-  title: 'Архив спринтов — Кора',
+  title: 'Архив спринтов',
 };
 
 export default function SprintsArchivePage() {

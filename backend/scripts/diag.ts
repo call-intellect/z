@@ -356,6 +356,56 @@ async function cmdTrace(a: Args): Promise<void> {
   process.stdout.write(`\nПолный след: bun run scripts/diag.ts chain --trace mtg_${id} --json\n`);
 }
 
+async function cmdGraph(a: Args): Promise<void> {
+  const meeting = str(a, 'meeting') ?? a._[1];
+  if (!meeting) die('Укажи --meeting <id встречи>');
+  const data = await apiGet<Json>('/api/v1/platform/graph/materialization', {
+    meetingId: meeting,
+    ...(str(a, 'org') ? { orgId: str(a, 'org') } : {}),
+  });
+  if (has(a, 'json')) return printJson(data);
+
+  const blockCount = (data as { blockCount?: number }).blockCount ?? 0;
+  const sig = ((data as { signalTypeDistribution?: Record<string, number> })
+    .signalTypeDistribution ?? {}) as Record<string, number>;
+  const status = ((data as { statusDistribution?: Record<string, number> })
+    .statusDistribution ?? {}) as Record<string, number>;
+  const mat = ((data as { materialized?: Record<string, number> })
+    .materialized ?? {}) as Record<string, number>;
+  const gaps = ((data as { gaps?: Array<Json> }).gaps ?? []) as Array<Json>;
+
+  head(`Материализация графа из встречи ${meeting}`);
+  out('Блоков (из встречи)', blockCount);
+  head('Распределение signalType');
+  const sigKeys = Object.keys(sig).sort((x, y) => (sig[y] ?? 0) - (sig[x] ?? 0));
+  if (sigKeys.length === 0) {
+    process.stdout.write('  — (нет блоков)\n');
+  } else {
+    for (const k of sigKeys) process.stdout.write(`  ${k}: ${sig[k]}\n`);
+  }
+  head('Распределение status');
+  const stKeys = Object.keys(status).sort((x, y) => (status[y] ?? 0) - (status[x] ?? 0));
+  if (stKeys.length === 0) {
+    process.stdout.write('  — (нет блоков)\n');
+  } else {
+    for (const k of stKeys) process.stdout.write(`  ${k}: ${status[k]}\n`);
+  }
+  head('Материализовано');
+  out('Decision', mat['decisions'] ?? 0);
+  out('Idea', mat['ideas'] ?? 0);
+  out('Goal', mat['goals'] ?? 0);
+  if (gaps.length > 0) {
+    head('⚠ РАСХОЖДЕНИЕ (сигнал есть, записи нет)');
+    for (const g of gaps) {
+      process.stdout.write(
+        `  ⚠ ${g['type']}: блоков с сигналом ${g['blocksWithSignal']}, материализовано ${g['materialized']}\n`,
+      );
+    }
+  } else {
+    out('Расхождения', 'нет');
+  }
+}
+
 // ───────────────────────── маршрутизация ─────────────────────────
 const HELP = `diag — read-only разбор прод-данных Коры. Команды:
   trace     --meeting <id>                 вся цепочка встречи (статус→отчёт→AI-вызовы→логи), где сломалось
@@ -365,6 +415,7 @@ const HELP = `diag — read-only разбор прод-данных Коры. К
   chain     --trace <traceId|mtg_<id>>     полный технический след одной цепочки
   llm-calls --meeting <id> [--scan N]      AI/ASR-вызовы встречи (провайдер/модель/tier/успех)
   call      <aiUsageLogId>                 один вызов: промпт + ответ модели
+  graph     --meeting <id> [--org <id>]   распределение signalType блоков встречи + счётчики Decision/Idea/Goal + расхождения
 Любая команда + --json → сырой JSON. ENV: DIAG_API_BASE, DIAG_ADMIN_EMAIL, DIAG_ADMIN_PASSWORD, DIAG_ORG_ID.`;
 
 async function main(): Promise<void> {
@@ -379,6 +430,7 @@ async function main(): Promise<void> {
     case 'chain': return cmdChain(a);
     case 'llm-calls': return cmdLlmCalls(a);
     case 'call': return cmdCall(a);
+    case 'graph': return cmdGraph(a);
     case undefined:
     case 'help':
     case '--help':

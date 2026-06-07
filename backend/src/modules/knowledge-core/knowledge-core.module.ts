@@ -28,6 +28,7 @@ import { ExecutablePersonaBuildService } from './services/executable-persona-bui
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
+import { GraphMaterializationService } from './services/graph-materialization.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
@@ -252,6 +253,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Вызывается best-effort из BlockLinkerWorker / entity-graph-builder
     // (через EntityLinkService). См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
     TemporalConflictService,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — GraphMaterializationService.
+    // Read-only наблюдаемость: «материализовались ли Decision/Idea/Goal из
+    // встречи». Инжектится платформенным контроллером (KnowledgeCoreApiModule)
+    // и cron'ом graph-materialization-verify (WorkersModule).
+    GraphMaterializationService,
   ],
   exports: [
     SegmentBuilderService,
@@ -360,6 +366,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Agents v2 Фаза A1 (2026-05-30) — экспорт для BlockLinkerWorker
     // (WorkersModule) и entity-graph-builder.cron.
     TemporalConflictService,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — экспорт для платформенного
+    // контроллера (graph-diagnostics) и cron'а graph-materialization-verify.
+    GraphMaterializationService,
   ],
 })
 export class KnowledgeCoreModule {}

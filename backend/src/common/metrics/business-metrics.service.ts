@@ -401,6 +401,10 @@ export class BusinessMetricsService implements OnModuleInit {
   // было бы отфильтровано (сверка перед enforce); enforce: сколько исключено.
   private kcAccessShadowDiffTotal!: Counter<'surface'>;
   private kcAccessDeniedTotal!: Counter<'surface'>;
+  // Agent-chain overhaul Фаза 0a (2026-06-07) — встречи, где блоки с signalType
+  // (decision/idea) есть, а соответствующая запись (Decision/Idea) не
+  // материализовалась. Эмитит cron graph-materialization-verify (type).
+  private kcMaterializationGapTotal!: Counter<'type'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -1986,6 +1990,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_access_denied_total',
       help: 'Ф4 knowledge-access — в enforce-режиме: сколько блоков исключено гейтом доступа (по поверхности).',
       labelNames: ['surface'] as const,
+    });
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — расхождение материализации графа.
+    this.kcMaterializationGapTotal = this.getOrCreateCounter({
+      name: 'kc_materialization_gap_total',
+      help: 'knowledge-core — встречи, где блоки с signalType (decision/idea) есть, а соответствующая запись (Decision/Idea) не материализовалась (type).',
+      labelNames: ['type'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -4824,6 +4834,16 @@ export class BusinessMetricsService implements OnModuleInit {
       specialist: args.specialist,
       reason: args.reason,
     });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 0a (2026-06-07) — расхождение материализации
+   * графа: у встречи есть блоки с signalType (decision/idea), а
+   * соответствующей записи (Decision/Idea) нет. Эмитит cron
+   * graph-materialization-verify по каждому gap.
+   */
+  incKcMaterializationGap(args: { type: string }): void {
+    this.kcMaterializationGapTotal.inc({ type: args.type });
   }
 
   /**

@@ -22,6 +22,7 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
 import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
@@ -170,6 +171,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     EntityResolverCronService,
     BlockLinkerWorker,
     EntityGraphBuilderCron,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — cron `*/30 * * * *`:
+    // догоночная наблюдаемость материализации графа. READ-ONLY: по недавним
+    // встречам (24ч) считает расхождения (блоки decision/idea есть, записи нет)
+    // → метрика kc_materialization_gap_total + WARN-лог. GraphMaterializationService
+    // берётся из @Global KnowledgeCoreModule.
+    GraphMaterializationVerifyCron,
     ReframingCron,
     ThemeClustererCron,
     CardRollupV2Worker,

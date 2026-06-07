@@ -195,6 +195,67 @@ describe('LlmRouterService', () => {
     expect(failedCall?.[0]).toMatchObject({ provider: 'minimax', status: 'failed' });
   });
 
+  it('validate=false для primary → переключение на secondary (ТЗ-3 Ф2)', async () => {
+    const ctx = build({
+      routes: [{ taskType: 'chapters', providers: ['minimax', 'openai-via-proxy'], isActive: true }],
+    });
+    await ctx.router.refreshCache();
+
+    const out = await ctx.router.call({
+      ...baseParams,
+      taskType: 'chapters' as LlmTaskType,
+      // primary minimax вернёт 'text-minimax' (не пройдёт), secondary openai
+      // вернёт 'text-openai-via-proxy' (пройдёт).
+      validate: (text) => text === 'text-openai-via-proxy',
+    });
+
+    // primary вызван, но его ответ отбракован → secondary вызван и победил.
+    expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+    expect(ctx.openai.complete).toHaveBeenCalledOnce();
+    expect(out.modelUsed).toBe('openai-via-proxy:gpt-5-mini');
+    // primary получил status=invalid_output (не success).
+    expect(ctx.incLlmRouterDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'minimax', status: 'invalid_output' }),
+    );
+    expect(ctx.incLlmRouterDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai-via-proxy', status: 'success' }),
+    );
+    // success-usage записан только для secondary (одна успешная запись).
+    expect(ctx.usageRecord).toHaveBeenCalledOnce();
+    expect(ctx.usageRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai-via-proxy', success: true }),
+    );
+  });
+
+  it('validate=false для всех → call() бросает (как при падении всех провайдеров)', async () => {
+    const ctx = build({
+      routes: [{ taskType: 'chapters', providers: ['anthropic', 'minimax'], isActive: true }],
+    });
+    await ctx.router.refreshCache();
+
+    await expect(
+      ctx.router.call({
+        ...baseParams,
+        taskType: 'chapters' as LlmTaskType,
+        // ни один ответ провайдера не проходит валидацию.
+        validate: () => false,
+      }),
+    ).rejects.toBeInstanceOf(LlmRouterAllProvidersFailedError);
+
+    // оба провайдера вызваны и оба получили invalid_output.
+    expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
+    expect(ctx.minimax.complete).toHaveBeenCalledOnce();
+    const invalidCalls = ctx.incLlmRouterDispatch.mock.calls.filter(
+      (c) => (c[0] as { status: string }).status === 'invalid_output',
+    );
+    expect(invalidCalls).toHaveLength(2);
+    // ни одного success.
+    const successCalls = ctx.incLlmRouterDispatch.mock.calls.filter(
+      (c) => (c[0] as { status: string }).status === 'success',
+    );
+    expect(successCalls).toHaveLength(0);
+  });
+
   it('нет route → используется дефолтная цепочка [deepseek, openai-via-proxy, kie:gemini-3.1-pro]', async () => {
     const ctx = build({ routes: [] });
     await ctx.router.refreshCache();

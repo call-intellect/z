@@ -138,3 +138,15 @@ export class LlmFormatNotSupportedError extends Error {
     this.name = 'LlmFormatNotSupportedError';
   }
 }
+
+/**
+ * Вывод провайдера не прошёл caller-`validate` (например, не распарсился как
+ * JSON-вердикт block-linker/entity-graph). LlmRouter трактует как retriable →
+ * переключение на следующего провайдера (secondary с настоящим strict).
+ */
+export class LlmInvalidOutputError extends Error {
+  constructor(message: string, readonly rawOutput: string) {
+    super(message);
+    this.name = 'LlmInvalidOutputError';
+  }
+}

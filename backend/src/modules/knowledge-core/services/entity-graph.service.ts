@@ -313,6 +313,10 @@ export class EntityGraphService {
           sourceRef: { type: 'entity', id: args.entityA.id },
           // Фаза 11: dataClass — max по упомянутым блокам.
           dataClass: maxDataClass(args.recentBlocks.map((b) => b.dataClass)),
+          // ТЗ-3 Ф2: битый primary (HTTP 200, не JSON-вердикт) → router сам
+          // переключится на secondary ВНУТРИ одного attempt, прежде чем этот
+          // retry-цикл увидит ошибку.
+          validate: (text) => this.parseVerdict(text) !== null,
         });
         const parsed = this.parseVerdict(out.text);
         if (parsed) return parsed;

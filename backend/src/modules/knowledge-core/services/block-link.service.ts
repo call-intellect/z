@@ -185,6 +185,10 @@ export class BlockLinkService {
             args.fromBlock.dataClass,
             args.toBlock.dataClass,
           ]),
+          // ТЗ-3 Ф2: битый primary (HTTP 200, не JSON-вердикт) → router сам
+          // переключится на secondary ВНУТРИ одного attempt, прежде чем этот
+          // retry-цикл увидит ошибку.
+          validate: (text) => this.parseVerdict(text) !== null,
         });
         const parsed = this.parseVerdict(out.text);
         if (parsed) return parsed;

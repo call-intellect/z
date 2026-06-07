@@ -3588,14 +3588,16 @@ export class BusinessMetricsService implements OnModuleInit {
 
   /**
    * Диспетчеризация задачи в LlmRouter.
-   *   status='success'  — провайдер вернул валидный ответ.
-   *   status='fallback' — провайдер упал, перешли к следующему.
-   *   status='failed'   — все провайдеры упали.
+   *   status='success'        — провайдер вернул валидный ответ.
+   *   status='fallback'       — провайдер упал, перешли к следующему.
+   *   status='failed'         — все провайдеры упали.
+   *   status='invalid_output' — ответ не прошёл caller-`validate` (ТЗ-3 Ф2);
+   *                             трактуется как retriable → следующий провайдер.
    */
   incLlmRouterDispatch(args: {
     taskType: string;
     provider: string;
-    status: 'success' | 'fallback' | 'failed';
+    status: 'success' | 'fallback' | 'failed' | 'invalid_output';
   }): void {
     this.llmRouterDispatchTotal.inc({
       task_type: args.taskType,

@@ -52,6 +52,14 @@ function makeService(setup: {
   /** Если задан — `audioTrack.findFirst` вернёт его (имитация уже собранной дорожки). */
   existingAudioTrack?: { id: string } | null;
   recordingsForReconcile?: Array<{ meetingId: string }>;
+  /** Что вернёт `egress.listCompositeEgress` (для composite-reconcile). */
+  compositeEgressState?: {
+    egressId: string;
+    status: 'complete' | 'failed' | 'active';
+    url: string | null;
+    bytes: number | null;
+    durationSeconds: number | null;
+  } | null;
 }): {
   svc: RecordingsService;
   prisma: any;
@@ -109,6 +117,7 @@ function makeService(setup: {
       egressId: setup.egressTrackStartId ?? 'EG_T1',
     })),
     stopEgress: vi.fn(async () => undefined),
+    listCompositeEgress: vi.fn(async () => setup.compositeEgressState ?? null),
   } as unknown as LivekitEgressClient;
 
   const s3 = {
@@ -603,5 +612,116 @@ describe('RecordingsService', () => {
     await expect(svc.extendRetention('m-1', 0, 'p-A')).rejects.toBeInstanceOf(
       RecordingInvalidStateError,
     );
+  });
+
+  // ─────────────────────────── reconcileCompositeEgress ──────────────────
+
+  const finalizingRecording = (over?: Partial<Recording>): Recording => ({
+    id: 'r-1',
+    meetingId: 'm-1',
+    status: 'finalizing',
+    retentionDays: 30,
+    expiresAt: new Date(),
+    compositeEgressId: 'EG_C1',
+    mainVideoUrl: null,
+    audioTracks: [],
+    ...over,
+  });
+
+  it('reconcileCompositeEgress: COMPLETE без mainVideoUrl → финализирует через onCompositeEnded', async () => {
+    const { svc, egress } = makeService({
+      recording: finalizingRecording(),
+      compositeEgressState: {
+        egressId: 'EG_C1',
+        status: 'complete',
+        url: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
+        bytes: 123_456,
+        durationSeconds: 600,
+      },
+    });
+    // Изолируем от внутренней логики onCompositeEnded — проверяем сам reconcile-контракт.
+    const onCompositeEnded = vi
+      .spyOn(svc, 'onCompositeEnded')
+      .mockResolvedValue({ status: 'ready', allReady: true });
+
+    const res = await svc.reconcileCompositeEgress('m-1');
+
+    expect((egress as any).listCompositeEgress).toHaveBeenCalledWith('m-1');
+    expect(onCompositeEnded).toHaveBeenCalledWith(
+      'm-1',
+      expect.objectContaining({
+        url: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
+        bytes: 123_456,
+        durationSeconds: 600,
+      }),
+    );
+    expect(res).toEqual(
+      expect.objectContaining({ becameComplete: true, allReady: true, compositeBytes: 123_456 }),
+    );
+  });
+
+  it('reconcileCompositeEgress: mainVideoUrl уже задан → no-op, LiveKit не дёргаем', async () => {
+    const { svc, egress } = makeService({
+      recording: finalizingRecording({
+        status: 'recording',
+        mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
+      }),
+      compositeEgressState: {
+        egressId: 'EG_C1',
+        status: 'complete',
+        url: 'https://s3.local/x.mp4',
+        bytes: 1,
+        durationSeconds: 1,
+      },
+    });
+    const onCompositeEnded = vi.spyOn(svc, 'onCompositeEnded');
+
+    const res = await svc.reconcileCompositeEgress('m-1');
+
+    expect((egress as any).listCompositeEgress).not.toHaveBeenCalled();
+    expect(onCompositeEnded).not.toHaveBeenCalled();
+    expect(res).toEqual(
+      expect.objectContaining({ becameComplete: false, compositeBytes: null }),
+    );
+  });
+
+  it('reconcileCompositeEgress: LiveKit FAILED → markFailed(egress_failed:reconcile)', async () => {
+    const { svc } = makeService({
+      recording: finalizingRecording(),
+      compositeEgressState: {
+        egressId: 'EG_C1',
+        status: 'failed',
+        url: null,
+        bytes: null,
+        durationSeconds: null,
+      },
+    });
+    const markFailed = vi.spyOn(svc, 'markFailed').mockResolvedValue(undefined);
+
+    const res = await svc.reconcileCompositeEgress('m-1');
+
+    expect(markFailed).toHaveBeenCalledWith('m-1', 'egress_failed:reconcile');
+    expect(res).toEqual(
+      expect.objectContaining({ becameComplete: false, allReady: false }),
+    );
+  });
+
+  it('reconcileCompositeEgress: composite ещё active → no-op (becameComplete:false)', async () => {
+    const { svc } = makeService({
+      recording: finalizingRecording(),
+      compositeEgressState: {
+        egressId: 'EG_C1',
+        status: 'active',
+        url: null,
+        bytes: null,
+        durationSeconds: null,
+      },
+    });
+    const onCompositeEnded = vi.spyOn(svc, 'onCompositeEnded');
+
+    const res = await svc.reconcileCompositeEgress('m-1');
+
+    expect(onCompositeEnded).not.toHaveBeenCalled();
+    expect(res.becameComplete).toBe(false);
   });
 });

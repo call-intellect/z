@@ -756,6 +756,58 @@ export class RecordingsService {
   }
 
   /**
+   * Pull-сверка composite-egress (ТЗ 2026-06-06 composite-egress reconcile).
+   *
+   * Зачем: composite egress_ended-вебхук может потеряться/задержаться (LiveKit
+   * не гарантирует доставку push). Тогда у нас бесконечно нет `mainVideoUrl`,
+   * встреча застревает в `recording_processing`, видео не появляется в UI.
+   * Крон раз в минуту тянет статус из LiveKit (`listEgress`) и, если composite
+   * УЖЕ `EGRESS_COMPLETE`, сам финализирует через тот же `onCompositeEnded`,
+   * что и вебхук, — ограничивая паузу сверху интервалом крона.
+   *
+   * Идемпотентно: если у записи уже есть `mainVideoUrl` или она в терминальном
+   * статусе — no-op (даже не дёргаем LiveKit). `onCompositeEnded` сам идемпотентен.
+   */
+  async reconcileCompositeEgress(
+    meetingId: string,
+  ): Promise<{ becameComplete: boolean; allReady: boolean; compositeBytes: number | null }> {
+    const recording = await this.prisma.recording.findUnique({ where: { meetingId } });
+    if (
+      !recording ||
+      recording.mainVideoUrl ||
+      ['ready', 'failed', 'deleted', 'archived', 'expired'].includes(recording.status)
+    ) {
+      return { becameComplete: false, allReady: false, compositeBytes: null };
+    }
+
+    const state = await this.egress.listCompositeEgress(meetingId);
+    if (!state) return { becameComplete: false, allReady: false, compositeBytes: null };
+
+    if (state.status === 'failed') {
+      // LiveKit сообщает, что composite упал, а egress_failed-вебхук не дошёл —
+      // помечаем запись failed (markFailed идемпотентен и щадит deleted/archived).
+      await this.markFailed(meetingId, 'egress_failed:reconcile');
+      return { becameComplete: false, allReady: false, compositeBytes: null };
+    }
+
+    if (state.status !== 'complete' || !state.url) {
+      // Ещё пишет/финализирует — ждём следующий тик.
+      return { becameComplete: false, allReady: false, compositeBytes: null };
+    }
+
+    const res = await this.onCompositeEnded(meetingId, {
+      url: state.url,
+      bytes: state.bytes,
+      durationSeconds: state.durationSeconds,
+    });
+    this.logger.log(
+      { meetingId, allReady: res.allReady },
+      'reconcileCompositeEgress: composite догнан кроном',
+    );
+    return { becameComplete: true, allReady: res.allReady, compositeBytes: state.bytes };
+  }
+
+  /**
    * Все ли egress'ы (composite + все известные треки) завершились?
    * Если да — переводим в `ready`, иначе — оставляем `finalizing` (или то,
    * в чём были).

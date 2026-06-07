@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DirectFileOutput,
   EgressClient,
+  EgressStatus,
   EncodedFileOutput,
   EncodedFileType,
   S3Upload,
@@ -18,6 +19,22 @@ export interface EgressS3Output {
   bucket: string;
   /** Путь до файла внутри bucket'а (S3 key). */
   key: string;
+}
+
+/**
+ * Нормализованный снимок состояния composite-egress'а из LiveKit (pull-модель).
+ * Используется reconcile-кроном как фоллбэк на потерянный egress-вебхук.
+ */
+export interface CompositeEgressState {
+  egressId: string;
+  /** complete — файл готов; failed — egress упал; active — ещё пишет/финализирует. */
+  status: 'complete' | 'failed' | 'active';
+  /** Локация готового MP4 (S3 URL) — заполнена только при `complete`. */
+  url: string | null;
+  /** Размер файла в байтах (из `FileInfo.size: bigint`). */
+  bytes: number | null;
+  /** Длительность записи в секундах (из `FileInfo.duration` — наносекунды). */
+  durationSeconds: number | null;
 }
 
 /**
@@ -118,6 +135,33 @@ export class LivekitEgressClient {
       this.logger.warn({ egressId, message }, 'stopEgress упал');
       throw err;
     }
+  }
+
+  /**
+   * Pull-статус composite-egress комнаты — для reconcile-крона (фоллбэк на
+   * потерянный/задержанный egress-вебхук). `null` — composite не найден
+   * (egress ещё не стартовал или LiveKit его уже забыл).
+   *
+   * Возвращает нормализованный снимок: статус (complete/failed/active) и, если
+   * файл готов, его `location`/`size`/`duration` (наносекунды → секунды).
+   */
+  async listCompositeEgress(meetingId: string): Promise<CompositeEgressState | null> {
+    const list = await this.egress.listEgress({ roomName: meetingId });
+    // Composite определяем по oneof `request.case === 'roomComposite'`; если SDK
+    // не отдал `request` (редко) — берём первый egress комнаты как fallback.
+    const e = list.find((x) => x.request?.case === 'roomComposite') ?? list[0];
+    if (!e) return null;
+    const file = e.fileResults?.[0] ?? null;
+    const isComplete = e.status === EgressStatus.EGRESS_COMPLETE;
+    const isFailed = e.status === EgressStatus.EGRESS_FAILED;
+    return {
+      egressId: e.egressId,
+      status: isComplete ? 'complete' : isFailed ? 'failed' : 'active',
+      url: file?.location ?? null,
+      bytes: file?.size != null ? Number(file.size) : null,
+      durationSeconds:
+        file?.duration != null ? Math.round(Number(file.duration) / 1_000_000_000) : null,
+    };
   }
 
   // ────────────────────────── helpers ────────────────────────────────────

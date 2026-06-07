@@ -233,6 +233,15 @@ const RecordingReliabilitySchema = z.object({
   RECORDING_TRACK_RECONCILE_ENABLED: zBool(true),
   RECORDING_FASTSTART_ENABLED: zBool(true),
   RECORDING_FASTSTART_MIN_BYTES: z.coerce.number().int().nonnegative().default(52_428_800),
+  /**
+   * Pull-фоллбэк на потерянный/задержанный composite egress-вебхук
+   * (cron `composite-egress-reconcile`, ТЗ 2026-06-06). Раз в минуту тянет
+   * статус composite-egress из LiveKit и, если он COMPLETE, сам финализирует
+   * встречу (реюз `onCompositeEnded` + промоут), ограничивая «паузу» сверху
+   * интервалом крона. Дефолт ON. Kill-switch — выставить false, если pull
+   * создаёт нагрузку на LiveKit API (защищено идемпотентностью).
+   */
+  RECORDING_COMPOSITE_RECONCILE_ENABLED: zBool(true),
 });
 
 /** Базовые лимиты MVP. */

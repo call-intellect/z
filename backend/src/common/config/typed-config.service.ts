@@ -1579,6 +1579,8 @@ export class TypedConfigService {
    *   - faststartEnabled      — faststart-постобработка composite MP4 (P1, ON).
    *   - faststartMinBytes     — порог: ниже него composite не ремуксится (мелкий
    *     файл и так играет мгновенно). Дефолт 50 МиБ.
+   *   - compositeReconcileEnabled — pull-фоллбэк на потерянный composite
+   *     egress-вебхук (cron `composite-egress-reconcile`, ТЗ 2026-06-06, ON).
    */
   get recording() {
     return {
@@ -1596,6 +1598,11 @@ export class TypedConfigService {
         'recording.faststartMinBytes',
         'RECORDING_FASTSTART_MIN_BYTES',
         52_428_800,
+      ),
+      compositeReconcileEnabled: this.resolveSync<boolean>(
+        'recording.compositeReconcileEnabled',
+        'RECORDING_COMPOSITE_RECONCILE_ENABLED',
+        true,
       ),
     } as const;
   }

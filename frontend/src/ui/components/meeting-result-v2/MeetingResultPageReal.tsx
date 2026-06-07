@@ -119,6 +119,7 @@ import {
   isEmptyStructuredValue,
   StructuredFieldValue,
 } from './structured-report';
+import { ReportActions } from './ReportActions';
 
 const MEETING_TYPE_LABELS: Record<string, string> = {
   team: 'Team sync',
@@ -1015,17 +1016,23 @@ function StructuredDataCard({ data }: { data: unknown }) {
   }, [data]);
   if (entries.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {entries.map(([k, v]) => (
-        <Card key={k}>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-            {structuredFieldLabel(k)}
-          </div>
-          <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
-            <StructuredFieldValue value={v} />
-          </div>
-        </Card>
-      ))}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 text-sm font-semibold text-fg-primary">Обзор</h3>
+        <ReportActions output={data} title="Отчёт встречи" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {entries.map(([k, v]) => (
+          <Card key={k}>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+              {structuredFieldLabel(k)}
+            </div>
+            <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+              <StructuredFieldValue value={v} />
+            </div>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

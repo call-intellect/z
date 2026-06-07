@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   isEmptyStructuredValue,
   structuredFieldLabel,
+  structuredReportToMarkdown,
+  structuredReportToPlainText,
+  structuredValueToMarkdown,
 } from '../structured-report';
 
 describe('structuredFieldLabel', () => {
@@ -37,5 +40,70 @@ describe('isEmptyStructuredValue', () => {
     expect(isEmptyStructuredValue(false)).toBe(false);
     expect(isEmptyStructuredValue([1])).toBe(false);
     expect(isEmptyStructuredValue({ a: 1 })).toBe(false);
+  });
+});
+
+describe('structuredValueToMarkdown', () => {
+  it('массив строк → список «- item»', () => {
+    expect(structuredValueToMarkdown(['Б', 'В'])).toBe('- Б\n- В');
+  });
+
+  it('массив объектов → «- main — meta»', () => {
+    expect(
+      structuredValueToMarkdown([{ title: 'A', assignee: 'Иван' }]),
+    ).toBe('- A — Иван');
+  });
+
+  it('вложенный объект → «**Подпись**: значение» по непустым полям', () => {
+    const md = structuredValueToMarkdown({ budget: '100', objections: '' });
+    expect(md).toContain('**Бюджет**: 100');
+    expect(md).not.toContain('Возражения');
+  });
+
+  it('примитив → как есть', () => {
+    expect(structuredValueToMarkdown('текст')).toBe('текст');
+    expect(structuredValueToMarkdown(0)).toBe('0');
+  });
+});
+
+describe('structuredReportToMarkdown', () => {
+  const output = {
+    tasks: [{ title: 'A', assignee: 'Иван' }],
+    decisions: ['Б'],
+    blockers: [],
+  };
+
+  it('сериализует непустые секции с русскими заголовками и пропускает пустые', () => {
+    const md = structuredReportToMarkdown(output, 'Отчёт встречи');
+    expect(md).toContain('# Отчёт встречи');
+    expect(md).toContain('## Задачи');
+    expect(md).toContain('- A');
+    expect(md).toContain('Иван');
+    expect(md).toContain('## Решения');
+    expect(md).toContain('- Б');
+    // пустая секция blockers пропущена
+    expect(md).not.toContain('Блокеры');
+    // никаких сырых англо-ключей
+    expect(md).not.toContain('tasks');
+    expect(md).not.toContain('decisions');
+    expect(md).not.toContain('blockers');
+  });
+
+  it('примитивный output без title → строка как есть', () => {
+    expect(structuredReportToMarkdown('просто текст')).toBe('просто текст');
+    expect(structuredReportToMarkdown(null)).toBe('');
+  });
+});
+
+describe('structuredReportToPlainText', () => {
+  it('убирает markdown-разметку (# и -)', () => {
+    const txt = structuredReportToPlainText(
+      { decisions: ['Б'] },
+      'Отчёт',
+    );
+    expect(txt).not.toContain('#');
+    expect(txt).toContain('Отчёт');
+    expect(txt).toContain('Решения');
+    expect(txt).toContain('• Б');
   });
 });

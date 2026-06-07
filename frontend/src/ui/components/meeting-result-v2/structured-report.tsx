@@ -121,3 +121,73 @@ export function StructuredFieldValue({ value }: { value: unknown }): JSX.Element
     </div>
   );
 }
+
+/**
+ * Значение секции → markdown-текст (текстовое зеркало `StructuredFieldValue`).
+ *   - массив строк → '- item';
+ *   - массив объектов (задачи) → '- {objectMainText} (— {objectMeta})';
+ *   - вложенный объект → '**Подпись**: значение' по непустым полям;
+ *   - примитив → как есть.
+ * Реюзает те же `objectMainText`/`objectMeta`/`structuredFieldLabel`, что и UI-рендер.
+ */
+export function structuredValueToMarkdown(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '—';
+    return value
+      .map((item) => {
+        if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+          const o = item as Record<string, unknown>;
+          const meta = objectMeta(o);
+          return `- ${objectMainText(o)}${meta ? ` — ${meta}` : ''}`;
+        }
+        return `- ${String(item)}`;
+      })
+      .join('\n');
+  }
+  const o = value as Record<string, unknown>;
+  const inner = Object.entries(o).filter(([, v]) => !isEmptyStructuredValue(v));
+  if (inner.length === 0) return '—';
+  return inner
+    .map(([k, v]) => `**${structuredFieldLabel(k)}**: ${structuredValueToMarkdown(v)}`)
+    .join('\n');
+}
+
+/**
+ * structuredData/output → markdown (текстовое зеркало `ReportOutputRenderer`):
+ * каждый непустой top-level ключ → '## Заголовок' + сериализованное значение.
+ * Пустые секции (`isEmptyStructuredValue`) пропускаются. Примитивный output —
+ * как есть. Используется кнопками «Скопировать текст / Скачать / Печать».
+ */
+export function structuredReportToMarkdown(output: unknown, title?: string): string {
+  if (output == null || typeof output !== 'object') {
+    return title
+      ? `# ${title}\n\n${String(output ?? '')}`.trim()
+      : String(output ?? '');
+  }
+  const lines: string[] = [];
+  if (title) {
+    lines.push(`# ${title}`, '');
+  }
+  for (const [key, value] of Object.entries(output as Record<string, unknown>)) {
+    if (isEmptyStructuredValue(value)) continue;
+    lines.push(`## ${structuredFieldLabel(key)}`);
+    lines.push(structuredValueToMarkdown(value));
+    lines.push('');
+  }
+  return lines.join('\n').trim();
+}
+
+/** Та же сериализация, но без markdown-разметки: '#' убраны, '- ' → '• '. */
+export function structuredReportToPlainText(output: unknown, title?: string): string {
+  return structuredReportToMarkdown(output, title)
+    .replace(/^#+\s*/gm, '')
+    .replace(/^-\s*/gm, '• ');
+}

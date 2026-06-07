@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
+import { useShallow } from 'zustand/react/shallow';
 
 import { ApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
@@ -167,8 +168,8 @@ function Loaded() {
   const tableId = useTableStore((s) => s.tableId);
   const allProperties = useTableStore((s) => s.properties);
   // View-aware: учитывает hiddenProps / propOrder / sorts из active view.
-  const properties = useTableStore(selectVisibleProperties);
-  const rows = useTableStore(selectVisibleRows);
+  const properties = useTableStore(useShallow(selectVisibleProperties));
+  const rows = useTableStore(useShallow(selectVisibleRows));
   const allRows = useTableStore((s) => s.rows);
   const rowHeightPx = useTableStore(selectRowHeightPx);
   const isMutating = useTableStore((s) => s.isMutating);

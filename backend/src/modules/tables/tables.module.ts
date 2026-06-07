@@ -39,12 +39,17 @@ import { TablesService } from './services/tables.service';
  */
 @Module({
   controllers: [
+    // ВАЖНО: PendingPatchesController должен идти ПЕРВЫМ. Он и TablesController
+    // оба биндят базовый путь `api/v1/tables`; Express матчит в порядке
+    // регистрации. Статические пути PendingPatches (`pending-patches`,
+    // `rows/:rowId/provenance`, `cell-provenance`) обязаны регистрироваться
+    // раньше динамического `@Get(':id')` из TablesController, иначе они
+    // затеняются и отдают 404 `table_not_found`.
+    PendingPatchesController,
     TablesController,
     TablePropertiesController,
     TableRowsController,
     TableViewsController,
-    // Smart-tables Фаза 3 — Event-to-Cells: очередь подтверждений + провенанс.
-    PendingPatchesController,
   ],
   providers: [
     TablesService,

@@ -67,6 +67,11 @@ const nextConfig = {
   // Самодостаточная сборка (server.js + минимальные node_modules) для запуска
   // фронта контейнером: `bun server.js`. nginx на хосте проксирует. См. deploy/README.md.
   output: 'standalone',
+  // git sha сборки → штатная защита Next от version skew: при несовпадении
+  // билда клиента и сервера выполняется hard MPA-navigation (полная перезагрузка
+  // с ассетами нового билда). Пусто при локальной сборке без build-arg — это ок
+  // (skew-защита просто неактивна). next.config — build-time, чтение process.env здесь штатно.
+  deploymentId: process.env.DEPLOYMENT_VERSION,
   transpilePackages: [
     '@livekit/components-react',
     '@livekit/components-styles',

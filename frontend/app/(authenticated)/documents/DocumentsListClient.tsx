@@ -2,16 +2,23 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { CloudUpload, Loader2, Plus } from 'lucide-react';
+import { CloudUpload, Loader2, Plus, X } from 'lucide-react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import {
+  ACCEPTED_DOCUMENT_ACCEPT,
+  documentKindLabel,
+  documentTypeLabel,
   documentsApi,
   type DocumentApi,
   type DocumentStatusApi,
+  type DocumentTypeApi,
+  type UploadDocumentItemApi,
 } from '@/api/documents.api';
 import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
+import { themesApi } from '@/api/themes.api';
+import { projectsApi } from '@/api/tracker/projects.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
@@ -38,13 +45,40 @@ import {
   AdminForbidden,
 } from '@app/(admin)/admin/AdminStateViews';
 
-const NO_ROLE_VALUE = '__none__';
+const NO_VALUE = '__none__';
 
 const STATUS_LABELS: Record<DocumentStatusApi, string> = {
   uploaded: 'загружен',
   parsing: 'обрабатывается',
   parsed: 'готов',
   failed: 'ошибка',
+};
+
+/** Смысловые типы документа для селекта «Тип документа» (ТЗ-4 Ф5). */
+const DOC_TYPE_OPTIONS: ReadonlyArray<{ value: DocumentTypeApi; label: string }> =
+  [
+    { value: 'regulation', label: documentTypeLabel('regulation') },
+    { value: 'policy', label: documentTypeLabel('policy') },
+    { value: 'instruction', label: documentTypeLabel('instruction') },
+    { value: 'process', label: documentTypeLabel('process') },
+    { value: 'job_description', label: documentTypeLabel('job_description') },
+    { value: 'other', label: documentTypeLabel('other') },
+  ];
+
+/** Статус файла в очереди загрузки (ТЗ-4 Ф5). */
+type QueueStatus = 'pending' | 'uploading' | 'done' | 'deduped' | 'error';
+
+interface QueueItem {
+  file: File;
+  status: QueueStatus;
+}
+
+const QUEUE_STATUS_LABELS: Record<QueueStatus, string> = {
+  pending: 'ожидание',
+  uploading: 'загрузка',
+  done: 'готово',
+  deduped: 'дубликат',
+  error: 'ошибка',
 };
 
 /**
@@ -151,6 +185,7 @@ function Content({ orgId }: { orgId: string }) {
               <tr>
                 <th className="px-4 py-2 text-left">Имя</th>
                 <th className="px-4 py-2 text-left">Тип</th>
+                <th className="px-4 py-2 text-left">Формат</th>
                 <th className="px-4 py-2 text-left">Кем загружен</th>
                 <th className="px-4 py-2 text-left">К должности</th>
                 <th className="px-4 py-2 text-left">Статус</th>
@@ -169,12 +204,8 @@ function Content({ orgId }: { orgId: string }) {
       {uploadOpen && (
         <UploadDocumentDialog
           orgId={orgId}
+          onUploaded={() => void swr.mutate()}
           onClose={() => setUploadOpen(false)}
-          onDone={() => {
-            setUploadOpen(false);
-            void swr.mutate();
-            toast.success('Документ загружен.');
-          }}
         />
       )}
     </div>
@@ -191,6 +222,9 @@ function DocumentRow({ doc }: { doc: DocumentApi }) {
         >
           {doc.name}
         </Link>
+      </td>
+      <td className="px-4 py-2 text-fg-secondary">
+        {documentTypeLabel(doc.docType ?? null)}
       </td>
       <td className="px-4 py-2 text-fg-secondary">{documentKindLabel(doc.kind)}</td>
       <td className="px-4 py-2 text-fg-secondary">{doc.uploaderName ?? '—'}</td>
@@ -238,18 +272,28 @@ function StatusBadge({ status }: { status: DocumentStatusApi }) {
 
 function UploadDocumentDialog({
   orgId,
+  onUploaded,
   onClose,
-  onDone,
 }: {
   orgId: string;
+  onUploaded: () => void;
   onClose: () => void;
-  onDone: () => void;
 }) {
   const rolesSwr = useSWR(['upload-roles', orgId], () =>
     rolesDomainApi.list(orgId),
   );
-  const [file, setFile] = useState<File | null>(null);
+  const themesSwr = useSWR(['upload-themes', orgId], () =>
+    themesApi.list({ limit: 100 }),
+  );
+  const projectsSwr = useSWR(['upload-projects', orgId], () =>
+    projectsApi.list(orgId),
+  );
+
+  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [roleId, setRoleId] = useState<string | null>(null);
+  const [themeId, setThemeId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [docType, setDocType] = useState<DocumentTypeApi | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -257,13 +301,98 @@ function UploadDocumentDialog({
     () => rolesSwr.data?.items ?? [],
     [rolesSwr.data],
   );
+  const themes = useMemo(() => themesSwr.data?.items ?? [], [themesSwr.data]);
+  const projects = useMemo(
+    () => projectsSwr.data?.items ?? [],
+    [projectsSwr.data],
+  );
+
+  const addFiles = (incoming: FileList | File[] | null) => {
+    if (!incoming) return;
+    const list = Array.from(incoming);
+    if (list.length === 0) return;
+    setQueue((prev) => {
+      // Дедуп по имени+размеру, чтобы повторный выбор не плодил строки.
+      const seen = new Set(prev.map((q) => `${q.file.name}::${q.file.size}`));
+      const next = [...prev];
+      for (const f of list) {
+        const key = `${f.name}::${f.size}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          next.push({ file: f, status: 'pending' });
+        }
+      }
+      return next;
+    });
+  };
+
+  const doneCount = queue.filter(
+    (q) => q.status === 'done' || q.status === 'deduped',
+  ).length;
+  const total = queue.length;
+
+  const handleUpload = async () => {
+    if (queue.length === 0) return;
+    setBusy(true);
+    setQueue((prev) =>
+      prev.map((q) =>
+        q.status === 'pending' || q.status === 'error'
+          ? { ...q, status: 'uploading' }
+          : q,
+      ),
+    );
+    try {
+      const res = await documentsApi.uploadBatch(orgId, {
+        files: queue.map((q) => q.file),
+        attachedRoleId: roleId,
+        attachedThemeId: themeId,
+        attachedProjectId: projectId,
+        docType,
+      });
+      // Сопоставляем результат с очередью по имени файла. Backend сохраняет
+      // порядок (files[] → items[]), имя — дополнительная страховка.
+      setQueue((prev) =>
+        prev.map((q, idx) => {
+          const item: UploadDocumentItemApi | undefined =
+            res.items[idx]?.name === q.file.name
+              ? res.items[idx]
+              : res.items.find((i) => i.name === q.file.name);
+          if (!item) return { ...q, status: 'error' };
+          return { ...q, status: item.deduped ? 'deduped' : 'done' };
+        }),
+      );
+      onUploaded();
+      const dedupedCount = res.items.filter((i) => i.deduped).length;
+      const createdCount = res.items.length - dedupedCount;
+      toast.success(
+        dedupedCount > 0
+          ? `Загружено: ${createdCount}; дубликатов: ${dedupedCount}.`
+          : `Загружено документов: ${createdCount}.`,
+      );
+    } catch (e) {
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.status === 'uploading' ? { ...q, status: 'error' } : q,
+        ),
+      );
+      toast.error(
+        e instanceof ApiError ? e.message : 'Не удалось загрузить.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const allDone =
+    total > 0 && queue.every((q) => q.status === 'done' || q.status === 'deduped');
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Загрузить документ</DialogTitle>
+          <DialogTitle>Загрузить документы</DialogTitle>
         </DialogHeader>
+
         <label
           htmlFor="doc-upload"
           onDragOver={(e) => {
@@ -274,38 +403,157 @@ function UploadDocumentDialog({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            const f = e.dataTransfer.files?.[0];
-            if (f) setFile(f);
+            addFiles(e.dataTransfer.files);
           }}
-          className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-sm transition-colors ${
+          className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed px-4 py-6 text-center text-sm transition-colors ${
             dragOver
               ? 'border-accent bg-accent/10 text-accent'
               : 'border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary'
           }`}
         >
-          <CloudUpload size={16} />
-          {file
-            ? `Выбран файл: ${file.name}`
-            : 'Перетащите файл или нажмите, чтобы выбрать'}
+          <CloudUpload size={18} />
+          <span>Перетащите файлы или нажмите, чтобы выбрать</span>
+          <span className="text-[11px] text-fg-tertiary">
+            PDF, Word, Excel, PowerPoint, Markdown, текст, HTML, RTF, ODT, CSV
+          </span>
           <input
             id="doc-upload"
             type="file"
+            multiple
             className="hidden"
-            accept=".pdf,.doc,.docx,.txt,.md,.rtf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            accept={ACCEPTED_DOCUMENT_ACCEPT}
+            onChange={(e) => {
+              addFiles(e.target.files);
+              // Сбрасываем, чтобы повторный выбор того же файла снова срабатывал.
+              e.target.value = '';
+            }}
           />
         </label>
+
+        {queue.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-fg-tertiary">
+              <span>Файлы ({total})</span>
+              <span>
+                Готово {doneCount} из {total}
+              </span>
+            </div>
+            <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border-subtle p-2">
+              {queue.map((q, idx) => (
+                <li
+                  key={`${q.file.name}-${q.file.size}-${idx}`}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {q.status === 'uploading' && (
+                      <Loader2 size={11} className="animate-spin text-fg-tertiary" />
+                    )}
+                    <span className="truncate text-fg-primary">{q.file.name}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <QueueStatusBadge status={q.status} />
+                    {!busy && (q.status === 'pending' || q.status === 'error') && (
+                      <button
+                        type="button"
+                        className="text-fg-tertiary hover:text-danger"
+                        aria-label="Убрать файл"
+                        onClick={() =>
+                          setQueue((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Тип документа (опционально)</Label>
+          <Select
+            value={docType ?? NO_VALUE}
+            onValueChange={(v) =>
+              setDocType(v === NO_VALUE ? null : (v as DocumentTypeApi))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Не указывать" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_VALUE}>Не указывать</SelectItem>
+              {DOC_TYPE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Тема (опционально)</Label>
+          {themes.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">
+              Темы появятся после первых встреч.
+            </p>
+          ) : (
+            <Select
+              value={themeId ?? NO_VALUE}
+              onValueChange={(v) => setThemeId(v === NO_VALUE ? null : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Не привязывать" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_VALUE}>Не привязывать</SelectItem>
+                {themes.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Проект (опционально)</Label>
+          {projects.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">Проектов пока нет.</p>
+          ) : (
+            <Select
+              value={projectId ?? NO_VALUE}
+              onValueChange={(v) => setProjectId(v === NO_VALUE ? null : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Не привязывать" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_VALUE}>Не привязывать</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
         <div className="space-y-1.5">
           <Label>Привязать к должности (опционально)</Label>
           <Select
-            value={roleId ?? NO_ROLE_VALUE}
-            onValueChange={(v) => setRoleId(v === NO_ROLE_VALUE ? null : v)}
+            value={roleId ?? NO_VALUE}
+            onValueChange={(v) => setRoleId(v === NO_VALUE ? null : v)}
           >
             <SelectTrigger>
               <SelectValue placeholder="Не привязывать" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NO_ROLE_VALUE}>Не привязывать</SelectItem>
+              <SelectItem value={NO_VALUE}>Не привязывать</SelectItem>
               {roles.map((r) => (
                 <SelectItem key={r.id} value={r.id}>
                   {r.name}
@@ -314,30 +562,14 @@ function UploadDocumentDialog({
             </SelectContent>
           </Select>
         </div>
+
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Отмена
+            {allDone ? 'Закрыть' : 'Отмена'}
           </Button>
-          <Button
-            disabled={!file || busy}
-            onClick={async () => {
-              if (!file) return;
-              setBusy(true);
-              try {
-                await documentsApi.upload(orgId, {
-                  file,
-                  attachedRoleId: roleId,
-                });
-                onDone();
-              } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось загрузить.');
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
+          <Button disabled={queue.length === 0 || busy || allDone} onClick={handleUpload}>
             {busy ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
-            Загрузить
+            Загрузить{total > 0 ? ` (${total})` : ''}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -345,22 +577,21 @@ function UploadDocumentDialog({
   );
 }
 
-function documentKindLabel(kind: DocumentApi['kind']): string {
-  switch (kind) {
-    case 'job_description':
-      return 'должностная инструкция';
-    case 'regulation':
-      return 'регламент';
-    case 'policy':
-      return 'политика';
-    case 'process':
-      return 'процесс';
-    case 'metric':
-      return 'метрика';
-    case 'other':
-    default:
-      return 'другое';
-  }
+function QueueStatusBadge({ status }: { status: QueueStatus }) {
+  const variant =
+    status === 'done'
+      ? 'default'
+      : status === 'error'
+        ? 'outline'
+        : 'secondary';
+  return (
+    <Badge
+      variant={variant}
+      className={`text-[10px] ${status === 'error' ? 'text-danger' : ''}`}
+    >
+      {QUEUE_STATUS_LABELS[status]}
+    </Badge>
+  );
 }
 
 function formatDate(iso: string): string {

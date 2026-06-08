@@ -7,6 +7,8 @@ import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import {
+  documentKindLabel,
+  documentTypeLabel,
   documentsApi,
   type DocumentDetailApi,
   type DocumentEntityKindApi,
@@ -157,6 +159,12 @@ function Detail({
           <Badge variant="secondary" className="text-[10px]">
             {STATUS_LABELS[document.status]}
           </Badge>
+          {document.docType && (
+            <Badge variant="default" className="text-[10px]">
+              {documentTypeLabel(document.docType)}
+            </Badge>
+          )}
+          <span className="text-fg-tertiary">{documentKindLabel(document.kind)}</span>
           {document.attachedRoleId && (
             <Link
               href={`/roles/${encodeURIComponent(document.attachedRoleId)}`}

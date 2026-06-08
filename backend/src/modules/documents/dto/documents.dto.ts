@@ -3,6 +3,7 @@ import type {
   Document,
   DocumentKind,
   DocumentStatus,
+  DocumentType,
   IdeaBlock,
   Metric,
   Policy,
@@ -101,6 +102,12 @@ export interface DocumentDto {
   originalSize: number;
   status: DocumentStatus;
   attachedRoleId: string | null;
+  /** ТЗ-4 Ф5 — смысловой тип документа (отдельно от формата `kind`). */
+  docType: DocumentType | null;
+  /** ТЗ-4 — привязка к теме графа (Theme). */
+  attachedThemeId: string | null;
+  /** ТЗ-4 — привязка к проекту трекера (Project). */
+  attachedProjectId: string | null;
   parsedText: string | null;
   parseError: string | null;
   createdAt: string;
@@ -118,6 +125,9 @@ export function toDocumentDto(doc: Document): DocumentDto {
     originalSize: doc.originalSize,
     status: doc.status,
     attachedRoleId: doc.attachedRoleId,
+    docType: doc.docType,
+    attachedThemeId: doc.attachedThemeId,
+    attachedProjectId: doc.attachedProjectId,
     parsedText: doc.parsedText,
     parseError: doc.parseError,
     createdAt: doc.createdAt.toISOString(),

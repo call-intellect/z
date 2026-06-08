@@ -516,7 +516,14 @@ export type LlmTaskType =
   | 'goal-hierarchy-link'
   | 'goals-pulse-summarize'
   // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
-  | 'chatbox-summary';
+  | 'chatbox-summary'
+  // Ф5 Р2 (2026-06-08) — task-dedupe: семантический арбитр совпадения двух
+  // задач встречи (action items). KNN-«серая зона»: один вызов на пару
+  // (fast-черновик, canonical-задача), вердикт same|different. РИСКОВО (может
+  // скрыть задачу) → за флагом DEFAULT OFF; при сомнении → 'different'.
+  // Дешёвый арбитр: primary deepseek-v4-flash; secondary gpt-5.4-mini;
+  // tertiary ollama qwen3.5:9b. Cache-friendly: SYSTEM статичен, две задачи в USER.
+  | 'task-dedupe';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -706,6 +713,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // тоже не был зарегистрирован.
   'experiment-extract',
   'experiment-summarize-lessons',
+  // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
+  'task-dedupe',
 ] as const;
 
 /**

@@ -108,6 +108,12 @@ const registry = new Map<string, ZodTypeAny>([
   // напрямую из блока встречи (signalType='idea') в block-ingest.
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
+  // ── семантический дедуп задач встречи (Ф5 Р2, 2026-06-08) ─────────────
+  // taskDedupeEnabled — флаг (дефолт FALSE, data-affecting); taskDedupeThreshold
+  // — KNN cosine-порог уверенного слияния fast-черновика в canonical.
+  ['meetings.taskDedupeEnabled', z.boolean()],
+  ['meetings.taskDedupeThreshold', UNIT_INTERVAL],
+
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],
 

@@ -51,6 +51,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcEntityGraphInvalidJsonTotal!: Counter<'reason'>;
   private kcEntityGraphFallbackNoneTotal!: Counter<'reason'>;
 
+  // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
+  private taskDedupeTotal!: Counter<'result'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -1069,6 +1072,17 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_entity_graph_fallback_none_total',
       help: 'entity-graph не смог распарсить вердикт арбитра после ретраев → связь сущностей не создана (молчаливая деградация графа). > 0 → проверь модель/формат.',
       labelNames: ['reason'] as const,
+    });
+
+    // Ф5 Р2 — семантический дедуп задач встречи. result:
+    //   knn_merged — fast-черновик удалён по cosine >= порога (без LLM);
+    //   llm_merged — удалён по вердикту 'same' LLM-арбитра (серая зона);
+    //   kept       — оставлен (нет близкого canonical или вердикт 'different');
+    //   skipped    — дедуп пропущен (флаг OFF / embed упал / ошибка).
+    this.taskDedupeTotal = this.getOrCreateCounter({
+      name: 'z_task_dedupe_total',
+      help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
+      labelNames: ['result'] as const,
     });
 
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
@@ -3761,6 +3775,15 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcEntityGraphFallbackNone(args: { reason: string }): void {
     this.kcEntityGraphFallbackNoneTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * Ф5 Р2 — один результат семантического дедупа задачи-черновика встречи.
+   * result: 'knn_merged' | 'llm_merged' | 'kept' | 'skipped'. Optional-safe:
+   * счётчик может быть не инициализирован в тестовых моках сервиса.
+   */
+  incTaskDedupe(args: { result: string }): void {
+    this.taskDedupeTotal?.inc({ result: args.result });
   }
 
   /**

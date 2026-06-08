@@ -12,6 +12,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 import { ParticipantContextService } from '../services/participant-context.service';
 import type { DialogTurn } from '../services/prompts/common';
@@ -39,6 +40,9 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
+    // Ф5 Р2 — семантический дедуп задач встречи (best-effort, за флагом OFF).
+    @Inject(MeetingTaskDedupeService)
+    private readonly taskDedupe: MeetingTaskDedupeService,
   ) {}
 
   onModuleInit(): void {
@@ -157,6 +161,24 @@ export class TasksExtractWorker implements OnModuleInit, OnModuleDestroy {
       { meetingId, count: tasks.length },
       'tasks-extract: извлечены и сохранены',
     );
+
+    // Ф5 Р2 — после записи canonical-задач: семантический дедуп fast-черновиков
+    // против этих canonical (best-effort, сервис сам no-op при флаге OFF).
+    // Ошибка дедупа не должна влиять на статус задач (уже 'ready').
+    try {
+      await this.taskDedupe.dedupeForMeeting({
+        tenantId: meeting.tenantId,
+        meetingId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          meetingId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'tasks-extract: task-dedupe упал (игнорируем)',
+      );
+    }
   }
 
   private async onJobFailed(

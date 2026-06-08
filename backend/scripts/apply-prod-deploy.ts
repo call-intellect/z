@@ -104,6 +104,8 @@ const STEPS: Step[] = [
     // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
     // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
     'goals',
+    // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
+    'task-dedupe',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

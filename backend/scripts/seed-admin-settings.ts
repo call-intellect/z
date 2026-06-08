@@ -290,6 +290,19 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'knowledge-core', severity, description });
   }
 
+  // ── Дедуп задач встречи (meetings.*) — Ф5 Р2 (2026-06-08). ──────────────
+  // РИСКОВО (может скрыть задачу) → дефолт FALSE (data-affecting). Non-lossy:
+  // удаляется только fast-черновик при совпадении с canonical-задачей.
+  // taskDedupeThreshold — KNN cosine-порог уверенного слияния (серая зона
+  // [порог-0.07, порог) → LLM-арбитр task-dedupe).
+  const meetingsSettings: Array<[string, unknown, Severity, string]> = [
+    ['meetings.taskDedupeEnabled', envBool('MEETINGS_TASK_DEDUPE_ENABLED', false), 'high', 'Семантический дедуп задач встречи: при ON fast-черновик удаляется, если дублирует canonical-задачу той же встречи (дефолт выключено)'],
+    ['meetings.taskDedupeThreshold', envFloat('MEETINGS_TASK_DEDUPE_THRESHOLD', 0.85), 'medium', 'Порог cosine-сходства заголовков для уверенного слияния fast-черновика в canonical (серая зона ниже порога — через LLM-арбитра)'],
+  ];
+  for (const [key, value, severity, description] of meetingsSettings) {
+    out.push({ key, value, category: 'ai', section: 'meetings', severity, description });
+  }
+
   // ── Эмбеддинги (embeddings.*) — 8.
   const embeddings: Array<[string, unknown, Severity, string]> = [
     ['embeddings.provider', env('EMBEDDING_PROVIDER', 'openai-proxy'), 'high', 'Провайдер эмбеддингов'],

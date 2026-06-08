@@ -822,6 +822,21 @@ export class TypedConfigService {
         undefined,
         true,
       ),
+      // Ф5 Р2 (2026-06-08) — семантический дедуп задач встречи. РИСКОВО (может
+      // скрыть задачу) → дефолт FALSE (data-affecting), включается осознанно.
+      // `taskDedupeThreshold` — KNN cosine-порог уверенного слияния fast-черновика
+      // в canonical (серая зона = [threshold-0.07, threshold) → LLM-арбитр).
+      // Admin-editable (resolveSync: cacheMap → default; ENV не вводим — крутилка).
+      taskDedupeEnabled: this.resolveSync<boolean>(
+        'meetings.taskDedupeEnabled',
+        undefined,
+        false,
+      ),
+      taskDedupeThreshold: this.resolveSync<number>(
+        'meetings.taskDedupeThreshold',
+        undefined,
+        0.85,
+      ),
     } as const;
   }
 

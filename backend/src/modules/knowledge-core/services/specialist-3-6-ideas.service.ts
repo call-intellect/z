@@ -42,6 +42,7 @@ interface IdeaSupporter {
 }
 
 interface IdeaDraft {
+  isIdea?: boolean;
   kind: 'internal' | 'client_request';
   statement: string;
   rationale?: string | null;
@@ -549,6 +550,15 @@ export class Specialist36Service {
         type: 'idea',
         reason: 'schema_validation',
       });
+      return null;
+    }
+    // C3 anti-плодёж: явный булев гейт. Срабатывает ТОЛЬКО на явный false —
+    // модель не обязана фабриковать карточку, если идеи в блоке нет.
+    if (parsed.isIdea === false) {
+      this.logger.debug(
+        { blockId: block.id },
+        'specialist-3-6.extractDraft: isIdea=false — это не идея, skip',
+      );
       return null;
     }
     if (parsed.confidence < Specialist36Service.MIN_EXTRACT_CONFIDENCE) {

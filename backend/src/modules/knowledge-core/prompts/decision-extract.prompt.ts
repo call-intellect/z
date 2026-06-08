@@ -29,6 +29,7 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     'Не выдумывай факты вне блока. Если в блоке нет нужного поля — оставь его null.',
     '',
     'Особое внимание:',
+    '- `isDecision` — true, если фрагмент действительно содержит ПРИНЯТОЕ решение; false, если это пожелание/обсуждение/вопрос без решения. На false остальные поля можно вернуть пустыми/нулевыми.',
     '- `statement` — суть решения одним связным предложением («Ушли с поставщика X в пользу Y»).',
     '- `rationale` — ПОЧЕМУ так решили. Это самый ценный кусок: вытаскивай прямую логику из reasoning-блоков и цитат.',
     '- `alternatives` — какие варианты рассматривали и почему отвергли. Если в блоке об этом ничего — пустой массив.',
@@ -43,11 +44,11 @@ export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '',
     'Положительный пример (что извлечь):',
     'Блок «Поставщик SMS» (decision). Цитаты: «Иван: смотрели Twilio и SMS Aero. Маша: Twilio дорогой в России, SMS Aero справился с тестом доставки в 99%. Сергей: окей, идём с SMS Aero, договор подписываем на квартал».',
-    'Вывод: {"statement": "Уходим к поставщику SMS Aero вместо Twilio.", "rationale": "Twilio слишком дорогой в России; SMS Aero показал 99% доставку на тестах.", "alternatives": [{"option": "Twilio", "reasonRejected": "дорогой в РФ"}], "decidedByPersonHints": ["Сергей"], "affectsEntityHints": [{"name": "SMS Aero", "type": "vendor"}], "decidedAt": null, "deadline": null, "status": "approved", "confidence": 0.85}.',
+    'Вывод: {"isDecision": true, "statement": "Уходим к поставщику SMS Aero вместо Twilio.", "rationale": "Twilio слишком дорогой в России; SMS Aero показал 99% доставку на тестах.", "alternatives": [{"option": "Twilio", "reasonRejected": "дорогой в РФ"}], "decidedByPersonHints": ["Сергей"], "affectsEntityHints": [{"name": "SMS Aero", "type": "vendor"}], "decidedAt": null, "deadline": null, "status": "approved", "confidence": 0.85}.',
     '',
     'Что НЕ делать (edge case — пожелание без обязательства):',
     'Блок «Дизайн админки» (idea?). Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
-    'Вывод: {"statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
+    'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
     ].join('\n'),
   ),
   ),
@@ -92,8 +93,13 @@ export const DECISION_EXTRACT_USER_TEMPLATE = (args: {
 export const DECISION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['statement', 'confidence'],
+  required: ['isDecision', 'statement', 'confidence'],
   properties: {
+    isDecision: {
+      type: 'boolean',
+      description:
+        'true — фрагмент содержит принятое решение; false — пожелание/обсуждение/вопрос без решения.',
+    },
     statement: {
       type: 'string',
       minLength: 5,

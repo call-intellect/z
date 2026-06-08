@@ -477,6 +477,15 @@ export class Specialist33Service {
       });
       return null;
     }
+    // C3 anti-плодёж: явный булев гейт. Срабатывает ТОЛЬКО на явный false —
+    // модель не обязана фабриковать карточку, если решения в блоке нет.
+    if (parsed.isDecision === false) {
+      this.logger.debug(
+        { blockId: block.id },
+        'specialist-3-3.extractDraft: isDecision=false — это не решение, skip',
+      );
+      return null;
+    }
     if ((parsed.confidence ?? 0) < Specialist33Service.MIN_EXTRACT_CONFIDENCE) {
       this.logger.debug(
         { blockId: block.id, confidence: parsed.confidence },
@@ -1298,6 +1307,7 @@ export class Specialist33Service {
 // ─────────────────────────── shared types ───────────────────────────
 
 export interface DecisionDraft {
+  isDecision?: boolean;
   statement: string;
   rationale?: string | null;
   alternatives?: Array<{ option: string; reasonRejected?: string | null }>;

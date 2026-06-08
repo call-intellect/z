@@ -238,6 +238,21 @@ export class VoxService {
             Array.isArray(segs) && segs[0] && typeof segs[0] === 'object'
               ? Object.keys(segs[0] as object)
               : [];
+          // PII-safe форма extendedResult / taskParams: ТОЛЬКО типы и ключи,
+          // НЕ значения (там может быть текст транскрипта = PII). По ключам
+          // extendedResult видно, есть ли там words/word_timestamps (исход б);
+          // по ключам taskParams — реальные имена принятых submit-параметров
+          // (имя возможного word-timing флага, без угадывания).
+          const extRaw = ro.extendedResult;
+          const extObj =
+            extRaw && typeof extRaw === 'object' && !Array.isArray(extRaw)
+              ? (extRaw as Record<string, unknown>)
+              : null;
+          const taskParamsRaw = ro.taskParams;
+          const taskParamsObj =
+            taskParamsRaw && typeof taskParamsRaw === 'object' && !Array.isArray(taskParamsRaw)
+              ? (taskParamsRaw as Record<string, unknown>)
+              : null;
           this.dbLog(
             'WARN',
             'vox.no_words',
@@ -251,6 +266,14 @@ export class VoxService {
               hasSegments: Array.isArray(segs),
               segmentsCount: Array.isArray(segs) ? segs.length : 0,
               firstSegmentKeys,
+              extendedResultType:
+                extRaw === null || extRaw === undefined
+                  ? 'absent'
+                  : Array.isArray(extRaw)
+                    ? `array(${extRaw.length})`
+                    : typeof extRaw,
+              extendedResultKeys: extObj ? Object.keys(extObj) : [],
+              taskParamsKeys: taskParamsObj ? Object.keys(taskParamsObj) : [],
             },
           );
         }
@@ -315,6 +338,10 @@ function parseVoxResult(raw: unknown): {
   // Vox может отдавать текст под разными ключами / вложенно в `result`.
   // Покрываем известные варианты, иначе молча получаем пустой транскрипт.
   const nested = (obj.result ?? obj.data ?? {}) as Record<string, unknown>;
+  // Третий источник: `extendedResult` (top-level ключ Vox, модель v3_e2e_rnnt).
+  // Может быть объектом ИЛИ JSON-строкой. Аддитивно — приоритет у уже работающих
+  // источников (obj / result / data); extended только в конце каждой цепочки.
+  const extended = asRecord(obj.extendedResult);
   const transcriptText =
     firstString(
       obj.transcriptText,
@@ -324,9 +351,18 @@ function parseVoxResult(raw: unknown): {
       nested.transcriptText,
       nested.transcript_text,
       nested.text,
+      extended.transcriptText,
+      extended.transcript_text,
+      extended.text,
     ) ?? '';
   const durationRaw =
-    obj.durationSeconds ?? obj.duration_seconds ?? nested.durationSeconds ?? nested.duration_seconds ?? 0;
+    obj.durationSeconds ??
+    obj.duration_seconds ??
+    nested.durationSeconds ??
+    nested.duration_seconds ??
+    extended.durationSeconds ??
+    extended.duration_seconds ??
+    0;
   const durationSeconds =
     typeof durationRaw === 'number'
       ? durationRaw
@@ -363,14 +399,19 @@ function parseVoxResult(raw: unknown): {
       );
 
   const flatWordsRaw =
-    obj.words ?? obj.wordsTimestamps ?? nested.words ?? nested.wordsTimestamps;
+    obj.words ??
+    obj.wordsTimestamps ??
+    nested.words ??
+    nested.wordsTimestamps ??
+    extended.words ??
+    extended.wordsTimestamps;
   let words = Array.isArray(flatWordsRaw) ? mapWords(flatWordsRaw) : undefined;
 
   // S5-02 (ТЗ 2026-06-06): многие ASR кладут пословные тайминги в
   // segments[].words (Whisper/Google/Deepgram-стиль). Если плоских words нет —
   // собираем из сегментов (top-level или в result/data). Единицы те же (numericMs).
   if (!words || words.length === 0) {
-    const segmentsRaw = (obj.segments ?? nested.segments ?? []) as unknown[];
+    const segmentsRaw = (obj.segments ?? nested.segments ?? extended.segments ?? []) as unknown[];
     if (Array.isArray(segmentsRaw) && segmentsRaw.length > 0) {
       const segWords: unknown[] = [];
       for (const seg of segmentsRaw) {
@@ -408,4 +449,25 @@ function numericMs(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/**
+ * Нормализует значение к объекту-записи. Принимает либо готовый объект,
+ * либо JSON-строку (Vox может класть `extendedResult` сериализованным).
+ * Массивы и не-JSON-строки → пустая запись. Используется для третьего
+ * источника таймингов — `extendedResult` (top-level ключ ответа Vox).
+ */
+function asRecord(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (typeof v === 'string' && v.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // not JSON — ignore
+    }
+  }
+  return {};
 }

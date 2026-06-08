@@ -238,4 +238,101 @@ describe('VoxService.poll', () => {
     expect(result.transcriptText).toBe('Текст без таймингов');
     expect(result.words ?? []).toHaveLength(0);
   });
+
+  it('COMPLETED с extendedResult.words (объект) → пословные тайминги извлекаются', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          transcriptText: 'Привет мир',
+          extendedResult: {
+            words: [
+              { word: 'Привет', startMs: 0, endMs: 500 },
+              { word: 'мир', startMs: 600, endMs: 900 },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.words).toHaveLength(2);
+    expect(result.transcriptText).toBe('Привет мир');
+  });
+
+  it('COMPLETED с extendedResult.segments[].words (объект) → words собраны', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          text: 'Один два',
+          durationSeconds: 4,
+          extendedResult: {
+            segments: [
+              { words: [{ text: 'Один', start_ms: 0, end_ms: 300 }] },
+              { words: [{ text: 'два', start_ms: 400, end_ms: 700 }] },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.words).toHaveLength(2);
+    expect(result.durationSeconds).toBe(4);
+  });
+
+  it('COMPLETED с extendedResult как JSON-строкой → распарсилось, words есть', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          transcriptText: 'Строковый extendedResult',
+          extendedResult: JSON.stringify({
+            durationSeconds: 7,
+            words: [{ word: 'Слово', startMs: 10, endMs: 200 }],
+          }),
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.words).toHaveLength(1);
+    expect(result.durationSeconds).toBe(7);
+    expect(result.transcriptText).toBe('Строковый extendedResult');
+  });
+
+  it('COMPLETED с пустым extendedResult → words отсутствуют, текст/длительность не сломаны', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          status: 'COMPLETED',
+          transcriptText: 'Только текст',
+          durationSeconds: 48,
+          extendedResult: {},
+        }),
+        { status: 200 },
+      ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const svc = new VoxService(makeCfg());
+    const promise = svc.poll('task-1', { intervalMs: 10, maxAttempts: 3 });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.transcriptText).toBe('Только текст');
+    expect(result.durationSeconds).toBe(48);
+    expect(result.words ?? []).toHaveLength(0);
+  });
 });

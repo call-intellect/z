@@ -83,16 +83,10 @@ export class SkillProfileRecalibrateCron {
         });
         traitsArchived += a.count;
 
+        // Decay на ОДНУ ступень за проход.
+        // порядок: medium→low ДО high→medium — иначе high упадёт в low за один
+        // проход (свежеставший из high `medium` иначе попал бы во второй шаг).
         const d1 = await this.prisma.skillTrait.updateMany({
-          where: {
-            profileId: p.id,
-            status: 'active',
-            confidence: 'high',
-            lastConfirmedAt: { lt: decayCutoff },
-          },
-          data: { confidence: 'medium' },
-        });
-        const d2 = await this.prisma.skillTrait.updateMany({
           where: {
             profileId: p.id,
             status: 'active',
@@ -100,6 +94,15 @@ export class SkillProfileRecalibrateCron {
             lastConfirmedAt: { lt: decayCutoff },
           },
           data: { confidence: 'low' },
+        });
+        const d2 = await this.prisma.skillTrait.updateMany({
+          where: {
+            profileId: p.id,
+            status: 'active',
+            confidence: 'high',
+            lastConfirmedAt: { lt: decayCutoff },
+          },
+          data: { confidence: 'medium' },
         });
         traitsDecayed += d1.count + d2.count;
 

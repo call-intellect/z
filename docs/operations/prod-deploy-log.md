@@ -227,6 +227,53 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📊 2026-06-09 — ТЗ-2 ⊕ ТЗ-3: дашборды (состав + современный визуал) + здоровье портфеля целей
+
+> Контракты: `plans/tz/2026-06-08-dashboards-info-rework.md` (состав ТЗ-2) ⊕ `plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md` (визуал ТЗ-3). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, фазы S2.1–S2.9.
+>
+> **Зачем для прода:** главная директора сжата до ≤7 величин (флаг `dashboard.main_rework.enabled`), COO-overview += «сколько закрыли» (флаг `operations.dashboard_rework.enabled`), self-view план-факта `/me/weekly-per-person` (флаг `operations.per_person_self_view.enabled`), /me 5→9 виджетов + 👍/👎 на ответах чата (флаг `me.daily_value_widgets.enabled`), два новых дашборда `/dashboard/portfolio` (здоровье портфеля целей + MoSCoW) и `/dashboard/value-recap`. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все флаги — AdminSetting с code-fallback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (засеиваются отдельными `seed-admin-setting-*`, см. Шаг 7; code-fallback есть):
+  - `dashboard.main_rework.enabled` (bool, kill-switch ON) — новая компоновка главной директора (ТЗ-2 Ф1).
+  - `operations.dashboard_rework.enabled` (bool, kill-switch ON) — новая раскладка COO-дашборда (ТЗ-2 Ф2).
+  - `operations.per_person_self_view.enabled` (bool, kill-switch ON) — self-view `GET /me/weekly-per-person` (ТЗ-2 Ф4).
+  - `me.daily_value_widgets.enabled` (bool, kill-switch ON) — 4 виджета пользы + чат-feedback на /me (ТЗ-2 Ф5).
+  - `operations.portfolio_health.enabled` (bool, kill-switch ON) + крутилки `portfolio.health.{threshold_healthy,threshold_warning,weight_achieved,weight_on_track,weight_at_risk,weight_stalled,weight_dropped}` (ТЗ-2 Ф6.A). Все зарегистрированы в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608190000_goal_priority_moscow`): `+ enum GoalPriority (must|should|could|wont)`, `+ Goal.priority GoalPriority?`, `+ table portfolio_health_snapshot` (FK → `Org` ON DELETE CASCADE, unique (tenantId, dateLocal), индекс по (tenantId, snapshotAt desc)). Все изменения аддитивны (CREATE TYPE / ADD COLUMN / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **5 новых, идемпотентных, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-dashboard-main.ts`, `...-operations-dashboard.ts`, `...-operations-per-person.ts`, `...-me-widgets.ts`, `...-portfolio-health.ts` (ключи см. Шаг 1). Все защищают admin-edited. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или каждый напрямую). Без сидеров работают на code-дефолтах.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `PortfolioHealthService` + `PortfolioHealthSnapshotCron` `@Cron('0 5 * * 1')`, `GET /api/v1/dashboard/operations/portfolio-health`, `PATCH /api/v1/goals/:id/priority`, `GET /api/v1/me/{ideas,recognitions,weekly-per-person}`, `fetchValueStrip`/`reasonSourceRef`/`mainReworkEnabled` в director-dashboard, chat-v2 feedback; frontend: новые виджеты главной + `/dashboard/portfolio` + `/dashboard/value-recap` + modern-визуал/фон админки): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron (≤ след. пн 05:00, без ERROR): в логах backend `portfolio-health-snapshot.cron` (`@Cron('0 5 * * 1')`, per-Org).
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/portfolio-health`, `PATCH /api/v1/goals/:id/priority`, `GET /api/v1/me/ideas`, `GET /api/v1/me/recognitions`, `GET /api/v1/me/weekly-per-person`, `GET /api/v1/dashboard/operations/value-recap/:id/export`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'portfolio_health_score|portfolio_health_snapshot_total|portfolio_priority_set_total|dashboard_value_strip_served_total|dashboard_main_first_screen_widget_count|coo_blockers_resolved_total|coo_team_capacity_widget_served_total|weekly_per_person|me_ideas_fate_served_total|me_recognitions_served_total'` — присутствуют.
+  - Миграция применена: в логах migrate-контейнера `goal_priority_moscow` без ошибок.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-09 — ТЗ-4 Ф1+Ф10: новые форматы документов + смысловой тип/привязки + AI-подсказка привязки
+
+> Контракт: `plans/tz/2026-06-08-manual-document-upload-and-import-tz.md` (Ф1 схема/парсер/мультифайл/дедуп/привязка + Ф10 AI-подсказка). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** канал `/documents` расширен — новые форматы (xlsx/pptx/html/rtf/odt/csv), мультифайл-загрузка + дедуп `contentHash` + явная привязка (тема/проект/должность → граф) + смысловой тип `docType`; LLM-подсказка привязки (human-in-the-loop). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (флаги/крутилки — AdminSetting с code-fallback). Библиотеки `officeparser` + `exceljs` (уже в `package.json`). ⚠ `officeparser` имеет `postinstall` — проверить нативную сборку на прод-Docker.
+
+- **Шаг 1 — AdminSetting / kill-switch** (засеивается `seed-admin-setting-document-attribution.ts` + `seed-admin-settings.ts`, см. Шаг 7; code-fallback есть):
+  - `documents.ai_attribution.enabled` (bool, kill-switch ON) — LLM-подсказка привязки документа (`document-attribution-suggest`). Зарегистрирован в `admin-setting-schema-registry.ts`.
+  - `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats}` (int/int/array) — лимиты мультизагрузки. `documents.maxZipSizeMb` — см. блок «ТЗ-4 Ф7» ниже.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608200000_documents_formats_type_attribution`): `+ enum DocumentType (regulation|policy|instruction|process|job_description|other)`, `+ значения xlsx/pptx/html/rtf/odt/csv в enum DocumentKind`, `+ Document.docType/suggestedDocType/suggestedThemeId/attachedThemeId/attachedProjectId/contentHash/importBatchId` + индексы (`(tenantId,docType)`, `(tenantId,contentHash)`, `(tenantId,attachedThemeId)`, `(importBatchId)`). Все изменения аддитивны (ADD VALUE / CREATE TYPE / ADD COLUMN), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-document-attribution.ts` — `documents.ai_attribution.enabled` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `document-attribution-suggest` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: парсер `officeparser`+`exceljs`, мультифайл `POST /documents` + дедуп `contentHash` + attribution → граф (`block-ingest.applyDocumentAttribution`), `PATCH /documents/:id/attribution`, `DocumentAttributionService` + taskType `document-attribution-suggest`, chat-v2 citations += documentId/Name; frontend: мультизагрузка + форма привязки + SuggestionBanner + doc-citation): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый REST: Swagger `/api/docs` → `PATCH /api/v1/documents/:id/attribution`; `POST /api/v1/documents` принимает несколько файлов.
+  - Маршрут LLM: `docker compose exec backend bun run scripts/diag-routes.ts` → `document-attribution-suggest` ведёт на `deepseek-v4-flash`.
+  - Парсер форматов: загрузить .pptx/.xlsx → `Document.status` доходит до `parsed`/`blocks_extracted` без ERROR (проверка нативной сборки `officeparser`).
+  - Миграция применена: в логах migrate-контейнера `documents_formats_type_attribution` без ошибок.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📦 2026-06-08 — ТЗ-4 Ф7: массовый импорт документов из ZIP-архива
 
 > Контракт: `plans/analysis/2026-06-08-manual-document-upload-and-import.md` (ТЗ-4 Ф7). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.

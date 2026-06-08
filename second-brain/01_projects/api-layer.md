@@ -525,6 +525,44 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 Гейт доступа в retrieval — без отдельных эндпоинтов и кодов ошибок: отфильтрованные блоки просто не попадают в выдачу (не 403). Включается флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off/shadow/enforce, дефолт off).
 
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2/ТЗ-3/ТЗ-4/ТЗ-5. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».
+
+**Дашборды (модули `operations`/`dashboard`/`goals`):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/dashboard/operations/portfolio-health` | здоровье портфеля целей (healthScore + разрезы статус/MoSCoW) | owner/coo, флаг `operations.portfolio_health.enabled` |
+| PATCH | `/api/v1/goals/:id/priority` | задать MoSCoW-приоритет цели. Тело `{ priority: 'must'\|'should'\|'could'\|'wont'\|null }` | write |
+| GET | `/api/v1/dashboard/operations/value-recap/:id/export` | экспорт месячной витрины в слайды/печать (read-only поверх value-recap S1.5). `?format=slides` | owner/coo |
+| GET | `/api/v1/me/ideas` | судьба моих идей (виджет /me) | self, флаг `me.daily_value_widgets.enabled` |
+| GET | `/api/v1/me/recognitions` | входящие признания (виджет /me) | self, флаг `me.daily_value_widgets.enabled` |
+| GET | `/api/v1/me/weekly-per-person` | self-view план-факта по себе | self, флаг `operations.per_person_self_view.enabled` |
+
+Контроллеры — `operations/controllers/{my-daily-value,my-weekly-per-person}.controller.ts` (`@Controller('api/v1/me')`), `operations/controllers/operations-dashboard.controller.ts`, `goals/goals.controller.ts`. Главная директора (`director-dashboard.service.ts`) дополнена `valueStrip`/`reasonSourceRef`/`mainReworkEnabled`; COO overview — blockers/frictions resolved. Чат: `chat-v2` += обратная связь 👍/👎 (`setFeedback`/`clearFeedback`).
+
+**Документы (модуль `documents`, `@Controller('api/v1/documents')`):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/documents` | мультифайл-загрузка (`FileFieldsInterceptor`) + дедуп `contentHash` + явная привязка (тема/проект/должность → граф) | write |
+| POST | `/api/v1/documents/import-zip` | массовый импорт ZIP-архива; `source=notion` — экспорт Notion (чистка 32-hex id из имён) | owner/admin |
+| POST | `/api/v1/documents/import-confluence` | импорт из Confluence API (токен crypto-encrypted в job) | owner/admin |
+| GET | `/api/v1/documents/imports/:id` | прогресс batch-импорта (`DocumentImport`) | owner/admin |
+| PATCH | `/api/v1/documents/:id/attribution` | принять/отредактировать привязку (включая accept AI-подсказки) + проекция в граф | write |
+
+**Загрузка встречи (модуль `meeting-uploads`, `@Controller('api/v1/meetings')`):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/meetings/upload` | начать загрузку встречи (presignPut) | write, рубильник `MEETING_UPLOAD_ENABLED`, квота `billing.meetingUploadsPerMonth` |
+| POST | `/api/v1/meetings/:id/upload/complete` | завершить загрузку → enqueue ingest | write |
+| GET | `/api/v1/meetings/:id/upload/playback` | playback-ссылка загруженного медиа | read |
+| GET | `/api/v1/meetings/:id/speakers` | список диаризованных говорящих (`MeetingUploadSpeaker`) | read |
+| PUT | `/api/v1/meetings/:id/speakers` | разметка говорящих (сотрудник/внешний/исключить/слить) | write |
+| POST | `/api/v1/meetings/:id/speakers/confirm` | подтвердить разметку → снять гейт `awaiting_speakers` → enqueue анализа | write |
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.

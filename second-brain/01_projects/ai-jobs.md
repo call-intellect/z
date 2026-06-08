@@ -342,4 +342,20 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - Вызывается из `Specialist37Service.verifyPendingTraits()` ночным cron'ом **`SkillTraitVerifyCron` `@Cron('30 3 * * *')`** (03:30) — обрабатывает черты в статусе `SkillTraitStatus.pending_verification` (черта в этом статусе **не попадает в persona**, пока не станет `active`).
 - Маршрут засеивается в `seed-llm-task-routes-skill-and-clone.ts` (вместе с остальными skill/clone-роутами).
 
+## Загрузка/импорт документов — AI-подсказка привязки (ТЗ-4 Ф10, 2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
+
+### Новый taskType `document-attribution-suggest`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `document-attribution-suggest` | по тексту загруженного документа предлагает **смысловой тип** (`DocumentType`) + **тему** графа → пишет в `Document.suggestedDocType`/`suggestedThemeId`. **Human-in-the-loop:** подсказка не применяется сама — пользователь принимает её через `PATCH /documents/:id/attribution`. | `deepseek-v4-flash` (cheap) | `document-attribution-suggest.prompt.ts` (cache-friendly: стабильный SYSTEM, текст документа в конце USER) |
+
+- Сервис `DocumentAttributionService` (`backend/src/modules/documents/`), флаг `documents.ai_attribution.enabled` (kill-switch).
+- Маршрут засеивается в `seed-llm-task-routes-default.ts` (уже в `apply-prod-deploy.ts` STEPS, идемпотентно).
+- **Без новой очереди** — подсказка считается синхронно при загрузке/по запросу (не отдельный BullMQ-job).
+
+> ⚠ Загрузка встречи (ТЗ-5) использует существующий ASR-стек (Vox-диаризация в `meeting-upload-transcribe.worker`), **новых chat-LLM taskType не вводит** — анализ загруженной встречи после подписи говорящих идёт по обычному meeting-пайплайну (`core.meeting-analyze-v2` и т.д.).
+
 [[../index|← index]]

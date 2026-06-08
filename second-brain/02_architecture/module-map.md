@@ -2303,3 +2303,39 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 **Миграций БД НЕТ** (schema.prisma не менялся; `Issue.goalId` уже существовал). **Новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
 
 [[../index|← index]]
+
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) (состав) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md) (визуал), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, 32 коммита. Модели — [[data-model]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+
+### Новый модуль `meeting-uploads` (ТЗ-5)
+
+`backend/src/modules/meeting-uploads/` — ручная загрузка готовой встречи с диаризацией:
+- `meeting-uploads.controller.ts` (`@Controller('api/v1/meetings')`) — presignPut + `POST /upload`(+`:id/upload/complete`) + `GET /:id/upload/playback` + `GET/PUT /:id/speakers` + `POST /:id/speakers/confirm`.
+- `meeting-uploads.service.ts` (загрузка + квота `billing.meetingUploadsPerMonth` + рубильник `MEETING_UPLOAD_ENABLED`) + `meeting-uploads-speakers.service.ts` (подпись говорящих: создаёт/привязывает `Person` external company/jobTitle + `Participant`, relabel turns, enqueue анализа).
+- `workers/meeting-upload-ingest.worker.ts` (очередь `meeting.upload-ingest`, concurrency=1, ffmpeg-нормализация любого формата) + `workers/meeting-upload-transcribe.worker.ts` (`meeting.upload-transcribe`, Vox-диаризация → turns + `MeetingUploadSpeaker`, гейт `awaiting_speakers` БЕЗ анализа).
+- очереди в `meeting-uploads.queues.ts` (`MEETING_UPLOAD_QUEUE_NAMES = { UPLOAD_INGEST:'meeting.upload-ingest', UPLOAD_TRANSCRIBE:'meeting.upload-transcribe' }`).
+- ASR: `ai/services/vox.service.ts`/`vox.types.ts` расширены `VoxDiarizedSegment` + парсинг `segments`. См. [[../01_projects/workers-queues]].
+
+### Документы (ТЗ-4): расширение `documents` + `ingest` + `knowledge-core`
+
+- **`documents/documents.controller.ts`** (`@Controller('api/v1/documents')`): `POST /` теперь мультифайл (`FileFieldsInterceptor`) + дедуп `contentHash` + attribution; `POST /import-zip` (batch ZIP/Notion `source`, `fflate`); `POST /import-confluence` (API-импорт); `GET /imports/:id`; `PATCH /:id/attribution` (accept AI-подсказки + проекция в граф).
+- **`documents/document-import.service.ts`** + **`document-import.worker.ts`** (очередь `core.document-import`, `CORE_QUEUE_NAMES.DOCUMENT_IMPORT`) — распаковка ZIP + per-entry создание Document'ов; Notion (`source=notion`, чистка 32-hex id из имён).
+- **`documents/confluence-client.ts`** — клиент Confluence API; токен передаётся в job **crypto-encrypted**.
+- **`documents/document-attribution.service.ts`** + промпт `ai/services/prompts/document-attribution-suggest.prompt.ts` — LLM-подсказка привязки (taskType `document-attribution-suggest`, `deepseek-v4-flash`, human-in-the-loop), флаг `documents.ai_attribution.enabled`. См. [[../01_projects/ai-jobs]].
+- **Парсер:** `+officeparser` (pptx/rtf/odt/csv/html), xlsx через `exceljs`; `detectKind` расширен. **`block-ingest.applyDocumentAttribution`** — проброс привязки в граф (`roleId`/`roleRelevant` + `ThemeIdeaBlock`).
+- **chat-v2 citations** += `documentId`/`documentName` (документ-источник в ответах чата).
+- Крутилки `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`.
+
+### Дашборды (ТЗ-2 состав ⊕ ТЗ-3 визуал)
+
+- **`operations/services/portfolio-health.service.ts`** + `portfolio-health.scoring.ts` + cron **`operations/workers/portfolio-health-snapshot.cron.ts`** (`PortfolioHealthSnapshotCron @Cron('0 5 * * 1')`) — здоровье портфеля целей + MoSCoW; эндпоинт `GET /dashboard/operations/portfolio-health`; `goals.controller.ts` += `PATCH /goals/:id/priority`. Модель `PortfolioHealthSnapshot` + enum `GoalPriority` — [[data-model]] §«Батч 5».
+- **`operations/controllers/my-daily-value.controller.ts`** (`@Controller('api/v1/me')`) — `GET /me/ideas` + `GET /me/recognitions` (виджеты /me, флаг `me.daily_value_widgets.enabled`); **`my-weekly-per-person.controller.ts`** — `GET /me/weekly-per-person` (self-view план-факта, флаг `operations.per_person_self_view.enabled`).
+- `dashboard/services/director-dashboard.service.ts` — `fetchValueStrip` + `reasonSourceRef` + `mainReworkEnabled` (флаг `dashboard.main_rework.enabled`); `operations-dashboard.controller.ts` overview += blockers/frictions resolved + value-recap export `GET /dashboard/operations/value-recap/:id/export` (флаг `operations.dashboard_rework.enabled`).
+- Фронт: 5 новых виджетов главной + `/dashboard/portfolio` + `/dashboard/value-recap` + `/meetings/upload` + `/meetings/[id]/speakers`; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css. См. [[../01_projects/frontend-pages]], [[../01_projects/director-dashboard]].
+
+### AdminSettings (kill-switch / крутилки)
+
+Новые ключи в `admin-setting-schema-registry.ts`: `dashboard.main_rework.enabled`, `operations.dashboard_rework.enabled`, `operations.per_person_self_view.enabled`, `me.daily_value_widgets.enabled`, `operations.portfolio_health.enabled` + `portfolio.health.{threshold_healthy,threshold_warning,weight_*}`, `documents.ai_attribution.enabled`, `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`, `billing.meetingUploadsPerMonth`, `meeting_upload.enabled`. ENV: `MEETING_UPLOAD_ENABLED` (kill-switch, default true). Сиды — 6 `seed-admin-setting-*` в `apply-prod-deploy.ts` STEPS. См. [[../01_projects/admin-settings]].
+
+[[../index|← index]]

@@ -162,6 +162,8 @@ UI-форма для каждой `AdminSetting` рендерится из Zod-�
 
 Запуск: `cd backend && bun run scripts/seed-admin-settings.ts`.
 
+**Батч 5 (2026-06-09, дашборды + загрузка/импорт):** новые ключи зарегистрированы в `admin-setting-schema-registry.ts` и засеиваются **отдельными** идемпотентными сидерами (все в `apply-prod-deploy.ts` STEPS): `seed-admin-setting-dashboard-main.ts` (`dashboard.main_rework.enabled`), `seed-admin-setting-operations-dashboard.ts` (`operations.dashboard_rework.enabled`), `seed-admin-setting-operations-per-person.ts` (`operations.per_person_self_view.enabled`), `seed-admin-setting-me-widgets.ts` (`me.daily_value_widgets.enabled`), `seed-admin-setting-portfolio-health.ts` (`operations.portfolio_health.enabled` + `portfolio.health.{threshold_healthy,threshold_warning,weight_achieved,weight_on_track,weight_at_risk,weight_stalled,weight_dropped}`), `seed-admin-setting-document-attribution.ts` (`documents.ai_attribution.enabled`). Ключи документов `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}` — в `seed-admin-settings.ts`; квота `billing.meetingUploadsPerMonth` — в `seed-admin-settings-billing.ts`. Рубильник загрузки встречи — ENV `MEETING_UPLOAD_ENABLED` (+ AdminSetting `meeting_upload.enabled`). См. [[../02_architecture/module-map]] §«Батч 5».
+
 ## Риски и митигации
 
 1. **Crash во время правки → out-of-sync процессы.** HTTP записал в БД, но Redis pub/sub упал — воркер не получил invalidation. **Митигация:** LRU TTL 30s гарантирует max staleness 30 секунд. Для security/retention — 5s.

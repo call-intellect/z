@@ -1564,4 +1564,51 @@ enum SkillTraitStatus {
 
 **Тумблеры (AdminSetting, все kill-switch ON):** `ideas.feed.enabled`/`.rerank.{weight,freshness,goal_link}`/`.freshness_days`, `insight.recheck_days`/`insights.recheck.enabled`, `operations.knowledge_at_risk.enabled`, `team_capacity.{overload,underload}_percent`/`operations.team_capacity.enabled`, `onboarding.silent_days`/`operations.onboarding_ramp.enabled`. **Без новых chat-LLM.** **Метрики:** `ideas_top_served_total`, `idea_status_auto_advanced_total{to}`, `idea_status_changed_notified_total`, `insight_rechecked_total{reactivated}`, `knowledge_at_risk_total{severity}`, `team_capacity_overload_total`, `onboarding_ramp_stalled_total`. Seed `seed-admin-setting-knowledge-improvement-agents.ts` (в STEPS).
 
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+
+### Здоровье портфеля целей (S2.6 / ТЗ-2 Ф6, миграция `20260608190000_goal_priority_moscow`)
+
+- **Новый enum `GoalPriority`** (`schema.prisma:879`): `must` / `should` / `could` / `wont` (MoSCoW).
+- **`Goal += priority GoalPriority?`** (`schema.prisma:4285`) — приоритет цели, задаётся `PATCH /goals/:id/priority`.
+- **Новая модель `PortfolioHealthSnapshot`** (`schema.prisma:4321`, `@@map("portfolio_health_snapshot")`) — дневной снимок здоровья портфеля целей per-Org:
+  - `tenantId` + `dateLocal VarChar(10)` (YYYY-MM-DD МСК), `@@unique([tenantId, dateLocal])`, `@@index([tenantId, snapshotAt(sort: Desc)])`.
+  - `healthScore Int` (0..100, интегральный балл), `byStatusJson Json` (разрез по `progressStatus`), `byPriorityJson Json` (разрез по MoSCoW: count/achievedCount/achievedPercent), `goalsCount Int`, `snapshotAt`.
+  - FK на `Org` (onDelete: Cascade). Пишется cron'ом `PortfolioHealthSnapshotCron @Cron('0 5 * * 1')` (пн 05:00). См. [[../01_projects/director-dashboard]].
+
+### Документы: форматы + смысловой тип + привязки + хэш (S3.1 ТЗ-4 Ф1, миграция `20260608200000_documents_formats_type_attribution`)
+
+- **`enum DocumentKind`** (`schema.prisma:919` область) расширен: `+ xlsx` (ExcelJS) / `+ pptx` / `+ html` / `+ rtf` / `+ odt` / `+ csv` (officeparser). Раньше было pdf/docx/markdown/text/other.
+- **Новый enum `DocumentType`** (`schema.prisma:919`) — смысловой тип («что это по сути», в отличие от `DocumentKind` = формат файла): `regulation` / `policy` / `instruction` / `process` / `job_description` / `other`.
+- **`Document` расширён** (`schema.prisma:5002`+):
+  - `docType DocumentType?` (вручную при загрузке), `suggestedDocType DocumentType?` + `suggestedThemeId String?` (предложено LLM `document-attribution-suggest`).
+  - `attachedThemeId String?` (FK `Theme` "DocumentTheme", SetNull) + `attachedProjectId String?` (FK `Project` "DocumentProject", SetNull) — явная привязка (пробрасывается в граф).
+  - `contentHash String?` — sha256 содержимого для дедупа загрузок (`@@index([tenantId, contentHash])`).
+  - `importBatchId String?` — связь с `DocumentImport` (`@@index([importBatchId])`).
+  - Новые индексы `@@index([tenantId, docType])`, `@@index([tenantId, attachedThemeId])`.
+
+### Массовый импорт документов (S3.2 ТЗ-4 Ф7–Ф9, миграция `20260608210000_document_import`)
+
+- **Новый enum `DocumentImportSource`** (`schema.prisma:940`): `upload_zip` / `notion` / `confluence`.
+- **Новый enum `DocumentImportStatus`** (`schema.prisma:947`): `pending` / `processing` / `completed` / `failed`.
+- **Новая модель `DocumentImport`** (`schema.prisma:5063`, `@@map("document_import")`) — batch-импорт:
+  - `tenantId` + `source` + `status (default pending)`, `totalFiles`/`doneFiles`/`failedFiles Int`, `errorLog Json?` (`[{file,error}]`), `createdById` (= `Person.id`).
+  - batch-атрибуция всем созданным Document'ам: `attachedThemeId?` / `attachedProjectId?` / `docType DocumentType?`.
+  - архив: `zipS3Key VarChar(500)?` ИЛИ `zipInline Bytes?` (+`zipSize Int`).
+  - FK на `Org` (Cascade), `@@index([tenantId, status])`. Обрабатывается воркером очереди `core.document-import`.
+
+### Загрузка встречи + диаризация (S3.3 ТЗ-5, миграция `20260608220000_meeting_upload_diarization`)
+
+- **Новый enum `MeetingSource`** (`schema.prisma:98`): `livekit` (дефолт) / `upload`.
+- **Новый enum `UploadSpeakerAssignment`** (`schema.prisma:108`): `unassigned` / `employee` / `external` / `excluded`.
+- **`MeetingStatus += awaiting_speakers`** (`schema.prisma:84`) — гейт: диаризация прошла, ждём ручной разметки говорящих ПЕРЕД анализом (вставлен BEFORE `ai_processing`).
+- **`Meeting` расширён** (`schema.prisma:1359`): `source MeetingSource @default(livekit)`, `uploadNumSpeakersHint Int?` (подсказка числа говорящих от пользователя), новый `@@index([tenantId, source, createdAt])`.
+- **`Person` расширён** (`schema.prisma:4762`): `company String? @db.VarChar(200)`, `jobTitle String? @db.VarChar(200)` — заполняются для внешних участников при подписи говорящих.
+- **Новая модель `MeetingUploadSpeaker`** (`schema.prisma:1382`, `@@map("meeting_upload_speaker")`) — диаризованный говорящий загруженной встречи:
+  - `meetingId` (FK `Meeting`, Cascade) + `label` + `displayLabel`, `turnsCount`/`speakingSeconds Int`, `sampleText Text`.
+  - `assignment UploadSpeakerAssignment @default(unassigned)`, `personId String?` (FK `Person`, SetNull) ИЛИ внешний `externalName`/`externalCompany`/`externalPosition VarChar(200)`.
+  - `mergedIntoLabel String?` — слияние двух дорожек в одного человека (без удаления записи, сохраняет провенанс), `participantId String?`.
+  - `@@unique([meetingId, label])`, `@@index([meetingId])`.
+
 [[../index|← index]]

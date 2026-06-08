@@ -1,15 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { weeklyPerPersonApi } from '@/api/weekly-per-person.api';
 import {
   pluralRu,
+  reliabilityDisplay,
   weeklyPerPersonFromApi,
   type WeeklyPerPersonUi,
   type WeeklyPersonRowUi,
 } from '@/domain/weekly-per-person';
+import {
+  CardTitle,
+  GlassCard,
+  GRAD,
+} from '@/ui/components/dashboard/modern';
 
 /**
  * ТЗ-D Фаза 5 (2026-06-05) — виджет недельного план-факта по людям.
@@ -77,10 +84,10 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
   };
 
   return (
-    <section className="rounded border bg-bg-card p-4">
-      <h2 className="text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <CardTitle icon={<Users size={16} />} grad={GRAD.blue}>
         Кто держит слово — за неделю
-      </h2>
+      </CardTitle>
       <p className="mt-1 text-sm text-fg-secondary">
         План-факт по людям: обещания, задачи и чек-ины за неделю.
       </p>
@@ -135,7 +142,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
           </div>
         </>
       )}
-    </section>
+    </GlassCard>
   );
 }
 
@@ -203,11 +210,24 @@ function PersonRow({
   row: WeeklyPersonRowUi;
   tone: 'success' | 'danger';
 }) {
-  const chip =
+  const toneChip =
     tone === 'success'
       ? 'bg-chip-success-bg text-chip-success-fg'
       : 'bg-chip-danger-bg text-chip-danger-fg';
   const broken = row.promisesBroken + row.promisesOverdue;
+  const reliability = reliabilityDisplay(row);
+  // «мало данных» — приглушённый предупреждающий тон (не фейковые 100%);
+  // «—» — нейтральный; процент — тон колонки (success/danger).
+  const reliabilityChip =
+    reliability.kind === 'low_data'
+      ? 'bg-chip-warning-bg text-chip-warning-fg'
+      : reliability.kind === 'none'
+      ? 'bg-bg-subtle text-fg-tertiary'
+      : toneChip;
+  const reliabilityTitle =
+    reliability.kind === 'low_data'
+      ? 'Слишком мало обещаний за неделю, чтобы считать надёжность.'
+      : 'Надёжность: доля сдержанных обещаний за неделю';
   return (
     <li className="rounded-md bg-bg-card p-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -218,10 +238,10 @@ function PersonRow({
           </span>
         ) : null}
         <span
-          className={`ml-auto rounded px-2 py-0.5 text-[11px] tabular-nums ${chip}`}
-          title="Надёжность: доля сдержанных обещаний за неделю"
+          className={`ml-auto rounded px-2 py-0.5 text-[11px] tabular-nums ${reliabilityChip}`}
+          title={reliabilityTitle}
         >
-          {row.reliabilityLabel}
+          {reliability.label}
         </span>
       </div>
       <p className="mt-1 text-xs text-fg-secondary">
@@ -280,41 +300,70 @@ function AllRowsTable({ rows }: { rows: WeeklyPersonRowUi[] }) {
             <th className="py-2 pr-3 text-right font-medium">Просрочил</th>
             <th className="py-2 pr-3 text-right font-medium">Задачи</th>
             <th className="py-2 pr-3 text-right font-medium">Чек-ины</th>
-            <th className="py-2 text-right font-medium">Надёжность</th>
+            <th className="py-2 pr-3 text-right font-medium">Надёжность</th>
+            <th
+              className="py-2 text-right font-medium"
+              title="Обещания со статусом „спросили“, на которые ещё нет ответа"
+            >
+              Без ответа
+            </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.personId}
-              className="border-b border-border-subtle/50 hover:bg-bg-subtle"
-            >
-              <td className="py-2 pr-3 font-medium text-fg-primary">
-                {r.personName}
-              </td>
-              <td className="py-2 pr-3 text-fg-secondary">
-                {r.departmentName ?? '—'}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                {r.promisesGiven}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                {r.promisesKept}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                {r.promisesOverdue}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                {r.tasksDone}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                {r.checkInsCompleted}
-              </td>
-              <td className="py-2 text-right tabular-nums text-fg-primary">
-                {r.reliabilityLabel}
-              </td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const reliability = reliabilityDisplay(r);
+            return (
+              <tr
+                key={r.personId}
+                className="border-b border-border-subtle/50 hover:bg-bg-subtle"
+              >
+                <td className="py-2 pr-3 font-medium text-fg-primary">
+                  {r.personName}
+                </td>
+                <td className="py-2 pr-3 text-fg-secondary">
+                  {r.departmentName ?? '—'}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
+                  {r.promisesGiven}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
+                  {r.promisesKept}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
+                  {r.promisesOverdue}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
+                  {r.tasksDone}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
+                  {r.checkInsCompleted}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">
+                  {reliability.kind === 'low_data' ? (
+                    <span
+                      className="rounded bg-chip-warning-bg px-2 py-0.5 text-[11px] text-chip-warning-fg"
+                      title="Слишком мало обещаний за неделю, чтобы считать надёжность."
+                    >
+                      {reliability.label}
+                    </span>
+                  ) : (
+                    <span
+                      className={
+                        reliability.kind === 'none'
+                          ? 'text-fg-tertiary'
+                          : 'text-fg-primary'
+                      }
+                    >
+                      {reliability.label}
+                    </span>
+                  )}
+                </td>
+                <td className="py-2 text-right tabular-nums text-fg-secondary">
+                  {r.promisesNoAnswer}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -4,6 +4,7 @@
  * ApiDto → UiModel: добавляем готовую к выводу подпись надёжности
  * (`reliabilityLabel`: «—» если данных нет, иначе «NN%»). Массивы
  * (topReliable / topRisk / rows) пробрасываются с маппингом строк.
+ * `reliabilityDisplay` различает «мало данных» и «нет данных» (см. ниже).
  *
  * Все функции — чистые, тестируются в `__tests__/weekly-per-person.test.ts`.
  */
@@ -34,6 +35,40 @@ export function reliabilityLabel(percent: number | null): string {
     return '—';
   }
   return `${Math.round(percent)}%`;
+}
+
+/**
+ * Готовое к выводу состояние надёжности человека за неделю.
+ *
+ * Бэкенд (контракт 75de6e76 / ТЗ-2 Ф4) присылает `reliabilityPercent === null`
+ * в ДВУХ разных случаях: обещаний нет вовсе ИЛИ их слишком мало (знаменатель <
+ * минимума, по умолчанию 3). Чтобы отличить «мало данных» от «нет данных», сами
+ * считаем знаменатель `kept + broken + overdue`:
+ *   - процент есть             → `{ kind: 'percent', label: 'NN%' }`
+ *   - процента нет, но обещания были → `{ kind: 'low_data', label: 'мало данных' }`
+ *   - процента нет и обещаний нет    → `{ kind: 'none', label: '—' }`
+ */
+export function reliabilityDisplay(
+  row: Pick<
+    WeeklyPersonRowApi,
+    'reliabilityPercent' | 'promisesKept' | 'promisesBroken' | 'promisesOverdue'
+  >,
+): { kind: 'percent' | 'low_data' | 'none'; label: string } {
+  if (
+    row.reliabilityPercent !== null &&
+    row.reliabilityPercent !== undefined &&
+    !Number.isNaN(row.reliabilityPercent)
+  ) {
+    return {
+      kind: 'percent',
+      label: `${Math.round(row.reliabilityPercent)}%`,
+    };
+  }
+  const denom = row.promisesKept + row.promisesBroken + row.promisesOverdue;
+  if (denom > 0) {
+    return { kind: 'low_data', label: 'мало данных' };
+  }
+  return { kind: 'none', label: '—' };
 }
 
 export function weeklyPersonRowFromApi(

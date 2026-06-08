@@ -14,7 +14,11 @@ import type {
   MaturitySnapshotApi,
   MaturitySnapshotDomainApi,
   OperationsBlockerApi,
+  OperationsChronicBlockerApi,
+  OperationsChronicBlockersApi,
   OperationsOverviewApi,
+  OperationsTeamCapacityApi,
+  OperationsTeamCapacityItemApi,
   OperationsTeamFrictionApi,
   OperationsTeamTemperatureSummaryApi,
 } from '@/api/operations-dashboard.api';
@@ -58,6 +62,12 @@ export interface OperationsOverviewDomain {
   teamTemperature: OperationsTeamTemperatureSummaryApi;
   insightsByCauseCategory: InsightCauseCategoryAggregateApi;
   maturity: MaturitySnapshotDomain;
+  /** ТЗ-2 Ф2 — закрыто блокеров за 30 дней (default 0 — защита от старого API). */
+  blockersResolvedCount: number;
+  /** ТЗ-2 Ф2 — закрыто конфликтов за 30 дней (default 0). */
+  frictionsResolvedCount: number;
+  /** ТЗ-2 Ф2 — kill-switch инфо-перекомпоновки (default true). */
+  reworkEnabled: boolean;
 }
 
 function toPercent(v: number | null | undefined): number | null {
@@ -107,5 +117,128 @@ export function fromOperationsOverviewApi(
     teamTemperature: api.teamTemperature,
     insightsByCauseCategory: api.insightsByCauseCategory,
     maturity: fromMaturitySnapshotApi(api.maturity),
+    // Защитные дефолты: старый API мог не отдавать эти поля.
+    blockersResolvedCount: api.blockersResolvedCount ?? 0,
+    frictionsResolvedCount: api.frictionsResolvedCount ?? 0,
+    reworkEnabled: api.reworkEnabled ?? true,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* ТЗ-3 Ф2 — загрузка команд по отделам                               */
+/* ------------------------------------------------------------------ */
+
+export type TeamCapacityClassification = 'overload' | 'underload' | 'ok';
+
+/** Русские подписи классификации загрузки отдела. */
+export const TEAM_CAPACITY_CLASSIFICATION_LABEL: Record<
+  TeamCapacityClassification,
+  string
+> = {
+  overload: 'перегруз',
+  underload: 'недогруз',
+  ok: 'в норме',
+};
+
+export interface TeamCapacityItemDomain {
+  departmentId: string;
+  departmentName: string;
+  personCount: number;
+  avgLoadPercent: number;
+  maxLoadPercent: number;
+  classification: TeamCapacityClassification;
+  /** Готовая русская подпись классификации. */
+  classificationLabel: string;
+}
+
+export interface TeamCapacityDomain {
+  items: TeamCapacityItemDomain[];
+  overloadedCount: number;
+  underloadedCount: number;
+  empty: boolean;
+}
+
+function normalizeClassification(value: string): TeamCapacityClassification {
+  return value === 'overload' || value === 'underload' ? value : 'ok';
+}
+
+function fromTeamCapacityItemApi(
+  api: OperationsTeamCapacityItemApi,
+): TeamCapacityItemDomain {
+  const classification = normalizeClassification(api.classification);
+  return {
+    departmentId: api.departmentId,
+    departmentName: api.departmentName,
+    personCount: api.personCount,
+    avgLoadPercent: api.avgLoadPercent,
+    maxLoadPercent: api.maxLoadPercent,
+    classification,
+    classificationLabel: TEAM_CAPACITY_CLASSIFICATION_LABEL[classification],
+  };
+}
+
+export function fromTeamCapacityApi(
+  api: OperationsTeamCapacityApi,
+): TeamCapacityDomain {
+  return {
+    items: (api.items ?? []).map(fromTeamCapacityItemApi),
+    overloadedCount: api.overloadedCount ?? 0,
+    underloadedCount: api.underloadedCount ?? 0,
+    empty: api.empty ?? true,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* ТЗ-2 Ф2 — хронические блокеры                                       */
+/* ------------------------------------------------------------------ */
+
+export type ChronicBlockerStatus = 'new' | 'recurring' | 'resolved';
+
+/** Русские подписи статуса хронического блокера. */
+export const CHRONIC_BLOCKER_STATUS_LABEL: Record<ChronicBlockerStatus, string> = {
+  new: 'новый',
+  recurring: 'повторяется',
+  resolved: 'закрыт',
+};
+
+export interface ChronicBlockerDomain {
+  id: string;
+  representativeText: string;
+  status: ChronicBlockerStatus;
+  /** Готовая русская подпись статуса. */
+  statusLabel: string;
+  daysOpen: number;
+  businessImpactScore: number;
+  firstSeenDateLocal: string;
+  lastSeenDateLocal: string;
+  linkedInsightId: string | null;
+  responsiblePersonId: string | null;
+}
+
+function normalizeChronicStatus(value: string): ChronicBlockerStatus {
+  return value === 'recurring' || value === 'resolved' ? value : 'new';
+}
+
+function fromChronicBlockerApi(
+  api: OperationsChronicBlockerApi,
+): ChronicBlockerDomain {
+  const status = normalizeChronicStatus(api.status);
+  return {
+    id: api.id,
+    representativeText: api.representativeText,
+    status,
+    statusLabel: CHRONIC_BLOCKER_STATUS_LABEL[status],
+    daysOpen: api.daysOpen,
+    businessImpactScore: api.businessImpactScore,
+    firstSeenDateLocal: api.firstSeenDateLocal,
+    lastSeenDateLocal: api.lastSeenDateLocal,
+    linkedInsightId: api.linkedInsightId,
+    responsiblePersonId: api.responsiblePersonId,
+  };
+}
+
+export function fromChronicBlockersApi(
+  api: OperationsChronicBlockersApi,
+): ChronicBlockerDomain[] {
+  return (api.items ?? []).map(fromChronicBlockerApi);
 }

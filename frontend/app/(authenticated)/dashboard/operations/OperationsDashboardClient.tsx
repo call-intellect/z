@@ -19,12 +19,16 @@ import {
 } from '@/domain/operations-dashboard';
 import { useAuth } from '@/contexts/auth-context';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
+import { InsightsTopWidget } from '../widgets/InsightsTopWidget';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
+import { ChronicBlockersWidget } from './widgets/ChronicBlockersWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
+import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
 
 /**
  * SBA β-8 — клиентский COO-дашборд.
@@ -107,8 +111,21 @@ export function OperationsDashboardClient() {
     return <div className="p-6 text-sm text-fg-secondary">Нет данных</div>;
   }
 
+  // ТЗ-2 Ф2 — инфо-перекомпоновка под kill-switch (default true). При OFF
+  // дашборд возвращается к легаси-раскладке («Свежие блокеры», без новых
+  // виджетов).
+  const reworkEnabled = data.reworkEnabled;
+  // ТЗ-2 Ф2 — «доменов посчитано N»: явного поля в снапшоте нет, считаем
+  // distinct-домены по slug среди сильных+слабых (лучшее доступное приближение).
+  const maturityDomainCount = new Set(
+    [...data.maturity.weakestDomains, ...data.maturity.topDomains].map(
+      (d) => d.slug,
+    ),
+  ).size;
+
   return (
-    <div className="p-6">
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div className="p-6">
       {/* §5.2 — Sticky-header c backdrop-blur и тонким border. */}
       <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
@@ -142,6 +159,11 @@ export function OperationsDashboardClient() {
             numericValue={data.teamFrictionCount}
             threshold={{ green: 0, yellow: 3, inverted: true }}
           />
+          {reworkEnabled ? (
+            <p className="mt-1.5 text-xs text-fg-tertiary">
+              закрыто: {data.frictionsResolvedCount}
+            </p>
+          ) : null}
         </section>
 
         {/* Зона «Исполнение» — блокеры, цели, загрузка. */}
@@ -150,13 +172,20 @@ export function OperationsDashboardClient() {
             Исполнение
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <KpiHero
-              label="Активные блокеры"
-              value={data.blockersCount}
-              numericValue={data.blockersCount}
-              threshold={{ green: 0, yellow: 5, inverted: true }}
-              href="/dashboard/operations/weekly"
-            />
+            <div>
+              <KpiHero
+                label="Активные блокеры"
+                value={data.blockersCount}
+                numericValue={data.blockersCount}
+                threshold={{ green: 0, yellow: 5, inverted: true }}
+                href="/dashboard/operations/weekly"
+              />
+              {reworkEnabled ? (
+                <p className="mt-1.5 text-xs text-fg-tertiary">
+                  закрыто за 30 дней: {data.blockersResolvedCount}
+                </p>
+              ) : null}
+            </div>
             <KpiHero
               label="Провалившиеся цели"
               value={data.missedGoalsCount}
@@ -215,6 +244,15 @@ export function OperationsDashboardClient() {
         />
       </div>
 
+      {/* ТЗ-3 Ф2 — «Загрузка команд». Заменяет «мёртвый» средний % загрузки,
+          который раньше не рендерился вовсе. Только при включённой
+          перекомпоновке (kill-switch). */}
+      {reworkEnabled ? (
+        <div className="mt-6">
+          <TeamCapacityWidget />
+        </div>
+      ) : null}
+
       <div className="mt-6">
         <ActivityFeedWidget
           feedTypes={['probe_question']}
@@ -226,40 +264,64 @@ export function OperationsDashboardClient() {
 
       {/* Зона «Сигналы» — зрелость данных + карта первопричин (R1). */}
       <section className="mt-8">
-        <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-          Сигналы
-        </h2>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Сигналы
+          </h2>
+          {/* ТЗ-2 Ф2 — «оценка» + знаменатель «(доменов посчитано N)».
+              Явного поля count в снапшоте нет → N = distinct-домены по slug
+              среди сильных+слабых. */}
+          {data.maturity.score !== null ? (
+            <span className="rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] font-medium text-fg-secondary">
+              оценка
+              {maturityDomainCount > 0
+                ? ` (доменов посчитано ${maturityDomainCount})`
+                : ''}
+            </span>
+          ) : null}
+        </div>
         <div className="space-y-6">
           <MaturityWidget maturity={data.maturity} />
           <CauseCategoryMapWidget
             insightsByCauseCategory={data.insightsByCauseCategory}
           />
+          {reworkEnabled ? <InsightsTopWidget /> : null}
         </div>
       </section>
 
       {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold">Свежие блокеры</h2>
-        {data.topRecentBlockers.length === 0 ? (
-          <p className="text-sm text-fg-secondary">Сейчас активных блокеров нет.</p>
-        ) : (
-          <ul className="divide-y rounded border bg-bg-card">
-            {data.topRecentBlockers.map((b) => (
-              <li key={b.id} className="p-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="flex-1">{b.text}</span>
-                  <SeverityBadge severity={b.severity} />
-                </div>
-                <div className="mt-1 text-xs text-fg-secondary">
-                  {b.ownerPersonName ?? 'без владельца'} ·{' '}
-                  {new Date(b.createdAt).toLocaleString('ru-RU')}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {reworkEnabled ? (
+        // ТЗ-2 Ф2 — «Свежие блокеры» заменены на «Хронические блокеры».
+        <div className="mt-8">
+          <ChronicBlockersWidget />
+        </div>
+      ) : (
+        // Легаси-раскладка (kill-switch OFF): прежний блок «Свежие блокеры».
+        <section className="mt-8">
+          <h2 className="mb-3 text-lg font-semibold">Свежие блокеры</h2>
+          {data.topRecentBlockers.length === 0 ? (
+            <p className="text-sm text-fg-secondary">
+              Сейчас активных блокеров нет.
+            </p>
+          ) : (
+            <ul className="divide-y rounded border bg-bg-card">
+              {data.topRecentBlockers.map((b) => (
+                <li key={b.id} className="p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="flex-1">{b.text}</span>
+                    <SeverityBadge severity={b.severity} />
+                  </div>
+                  <div className="mt-1 text-xs text-fg-secondary">
+                    {b.ownerPersonName ?? 'без владельца'} ·{' '}
+                    {new Date(b.createdAt).toLocaleString('ru-RU')}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-lg font-semibold">Свежие конфликты</h2>
@@ -285,6 +347,7 @@ export function OperationsDashboardClient() {
           </ul>
         )}
       </section>
+      </div>
     </div>
   );
 }

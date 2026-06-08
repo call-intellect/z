@@ -102,6 +102,12 @@ export interface OperationsOverviewApi {
   insightsByCauseCategory: InsightCauseCategoryAggregateApi;
   /** SBA β-8.3 Wave 3 — снапшот зрелости компании. */
   maturity: MaturitySnapshotApi;
+  /** ТЗ-2 Ф2 — закрыто блокеров за 30 дней (зеркало под KPI). */
+  blockersResolvedCount: number;
+  /** ТЗ-2 Ф2 — закрыто конфликтов за 30 дней (зеркало под KPI). */
+  frictionsResolvedCount: number;
+  /** ТЗ-2 Ф2 — kill-switch инфо-перекомпоновки COO-дашборда (по умолчанию true). */
+  reworkEnabled: boolean;
 }
 
 export interface OperationsTeamTemperatureSummaryApi {
@@ -171,6 +177,47 @@ export interface OperationsStaleIssuesApi {
   items: OperationsStaleIssueApi[];
 }
 
+/**
+ * ТЗ-3 Ф2 — загрузка команд по отделам.
+ * Контракт: `GET /api/v1/dashboard/operations/team-capacity`.
+ * `loadPercent`-источник заполнен в проде разрежённо → `empty=true` ожидаемо.
+ */
+export interface OperationsTeamCapacityItemApi {
+  departmentId: string;
+  departmentName: string;
+  personCount: number;
+  avgLoadPercent: number;
+  maxLoadPercent: number;
+  classification: 'overload' | 'underload' | 'ok';
+}
+
+export interface OperationsTeamCapacityApi {
+  items: OperationsTeamCapacityItemApi[];
+  overloadedCount: number;
+  underloadedCount: number;
+  empty: boolean;
+}
+
+/**
+ * ТЗ-2 Ф2 — хронические блокеры (живут давно / повторяются).
+ * Контракт: `GET /api/v1/dashboard/operations/blockers/chronic?status=&limit=`.
+ */
+export interface OperationsChronicBlockerApi {
+  id: string;
+  representativeText: string;
+  status: string;
+  daysOpen: number;
+  businessImpactScore: number;
+  firstSeenDateLocal: string;
+  lastSeenDateLocal: string;
+  linkedInsightId: string | null;
+  responsiblePersonId: string | null;
+}
+
+export interface OperationsChronicBlockersApi {
+  items: OperationsChronicBlockerApi[];
+}
+
 export interface PersonalRelationApi {
   id: string;
   fromPersonId: string;
@@ -238,6 +285,27 @@ export const operationsDashboardApi = {
     const suffix = q.toString();
     return apiClient.get<OperationsStaleIssuesApi>(
       `/api/v1/dashboard/operations/stale-issues${suffix ? `?${suffix}` : ''}`,
+    );
+  },
+  /**
+   * ТЗ-3 Ф2 — `GET /dashboard/operations/team-capacity`.
+   * Загрузка по отделам (avg/max %, классификация перегруз/недогруз/в норме).
+   */
+  getTeamCapacity: () =>
+    apiClient.get<OperationsTeamCapacityApi>(
+      '/api/v1/dashboard/operations/team-capacity',
+    ),
+  /**
+   * ТЗ-2 Ф2 — `GET /dashboard/operations/blockers/chronic?status=&limit=`.
+   * Хронические блокеры (давно открытые / повторяющиеся).
+   */
+  getChronicBlockers: (params?: { status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set('status', params.status);
+    if (params?.limit !== undefined) q.set('limit', String(params.limit));
+    const suffix = q.toString();
+    return apiClient.get<OperationsChronicBlockersApi>(
+      `/api/v1/dashboard/operations/blockers/chronic${suffix ? `?${suffix}` : ''}`,
     );
   },
 };

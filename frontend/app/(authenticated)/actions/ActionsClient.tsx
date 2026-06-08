@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Clock, ExternalLink, Inbox } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { GlassCard, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
@@ -106,6 +107,7 @@ export function ActionsClient() {
   };
 
   return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
@@ -137,9 +139,9 @@ export function ActionsClient() {
       </Tabs>
 
       {isLoading && (
-        <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-10 text-center text-sm text-fg-tertiary">
+        <GlassCard className="px-4 py-10 text-center text-sm text-fg-tertiary">
           Загрузка…
-        </div>
+        </GlassCard>
       )}
 
       {!isLoading && Boolean(error) && (
@@ -149,7 +151,7 @@ export function ActionsClient() {
       )}
 
       {!isLoading && !error && filtered.length === 0 && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface px-4 py-12 text-center">
+        <GlassCard className="flex flex-col items-center gap-3 px-4 py-12 text-center">
           <Inbox size={32} className="text-fg-tertiary" />
           <div>
             <p className="text-sm font-medium text-fg-primary">
@@ -159,16 +161,14 @@ export function ActionsClient() {
               Сейчас ничего не ждёт вашего подтверждения.
             </p>
           </div>
-        </div>
+        </GlassCard>
       )}
 
       {!isLoading && !error && filtered.length > 0 && (
         <ul className="flex flex-col gap-2">
           {filtered.map((it) => (
-            <li
-              key={`${it.source}:${it.resourceId}`}
-              className="rounded-lg border border-border-subtle bg-bg-surface p-4"
-            >
+            <li key={`${it.source}:${it.resourceId}`} className="contents">
+              <GlassCard className="p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-fg-primary">
@@ -228,10 +228,12 @@ export function ActionsClient() {
                   </DropdownMenu>
                 </div>
               </div>
+              </GlassCard>
             </li>
           ))}
         </ul>
       )}
+    </div>
     </div>
   );
 }

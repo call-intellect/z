@@ -10,8 +10,8 @@ import {
   toMaturityOverviewDomain,
   type MaturityOverviewDomain,
 } from '@/domain/maturity';
+import { GlassCard, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
 
 import {
   AdminError,
@@ -85,6 +85,7 @@ function MaturityContent({
   if (!overview) return <AdminError message="Сводка недоступна" />;
 
   return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <header className="flex items-start justify-between gap-4">
         <div>
@@ -143,7 +144,7 @@ function MaturityContent({
         />
       </div>
 
-      <Card className="p-5">
+      <GlassCard className="p-5">
         <h2 className="mb-3 text-sm font-medium text-fg-primary">
           Распределение должностей по зрелости
         </h2>
@@ -168,9 +169,9 @@ function MaturityContent({
             );
           })}
         </div>
-      </Card>
+      </GlassCard>
 
-      <Card className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-3">
+      <GlassCard className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-3">
         <Stat label="Доменов всего" value={overview.domainsTotal} />
         <Stat label="Доменов с оценкой" value={overview.domainsScored} />
         <Stat
@@ -181,7 +182,8 @@ function MaturityContent({
               : '0/0'
           }
         />
-      </Card>
+      </GlassCard>
+    </div>
     </div>
   );
 }
@@ -196,13 +198,13 @@ function ScoreCard({
   hint?: string;
 }): JSX.Element {
   return (
-    <Card className="p-5">
+    <GlassCard className="p-5">
       <div className="text-xs text-fg-tertiary">{title}</div>
       <div className="mt-2 text-3xl font-semibold text-accent">
         {value === null ? '—' : `${value}%`}
       </div>
       {hint && <div className="mt-1 text-[11px] text-fg-tertiary">{hint}</div>}
-    </Card>
+    </GlassCard>
   );
 }
 

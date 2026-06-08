@@ -234,6 +234,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private customerRiskRadarFailedTotal!: Counter<'reason'>;
   private customerRiskManagerNotifiedTotal!: Counter<string>;
 
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──
+  private portfolioHealthScore!: Gauge<'tenant_top'>;
+  private portfolioHealthSnapshotTotal!: Counter<'tenant_top'>;
+  private portfolioPrioritySetTotal!: Counter<'tenant_top' | 'priority'>;
+
   // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
   private personalDailyBriefBuiltTotal!: Counter<string>;
   private personalDailyBriefDeliveredTotal!: Counter<'channel'>;
@@ -1652,6 +1657,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'customer_risk_manager_notified_total',
       help: 'TZ-1 Ф1 — отправлено push ответственному менеджеру по клиенту под риском.',
       labelNames: [] as const,
+    });
+
+    // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──
+    this.portfolioHealthScore = this.getOrCreateGauge({
+      name: 'portfolio_health_score',
+      help: 'ТЗ-2 Ф6.A — интегральный балл здоровья портфеля целей (0..100) по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.portfolioHealthSnapshotTotal = this.getOrCreateCounter({
+      name: 'portfolio_health_snapshot_total',
+      help: 'ТЗ-2 Ф6.A — построено недельных снимков здоровья портфеля (upsert).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.portfolioPrioritySetTotal = this.getOrCreateCounter({
+      name: 'portfolio_priority_set_total',
+      help: 'ТЗ-2 Ф6.A — проставлен MoSCoW-приоритет цели (priority ∈ must|should|could|wont|none).',
+      labelNames: ['tenant_top', 'priority'] as const,
     });
 
     // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
@@ -4607,6 +4629,28 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `customer_risk_radar_failed_total{reason}`. */
   incCustomerRiskRadarFailed(args: { reason: string }): void {
     this.customerRiskRadarFailedTotal.inc({ reason: args.reason });
+  }
+
+  /** Gauge `portfolio_health_score{tenant_top}` (0..100). */
+  setPortfolioHealthScore(args: { tenantTop: string; score: number }): void {
+    if (!Number.isFinite(args.score)) return;
+    this.portfolioHealthScore.set(
+      { tenant_top: args.tenantTop },
+      Math.min(100, Math.max(0, args.score)),
+    );
+  }
+
+  /** Counter `portfolio_health_snapshot_total{tenant_top}`. */
+  incPortfolioHealthSnapshot(args: { tenantTop: string }): void {
+    this.portfolioHealthSnapshotTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `portfolio_priority_set_total{tenant_top,priority}`. */
+  incPortfolioPrioritySet(args: { tenantTop: string; priority: string }): void {
+    this.portfolioPrioritySetTotal.inc({
+      tenant_top: args.tenantTop,
+      priority: args.priority,
+    });
   }
 
   /** Counter `customer_risk_manager_notified_total`. */

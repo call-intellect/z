@@ -36,6 +36,7 @@ import { DailyDigestService } from './services/daily-digest.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonalRelationService } from './services/personal-relation.service';
+import { PortfolioHealthService } from './services/portfolio-health.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { ValueRecapService } from './services/value-recap.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
@@ -55,6 +56,7 @@ import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
+import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 import { ValueRecapCron } from './workers/value-recap.cron';
 
@@ -211,6 +213,11 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // + cron @Cron('0 7 1 * *') (1-е число месяца, push-first владельцу/COO).
     ValueRecapService,
     ValueRecapCron,
+    // ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей: сервис
+    // (compute + upsert + дельта к прошлой неделе) + weekly cron
+    // @Cron('0 5 * * 1'). Endpoint /dashboard/operations/portfolio-health.
+    PortfolioHealthService,
+    PortfolioHealthSnapshotCron,
   ],
   exports: [
     GoalCascadeService,
@@ -239,6 +246,8 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     OnboardingRampService,
     // TZ-1 Фаза 5 (daily-value-engine) — экспортируем для тестов / reuse.
     ValueRecapService,
+    // ТЗ-2 Ф6.A (daily-value-dashboards) — экспортируем для тестов / reuse.
+    PortfolioHealthService,
   ],
 })
 export class OperationsModule {}

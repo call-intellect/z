@@ -78,6 +78,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-dashboard.ts', hint: 'operations.dashboard_rework.enabled kill-switch (ТЗ-2 Ф2 новая раскладка COO-дашборда)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-per-person.ts', hint: 'operations.per_person_self_view.enabled kill-switch (ТЗ-2 Ф4 self-view /me/weekly-per-person)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-me-widgets.ts', hint: 'me.daily_value_widgets.enabled kill-switch (ТЗ-2 Ф5 виджеты /me: /me/ideas + /me/recognitions)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-portfolio-health.ts', hint: 'portfolio.health.{threshold_*,weight_*} + operations.portfolio_health.enabled kill-switch (ТЗ-2 Ф6.A здоровье портфеля целей)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },

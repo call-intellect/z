@@ -843,6 +843,20 @@ enum GoalProgressStatus {
   dropped
 }
 
+/// ТЗ-2 Ф6.A (daily-value-dashboards) — MoSCoW-приоритет цели для портфеля.
+///   - must   — обязательно (must have).
+///   - should — следует сделать (should have).
+///   - could  — можно (could have).
+///   - wont   — пока не делаем (won't have this time).
+/// Nullable на Goal: приоритет проставляется владельцем вручную (Patch), AI не
+/// выдумывает — отсутствие = «не классифицировано» (корзина 'none' в портфеле).
+enum GoalPriority {
+  must
+  should
+  could
+  wont
+}
+
 /// Goals OKR v2 — откуда тянуть GoalKeyResult.currentValue автоматически.
 enum GoalKrSourceKind {
   manual
@@ -2416,6 +2430,9 @@ model Org {
 
   // ── TZ-1 Фаза 5 (daily-value-engine) — месячные снимки value-recap ──
   valueRecapSnapshots ValueRecapSnapshot[]
+
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — недельные снимки здоровья портфеля целей ──
+  portfolioHealthSnapshots PortfolioHealthSnapshot[]
 
   // ── TZ-1 Фаза 3.A (daily-value-engine) — синтез блокеров ──
   blockerSyntheses BlockerSynthesis[]
@@ -4151,6 +4168,10 @@ model Goal {
   promotionState GoalPromotionState @default(active)
   /// Статус движения для пульса (вычисляется авто, правится руками). Отдельная ось от status (жизненного цикла).
   progressStatus GoalProgressStatus @default(on_track)
+  /// ТЗ-2 Ф6.A (daily-value-dashboards) — MoSCoW-приоритет для портфеля целей.
+  /// NULL = не классифицировано (корзина 'none'). Проставляется владельцем через
+  /// PATCH /api/v1/goals/:id/priority; AI не перетирает.
+  priority       GoalPriority?
   /// Провенанс: блоки графа, из которых добыта цель. GIN-индекс — в postgres-init.sql. Пусто для ручных.
   sourceBlockIds String[]           @default([])
   /// Уверенность извлечения 0..1 (для AI). NULL для ручных.
@@ -4178,6 +4199,34 @@ model Goal {
   @@index([tenantId, ownerPersonId])
   /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
   @@index([tenantId, isPrimary])
+}
+
+/// ТЗ-2 Ф6.A (daily-value-dashboards) — недельный снимок здоровья портфеля
+/// целей компании. Cron `@Cron('0 5 * * 1')` (понедельник 05:00) считает
+/// `healthScore` (0..100) по распределению `progressStatus` живых целей,
+/// разрез по MoSCoW-приоритету (byPriorityJson) и upsert'ит снимок per
+/// (tenantId, dateLocal). Дельта к прошлой неделе берётся из предыдущего снимка.
+/// Идемпотентно — `@@unique([tenantId, dateLocal])`.
+model PortfolioHealthSnapshot {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// День снимка YYYY-MM-DD (МСК). Уникален в паре с tenantId.
+  dateLocal      String   @db.VarChar(10)
+  /// Интегральный балл здоровья портфеля 0..100.
+  healthScore    Int
+  /// Разрез по progressStatus: { on_track, at_risk, stalled, achieved, dropped } → count.
+  byStatusJson   Json
+  /// Разрез по MoSCoW: { must, should, could, wont, none } → { count, achievedCount, achievedPercent }.
+  byPriorityJson Json
+  /// Сколько живых целей участвовало в расчёте.
+  goalsCount     Int      @default(0)
+  snapshotAt     DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dateLocal])
+  @@index([tenantId, snapshotAt(sort: Desc)])
+  @@map("portfolio_health_snapshot")
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;

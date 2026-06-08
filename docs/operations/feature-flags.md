@@ -89,6 +89,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `operations.dashboard_rework.enabled` | 🟢 ВКЛ | Новая раскладка COO-дашборда — capacity по командам, «сколько закрыли» (resolved-зеркало блокеров/конфликтов), хронические блокеры с «Причиной», приём переносов. Едет в overview DTO как `reworkEnabled`, гейтит инфо-перекомпоновку на фронте (визуал безусловно). Выкл → прежняя раскладка COO. (ТЗ-2 Ф2 daily-value-dashboards) |
 | `operations.per_person_self_view.enabled` | 🟢 ВКЛ | Self-view недельного план-факта рядовому — `GET /api/v1/me/weekly-per-person` (своя строка + средняя надёжность команды для стрелки «я vs команда»). Выкл → endpoint отдаёт пустой self DTO. (ТЗ-2 Ф4 daily-value-dashboards) |
 | `me.daily_value_widgets.enabled` | 🟢 ВКЛ | 4 виджета ежедневной ценности в `/me` (память помогла / мой план-факт / судьба идей / признания) + self-эндпоинты `GET /me/ideas`, `GET /me/recognitions`. Выкл → эндпоинты отдают пустой список (виджеты graceful-empty). (ТЗ-2 Ф5 daily-value-dashboards) |
+| `operations.portfolio_health.enabled` | 🟢 ВКЛ | Дашборд здоровья портфеля целей: cron пн 05:00 пишет недельный `PortfolioHealthSnapshot`, `GET /operations/portfolio-health` (healthScore 0–100 + светофор + распределение по статусам + MoSCoW-разрез + дельта неделя-к-неделе). Выкл → cron не пишет, endpoint отдаёт пустой скелет. (ТЗ-2 Ф6.A daily-value-dashboards) |
 
 ---
 

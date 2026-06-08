@@ -8,9 +8,11 @@ import {
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
+import { resolveAxisTenantTop } from '../../knowledge-core/services/tenant-top';
 import { QuotaService } from '../../quotas/quota.service';
 import type {
   CreateGoalDto,
@@ -52,6 +54,8 @@ export class GoalsService {
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(QuotaService) private readonly quotas: QuotaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
     @Inject(StrategicAlignmentIssuesService)
     private readonly issuesAlignment: StrategicAlignmentIssuesService,
   ) {}
@@ -308,6 +312,49 @@ export class GoalsService {
     });
 
     return this.mapList(updated, updated._count.themes);
+  }
+
+  /**
+   * ТЗ-2 Ф6.A (daily-value-dashboards) — проставить MoSCoW-приоритет цели.
+   * Tenant-scoped (цель должна принадлежать tenant). `null` = снять приоритет
+   * (корзина 'none' в портфеле). AI приоритет не перетирает.
+   */
+  async setPriority(args: {
+    tenantId: string;
+    userId: string;
+    goalId: string;
+    priority: 'must' | 'should' | 'could' | 'wont' | null;
+  }): Promise<{ id: string; priority: 'must' | 'should' | 'could' | 'wont' | null }> {
+    const { tenantId, userId, goalId, priority } = args;
+    const existing = await this.prisma.goal.findUnique({
+      where: { id: goalId },
+      select: { id: true, tenantId: true },
+    });
+    if (!existing || existing.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'goal_not_found', message: 'Цель не найдена' },
+      });
+    }
+
+    const updated = await this.prisma.goal.update({
+      where: { id: goalId },
+      data: { priority },
+      select: { id: true, priority: true },
+    });
+
+    this.metrics.incPortfolioPrioritySet({
+      tenantTop: resolveAxisTenantTop(tenantId),
+      priority: priority ?? 'none',
+    });
+    void this.audit.log({
+      userId,
+      action: 'goal.priority_set',
+      resourceId: goalId,
+      metadata: { tenantId, priority },
+    });
+
+    return { id: updated.id, priority: updated.priority };
   }
 
   // ─────────────────────────── supersede ────────────────────────────

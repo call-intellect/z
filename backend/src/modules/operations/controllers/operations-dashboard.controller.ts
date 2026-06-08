@@ -16,6 +16,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -57,6 +58,11 @@ import type {
   OperationsTeamTemperatureDto,
 } from '../dto/operations-dashboard.dto';
 import {
+  PortfolioHealthQuerySchema,
+  type PortfolioHealthDto,
+  type PortfolioHealthQuery,
+} from '../dto/portfolio-health.dto';
+import {
   ValueRecapExportQuerySchema,
   ValueRecapQuerySchema,
   type ValueRecapExportDto,
@@ -75,6 +81,7 @@ import { DecisionImplementationService } from '../services/decision-implementati
 import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
+import { PortfolioHealthService } from '../services/portfolio-health.service';
 import { TeamCapacityService } from '../services/team-capacity.service';
 import {
   shiftPeriod,
@@ -113,6 +120,9 @@ export class OperationsDashboardController {
     private readonly onboardingRamp: OnboardingRampService,
     @Inject(ValueRecapService)
     private readonly valueRecap: ValueRecapService,
+    @Inject(PortfolioHealthService)
+    private readonly portfolioHealth: PortfolioHealthService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
@@ -637,6 +647,66 @@ export class OperationsDashboardController {
       format: 'slides',
       periodYm: snap.periodYm,
       slides: buildValueRecapSlides(snap.payload),
+    };
+  }
+
+  /**
+   * ТЗ-2 Ф6.A (daily-value-dashboards) — Здоровье портфеля целей.
+   *
+   * Интегральный балл 0..100 + шкала/уровень, разрезы по статусу движения и по
+   * MoSCoW-приоритету, построчный список целей, дельта к прошлой неделе.
+   * Считается на лету за `?date=YYYY-MM-DD` (default — сегодня МСК); cron лишь
+   * persist'ит снимок для дельты. Гейт `operations.portfolio_health.enabled`
+   * (kill-switch, ON). OFF → пустой каркас. Доступ — owner/admin/coo.
+   */
+  @Get('portfolio-health')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — здоровье портфеля целей (балл 0..100 + MoSCoW-разрез)',
+  })
+  async portfolioHealthGet(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(PortfolioHealthQuerySchema))
+    q: PortfolioHealthQuery,
+  ): Promise<PortfolioHealthDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'operations.portfolio_health.enabled',
+      'OPERATIONS_PORTFOLIO_HEALTH_ENABLED',
+      true,
+    );
+    if (!enabled) return this.emptyPortfolioHealth();
+
+    const dateLocal =
+      q.date && /^\d{4}-\d{2}-\d{2}$/.test(q.date) ? q.date : this.todayMsk();
+    return this.portfolioHealth.compute({ tenantId: tenantId!, dateLocal });
+  }
+
+  /** Пустой каркас здоровья портфеля (флаг OFF). */
+  private emptyPortfolioHealth(): PortfolioHealthDto {
+    return {
+      healthScore: 0,
+      scale: { healthy: 60, warning: 40, level: 'critical' },
+      byStatus: {
+        on_track: 0,
+        at_risk: 0,
+        stalled: 0,
+        achieved: 0,
+        dropped: 0,
+      },
+      byPriority: {
+        must: { count: 0, achievedCount: 0, achievedPercent: 0 },
+        should: { count: 0, achievedCount: 0, achievedPercent: 0 },
+        could: { count: 0, achievedCount: 0, achievedPercent: 0 },
+        wont: { count: 0, achievedCount: 0, achievedPercent: 0 },
+        none: { count: 0, achievedCount: 0, achievedPercent: 0 },
+      },
+      rows: [],
+      deltaVsPrevWeek: null,
     };
   }
 

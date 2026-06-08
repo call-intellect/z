@@ -250,6 +250,16 @@ const registry = new Map<string, ZodTypeAny>([
   ['customer_risk.threshold.warning', NON_NEGATIVE_INT],
   ['operations.customer_risk_radar.enabled', z.boolean()],
 
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──────
+  ['portfolio.health.threshold_healthy', NON_NEGATIVE_INT],
+  ['portfolio.health.threshold_warning', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_achieved', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_on_track', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_at_risk', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_stalled', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_dropped', NON_NEGATIVE_INT],
+  ['operations.portfolio_health.enabled', z.boolean()],
+
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],

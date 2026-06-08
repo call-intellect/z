@@ -35,6 +35,12 @@ export interface ChatV2CitationApi {
   startMs: number;
   endMs: number;
   snippet: string;
+  /**
+   * ТЗ-4 Ф11 — провенанс документа. Если блок происходит из загруженного
+   * документа, citation несёт ссылку на него (`/documents/<documentId>`).
+   */
+  documentId?: string;
+  documentName?: string;
 }
 
 export interface ChatV2ConversationApi {

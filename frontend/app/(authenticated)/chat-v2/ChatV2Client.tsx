@@ -19,6 +19,7 @@ import {
   type FormEvent,
   type ReactElement,
 } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
@@ -479,15 +480,26 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
             <div className="text-xs font-medium text-fg-tertiary">Источники:</div>
             {message.citations.map((c, idx) => (
               <div
-                key={`${c.meetingId}-${c.startMs}-${idx}`}
+                key={`${c.documentId ?? c.meetingId}-${c.startMs}-${idx}`}
                 className="rounded bg-bg px-2 py-1.5 text-xs"
               >
-                <div className="font-medium">
-                  {c.meetingTitle}{' '}
-                  <span className="text-fg-tertiary">
-                    [{formatTimestamp(c.startMs)}]
-                  </span>
-                </div>
+                {c.documentId ? (
+                  <div className="font-medium">
+                    <Link
+                      href={`/documents/${encodeURIComponent(c.documentId)}`}
+                      className="text-accent hover:underline"
+                    >
+                      Документ: {c.documentName ?? 'без названия'}
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="font-medium">
+                    {c.meetingTitle}{' '}
+                    <span className="text-fg-tertiary">
+                      [{formatTimestamp(c.startMs)}]
+                    </span>
+                  </div>
+                )}
                 <div className="mt-0.5 italic text-fg-secondary">
                   &laquo;{c.snippet}&raquo;
                 </div>

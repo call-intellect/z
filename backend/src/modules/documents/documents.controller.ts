@@ -10,6 +10,7 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -58,6 +59,7 @@ import {
   type DocumentDetailDto,
   type DocumentDto,
   type DocumentExtractedEntitiesDto,
+  type DocumentImportDto,
   ImportConfluenceBodySchema,
   type ImportConfluenceBodyDto,
   type ImportConfluenceResultDto,
@@ -66,8 +68,11 @@ import {
   type ImportZipResultDto,
   ListDocumentsQuerySchema,
   type ListDocumentsQuery,
+  SetAttributionBodySchema,
+  type SetAttributionBodyDto,
   toDecisionProvenance,
   toDocumentDto,
+  toDocumentImportDto,
   toIdeaBlockSummaryDto,
   toMetricProvenance,
   toPolicyProvenance,
@@ -345,6 +350,50 @@ export class DocumentsController {
       attachedRoleId: q.attachedRoleId,
     });
     return { items: items.map(toDocumentDto), total };
+  }
+
+  @Get('imports/:id')
+  @ApiOperation({
+    summary:
+      'Статус batch-импорта (ТЗ-4 Волна 2). Прогресс {doneFiles}/{totalFiles} + errorLog. owner/admin, tenant-scoped.',
+  })
+  async getImportStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DocumentImportDto> {
+    const t = this.requireTenant(tenantId);
+    // Импорт инициирует и наблюдает тот, кто может писать документы (owner/admin).
+    await this.requireWrite(user.id, t);
+    const row = await this.documents.getImportStatus({
+      tenantId: t,
+      importId: id,
+    });
+    return toDocumentImportDto(row);
+  }
+
+  @Patch(':id/attribution')
+  @ApiOperation({
+    summary:
+      'Установить/изменить смысловую атрибуцию документа (тип/тема/проект) и принять подсказку Коры (ТЗ-4 Волна 2). owner/admin, tenant-scoped. Проецирует привязку в граф для блоков документа.',
+  })
+  async setAttribution(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetAttributionBodySchema))
+    body: SetAttributionBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DocumentDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    const updated = await this.documents.setAttribution({
+      tenantId: t,
+      documentId: id,
+      docType: body.docType,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+    });
+    return toDocumentDto(updated);
   }
 
   @Get(':id')

@@ -70,6 +70,13 @@ export interface DocumentApi {
   attachedThemeId: string | null;
   /** Привязка к проекту трекера (ТЗ-4 Ф3). Может отсутствовать. */
   attachedProjectId: string | null;
+  /**
+   * ТЗ-4 Ф10 — предложенный Корой смысловой тип (до подтверждения человеком).
+   * Заполняется, пока `docType`/`attachedThemeId` не выставлены вручную.
+   */
+  suggestedDocType?: DocumentTypeApi | null;
+  /** ТЗ-4 Ф10 — предложенная Корой тема (Theme.id) до подтверждения. */
+  suggestedThemeId?: string | null;
   createdAt: string;
   parsedAt: string | null;
 }
@@ -229,6 +236,42 @@ export interface UploadDocumentsResponseApi {
   items: UploadDocumentItemApi[];
 }
 
+/** Источник batch-импорта (ТЗ-4 Волна 2). */
+export type DocumentImportSourceApi = 'upload_zip' | 'notion' | 'confluence';
+
+/** Статус batch-импорта (ТЗ-4 Волна 2). */
+export type DocumentImportStatusApi =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed';
+
+/** Ответ `POST /import-zip` и `POST /import-confluence` (ТЗ-4 Волна 2). */
+export interface ImportResultApi {
+  importId: string;
+}
+
+/** Статус batch-импорта (ТЗ-4 Волна 2, `GET /documents/imports/:id`). */
+export interface DocumentImportApi {
+  id: string;
+  source: DocumentImportSourceApi;
+  status: DocumentImportStatusApi;
+  totalFiles: number;
+  doneFiles: number;
+  failedFiles: number;
+  errorLog: Array<{ file: string; error: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Параметры импорта из Confluence Cloud (ТЗ-4 Волна 2). */
+export interface ImportConfluenceArgs extends DocumentAttribution {
+  baseUrl: string;
+  email: string;
+  apiToken: string;
+  spaceKey: string;
+}
+
 /** Дописывает поля атрибуции в FormData (только заданные). */
 function appendAttribution(form: FormData, attr: DocumentAttribution): void {
   if (attr.attachedRoleId) form.append('attachedRoleId', attr.attachedRoleId);
@@ -297,6 +340,48 @@ async function uploadDocumentMultipart(
   form.append('file', args.file);
   appendAttribution(form, args);
   return postDocumentsMultipart(orgId, form);
+}
+
+/**
+ * ТЗ-4 Волна 2 — импорт ZIP-архива (обычный или экспорт Notion). Multipart
+ * (`file` = .zip + `source` + batch-атрибуция). Возвращает `{ importId }` —
+ * статус UI опрашивает через `getImportStatus`.
+ */
+async function importZip(
+  orgId: string,
+  args: { file: File; source: 'upload_zip' | 'notion' } & DocumentAttribution,
+): Promise<ImportResultApi> {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/documents/import-zip`;
+
+  const form = new FormData();
+  form.append('file', args.file);
+  form.append('source', args.source);
+  appendAttribution(form, args);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Org-Id': orgId },
+    body: form,
+  });
+
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    let code = `http_${res.status}`;
+    try {
+      const body = (await res.json()) as {
+        error?: { code?: string; message?: string };
+      };
+      if (body?.error?.message) message = body.error.message;
+      if (body?.error?.code) code = body.error.code;
+    } catch {
+      // ignore
+    }
+    throw new ApiError({ code, message });
+  }
+  return (await res.json()) as ImportResultApi;
 }
 
 /**
@@ -460,4 +545,54 @@ export const documentsApi = {
 
   /** Пакетная загрузка нескольких файлов с общей атрибуцией (ТЗ-4 Ф5). */
   uploadBatch: uploadDocumentsBatch,
+
+  /** Импорт ZIP-архива (обычного или экспорта Notion) — ТЗ-4 Волна 2. */
+  importZip,
+
+  /** Импорт пространства Confluence Cloud (JSON-тело) — ТЗ-4 Волна 2. */
+  importConfluence: (
+    orgId: string,
+    args: ImportConfluenceArgs,
+  ): Promise<ImportResultApi> =>
+    apiClient.post<ImportResultApi>(
+      `/api/v1/documents/import-confluence`,
+      {
+        baseUrl: args.baseUrl,
+        email: args.email,
+        apiToken: args.apiToken,
+        spaceKey: args.spaceKey,
+        ...(args.attachedThemeId ? { attachedThemeId: args.attachedThemeId } : {}),
+        ...(args.attachedProjectId
+          ? { attachedProjectId: args.attachedProjectId }
+          : {}),
+        ...(args.docType ? { docType: args.docType } : {}),
+      },
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /** Статус batch-импорта (для UI прогресса) — ТЗ-4 Волна 2. */
+  getImportStatus: (orgId: string, importId: string): Promise<DocumentImportApi> =>
+    apiClient.get<DocumentImportApi>(
+      `/api/v1/documents/imports/${encodeURIComponent(importId)}`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Установить/изменить смысловую атрибуцию документа и принять подсказку Коры
+   * (ТЗ-4 Волна 2). `undefined` поле не трогает колонку, `null` снимает привязку.
+   */
+  setAttribution: (
+    orgId: string,
+    id: string,
+    args: {
+      docType?: DocumentTypeApi | null;
+      attachedThemeId?: string | null;
+      attachedProjectId?: string | null;
+    },
+  ): Promise<DocumentApi> =>
+    apiClient.patch<DocumentApi>(
+      `/api/v1/documents/${encodeURIComponent(id)}/attribution`,
+      args,
+      { headers: orgHeaders(orgId) },
+    ),
 };

@@ -2,7 +2,14 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { CloudUpload, Loader2, Plus, X } from 'lucide-react';
+import {
+  CloudUpload,
+  Download,
+  Loader2,
+  Plus,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
@@ -12,6 +19,7 @@ import {
   documentTypeLabel,
   documentsApi,
   type DocumentApi,
+  type DocumentImportApi,
   type DocumentStatusApi,
   type DocumentTypeApi,
   type UploadDocumentItemApi,
@@ -30,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/ui/shadcn/dialog';
+import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 import {
   Select,
@@ -38,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/ui/shadcn/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 
 import {
   AdminEmpty,
@@ -102,6 +112,7 @@ export function DocumentsListClient() {
 
 function Content({ orgId }: { orgId: string }) {
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const swr = useSWR(
     ['documents-list', orgId],
@@ -159,9 +170,18 @@ function Content({ orgId }: { orgId: string }) {
             Загруженные файлы и их статус парсинга.
           </p>
         </div>
-        <Button size="sm" onClick={() => setUploadOpen(true)}>
-          <Plus size={14} className="mr-1" /> Загрузить документ
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+          >
+            <Download size={14} className="mr-1" /> Импорт
+          </Button>
+          <Button size="sm" onClick={() => setUploadOpen(true)}>
+            <Plus size={14} className="mr-1" /> Загрузить документ
+          </Button>
+        </div>
       </header>
 
       {swr.isLoading ? (
@@ -194,7 +214,12 @@ function Content({ orgId }: { orgId: string }) {
             </thead>
             <tbody className="divide-y divide-border-subtle">
               {items.map((d) => (
-                <DocumentRow key={d.id} doc={d} />
+                <DocumentRow
+                  key={d.id}
+                  doc={d}
+                  orgId={orgId}
+                  onChanged={() => void swr.mutate()}
+                />
               ))}
             </tbody>
           </table>
@@ -208,45 +233,318 @@ function Content({ orgId }: { orgId: string }) {
           onClose={() => setUploadOpen(false)}
         />
       )}
+
+      {importOpen && (
+        <ImportDocumentsDialog
+          orgId={orgId}
+          onImported={() => void swr.mutate()}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-function DocumentRow({ doc }: { doc: DocumentApi }) {
+function DocumentRow({
+  doc,
+  orgId,
+  onChanged,
+}: {
+  doc: DocumentApi;
+  orgId: string;
+  onChanged: () => void;
+}) {
+  const showSuggestion = hasPendingSuggestion(doc);
   return (
-    <tr className="hover:bg-bg-overlay/30">
-      <td className="px-4 py-2 font-medium text-fg-primary">
-        <Link
-          href={`/documents/${encodeURIComponent(doc.id)}`}
-          className="hover:text-accent"
-        >
-          {doc.name}
-        </Link>
-      </td>
-      <td className="px-4 py-2 text-fg-secondary">
-        {documentTypeLabel(doc.docType ?? null)}
-      </td>
-      <td className="px-4 py-2 text-fg-secondary">{documentKindLabel(doc.kind)}</td>
-      <td className="px-4 py-2 text-fg-secondary">{doc.uploaderName ?? '—'}</td>
-      <td className="px-4 py-2 text-fg-secondary">
-        {doc.attachedRoleId ? (
+    <>
+      <tr className="hover:bg-bg-overlay/30">
+        <td className="px-4 py-2 font-medium text-fg-primary">
           <Link
-            href={`/roles/${encodeURIComponent(doc.attachedRoleId)}`}
+            href={`/documents/${encodeURIComponent(doc.id)}`}
             className="hover:text-accent"
           >
-            {doc.attachedRoleName ?? 'должность'}
+            {doc.name}
           </Link>
-        ) : (
-          '—'
-        )}
-      </td>
-      <td className="px-4 py-2">
-        <StatusBadge status={doc.status} />
-      </td>
-      <td className="px-4 py-2 text-right text-xs text-fg-tertiary tabular-nums">
-        {formatDate(doc.createdAt)}
-      </td>
-    </tr>
+        </td>
+        <td className="px-4 py-2 text-fg-secondary">
+          {documentTypeLabel(doc.docType ?? null)}
+        </td>
+        <td className="px-4 py-2 text-fg-secondary">
+          {documentKindLabel(doc.kind)}
+        </td>
+        <td className="px-4 py-2 text-fg-secondary">{doc.uploaderName ?? '—'}</td>
+        <td className="px-4 py-2 text-fg-secondary">
+          {doc.attachedRoleId ? (
+            <Link
+              href={`/roles/${encodeURIComponent(doc.attachedRoleId)}`}
+              className="hover:text-accent"
+            >
+              {doc.attachedRoleName ?? 'должность'}
+            </Link>
+          ) : (
+            '—'
+          )}
+        </td>
+        <td className="px-4 py-2">
+          <StatusBadge status={doc.status} />
+        </td>
+        <td className="px-4 py-2 text-right text-xs text-fg-tertiary tabular-nums">
+          {formatDate(doc.createdAt)}
+        </td>
+      </tr>
+      {showSuggestion && (
+        <tr className="bg-bg-overlay/20">
+          <td colSpan={7} className="px-4 pb-2 pt-0">
+            <SuggestionBanner
+              orgId={orgId}
+              doc={doc}
+              onChanged={onChanged}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/** Есть ли непринятая подсказка Коры: предложено, но человек ещё не задал. */
+export function hasPendingSuggestion(doc: {
+  docType?: DocumentTypeApi | null;
+  attachedThemeId?: string | null;
+  suggestedDocType?: DocumentTypeApi | null;
+  suggestedThemeId?: string | null;
+}): boolean {
+  const hasAccepted = Boolean(doc.docType) || Boolean(doc.attachedThemeId);
+  const hasSuggestion =
+    Boolean(doc.suggestedDocType) || Boolean(doc.suggestedThemeId);
+  return hasSuggestion && !hasAccepted;
+}
+
+/**
+ * F3 (ТЗ-4 Волна 2) — баннер подсказки атрибуции от Коры с действиями
+ * «Принять» (применяет suggested* как docType/attachedThemeId) и «Изменить»
+ * (открывает диалог редактирования перед сохранением). Используется в списке
+ * и на деталке документа.
+ */
+export function SuggestionBanner({
+  orgId,
+  doc,
+  onChanged,
+}: {
+  orgId: string;
+  doc: DocumentApi;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const themesSwr = useSWR(['suggest-themes', orgId], () =>
+    themesApi.list({ limit: 100 }),
+  );
+  const suggestedThemeName = useMemo(() => {
+    if (!doc.suggestedThemeId) return null;
+    return (
+      themesSwr.data?.items.find((t) => t.id === doc.suggestedThemeId)?.name ??
+      null
+    );
+  }, [doc.suggestedThemeId, themesSwr.data]);
+
+  const accept = async () => {
+    setBusy(true);
+    try {
+      await documentsApi.setAttribution(orgId, doc.id, {
+        docType: doc.suggestedDocType ?? undefined,
+        attachedThemeId: doc.suggestedThemeId ?? undefined,
+      });
+      toast.success('Подсказка принята.');
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось применить.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const parts: string[] = [];
+  if (doc.suggestedDocType) {
+    parts.push(`тип «${documentTypeLabel(doc.suggestedDocType)}»`);
+  }
+  if (doc.suggestedThemeId) {
+    parts.push(`тема «${suggestedThemeName ?? doc.suggestedThemeId}»`);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-accent/5 px-3 py-2 text-xs">
+      <Sparkles size={13} className="shrink-0 text-accent" />
+      <span className="text-fg-secondary">
+        Кора предлагает: {parts.join(', ')}
+      </span>
+      <span className="ml-auto flex items-center gap-1.5">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditOpen(true)}>
+          Изменить
+        </Button>
+        <Button size="sm" disabled={busy} onClick={() => void accept()}>
+          {busy ? <Loader2 size={12} className="mr-1 animate-spin" /> : null}
+          Принять
+        </Button>
+      </span>
+      {editOpen && (
+        <EditAttributionDialog
+          orgId={orgId}
+          doc={doc}
+          onSaved={() => {
+            setEditOpen(false);
+            onChanged();
+          }}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Диалог редактирования атрибуции (открывается из «Изменить» в SuggestionBanner).
+ * Префилл — из suggested*; при сохранении — PATCH attribution.
+ */
+function EditAttributionDialog({
+  orgId,
+  doc,
+  onSaved,
+  onClose,
+}: {
+  orgId: string;
+  doc: DocumentApi;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const themesSwr = useSWR(['edit-attr-themes', orgId], () =>
+    themesApi.list({ limit: 100 }),
+  );
+  const projectsSwr = useSWR(['edit-attr-projects', orgId], () =>
+    projectsApi.list(orgId),
+  );
+  const themes = useMemo(() => themesSwr.data?.items ?? [], [themesSwr.data]);
+  const projects = useMemo(
+    () => projectsSwr.data?.items ?? [],
+    [projectsSwr.data],
+  );
+
+  const [docType, setDocType] = useState<DocumentTypeApi | null>(
+    doc.suggestedDocType ?? null,
+  );
+  const [themeId, setThemeId] = useState<string | null>(
+    doc.suggestedThemeId ?? null,
+  );
+  const [projectId, setProjectId] = useState<string | null>(
+    doc.attachedProjectId ?? null,
+  );
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await documentsApi.setAttribution(orgId, doc.id, {
+        docType,
+        attachedThemeId: themeId,
+        attachedProjectId: projectId,
+      });
+      toast.success('Атрибуция сохранена.');
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Изменить атрибуцию</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-1.5">
+          <Label>Тип документа</Label>
+          <Select
+            value={docType ?? NO_VALUE}
+            onValueChange={(v) =>
+              setDocType(v === NO_VALUE ? null : (v as DocumentTypeApi))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Не указывать" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_VALUE}>Не указывать</SelectItem>
+              {DOC_TYPE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Тема</Label>
+          {themes.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">Тем пока нет.</p>
+          ) : (
+            <Select
+              value={themeId ?? NO_VALUE}
+              onValueChange={(v) => setThemeId(v === NO_VALUE ? null : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Не привязывать" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_VALUE}>Не привязывать</SelectItem>
+                {themes.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Проект</Label>
+          {projects.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">Проектов пока нет.</p>
+          ) : (
+            <Select
+              value={projectId ?? NO_VALUE}
+              onValueChange={(v) => setProjectId(v === NO_VALUE ? null : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Не привязывать" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_VALUE}>Не привязывать</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button onClick={() => void save()} disabled={busy}>
+            {busy ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+            Сохранить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -576,6 +874,291 @@ function UploadDocumentDialog({
     </Dialog>
   );
 }
+
+/**
+ * F1 (ТЗ-4 Волна 2) — диалог импорта: ZIP, Notion-экспорт (тоже ZIP) и
+ * Confluence Cloud (форма подключения). После старта — поллинг статуса импорта
+ * с прогрессом и логом ошибок.
+ */
+function ImportDocumentsDialog({
+  orgId,
+  onImported,
+  onClose,
+}: {
+  orgId: string;
+  onImported: () => void;
+  onClose: () => void;
+}) {
+  const [importId, setImportId] = useState<string | null>(null);
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Импорт документов</DialogTitle>
+        </DialogHeader>
+
+        {importId ? (
+          <ImportProgress
+            orgId={orgId}
+            importId={importId}
+            onImported={onImported}
+          />
+        ) : (
+          <Tabs defaultValue="zip">
+            <TabsList className="w-full">
+              <TabsTrigger value="zip" className="flex-1">
+                ZIP
+              </TabsTrigger>
+              <TabsTrigger value="notion" className="flex-1">
+                Notion
+              </TabsTrigger>
+              <TabsTrigger value="confluence" className="flex-1">
+                Confluence
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="zip">
+              <ImportZipTab
+                orgId={orgId}
+                source="upload_zip"
+                hint="Загрузите .zip-архив — поддержанные файлы внутри станут отдельными документами."
+                onStarted={setImportId}
+              />
+            </TabsContent>
+
+            <TabsContent value="notion">
+              <ImportZipTab
+                orgId={orgId}
+                source="notion"
+                hint="Выгрузите рабочее пространство Notion как «Markdown & CSV» (.zip) и загрузите архив сюда. Имена страниц очистятся автоматически."
+                onStarted={setImportId}
+              />
+            </TabsContent>
+
+            <TabsContent value="confluence">
+              <ImportConfluenceTab orgId={orgId} onStarted={setImportId} />
+            </TabsContent>
+          </Tabs>
+        )}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            {importId ? 'Закрыть' : 'Отмена'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Вкладка импорта ZIP/Notion: выбор архива + старт импорта. */
+function ImportZipTab({
+  orgId,
+  source,
+  hint,
+  onStarted,
+}: {
+  orgId: string;
+  source: 'upload_zip' | 'notion';
+  hint: string;
+  onStarted: (importId: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const start = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const res = await documentsApi.importZip(orgId, { file, source });
+      onStarted(res.importId);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось начать импорт.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-3">
+      <p className="text-xs text-fg-tertiary">{hint}</p>
+      <Input
+        type="file"
+        accept=".zip,application/zip"
+        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+      />
+      {file && (
+        <p className="truncate text-xs text-fg-secondary">{file.name}</p>
+      )}
+      <Button disabled={!file || busy} onClick={() => void start()}>
+        {busy ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+        Начать импорт
+      </Button>
+    </div>
+  );
+}
+
+/** Вкладка импорта из Confluence Cloud: форма подключения. */
+function ImportConfluenceTab({
+  orgId,
+  onStarted,
+}: {
+  orgId: string;
+  onStarted: (importId: string) => void;
+}) {
+  const [baseUrl, setBaseUrl] = useState('');
+  const [email, setEmail] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [spaceKey, setSpaceKey] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const canSubmit =
+    baseUrl.trim() && email.trim() && apiToken.trim() && spaceKey.trim();
+
+  const start = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    try {
+      const res = await documentsApi.importConfluence(orgId, {
+        baseUrl: baseUrl.trim(),
+        email: email.trim(),
+        apiToken: apiToken.trim(),
+        spaceKey: spaceKey.trim(),
+      });
+      onStarted(res.importId);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Не удалось начать импорт.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-3">
+      <div className="space-y-1.5">
+        <Label>Адрес Confluence</Label>
+        <Input
+          placeholder="https://компания.atlassian.net"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>Эл. почта учётки Atlassian</Label>
+        <Input
+          type="email"
+          placeholder="you@company.ru"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>API-токен</Label>
+        <Input
+          type="password"
+          placeholder="Токен Atlassian (не пароль)"
+          value={apiToken}
+          onChange={(e) => setApiToken(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>Ключ пространства</Label>
+        <Input
+          placeholder="например ENG"
+          value={spaceKey}
+          onChange={(e) => setSpaceKey(e.target.value)}
+        />
+      </div>
+      <Button disabled={!canSubmit || busy} onClick={() => void start()}>
+        {busy ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+        Начать импорт
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Прогресс импорта: поллинг `GET /documents/imports/:id` через SWR с
+ * refreshInterval до статуса completed/failed; показывает счётчик и лог ошибок.
+ */
+function ImportProgress({
+  orgId,
+  importId,
+  onImported,
+}: {
+  orgId: string;
+  importId: string;
+  onImported: () => void;
+}) {
+  const swr = useSWR<DocumentImportApi>(
+    ['document-import', orgId, importId],
+    () => documentsApi.getImportStatus(orgId, importId),
+    {
+      refreshInterval: (latest) =>
+        latest && (latest.status === 'completed' || latest.status === 'failed')
+          ? 0
+          : 1500,
+      onSuccess: (data) => {
+        if (data.status === 'completed' || data.status === 'failed') {
+          onImported();
+        }
+      },
+    },
+  );
+
+  if (swr.error) {
+    return (
+      <p className="py-4 text-sm text-danger">
+        {swr.error instanceof Error ? swr.error.message : 'Ошибка'}
+      </p>
+    );
+  }
+  const data = swr.data;
+  if (!data) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-fg-tertiary">
+        <Loader2 size={14} className="animate-spin" /> Запускаем импорт…
+      </div>
+    );
+  }
+
+  const inProgress = data.status === 'pending' || data.status === 'processing';
+  return (
+    <div className="space-y-3 py-2">
+      <div className="flex items-center gap-2 text-sm">
+        {inProgress && <Loader2 size={14} className="animate-spin text-accent" />}
+        <span className="font-medium text-fg-primary">
+          {IMPORT_STATUS_LABELS[data.status]}
+        </span>
+      </div>
+      <p className="text-sm text-fg-secondary">
+        Готово {data.doneFiles} из {data.totalFiles}, ошибок{' '}
+        {data.failedFiles}
+      </p>
+      {data.errorLog.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-fg-tertiary">
+            Ошибки ({data.errorLog.length})
+          </div>
+          <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border-subtle p-2 text-xs">
+            {data.errorLog.map((e, idx) => (
+              <li key={`${e.file}-${idx}`} className="text-fg-secondary">
+                <span className="font-medium text-fg-primary">{e.file}</span>:{' '}
+                {e.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const IMPORT_STATUS_LABELS: Record<DocumentImportApi['status'], string> = {
+  pending: 'В очереди',
+  processing: 'Импортируем…',
+  completed: 'Импорт завершён',
+  failed: 'Импорт не удался',
+};
 
 function QueueStatusBadge({ status }: { status: QueueStatus }) {
   const variant =

@@ -1,6 +1,9 @@
 import type {
   Decision,
   Document,
+  DocumentImport,
+  DocumentImportSource,
+  DocumentImportStatus,
   DocumentKind,
   DocumentStatus,
   DocumentType,
@@ -132,6 +135,76 @@ export interface ImportConfluenceResultDto {
   importId: string;
 }
 
+/**
+ * ТЗ-4 Волна 2 (B1) — статус batch-импорта для UI прогресса
+ * (`GET /api/v1/documents/imports/:id`). Один элемент `errorLog` — `{file, error}`.
+ */
+export interface DocumentImportDto {
+  id: string;
+  source: DocumentImportSource;
+  status: DocumentImportStatus;
+  totalFiles: number;
+  doneFiles: number;
+  failedFiles: number;
+  errorLog: Array<{ file: string; error: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Сериализует `DocumentImport` для статус-эндпоинта. `errorLog` хранится как
+ * `Json?` — нормализуем в массив `{file, error}` (мусор/невалидные элементы
+ * отбрасываем, чтобы UI не падал на неожиданной форме).
+ */
+export function toDocumentImportDto(row: DocumentImport): DocumentImportDto {
+  return {
+    id: row.id,
+    source: row.source,
+    status: row.status,
+    totalFiles: row.totalFiles,
+    doneFiles: row.doneFiles,
+    failedFiles: row.failedFiles,
+    errorLog: normalizeImportErrorLog(row.errorLog),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function normalizeImportErrorLog(
+  raw: unknown,
+): Array<{ file: string; error: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ file: string; error: string }> = [];
+  for (const e of raw) {
+    if (
+      e &&
+      typeof e === 'object' &&
+      typeof (e as { file?: unknown }).file === 'string' &&
+      typeof (e as { error?: unknown }).error === 'string'
+    ) {
+      out.push({
+        file: (e as { file: string }).file,
+        error: (e as { error: string }).error,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * ТЗ-4 Волна 2 (B2) — тело `PATCH /api/v1/documents/:id/attribution`.
+ * Устанавливает/меняет смысловую атрибуцию документа человеком и очищает
+ * подсказки классификатора (`suggestedDocType`/`suggestedThemeId`). Все поля
+ * опц.; `null` явно снимает привязку. Theme/Project проверяются на принадлежность
+ * tenantId (как при загрузке). После — проекция в граф для блоков документа.
+ */
+export const SetAttributionBodySchema = z.object({
+  docType: DocTypeEnumSchema.nullable().optional(),
+  attachedThemeId: z.string().cuid().nullable().optional(),
+  attachedProjectId: z.string().cuid().nullable().optional(),
+});
+export type SetAttributionBodyDto = z.infer<typeof SetAttributionBodySchema>;
+
 export const ListDocumentsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
@@ -166,6 +239,10 @@ export interface DocumentDto {
   attachedThemeId: string | null;
   /** ТЗ-4 — привязка к проекту трекера (Project). */
   attachedProjectId: string | null;
+  /** ТЗ-4 Ф10 — предложенный классификатором тип (до подтверждения человеком). */
+  suggestedDocType: DocumentType | null;
+  /** ТЗ-4 Ф10 — предложенная классификатором тема (Theme.id) до подтверждения. */
+  suggestedThemeId: string | null;
   parsedText: string | null;
   parseError: string | null;
   createdAt: string;
@@ -186,6 +263,8 @@ export function toDocumentDto(doc: Document): DocumentDto {
     docType: doc.docType,
     attachedThemeId: doc.attachedThemeId,
     attachedProjectId: doc.attachedProjectId,
+    suggestedDocType: doc.suggestedDocType,
+    suggestedThemeId: doc.suggestedThemeId,
     parsedText: doc.parsedText,
     parseError: doc.parseError,
     createdAt: doc.createdAt.toISOString(),

@@ -11,6 +11,7 @@ import {
 import {
   type Decision,
   type Document,
+  type DocumentImport,
   type DocumentKind,
   type DocumentStatus,
   type DocumentType,
@@ -658,6 +659,160 @@ export class DocumentsService {
       id: updated.id,
       deletedAt: (updated.deletedAt ?? new Date()).toISOString(),
     };
+  }
+
+  // ─────────────────────────── import status (Волна 2 B1) ───────────────
+
+  /**
+   * Статус batch-импорта для UI прогресса (`GET /documents/imports/:id`).
+   * tenant-scope: чужой Org → 404 (не раскрываем существование).
+   */
+  async getImportStatus(args: {
+    tenantId: string;
+    importId: string;
+  }): Promise<DocumentImport> {
+    const row = await this.prisma.documentImport.findUnique({
+      where: { id: args.importId },
+    });
+    if (!row || row.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'import_not_found', message: 'Импорт не найден' },
+      });
+    }
+    return row;
+  }
+
+  // ─────────────────────────── attribution accept (Волна 2 B2) ──────────
+
+  /**
+   * ТЗ-4 Волна 2 (B2) — выставляет смысловую атрибуцию документа человеком и
+   * очищает подсказки классификатора (accepted). Затем проецирует привязку в
+   * граф для уже существующих блоков документа (зеркалит Ф4
+   * `applyDocumentAttribution` из block-ingest.worker).
+   *
+   * Идемпотентно:
+   *   - `document.update` повторяемо;
+   *   - проекция: `ideaBlock.updateMany` (roleId/roleRelevant) и
+   *     `themeIdeaBlock.createMany({ skipDuplicates })` (PK [themeId, blockId]).
+   *
+   * Контракт полей:
+   *   - значение `undefined` (поле не передано) — НЕ трогаем колонку;
+   *   - значение `null` — явно снимаем привязку;
+   *   - Theme/Project проверяются на принадлежность tenantId (как при загрузке).
+   */
+  async setAttribution(args: {
+    tenantId: string;
+    documentId: string;
+    docType?: DocumentType | null;
+    attachedThemeId?: string | null;
+    attachedProjectId?: string | null;
+  }): Promise<Document> {
+    const { tenantId, documentId } = args;
+
+    // Доступ + tenant-scope: 404/403 при чужом/удалённом документе.
+    const doc = await this.get({ tenantId, documentId });
+
+    // Theme/Project, если задаются ненулевыми — должны принадлежать tenantId.
+    await this.assertAttributionBelongsToTenant({
+      tenantId,
+      attachedThemeId: args.attachedThemeId ?? undefined,
+      attachedProjectId: args.attachedProjectId ?? undefined,
+    });
+
+    // 1. Устанавливаем колонки. Только переданные поля; подсказки снимаем всегда
+    //    (атрибуция подтверждена/перебита человеком — accepted).
+    const data: Prisma.DocumentUpdateInput = {
+      suggestedDocType: null,
+      suggestedThemeId: null,
+    };
+    if (args.docType !== undefined) data.docType = args.docType;
+    if (args.attachedThemeId !== undefined) {
+      data.attachedTheme = args.attachedThemeId
+        ? { connect: { id: args.attachedThemeId } }
+        : { disconnect: true };
+    }
+    if (args.attachedProjectId !== undefined) {
+      data.attachedProject = args.attachedProjectId
+        ? { connect: { id: args.attachedProjectId } }
+        : { disconnect: true };
+    }
+
+    const updated = await this.prisma.document.update({
+      where: { id: doc.id },
+      data,
+    });
+
+    // 2. Проекция в граф для уже извлечённых блоков документа.
+    await this.projectAttributionToBlocks({
+      tenantId,
+      documentId,
+      attachedRoleId: updated.attachedRoleId,
+      attachedThemeId: updated.attachedThemeId,
+    });
+
+    this.logger.log(
+      {
+        documentId,
+        tenantId,
+        docType: updated.docType,
+        attachedThemeId: updated.attachedThemeId,
+        attachedProjectId: updated.attachedProjectId,
+      },
+      'documents.setAttribution: атрибуция подтверждена + спроецирована в граф',
+    );
+    return updated;
+  }
+
+  /**
+   * Зеркало Ф4 `applyDocumentAttribution` (block-ingest.worker), но для уже
+   * созданных блоков: находит IdeaBlock'и документа через `IdeaBlockEvidence`
+   * (rawEvent.sourceExternalId='doc:<id>') и применяет:
+   *   - `attachedRoleId` → блокам `roleId + roleRelevant=true` (updateMany);
+   *   - `attachedThemeId` → ThemeIdeaBlock (weight 0.8, skipDuplicates).
+   *
+   * Идемпотентно. Если блоков нет (документ ещё не разобран) — no-op; привязка
+   * применится при ingest через сам `applyDocumentAttribution`.
+   */
+  private async projectAttributionToBlocks(args: {
+    tenantId: string;
+    documentId: string;
+    attachedRoleId: string | null;
+    attachedThemeId: string | null;
+  }): Promise<void> {
+    const { tenantId, documentId, attachedRoleId, attachedThemeId } = args;
+    if (!attachedRoleId && !attachedThemeId) return;
+
+    const evidence = await this.prisma.ideaBlockEvidence.findMany({
+      where: {
+        rawEvent: {
+          tenantId,
+          sourceExternalId: `doc:${documentId}`,
+        },
+        block: { tenantId },
+      },
+      select: { blockId: true },
+      distinct: ['blockId'],
+    });
+    const blockIds = evidence.map((e) => e.blockId);
+    if (blockIds.length === 0) return;
+
+    if (attachedRoleId) {
+      await this.prisma.ideaBlock.updateMany({
+        where: { id: { in: blockIds }, tenantId },
+        data: { roleId: attachedRoleId, roleRelevant: true },
+      });
+    }
+    if (attachedThemeId) {
+      await this.prisma.themeIdeaBlock.createMany({
+        data: blockIds.map((blockId) => ({
+          themeId: attachedThemeId,
+          blockId,
+          weight: new Prisma.Decimal('0.8'),
+        })),
+        skipDuplicates: true,
+      });
+    }
   }
 }
 

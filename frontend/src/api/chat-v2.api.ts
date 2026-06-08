@@ -193,6 +193,26 @@ export const chatV2Api = {
     ),
 
   /**
+   * TZ-1 Ф5 — оценить ответ ассистента (палец вверх/вниз). Upsert по
+   * (messageId, userId). Контракт: `POST /api/v1/chat-v2/messages/:id/feedback`.
+   * Источник: `backend/.../chat-v2.controller.ts:setFeedback`.
+   */
+  setFeedback: (messageId: string, helpful: 'up' | 'down', comment?: string) =>
+    apiClient.post<{ messageId: string; helpful: 'up' | 'down' }>(
+      `/api/v1/chat-v2/messages/${encodeURIComponent(messageId)}/feedback`,
+      comment !== undefined ? { helpful, comment } : { helpful },
+    ),
+
+  /**
+   * TZ-1 Ф5 — снять оценку ответа ассистента.
+   * Контракт: `DELETE /api/v1/chat-v2/messages/:id/feedback`.
+   */
+  clearFeedback: (messageId: string) =>
+    apiClient.del<{ messageId: string; cleared: boolean }>(
+      `/api/v1/chat-v2/messages/${encodeURIComponent(messageId)}/feedback`,
+    ),
+
+  /**
    * SBA α-5 dialog-layer — очистка AnswerCache+RetrievalCache по
    * conversationId. Доступно владельцу диалога.
    */

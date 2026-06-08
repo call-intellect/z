@@ -8,6 +8,8 @@ import {
   PinOff,
   Plus,
   Send,
+  ThumbsDown,
+  ThumbsUp,
 } from 'lucide-react';
 import {
   useCallback,
@@ -493,7 +495,60 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
             ))}
           </div>
         ) : null}
+
+        {!isUser ? <MessageFeedback messageId={message.id} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * TZ-3 Ф3 — оценка ответа ассистента (👍/👎). Тонкий ряд под сообщением.
+ * Optimistic local state: при клике сразу подсвечиваем выбор и шлём запрос
+ * fire-and-forget; при ошибке откатываем. Повторный клик по активной кнопке
+ * снимает оценку (DELETE). Channel-agnostic эндпоинт на бэке поддерживает оба.
+ */
+function MessageFeedback({ messageId }: { messageId: string }): ReactElement {
+  const [helpful, setHelpful] = useState<'up' | 'down' | null>(null);
+
+  function vote(next: 'up' | 'down'): void {
+    const prev = helpful;
+    if (prev === next) {
+      // Повторный клик по активной — снять оценку.
+      setHelpful(null);
+      void chatV2Api.clearFeedback(messageId).catch(() => setHelpful(prev));
+      return;
+    }
+    setHelpful(next);
+    void chatV2Api.setFeedback(messageId, next).catch(() => setHelpful(prev));
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+      <button
+        type="button"
+        onClick={() => vote('up')}
+        title="Ответ помог"
+        aria-label="Ответ помог"
+        aria-pressed={helpful === 'up'}
+        className={`rounded p-1 transition-colors hover:bg-surface-hover ${
+          helpful === 'up' ? 'text-accent' : 'text-fg-tertiary'
+        }`}
+      >
+        <ThumbsUp size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => vote('down')}
+        title="Ответ не помог"
+        aria-label="Ответ не помог"
+        aria-pressed={helpful === 'down'}
+        className={`rounded p-1 transition-colors hover:bg-surface-hover ${
+          helpful === 'down' ? 'text-danger' : 'text-fg-tertiary'
+        }`}
+      >
+        <ThumbsDown size={14} />
+      </button>
     </div>
   );
 }

@@ -23,6 +23,10 @@ import {
 
 import { MyPositionCard } from './MyPositionCard';
 import { MyTelegramCard } from './MyTelegramCard';
+import { MemoryHelpedMeWidget } from './widgets/MemoryHelpedMeWidget';
+import { MyIdeasFateWidget } from './widgets/MyIdeasFateWidget';
+import { MyWeeklyPlanFactWidget } from './widgets/MyWeeklyPlanFactWidget';
+import { RecognitionInboxWidget } from './widgets/RecognitionInboxWidget';
 
 const BLOCK_TITLES: Record<string, string> = {
   responsibilities: 'Обязанности',
@@ -121,12 +125,36 @@ function Content({
 
       <RoleProfileBlock loading={profileSwr.isLoading} profile={profile ?? null} />
 
+      <DailyValueSection />
+
       <MyTelegramCard orgId={orgId} />
 
       <MyDocumentsBlock orgId={orgId} />
 
       <MyMeetingsBlock />
     </div>
+  );
+}
+
+/**
+ * ТЗ-2 Ф5 + ТЗ-3 Ф3 — секция «Моя польза за неделю»: 4 виджета ежедневной
+ * ценности на современном визуальном языке (стеклянные карточки). Каждый
+ * виджет фетчит свои данные сам (SWR) и gracefully показывает empty-state,
+ * поэтому шелл `/me` остаётся прежним, а виджеты живут локально в GlassCard.
+ */
+function DailyValueSection() {
+  return (
+    <section className="mb-6">
+      <h2 className="mb-3 text-base font-semibold tracking-tight text-fg-primary">
+        Моя польза за неделю
+      </h2>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <MyWeeklyPlanFactWidget />
+        <MemoryHelpedMeWidget />
+        <MyIdeasFateWidget />
+        <RecognitionInboxWidget />
+      </div>
+    </section>
   );
 }
 

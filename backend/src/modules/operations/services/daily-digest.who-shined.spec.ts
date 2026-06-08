@@ -90,6 +90,9 @@ function buildSvc(overrides: {
   };
   const pendingActions = { getCount: vi.fn() };
   const customerRisk = { topForDigest: vi.fn().mockResolvedValue([]) };
+  const blockerSynthesis = {
+    listChronicForTenant: vi.fn().mockResolvedValue([]),
+  };
 
   const svc = new DailyDigestService(
     prisma as never,
@@ -97,6 +100,7 @@ function buildSvc(overrides: {
     metrics as never,
     pendingActions as never,
     customerRisk as never,
+    blockerSynthesis as never,
   );
   return { svc, prisma };
 }

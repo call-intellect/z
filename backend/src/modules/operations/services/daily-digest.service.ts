@@ -15,6 +15,7 @@ import type {
   DailyDigestPersonShinedDto,
   DailyDigestPersonStruggledDto,
   DailyDigestCustomerAtRiskDto,
+  DailyDigestChronicBlockerDto,
 } from '../dto/daily-digest.dto';
 import {
   DAILY_DIGEST_PROMPT_VERSION,
@@ -26,6 +27,7 @@ import {
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
+import { BlockerSynthesisService } from './blocker-synthesis.service';
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
 
 /**
@@ -62,6 +64,9 @@ export class DailyDigestService {
     // TZ-1 Фаза 1 (daily-value-engine) — мост секции «Клиенты под риском».
     @Inject(CustomerRiskRadarService)
     private readonly customerRisk: CustomerRiskRadarService,
+    // ТЗ-2 Ф3 — мост секции «Хронические блокеры» (тот же OperationsModule).
+    @Inject(BlockerSynthesisService)
+    private readonly blockerSynthesis: BlockerSynthesisService,
   ) {}
 
   /**
@@ -562,6 +567,8 @@ export class DailyDigestService {
       whoStruggled: [],
       // TZ-1 Ф1 — реально заполняется enrichDto() → computeRuntimeSections().
       customersAtRisk: [],
+      // ТЗ-2 Ф3 — реально заполняется enrichDto() → computeRuntimeSections().
+      chronicBlockers: [],
     };
   }
 
@@ -614,6 +621,7 @@ export class DailyDigestService {
     whoShined: DailyDigestPersonShinedDto[];
     whoStruggled: DailyDigestPersonStruggledDto[];
     customersAtRisk: DailyDigestCustomerAtRiskDto[];
+    chronicBlockers: DailyDigestChronicBlockerDto[];
   }> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
     const now = new Date();
@@ -1028,7 +1036,42 @@ export class DailyDigestService {
       );
     }
 
-    return { eventsToday, urgentItems, whoShined, whoStruggled, customersAtRisk };
+    // ============== chronicBlockers (ТЗ-2 Ф3) ==============
+    // Топ хронических блокеров (new/recurring) по businessImpactScore из
+    // BlockerSynthesisService. Best-effort: если синтеза нет / упал — `[]`,
+    // дайджест не ломается. Поля businessImpactScore/даты в DTO не выносим.
+    let chronicBlockers: DailyDigestChronicBlockerDto[] = [];
+    try {
+      const chronic = await this.blockerSynthesis.listChronicForTenant({
+        tenantId: args.tenantId,
+        limit: 5,
+      });
+      chronicBlockers = chronic.map((c) => ({
+        id: c.id,
+        representativeText: c.representativeText,
+        status: c.status,
+        daysOpen: c.daysOpen,
+        linkedInsightId: c.linkedInsightId,
+        responsiblePersonId: c.responsiblePersonId,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: секция «Хронические блокеры» упала — пропускаю',
+      );
+    }
+
+    return {
+      eventsToday,
+      urgentItems,
+      whoShined,
+      whoStruggled,
+      customersAtRisk,
+      chronicBlockers,
+    };
   }
 
   /**

@@ -154,6 +154,23 @@ export interface DailyDigestCustomerAtRiskDto {
   badge: string;
 }
 
+/**
+ * ТЗ-2 Ф3 — хронический блокер в ежедневном дайджесте.
+ *
+ * Топ-N из `BlockerSynthesis` (status ∈ new|recurring) по businessImpactScore.
+ * Runtime-вычислено через `BlockerSynthesisService.listChronicForTenant`,
+ * не персистится в metricsJson. Best-effort: если синтез пуст / упал — `[]`.
+ */
+export interface DailyDigestChronicBlockerDto {
+  id: string;
+  representativeText: string;
+  /** new | recurring | resolved. */
+  status: string;
+  daysOpen: number;
+  linkedInsightId: string | null;
+  responsiblePersonId: string | null;
+}
+
 export interface DailyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -177,6 +194,8 @@ export interface DailyOperationsDigestDto {
   whoStruggled: DailyDigestPersonStruggledDto[];
   /** TZ-1 Ф1 — клиенты под риском (топ по riskScore). Пусто, если снимков нет. */
   customersAtRisk: DailyDigestCustomerAtRiskDto[];
+  /** ТЗ-2 Ф3 — хронические блокеры (топ по businessImpactScore). Пусто, если синтеза нет. */
+  chronicBlockers: DailyDigestChronicBlockerDto[];
 }
 
 /**

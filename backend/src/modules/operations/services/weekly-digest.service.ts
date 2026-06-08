@@ -5,11 +5,13 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
+  WeeklyDeltaDto,
   WeeklyDigestMetricsDto,
   WeeklyDigestSourcesDto,
   WeeklyForecastItemDto,
   WeeklyKpiDeltaDto,
   WeeklyOperationsDigestDto,
+  WeeklySectionDeltasDto,
   WeeklyTeamDynamicsRowDto,
 } from '../dto/weekly-digest.dto';
 import {
@@ -476,6 +478,9 @@ export class WeeklyDigestService {
       kpiDeltas: [],
       teamDynamics: [],
       forecast: [],
+      // ТЗ-2 Ф3 — посекционные дельты, заполняются в enrichDto(). Пустой
+      // дефолт type-корректен для ветки без enrich (unit-тесты).
+      sectionDeltas: emptySectionDeltas(),
     };
   }
 
@@ -527,6 +532,7 @@ export class WeeklyDigestService {
     kpiDeltas: WeeklyKpiDeltaDto[];
     teamDynamics: WeeklyTeamDynamicsRowDto[];
     forecast: WeeklyForecastItemDto[];
+    sectionDeltas: WeeklySectionDeltasDto;
   }> {
     const curStart = args.weekStart;
     const curEnd = args.weekEnd;
@@ -551,6 +557,18 @@ export class WeeklyDigestService {
       prevCommitments,
       curHanging,
       prevHanging,
+      // ТЗ-2 Ф3 — посекционные счётчики (текущая/предыдущая неделя).
+      // Блокеры — IdeaBlock(signalType=blocker) по createdAt в окне.
+      curBlockerCount,
+      prevBlockerCount,
+      // Инсайты — тот же фильтр, что и topInsights в aggregate()
+      // (status='active' + lastObservedAt в окне; severity-фильтра нет).
+      curInsightCount,
+      prevInsightCount,
+      // Идеи — тот же фильтр и окно, что и topIdeas в aggregate()
+      // (status notIn rejected/archived + lastDiscussedAt в окне).
+      curIdeaCount,
+      prevIdeaCount,
     ] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
@@ -628,6 +646,53 @@ export class WeeklyDigestService {
           createdAt: { lt: addDays(prevEndUtc, -7) },
         },
       }),
+      // ── sectionDeltas: блокеры (IdeaBlock signalType=blocker, createdAt в окне).
+      this.prisma.ideaBlock.count({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.ideaBlock.count({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
+      // ── sectionDeltas: инсайты (мирроринг topInsights — status=active +
+      // lastObservedAt в окне).
+      this.prisma.insight.count({
+        where: {
+          tenantId: args.tenantId,
+          status: 'active',
+          lastObservedAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.insight.count({
+        where: {
+          tenantId: args.tenantId,
+          status: 'active',
+          lastObservedAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
+      // ── sectionDeltas: идеи (мирроринг topIdeas — notIn rejected/archived +
+      // lastDiscussedAt в окне).
+      this.prisma.idea.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.idea.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
     ]);
 
     // ── KPI #1: индекс настроения = (green-red)/total * 100 (округлено).
@@ -674,7 +739,17 @@ export class WeeklyDigestService {
       prevHanging,
     });
 
-    return { kpiDeltas, teamDynamics, forecast };
+    // ── sectionDeltas (ТЗ-2 Ф3): кол-во блокеров/инсайтов/идей за неделю +
+    // дельта к предыдущей. previous-окно по факту всегда имеет данные (запрос
+    // выполнен), поэтому previous=число, а не null; форма допускает null на
+    // случай отсутствия данных за предыдущую неделю (тогда delta=null).
+    const sectionDeltas: WeeklySectionDeltasDto = {
+      blockers: buildSectionDelta(curBlockerCount, prevBlockerCount),
+      insights: buildSectionDelta(curInsightCount, prevInsightCount),
+      ideas: buildSectionDelta(curIdeaCount, prevIdeaCount),
+    };
+
+    return { kpiDeltas, teamDynamics, forecast, sectionDeltas };
   }
 
   /**
@@ -1080,6 +1155,30 @@ function emptyMetrics(): WeeklyDigestMetricsDto {
 
 function emptySources(): WeeklyDigestSourcesDto {
   return { blockerCheckInIds: [], insightIds: [], goalIds: [], decisionIds: [] };
+}
+
+/**
+ * ТЗ-2 Ф3 — пустой `sectionDeltas` для `toDto` (ветка без enrich).
+ * previous=null → delta=null для всех секций.
+ */
+function emptySectionDeltas(): WeeklySectionDeltasDto {
+  const zero: WeeklyDeltaDto = { current: 0, previous: null, delta: null };
+  return { blockers: { ...zero }, insights: { ...zero }, ideas: { ...zero } };
+}
+
+/**
+ * ТЗ-2 Ф3 — собрать дельту одной секции. `previous=null` → `delta=null`
+ * (нет данных за предыдущую неделю).
+ */
+function buildSectionDelta(
+  current: number,
+  previous: number | null,
+): WeeklyDeltaDto {
+  return {
+    current,
+    previous,
+    delta: previous === null ? null : current - previous,
+  };
 }
 
 function parseDateLocalToUtc(dateLocal: string): Date {

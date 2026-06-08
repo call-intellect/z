@@ -120,14 +120,26 @@ describe('DailyDigestService', () => {
     const customerRisk = {
       topForDigest: vi.fn().mockResolvedValue([]),
     };
+    const blockerSynthesis = {
+      listChronicForTenant: vi.fn().mockResolvedValue([]),
+    };
     const svc = new DailyDigestService(
       prisma as never,
       llm as never,
       metrics as never,
       pendingActions as never,
       customerRisk as never,
+      blockerSynthesis as never,
     );
-    return { svc, prisma, llm, metrics, pendingActions, customerRisk };
+    return {
+      svc,
+      prisma,
+      llm,
+      metrics,
+      pendingActions,
+      customerRisk,
+      blockerSynthesis,
+    };
   }
 
   it('aggregate: считает доли green/yellow/red и топ-3 красных', async () => {

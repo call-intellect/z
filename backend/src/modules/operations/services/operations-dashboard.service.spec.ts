@@ -13,6 +13,8 @@ describe('OperationsDashboardService', () => {
     betaOps: {
       operationsDashboardCacheTtlSeconds: 300,
     },
+    // ТЗ-2 Ф2 — getOverview читает kill-switch новой раскладки COO.
+    getDynamic: vi.fn().mockResolvedValue(true),
   };
 
   function buildSvc(overrides: {
@@ -63,6 +65,12 @@ describe('OperationsDashboardService', () => {
       },
       entityLink: {
         findMany: vi.fn().mockResolvedValue(overrides.entityLinks ?? []),
+        // ТЗ-2 Ф2 — frictionsResolvedCount (conflicted_with → archived, 30д).
+        count: vi.fn().mockResolvedValue(0),
+      },
+      // ТЗ-2 Ф2 — blockersResolvedCount (BlockerSynthesis status=resolved, 30д).
+      blockerSynthesis: {
+        count: vi.fn().mockResolvedValue(0),
       },
       person: {
         findMany: vi.fn().mockResolvedValue(overrides.persons ?? []),
@@ -99,6 +107,8 @@ describe('OperationsDashboardService', () => {
       // SBA β-8.3 Wave 2 — карта причин + зрелость.
       setCooInsightsByCause: vi.fn(),
       setCooCompanyMaturityScore: vi.fn(),
+      // ТЗ-2 Ф2 — «зеркало закрытого».
+      setCooBlockersResolved: vi.fn(),
     };
     const svc = new OperationsDashboardService(
       prisma as never,

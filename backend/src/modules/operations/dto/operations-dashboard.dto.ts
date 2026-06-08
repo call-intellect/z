@@ -108,6 +108,12 @@ export interface OperationsDashboardOverviewDto {
   missedGoalsCount: number;
   cascadeMissedCount: number;
   teamFrictionCount: number;
+  /** ТЗ-2 Ф2 — «зеркало закрытого»: блокеры в статусе resolved за последние 30 дней (BlockerSynthesis). */
+  blockersResolvedCount: number;
+  /** ТЗ-2 Ф2 — конфликты (EntityLink conflicted_with) переведённые в archived за последние 30 дней. */
+  frictionsResolvedCount: number;
+  /** ТЗ-2 Ф2 — kill-switch новой раскладки COO (operations.dashboard_rework.enabled). Едет в DTO; гейтит только инфо-перекомпоновку на фронте. */
+  reworkEnabled: boolean;
   capacityAvgPercent: number;
   capacityOverloadedCount: number;
   /** Топ-5 свежих блокеров. */

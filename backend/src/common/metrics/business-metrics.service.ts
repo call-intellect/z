@@ -759,6 +759,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
+  // ── ТЗ-2 Ф2 — «зеркало закрытого» + capacity-виджет COO ──
+  // Cardinality-safe: tenant_top — top-100 bucket (resolveOperationsTenantTop).
+  private cooBlockersResolvedTotal!: Gauge<'tenant_top'>;
+  private cooTeamCapacityWidgetServedTotal!: Counter<'tenant_top'>;
 
   // ── SBA β-8.3 — ежедневный отчёт COO ──────────────────────────────
   // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
@@ -3030,6 +3034,17 @@ export class BusinessMetricsService implements OnModuleInit {
     this.cooTeamTemperatureRedShare = this.getOrCreateGauge({
       name: 'coo_team_temperature_red_share',
       help: 'SBA β-8.1 — доля красных чек-инов за 7 дней (0..1). Тревога Grafana при > 0.3.',
+      labelNames: ['tenant_top'] as const,
+    });
+    // ── ТЗ-2 Ф2 — «зеркало закрытого» + capacity-виджет COO ──
+    this.cooBlockersResolvedTotal = this.getOrCreateGauge({
+      name: 'coo_blockers_resolved_total',
+      help: 'ТЗ-2 Ф2 — блокеры (BlockerSynthesis), закрытые (status=resolved) за последние 30 дней. «Зеркало закрытого» на COO-дашборде.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooTeamCapacityWidgetServedTotal = this.getOrCreateCounter({
+      name: 'coo_team_capacity_widget_served_total',
+      help: 'ТЗ-2 Ф2 — отдача виджета загрузки команд COO (GET /dashboard/operations/team-capacity).',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -6710,6 +6725,26 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.max(0, Math.min(1, args.value)),
     );
+  }
+
+  /**
+   * ТЗ-2 Ф2 — Gauge `coo_blockers_resolved_total{tenant_top}`.
+   * Сколько блокеров закрыто (status=resolved) за последние 30 дней.
+   */
+  setCooBlockersResolved(args: { tenantTop: string; count: number }): void {
+    if (!Number.isFinite(args.count)) return;
+    this.cooBlockersResolvedTotal.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, args.count),
+    );
+  }
+
+  /**
+   * ТЗ-2 Ф2 — Counter `coo_team_capacity_widget_served_total{tenant_top}`.
+   * Инкремент на каждую отдачу виджета загрузки команд COO.
+   */
+  incCooTeamCapacityWidgetServed(args: { tenantTop: string }): void {
+    this.cooTeamCapacityWidgetServedTotal.inc({ tenant_top: args.tenantTop });
   }
 
   // ────────────────────── SBA β-8.3 — Daily Digest ────────────────────

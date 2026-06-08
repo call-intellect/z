@@ -96,6 +96,9 @@ export class OperationsDashboardService {
     const cached = await this.cacheGet<OperationsDashboardOverviewDto>(cacheKey);
     if (cached) return cached;
 
+    // ТЗ-2 Ф2 — «зеркало закрытого» за последние 30 дней.
+    const since30 = new Date(Date.now() - 30 * 24 * 3_600_000);
+
     const [
       blockers,
       goalsAgg,
@@ -104,6 +107,9 @@ export class OperationsDashboardService {
       temperature,
       insightsByCauseCategory,
       maturity,
+      blockersResolvedCount,
+      frictionsResolvedCount,
+      reworkEnabled,
     ] = await Promise.all([
       this.fetchBlockers(args.tenantId, 100),
       this.fetchGoalsAgg(args.tenantId),
@@ -115,6 +121,29 @@ export class OperationsDashboardService {
       this.fetchInsightsByCauseCategory(args.tenantId, 7),
       // SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании.
       this.fetchMaturitySnapshot(args.tenantId),
+      // ТЗ-2 Ф2 — блокеры (BlockerSynthesis), переведённые в resolved за 30 дней.
+      this.prisma.blockerSynthesis.count({
+        where: {
+          tenantId: args.tenantId,
+          status: 'resolved',
+          updatedAt: { gte: since30 },
+        },
+      }),
+      // ТЗ-2 Ф2 — конфликты (EntityLink conflicted_with), уведённые в archived за 30 дней.
+      this.prisma.entityLink.count({
+        where: {
+          tenantId: args.tenantId,
+          relationType: 'conflicted_with',
+          status: 'archived',
+          updatedAt: { gte: since30 },
+        },
+      }),
+      // ТЗ-2 Ф2 — kill-switch новой раскладки COO (ON по умолчанию).
+      this.cfg.getDynamic<boolean>(
+        'operations.dashboard_rework.enabled',
+        undefined,
+        true,
+      ),
     ]);
 
     const blockersBySeverity: Record<Severity, number> = {
@@ -144,6 +173,9 @@ export class OperationsDashboardService {
       missedGoalsCount: goalsAgg.missed,
       cascadeMissedCount: goalsAgg.cascadeMissed,
       teamFrictionCount: frictions.length,
+      blockersResolvedCount,
+      frictionsResolvedCount,
+      reworkEnabled,
       capacityAvgPercent: capacity.avgLoadPercent,
       capacityOverloadedCount: capacity.overloadedCount,
       topRecentBlockers: blockers.slice(0, 5),
@@ -164,6 +196,11 @@ export class OperationsDashboardService {
     this.metrics.setCooTeamTemperatureRedShare({
       tenantTop: resolveOperationsTenantTop(args.tenantId),
       value: temperature.redShare,
+    });
+    // ТЗ-2 Ф2 — «зеркало закрытого»: сколько блокеров закрыто за 30 дней.
+    this.metrics.setCooBlockersResolved({
+      tenantTop: resolveOperationsTenantTop(args.tenantId),
+      count: blockersResolvedCount,
     });
     return dto;
   }

@@ -16,6 +16,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
@@ -79,6 +80,7 @@ import {
   shiftPeriod,
   ValueRecapService,
 } from '../services/value-recap.service';
+import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { buildValueRecapSlides } from '../utils/value-recap-export';
 
 /**
@@ -112,6 +114,8 @@ export class OperationsDashboardController {
     @Inject(ValueRecapService)
     private readonly valueRecap: ValueRecapService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   @Get('overview')
@@ -495,7 +499,12 @@ export class OperationsDashboardController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
-    return this.teamCapacity.aggregate({ tenantId: tenantId! });
+    const result = await this.teamCapacity.aggregate({ tenantId: tenantId! });
+    // ТЗ-2 Ф2 — наблюдаемость отдачи виджета загрузки команд.
+    this.metrics.incCooTeamCapacityWidgetServed({
+      tenantTop: resolveOperationsTenantTop(tenantId!),
+    });
+    return result;
   }
 
   /**

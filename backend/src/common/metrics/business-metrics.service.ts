@@ -744,6 +744,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private goalCascadeMissesTotal!: Counter<'tenant_top'>;
   private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
 
+  // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ─────────
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private dashboardValueStripServedTotal!: Counter<'tenant_top'>;
+  private dashboardMainFirstScreenWidgetCount!: Gauge<'tenant_top'>;
+
   // ── SBA β-8.1 — добивка панели операционного директора ────────────
   // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
   private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
@@ -2987,6 +2992,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'personal_relation_builder_runs_total',
       help: 'SBA β-8 — результат запуска PersonalRelationBuilderWorker. result ∈ link_created|link_updated|skipped_low_confidence|skipped_no_pair|error.',
       labelNames: ['tenant_top', 'result'] as const,
+    });
+
+    // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ──
+    this.dashboardValueStripServedTotal = this.getOrCreateCounter({
+      name: 'dashboard_value_strip_served_total',
+      help: 'ТЗ-2 Ф1 — сколько раз отдана «Полоса пользы» директора (5 твёрдых счётчиков). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.dashboardMainFirstScreenWidgetCount = this.getOrCreateGauge({
+      name: 'dashboard_main_first_screen_widget_count',
+      help: 'ТЗ-2 Ф1 — число величин на первом экране новой компоновки главной директора (≤7). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
     });
 
     // ── SBA β-8.1 — добивка панели операционного директора ──
@@ -6610,6 +6627,31 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant_top: args.tenantTop,
       result: args.result,
     });
+  }
+
+  // ────────────────────── ТЗ-2 Ф1 (главная директора) ──────────────────
+
+  /**
+   * Counter `dashboard_value_strip_served_total{tenant_top}`.
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf` (top-100 bucket).
+   */
+  incDashboardValueStripServed(args: { tenantTop: string }): void {
+    this.dashboardValueStripServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Gauge `dashboard_main_first_screen_widget_count{tenant_top}`.
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  setDashboardMainFirstScreenWidgetCount(args: {
+    tenantTop: string;
+    count: number;
+  }): void {
+    if (!Number.isFinite(args.count)) return;
+    this.dashboardMainFirstScreenWidgetCount.set(
+      { tenant_top: args.tenantTop },
+      args.count,
+    );
   }
 
   // ────────────────────── SBA β-8.1 (COO добивка) ──────────────────────

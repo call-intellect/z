@@ -51,6 +51,7 @@ export const SAMPLE_STORY_DATASET = {
       trustedAnswer:
         'Acme не смог импортировать таблицу > 5MB, контакт ушёл к конкуренту через 2 дня. Нужен progress-bar и retry.',
       evidenceMeetingId: null,
+      reasonSourceRef: null,
     },
     {
       id: 'sample-signal-2',
@@ -61,6 +62,7 @@ export const SAMPLE_STORY_DATASET = {
       trustedAnswer:
         'Три клиента подряд просят детализацию по seats в инвойсе. Бухгалтерии нужна разбивка для проводки.',
       evidenceMeetingId: null,
+      reasonSourceRef: null,
     },
     {
       id: 'sample-signal-3',
@@ -71,6 +73,7 @@ export const SAMPLE_STORY_DATASET = {
       trustedAnswer:
         'Команда решила сдвинуть запуск публичного API из-за нагрузочных тестов. Ответственный — Артём.',
       evidenceMeetingId: null,
+      reasonSourceRef: null,
     },
   ],
   signalCounters: {
@@ -144,6 +147,11 @@ export const SAMPLE_STORY_DATASET = {
   | 'kpiSentimentIndex'
   | 'kpiCommitmentReliability'
   | 'kpiHangingDecisions'
+  // ТЗ-2 Ф1 — «Полоса пользы» и флаг новой компоновки тоже выставляются в
+  // DirectorDashboardService (valueStrip — реальный fetchValueStrip,
+  // mainReworkEnabled — из AdminSetting), не входят в статичный датасет.
+  | 'valueStrip'
+  | 'mainReworkEnabled'
 >;
 
 /**

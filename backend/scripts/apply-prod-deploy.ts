@@ -71,7 +71,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-notification-budget.ts', hint: 'notifications.daily_budget.* + quiet_hours.* + binding_campaign.enabled (TZ-1 Ф0 daily-value)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-customer-risk.ts', hint: 'customer_risk.window_days + weight.* + threshold.* + operations.customer_risk_radar.enabled (TZ-1 Ф1 радар клиентов)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-personal-brief.ts', hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)' },
-  { phase: 'seed-base', script: 'scripts/seed-admin-setting-execution-agents.ts', hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (TZ-1 Ф3.D достоверность)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-execution-agents.ts', hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + decision.stale_days + operations.{blocker_synthesis,decision_controller,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
@@ -315,6 +315,10 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  // TZ-1 Ф3.B (daily-value-engine) — засеять DecisionTaskLink из пересечения
+  // sourceBlockIds (Decision×Issue) + пересчитать Decision.linkedTaskCount.
+  // Идемпотентно (skipDuplicates). На чистом старте — no-op → skipBootstrap.
+  { phase: 'backfill', script: 'scripts/backfill-decision-linked-task-count.ts', hint: 'Decision.linkedTaskCount + DecisionTaskLink из sourceBlockIds (TZ-1 Ф3.B)', skipBootstrap: true },
   // Tracker Boards (2026-05-27) — каждому проекту нужна default-доска
   // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.

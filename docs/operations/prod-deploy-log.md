@@ -145,6 +145,35 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения: синтез блокеров · контролёр решений · каскад обещаний
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 3.A/B/C). **Зависит от Ф0** (доставка push + бюджет). Ф3.D (фиксы достоверности) — уже выкачена отдельно.
+>
+> **Зачем для прода:** (А) накопительный синтез блокеров (cron 22:00 → статусы new/recurring/resolved + бизнес-удар + мост хроники в инсайт-радар); (Б) контролёр внедрения решений (cron 06:00 → решения без задач/результатов старше N дней → stalled + push ответственному + агрегат «% доведённых»); (В) каскад обещаний (cron 08:00 → просроченное обещание с зависимостью → дневной алерт автору и руководителю). **3 миграции БД** (все аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/coo.
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-execution-agents.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.blocker_synthesis.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_BLOCKER_SYNTHESIS_ENABLED`.
+  - `operations.decision_controller.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_DECISION_CONTROLLER_ENABLED`.
+  - `operations.promise_cascade.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_PROMISE_CASCADE_ENABLED`.
+  - `blocker_synthesis.lookback_days` (int, **default 7**), `blocker_synthesis.recurring_days` (int, **default 2**), `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}` (веса бизнес-удара: 1/4/3/2/0.5).
+  - `decision.stale_days` (int, **default 21**) — после скольких дней решение без задач/outcomes → stalled.
+- **Шаг 4 — Prisma** — **обязательно, авто** (3 миграции, все аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260608160000_blocker_synthesis`: `+ table blocker_synthesis` (FK → `Org`/`persons`, unique по (tenantId, clusterKey), индекс по (tenantId, status, lastSeenDateLocal)).
+  - `20260608160100_decision_implementation`: `+ decisions.linkedTaskCount/implementationStatus/implementationCheckedAt` (ADD COLUMN, default/nullable).
+  - `20260608160200_decision_task_link`: `+ table decision_task_link` (join Decision↔Issue, FK → `decisions`/`Issue` onDelete CASCADE, unique по (decisionId, issueId)).
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-execution-agents.ts` — добавлены ключи Ф3.A/B/C (см. Шаг 1) к ключам Ф3.D. Защищает admin-edited. Также **новый LLM-маршрут** `blocker-synthesis-summary` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-execution-agents.ts`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `scripts/backfill-decision-linked-task-count.ts` — засевает `DecisionTaskLink` из пересечения `sourceBlockIds` (Decision×Issue) + пересчитывает `Decision.linkedTaskCount`. Идемпотентно (skipDuplicates). Сначала `--dry-run`: `docker compose exec backend bun run scripts/backfill-decision-linked-task-count.ts --dry-run` → затем без флага. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `BlockerSynthesisService`+`BlockerSynthesisCron` `@Cron('0 22 * * *')`, `DecisionImplementationService`+`DecisionImplementationCron` `@Cron('0 6 * * *')`, `PromiseCascadeService`+`PromiseCascadeCron` `@Cron('0 8 * * *')`, 3 новых эндпоинта, новый taskType `blocker-synthesis-summary`, 4 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые cron в логах backend (без ERROR): `blocker-synthesis.cron: проход завершён`, `decision-implementation.cron: проход завершён`, `promise-cascade.cron: проход завершён`.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/blockers/chronic`, `GET /api/v1/dashboard/operations/decisions/throughput`, `GET /api/v1/dashboard/operations/decisions/stalled` (все owner/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'blocker_synthesis_recurring_total|decision_stalled_total|decision_throughput_percent|promise_cascade_alert_total'` — присутствуют.
+  - Маршрут LLM: `blocker-synthesis-summary` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

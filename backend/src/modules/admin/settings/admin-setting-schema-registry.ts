@@ -180,6 +180,23 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],
 
+  // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
+  ['blocker_synthesis.lookback_days', POSITIVE_INT],
+  ['blocker_synthesis.recurring_days', POSITIVE_INT],
+  ['blocker_synthesis.impact.base', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.customer', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.deadline', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.commitment', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.per_day_open', z.number().nonnegative()],
+  ['operations.blocker_synthesis.enabled', z.boolean()],
+
+  // ── TZ-1 Ф3.B (daily-value-engine) — контролёр внедрения решений ──────
+  ['decision.stale_days', POSITIVE_INT],
+  ['operations.decision_controller.enabled', z.boolean()],
+
+  // ── TZ-1 Ф3.C (daily-value-engine) — каскад обещаний ──────────────────
+  ['operations.promise_cascade.enabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

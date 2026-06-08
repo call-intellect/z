@@ -338,6 +338,19 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
+  // ТОЛЬКО финальный абзац-сводка (кластеризация/статусы/импакт — SQL/TS +
+  // embeddings) → дешёвая задача, primary deepseek-v4-flash. Без выдуманных ₽.
+  {
+    taskType: 'blocker-synthesis-summary',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap summary)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

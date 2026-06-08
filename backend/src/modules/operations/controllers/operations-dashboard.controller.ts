@@ -27,6 +27,15 @@ import {
   type CustomerRiskQuery,
   type CustomerRiskListDto,
 } from '../dto/customer-risk.dto';
+import {
+  ChronicBlockersQuerySchema,
+  DecisionThroughputQuerySchema,
+  type ChronicBlockersListDto,
+  type ChronicBlockersQuery,
+  type DecisionThroughputDto,
+  type DecisionThroughputQuery,
+  type StalledDecisionsListDto,
+} from '../dto/execution-agents.dto';
 import type {
   OperationsDashboardBlockersListDto,
   OperationsDashboardCapacityListDto,
@@ -40,8 +49,10 @@ import {
   TeamTemperatureQuerySchema,
   type TeamTemperatureQuery,
 } from '../dto/weekly-digest.dto';
+import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
 import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
+import { DecisionImplementationService } from '../services/decision-implementation.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 
 /**
@@ -62,6 +73,10 @@ export class OperationsDashboardController {
     private readonly commitments: CommitmentsService,
     @Inject(CustomerRiskRadarService)
     private readonly customerRisk: CustomerRiskRadarService,
+    @Inject(BlockerSynthesisService)
+    private readonly blockerSynthesis: BlockerSynthesisService,
+    @Inject(DecisionImplementationService)
+    private readonly decisionImpl: DecisionImplementationService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
@@ -313,6 +328,96 @@ export class OperationsDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     return this.customerRisk.listForTenant({ tenantId: tenantId!, query: q });
+  }
+
+  /**
+   * TZ-1 Фаза 3.A (daily-value-engine) — хронические блокеры.
+   *
+   * Накопленные кластеры блокеров из `BlockerSynthesis`: новые/повторяющиеся
+   * (default — `new`+`recurring`) или конкретный `?status=`. Сортировка по
+   * бизнес-удару. `?limit=` (1..100, default 20). Доступ — owner/admin/coo.
+   */
+  @Get('blockers/chronic')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — хронические/открытые блокеры (накопительный синтез)',
+  })
+  async blockersChronic(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(ChronicBlockersQuerySchema))
+    q: ChronicBlockersQuery,
+  ): Promise<ChronicBlockersListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const items = await this.blockerSynthesis.listChronicForTenant({
+      tenantId: tenantId!,
+      status: q.status,
+      limit: q.limit,
+    });
+    return { items };
+  }
+
+  /**
+   * TZ-1 Фаза 3.B (daily-value-engine) — пропускная способность решений.
+   *
+   * Агрегат «% решений, доведённых до actualOutcomes» за окно `?from=&to=`
+   * (default — последние 90 дней). `count` всегда в паре с «% доведённых»
+   * (Р7). Доступ — owner/admin/coo.
+   */
+  @Get('decisions/throughput')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — % решений, доведённых до результата (за окно)',
+  })
+  async decisionsThroughput(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(DecisionThroughputQuerySchema))
+    q: DecisionThroughputQuery,
+  ): Promise<DecisionThroughputDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const to = q.to ? new Date(`${q.to}T23:59:59.999Z`) : new Date();
+    const from = q.from
+      ? new Date(`${q.from}T00:00:00.000Z`)
+      : new Date(to.getTime() - 90 * 24 * 3_600_000);
+    const tp = await this.decisionImpl.getDecisionThroughput({
+      tenantId: tenantId!,
+      from,
+      to,
+    });
+    return {
+      ...tp,
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    };
+  }
+
+  /**
+   * TZ-1 Фаза 3.B (daily-value-engine) — застрявшие решения.
+   *
+   * Решения с `implementationStatus='stalled'` (0 задач + нет результатов
+   * старше N дней). Доступ — owner/admin/coo.
+   */
+  @Get('decisions/stalled')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — решения без движения (stalled, контролёр внедрения)',
+  })
+  async decisionsStalled(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<StalledDecisionsListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const items = await this.decisionImpl.listStalledForTenant({
+      tenantId: tenantId!,
+    });
+    return { items };
   }
 
   /**

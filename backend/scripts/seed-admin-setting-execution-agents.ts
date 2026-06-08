@@ -1,9 +1,12 @@
 /**
- * ТЗ-1 Ф3.D (daily-value-engine) — Seed AdminSetting для фиксов достоверности
- * агентов исполнения.
+ * ТЗ-1 Ф3.D + Ф3.A/B/C (daily-value-engine) — Seed AdminSetting для агентов
+ * исполнения (фиксы достоверности + синтез блокеров + контролёр решений +
+ * каскад обещаний).
  *
  * Регистрирует пороги-«крутилки» (редактируются super_admin'ом в админке,
  * code-fallback в самих сервисах):
+ *
+ * Ф3.D (фиксы достоверности):
  *   - `goals.author_coverage_min` (0..1, default 0.6) — минимальная доля
  *     commitment с непустым `commitmentAuthorPersonId` для goal-vector. Ниже —
  *     атрибуция kept/broken откатывается на адресата (recipient).
@@ -17,6 +20,22 @@
  *     `Appointment.loadPercent` (строго >) для триггера `workload_overload`.
  *   - `probe.meeting_noshows.count` (int, default 3) — минимум неявок за 28д
  *     для триггера `meeting_noshows`.
+ *
+ * Ф3.A (синтез блокеров):
+ *   - `blocker_synthesis.lookback_days` (int, default 7) — окно накопления.
+ *   - `blocker_synthesis.recurring_days` (int, default 2) — с какого daysOpen
+ *     повторяющийся блокер мостится в Insight.
+ *   - `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}`
+ *     — веса бизнес-удара кластера блокеров.
+ *   - `operations.blocker_synthesis.enabled` (bool, default true) — kill-switch.
+ *
+ * Ф3.B (контролёр внедрения решений):
+ *   - `decision.stale_days` (int, default 21) — после скольких дней решение без
+ *     задач и без actualOutcomes помечается `stalled`.
+ *   - `operations.decision_controller.enabled` (bool, default true) — kill-switch.
+ *
+ * Ф3.C (каскад обещаний):
+ *   - `operations.promise_cascade.enabled` (bool, default true) — kill-switch.
  *
  * Запуск:
  *   bun run scripts/seed-admin-setting-execution-agents.ts
@@ -90,6 +109,111 @@ const SEEDS: SettingSeed[] = [
     severity: 'low',
     description:
       'Минимум неявок на завершённые встречи за 28 дней (приглашён, но не присоединился), при котором срабатывает risk-триггер пропуска встреч (meeting_noshows). По умолчанию 3.',
+  },
+
+  // ── Ф3.A — накопительный синтез блокеров ──────────────────────────────
+  {
+    key: 'blocker_synthesis.lookback_days',
+    value: 7,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Окно накопления блокеров (дней) для синтеза: за сколько прошлых дней искать повторения кластера. По умолчанию 7.',
+  },
+  {
+    key: 'blocker_synthesis.recurring_days',
+    value: 2,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'С какого daysOpen повторяющийся кластер блокеров считается хроническим и мостится в инсайт-радар (Insight). По умолчанию 2.',
+  },
+  {
+    key: 'blocker_synthesis.impact.base',
+    value: 1,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Базовый вес бизнес-удара за каждый блок в кластере блокеров. По умолчанию 1.',
+  },
+  {
+    key: 'blocker_synthesis.impact.customer',
+    value: 4,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Бонус бизнес-удара, если блокер задевает клиента/выручку/сделку. По умолчанию 4.',
+  },
+  {
+    key: 'blocker_synthesis.impact.deadline',
+    value: 3,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Бонус бизнес-удара, если блокер задевает дедлайн/срок/релиз. По умолчанию 3.',
+  },
+  {
+    key: 'blocker_synthesis.impact.commitment',
+    value: 2,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Бонус бизнес-удара, если блокер задевает обещание/договорённость. По умолчанию 2.',
+  },
+  {
+    key: 'blocker_synthesis.impact.per_day_open',
+    value: 0.5,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'low',
+    description:
+      'Множитель бизнес-удара за каждый день, что блокер открыт (хроника тяжелее). По умолчанию 0.5.',
+  },
+  {
+    key: 'operations.blocker_synthesis.enabled',
+    value: true,
+    category: 'operations',
+    section: 'blocker_synthesis',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник (kill-switch) дневного синтеза блокеров (cron 22:00). Выкл → синтез не строится, мост в инсайты не работает. По умолчанию ВКЛ.',
+  },
+
+  // ── Ф3.B — контролёр внедрения решений ────────────────────────────────
+  {
+    key: 'decision.stale_days',
+    value: 21,
+    category: 'operations',
+    section: 'decision_controller',
+    severity: 'low',
+    description:
+      'Через сколько дней решение (approved/implemented) без связанных задач и без actualOutcomes помечается «не двигается» (stalled). По умолчанию 21.',
+  },
+  {
+    key: 'operations.decision_controller.enabled',
+    value: true,
+    category: 'operations',
+    section: 'decision_controller',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник (kill-switch) контролёра внедрения решений (cron 06:00). Выкл → статусы внедрения не пересчитываются, пушей нет. По умолчанию ВКЛ.',
+  },
+
+  // ── Ф3.C — каскад обещаний ────────────────────────────────────────────
+  {
+    key: 'operations.promise_cascade.enabled',
+    value: true,
+    category: 'operations',
+    section: 'promise_cascade',
+    severity: 'medium',
+    description:
+      'Аварийный рубильник (kill-switch) дневного каскада обещаний (cron 08:00). Выкл → каскадные алерты автору/руководителю не шлются. По умолчанию ВКЛ.',
   },
 ];
 

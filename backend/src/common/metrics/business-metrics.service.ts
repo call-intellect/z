@@ -240,6 +240,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private personalDailyBriefOpenedTotal!: Counter<string>;
   private knowsWhoMatchTotal!: Counter<'found'>;
 
+  // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
+  // Cardinality-safe: status ∈ new|recurring|resolved; decision_throughput —
+  // gauge без tenant в labels (top-100 агрегацию делает Grafana поверх БД).
+  private blockerSynthesisRecurringTotal!: Counter<'status'>;
+  private decisionStalledTotal!: Counter<string>;
+  private decisionThroughputPercent!: Gauge<'tenant_top'>;
+  private promiseCascadeAlertTotal!: Counter<string>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1631,6 +1639,28 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'knows_who_match_total',
       help: 'TZ-1 Ф2 — поиск носителя знания «кто знает X» (found ∈ yes|no).',
       labelNames: ['found'] as const,
+    });
+
+    // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
+    this.blockerSynthesisRecurringTotal = this.getOrCreateCounter({
+      name: 'blocker_synthesis_recurring_total',
+      help: 'TZ-1 Ф3.A — синтезированный кластер блокеров по статусу (status ∈ new|recurring|resolved).',
+      labelNames: ['status'] as const,
+    });
+    this.decisionStalledTotal = this.getOrCreateCounter({
+      name: 'decision_stalled_total',
+      help: 'TZ-1 Ф3.B — решение помечено stalled контролёром внедрения (0 задач + нет actualOutcomes старше N дней).',
+      labelNames: [] as const,
+    });
+    this.decisionThroughputPercent = this.getOrCreateGauge({
+      name: 'decision_throughput_percent',
+      help: 'TZ-1 Ф3.B — доля решений, доведённых до actualOutcomes, % (несущая метрика витрины Ф5).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.promiseCascadeAlertTotal = this.getOrCreateCounter({
+      name: 'promise_cascade_alert_total',
+      help: 'TZ-1 Ф3.C — дневной алерт каскада обещаний (просроченное обещание держит чужую работу).',
+      labelNames: [] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -4458,6 +4488,35 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `knows_who_match_total{found}`. */
   incKnowsWhoMatch(args: { found: 'yes' | 'no' }): void {
     this.knowsWhoMatchTotal.inc({ found: args.found });
+  }
+
+  // ──────────────── TZ-1 Фаза 3.A/B/C — агенты исполнения ──────────────
+
+  /** Counter `blocker_synthesis_recurring_total{status}`. */
+  incBlockerSynthesisRecurring(args: { status: string }): void {
+    this.blockerSynthesisRecurringTotal.inc({ status: args.status });
+  }
+
+  /** Counter `decision_stalled_total`. */
+  incDecisionStalled(): void {
+    this.decisionStalledTotal.inc();
+  }
+
+  /** Gauge `decision_throughput_percent{tenant_top}` (0..100). */
+  setDecisionThroughputPercent(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.decisionThroughputPercent.set(
+      { tenant_top: args.tenantTop },
+      Math.min(100, Math.max(0, args.value)),
+    );
+  }
+
+  /** Counter `promise_cascade_alert_total`. */
+  incPromiseCascadeAlert(): void {
+    this.promiseCascadeAlertTotal.inc();
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

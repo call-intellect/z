@@ -14,8 +14,11 @@ import { OperationsDashboardController } from './controllers/operations-dashboar
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
 import { WeeklyPerPersonController } from './controllers/weekly-per-person.controller';
+import { BlockerSynthesisService } from './services/blocker-synthesis.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
+import { DecisionImplementationService } from './services/decision-implementation.service';
+import { PromiseCascadeService } from './services/promise-cascade.service';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
@@ -29,9 +32,12 @@ import { PersonalRelationService } from './services/personal-relation.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
+import { BlockerSynthesisCron } from './workers/blocker-synthesis.cron';
 import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.cron';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
+import { DecisionImplementationCron } from './workers/decision-implementation.cron';
+import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
@@ -146,6 +152,21 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     PersonalDailyBriefService,
     KnowsWhoService,
     PersonalDailyBriefCron,
+    // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров:
+    // сервис (computeForTenant + чтение для эндпоинта) + cron @Cron('0 22 * * *').
+    // BlockerSynthesisService инжектит Specialist35Service из @Global
+    // KnowledgeCoreModule (мост хроники в Insight).
+    BlockerSynthesisService,
+    BlockerSynthesisCron,
+    // TZ-1 Фаза 3.B (daily-value-engine) — контролёр внедрения решений:
+    // сервис (computeForTenant + getDecisionThroughput + listStalled) +
+    // cron @Cron('0 6 * * *').
+    DecisionImplementationService,
+    DecisionImplementationCron,
+    // TZ-1 Фаза 3.C (daily-value-engine) — каскад обещаний: сервис
+    // (findCascadesForTenant) + cron @Cron('0 8 * * *').
+    PromiseCascadeService,
+    PromiseCascadeCron,
   ],
   exports: [
     GoalCascadeService,
@@ -164,6 +185,10 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // TZ-1 Фаза 2 (daily-value-engine) — экспортируем для тестов / reuse.
     PersonalDailyBriefService,
     KnowsWhoService,
+    // TZ-1 Фаза 3.A/B/C (daily-value-engine) — экспортируем для тестов / reuse.
+    BlockerSynthesisService,
+    DecisionImplementationService,
+    PromiseCascadeService,
   ],
 })
 export class OperationsModule {}

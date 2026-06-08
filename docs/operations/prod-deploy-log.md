@@ -121,6 +121,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### TZ-1 Фаза 2 (daily-value-engine) — движок рядового: «Твой день» + «кто знает X»
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 2). **Зависит от Ф0** (доставка push + бюджет). Gate Ф0 ≥70% привязки — продуктовое условие старта рассылки, на выкат кода не влияет (cron без verified-binding просто не доставит push).
+>
+> **Зачем для прода:** утренний персональный бриф сотруднику (его задачи/обещания/блокеры на сегодня + что обещали ему + 1 подсказка) и помощник «кто знает X» (семантический поиск носителя знания по блокеру через skill-профили). Источник зависимости снизу. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты строго self-scope (Р8).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-personal-brief.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.personal_daily_brief.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг брифа. ENV-fallback `OPERATIONS_PERSONAL_DAILY_BRIEF_ENABLED`.
+  - `operations.personal_daily_brief.morning_hour` (int, **default 9**) — локальный час утреннего окна (по `Person.timezone`).
+  - `operations.knows_who.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг «кто знает X». ENV-fallback `OPERATIONS_KNOWS_WHO_ENABLED`.
+  - `knows_who.min_confidence` (number, **default 0.5**) — порог cosine similarity для зачёта носителя. ENV-fallback `KNOWS_WHO_MIN_CONFIDENCE`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608150000_personal_daily_brief`): `+ table personal_daily_brief` (FK → `Org`/`persons`, 2 индекса, unique по (tenantId, personId, dateLocal)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-personal-brief.ts` — 4 ключа `operations.personal_daily_brief.*` + `operations.knows_who.enabled` + `knows_who.min_confidence` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `personal-brief-hint` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-personal-brief.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `PersonalDailyBriefService`, `KnowsWhoService`, `PersonalDailyBriefCron` `@Cron('0 * * * *')`, `GET /api/v1/me/daily-brief`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who`, новый taskType `personal-brief-hint`, 4 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `personal-daily-brief.cron: проход завершён` (в течение часа), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/me/daily-brief`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who` (все self-scope).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'personal_daily_brief_built_total|personal_daily_brief_delivered_total|personal_daily_brief_opened_total|knows_who_match_total'` — присутствуют.
+  - Маршрут LLM: `personal-brief-hint` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

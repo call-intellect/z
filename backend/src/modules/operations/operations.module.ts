@@ -7,6 +7,8 @@ import { TrackerModule } from '../tracker/tracker.module';
 
 import { DailyDigestController } from './controllers/daily-digest.controller';
 import { MyCheckInsController } from './controllers/my-check-ins.controller';
+import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
+import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyPromisesController } from './controllers/my-promises.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
@@ -16,7 +18,10 @@ import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
+import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
+import { KnowsWhoService } from './services/knows-who.service';
+import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { DailyDigestService } from './services/daily-digest.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
@@ -26,6 +31,8 @@ import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
 import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.cron';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
+import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
+import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
@@ -85,6 +92,11 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     MyPromisesController,
     // SBA β-8.3 — ежедневный отчёт COO.
     DailyDigestController,
+    // TZ-1 Фаза 1 (daily-value-engine) — мои клиенты под риском (self-scope).
+    MyCustomerRiskController,
+    // TZ-1 Фаза 2 (daily-value-engine) — движок рядового: «Твой день» + «кто
+    // знает X» (self-scope `/me/daily-brief`, `/me/knows-who`).
+    MyDailyBriefController,
   ],
   providers: [
     DailyCheckInService,
@@ -123,6 +135,17 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // (приглашение + напоминание), @Cron('0 9 * * *'). Использует
     // ConversationalService (@Global).
     ChannelBindingCampaignCron,
+    // TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском:
+    // сервис (computeForTenant + чтение для эндпоинтов) + cron @Cron('0 21 * * *').
+    CustomerRiskRadarService,
+    CustomerRiskRadarCron,
+    // TZ-1 Фаза 2 (daily-value-engine) — движок рядового: бриф «Твой день»
+    // (buildFor + чтение/upsert) + помощник «кто знает X» (semantic) + cron
+    // @Cron('0 * * * *') (утреннее окно по Person.timezone). KnowsWhoService
+    // инжектит KnowledgeEmbeddingService из @Global KnowledgeCoreModule.
+    PersonalDailyBriefService,
+    KnowsWhoService,
+    PersonalDailyBriefCron,
   ],
   exports: [
     GoalCascadeService,
@@ -136,6 +159,11 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     Specialist39PromiseKeeperService,
     // SBA β-8.3 — экспортируем для тестов / повторного использования.
     DailyDigestService,
+    // TZ-1 Фаза 1 (daily-value-engine) — экспортируем для тестов / reuse.
+    CustomerRiskRadarService,
+    // TZ-1 Фаза 2 (daily-value-engine) — экспортируем для тестов / reuse.
+    PersonalDailyBriefService,
+    KnowsWhoService,
   ],
 })
 export class OperationsModule {}

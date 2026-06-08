@@ -325,6 +325,19 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день».
+  // ТОЛЬКО «1 подсказка дня» (бриф структурный, «кто знает X» — embeddings) →
+  // дешёвая задача, primary deepseek-v4-flash. Без выдуманных фактов/₽.
+  {
+    taskType: 'personal-brief-hint',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

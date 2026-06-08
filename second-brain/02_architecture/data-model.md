@@ -1532,4 +1532,21 @@ enum SkillTraitStatus {
 
 **`checkin.prompt`** добавлен в `EVENT_TYPE_CHANNEL_POLICY` (`['telegram_bot','max_bot','in_app']`) — раньше падал на DEFAULT `['in_app']` и не доходил до Telegram. `ChannelBindingCampaignCron @Cron('0 9 * * *')` (модуль operations) рассылает приглашения/напоминания сотрудникам без verified-привязки. Эндпоинты: `GET /api/v1/dashboard/operations/binding-coverage`, `PATCH /api/v1/me/notification-preferences`. Метрики: `notification_budget_consumed_total{trigger}`, `notification_budget_blocked_total{reason}`, `notification_deferred_to_digest_total`, `channel_binding_coverage_ratio` (gauge), `channel_binding_campaign_invited_total`, `checkin_prompt_delivered_total{channel}`.
 
+### TZ-1 Фаза 2 — движок рядового: «Твой день» + помощник «кто знает X» (2026-06-08)
+
+Миграция `20260608150000_personal_daily_brief` (аддитивная). Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` Фаза 2.
+
+**Новая модель `PersonalDailyBrief`** (`@@map("personal_daily_brief")`) — идемпотентный снимок персонального дневного брифа per-person/день:
+- `tenantId` + `personId` + `dateLocal VarChar(10)`, `@@unique([tenantId, personId, dateLocal])`, `@@index([tenantId, dateLocal])`.
+- `payloadJson Json` (контракт `PersonalDailyBriefPayload`: myTasks/myPromises/myBlockers/promisedToMe + hint + knowsWho + counts), `deliveredAt DateTime?` (push), `openedAt DateTime?` (клик) — единый паттерн «доставлено vs открыто».
+- FK на `Org` и `Person` (onDelete: Cascade).
+
+**Сервисы** (модуль operations): `PersonalDailyBriefService.buildFor` синтезирует бриф из `Issue`(assignee через IssueAssignee.userId)/`Task`(assigneeUserId) due today/overdue + `IdeaBlock(commitment, commitmentAuthorPersonId=я)` (мои обещания) + открытые блокеры автора (`signalType∈{blocker,knowledge_gap}`) + `IdeaBlock(commitment, commitmentRecipientPersonId=я)` (тебе обещали) + 1 LLM-подсказка (`personal-brief-hint`, code-fallback). Дедуп — чистые `dedupBriefItems`/`dropPromisesThatBecameTasks` (обещание-ставшее-задачей считается один раз, sourceBlockId-ключ). `KnowsWhoService.findExpertsForBlocker` — pgvector cosine KNN по `person_knowledge_category_embeddings` (повтор canonical-пути `Specialist32CardHandler`), исключает автора, порог `knows_who.min_confidence`, чистый ранкинг `rankExperts`. Embeddings (text-embedding-3-small) через @Global `KnowledgeEmbeddingService` — НЕ chat-LLM.
+
+**Cron** `PersonalDailyBriefCron @Cron('0 * * * *')` (модуль operations): утреннее окно по `Person.timezone` (`operations.personal_daily_brief.morning_hour`, default 9) → buildFor → upsert → push (`proactive.notification`, priorityTier 2, через бюджет Ф0) → markDelivered. Идемпотентно по unique + проверке deliveredAt.
+
+**Эндпоинты (self-scope, Р8):** `GET /api/v1/me/daily-brief?date=`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who?blockId=|q=`. personId резолвится сервером из сессии (`CommitmentsService.resolveSelfPerson`), не из query.
+
+**Тумблеры (AdminSetting):** `operations.personal_daily_brief.enabled`(ON)/`.morning_hour`(9)/`operations.knows_who.enabled`(ON)/`knows_who.min_confidence`(0.5). **LLM:** `personal-brief-hint` (triple-reg, primary deepseek-v4-flash). **Метрики:** `personal_daily_brief_built_total`, `personal_daily_brief_delivered_total{channel}`, `personal_daily_brief_opened_total`, `knows_who_match_total{found}`.
+
 [[../index|← index]]

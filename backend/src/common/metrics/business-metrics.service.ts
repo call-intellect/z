@@ -234,6 +234,12 @@ export class BusinessMetricsService implements OnModuleInit {
   private customerRiskRadarFailedTotal!: Counter<'reason'>;
   private customerRiskManagerNotifiedTotal!: Counter<string>;
 
+  // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
+  private personalDailyBriefBuiltTotal!: Counter<string>;
+  private personalDailyBriefDeliveredTotal!: Counter<'channel'>;
+  private personalDailyBriefOpenedTotal!: Counter<string>;
+  private knowsWhoMatchTotal!: Counter<'found'>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1603,6 +1609,28 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'customer_risk_manager_notified_total',
       help: 'TZ-1 Ф1 — отправлено push ответственному менеджеру по клиенту под риском.',
       labelNames: [] as const,
+    });
+
+    // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
+    this.personalDailyBriefBuiltTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_built_total',
+      help: 'TZ-1 Ф2 — построено персональных дневных брифов (upsert).',
+      labelNames: [] as const,
+    });
+    this.personalDailyBriefDeliveredTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_delivered_total',
+      help: 'TZ-1 Ф2 — доставлен персональный бриф по каналу (channel ∈ push|in_app|...).',
+      labelNames: ['channel'] as const,
+    });
+    this.personalDailyBriefOpenedTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_opened_total',
+      help: 'TZ-1 Ф2 — сотрудник открыл персональный бриф (POST /me/daily-brief/:id/opened).',
+      labelNames: [] as const,
+    });
+    this.knowsWhoMatchTotal = this.getOrCreateCounter({
+      name: 'knows_who_match_total',
+      help: 'TZ-1 Ф2 — поиск носителя знания «кто знает X» (found ∈ yes|no).',
+      labelNames: ['found'] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -4408,6 +4436,28 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `customer_risk_manager_notified_total`. */
   incCustomerRiskManagerNotified(): void {
     this.customerRiskManagerNotifiedTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 2 — движок рядового «Твой день» ──────────
+
+  /** Counter `personal_daily_brief_built_total`. */
+  incPersonalDailyBriefBuilt(): void {
+    this.personalDailyBriefBuiltTotal.inc();
+  }
+
+  /** Counter `personal_daily_brief_delivered_total{channel}`. */
+  incPersonalDailyBriefDelivered(args: { channel: string }): void {
+    this.personalDailyBriefDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  /** Counter `personal_daily_brief_opened_total`. */
+  incPersonalDailyBriefOpened(): void {
+    this.personalDailyBriefOpenedTotal.inc();
+  }
+
+  /** Counter `knows_who_match_total{found}`. */
+  incKnowsWhoMatch(args: { found: 'yes' | 'no' }): void {
+    this.knowsWhoMatchTotal.inc({ found: args.found });
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

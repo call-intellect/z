@@ -2411,6 +2411,9 @@ model Org {
   // ── TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов ──
   customerRiskSnapshots CustomerRiskSnapshot[]
 
+  // ── TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы ──
+  personalDailyBriefs PersonalDailyBrief[]
+
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
 
@@ -4637,6 +4640,8 @@ model Person {
   /// TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов, где этот Person
   /// ответственный менеджер (CustomerRiskSnapshot.responsiblePersonId).
   customerRiskSnapshots       CustomerRiskSnapshot[]             @relation("CustomerRiskSnapshotResponsible")
+  /// TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы «Твой день».
+  personalDailyBriefs         PersonalDailyBrief[]               @relation("PersonalDailyBriefPerson")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6713,6 +6718,39 @@ model CustomerRiskSnapshot {
   @@index([tenantId, riskLevel, snapshotAt(sort: Desc)])
   @@index([tenantId, responsiblePersonId])
   @@map("customer_risk_snapshot")
+}
+
+/// TZ-1 Фаза 2 (daily-value-engine) — идемпотентный снимок персонального
+/// дневного брифа «Твой день» per-person/день.
+///
+/// `PersonalDailyBriefCron` (`@Cron('0 * * * *')`) утром по локальной TZ Person'а
+/// синтезирует бриф (задачи/обещания/блокеры/что-обещали-тебе/подсказка/
+/// skill-помощь) → upsert по `@@unique([tenantId, personId, dateLocal])` →
+/// push через дневной бюджет Ф0 (priorityTier 2). `payloadJson` — структурный
+/// payload (SQL+шаблон, LLM только на «1 подсказку дня»). `deliveredAt` —
+/// момент push, `openedAt` — клик пользователя (единый паттерн «доставлено vs
+/// открыто», как у дайджестов).
+model PersonalDailyBrief {
+  id          String    @id @default(cuid())
+  tenantId    String
+  personId    String
+  /// YYYY-MM-DD по локальной TZ Person'а — день брифа.
+  dateLocal   String    @db.VarChar(10)
+  /// Структурный payload брифа (задачи/обещания/блокеры/что-обещали-тебе/
+  /// подсказка/skill-помощь). Контракт — `PersonalDailyBriefPayload`.
+  payloadJson Json
+  /// Когда отправлен push сотруднику (NULL — не отправляли).
+  deliveredAt DateTime?
+  /// Когда сотрудник открыл бриф (NULL — не открывал).
+  openedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation("PersonalDailyBriefPerson", fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personId, dateLocal])
+  @@index([tenantId, dateLocal])
+  @@map("personal_daily_brief")
 }
 
 /// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.

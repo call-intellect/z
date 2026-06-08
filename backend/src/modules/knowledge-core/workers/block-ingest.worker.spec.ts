@@ -151,6 +151,127 @@ function buildAttributionWorker() {
   return { worker, resolveSubjectEntityId, upsert, incSubjectAttribution };
 }
 
+/**
+ * ТЗ-4 Ф4 — документная привязка влияет на граф. Харнесс для
+ * `applyDocumentAttribution`: экспонирует моки `ideaBlock.updateMany` и
+ * `themeIdeaBlock.createMany`, чтобы проверить детерминированную запись
+ * привязки роли/темы из payload документа.
+ */
+function buildDocAttributionWorker() {
+  const updateMany = vi.fn(async (_args: any) => ({ count: 0 }));
+  const createMany = vi.fn(async (_args: any) => ({ count: 0 }));
+  const prisma = {
+    ideaBlock: { updateMany },
+    themeIdeaBlock: { createMany },
+  } as any;
+  const worker = new BlockIngestWorker(
+    {} as any, // redis
+    prisma, // prisma
+    {} as any, // s3
+    {} as any, // segments
+    {} as any, // extractor
+    {} as any, // embeddings
+    {} as any, // entities
+    {} as any, // coreQueue
+    {} as any, // gate
+    {} as any, // graph
+    {} as any, // metrics
+    {} as any, // axisClassifier
+    {} as any, // cfg
+    {} as any, // blockAccessDeriver
+  );
+  return { worker, updateMany, createMany };
+}
+
+describe('BlockIngestWorker.applyDocumentAttribution — ТЗ-4 Ф4', () => {
+  const docEvent = {
+    id: 'raw-doc-1',
+    tenantId: 'tenant-1',
+    sourceType: 'external',
+    sourceExternalId: 'doc:doc-42',
+    occurredAt: new Date('2026-06-08T10:00:00.000Z'),
+    dataClass: 'internal',
+  } as any;
+
+  it('doc-источник с attachedRoleId+attachedThemeId → updateMany(roleId,roleRelevant) + createMany(theme, skipDuplicates, по строке на блок)', async () => {
+    const { worker, updateMany, createMany } = buildDocAttributionWorker();
+    const blockIds = ['block-1', 'block-2', 'block-3'];
+    await (worker as any).applyDocumentAttribution(
+      docEvent,
+      { attachedRoleId: 'role-7', attachedThemeId: 'theme-9' },
+      blockIds,
+    );
+
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: { in: blockIds }, tenantId: 'tenant-1' },
+      data: { roleId: 'role-7', roleRelevant: true },
+    });
+
+    expect(createMany).toHaveBeenCalledTimes(1);
+    const createArgs = (createMany.mock.calls[0]?.[0] ?? {}) as {
+      skipDuplicates?: boolean;
+      data: Array<Record<string, unknown>>;
+    };
+    expect(createArgs.skipDuplicates).toBe(true);
+    expect(createArgs.data).toHaveLength(blockIds.length);
+    for (let i = 0; i < blockIds.length; i++) {
+      const row = createArgs.data[i] as Record<string, unknown>;
+      expect(row).toMatchObject({
+        themeId: 'theme-9',
+        blockId: blockIds[i],
+      });
+      // weight=0.8 хранится как Prisma.Decimal — сверяем строковое представление.
+      expect(String(row['weight'])).toBe('0.8');
+    }
+  });
+
+  it('doc-источник только с attachedRoleId → updateMany, но НЕ createMany', async () => {
+    const { worker, updateMany, createMany } = buildDocAttributionWorker();
+    await (worker as any).applyDocumentAttribution(
+      docEvent,
+      { attachedRoleId: 'role-7', attachedThemeId: null },
+      ['block-1'],
+    );
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('doc-источник без привязок (LLM не дал роль, человек не привязал) → ни updateMany, ни createMany', async () => {
+    const { worker, updateMany, createMany } = buildDocAttributionWorker();
+    await (worker as any).applyDocumentAttribution(docEvent, {}, ['block-1']);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('НЕ doc-источник (meeting) с привязками в payload → ничего не пишет', async () => {
+    const { worker, updateMany, createMany } = buildDocAttributionWorker();
+    const meetingEvent = {
+      ...docEvent,
+      sourceType: 'meeting',
+      sourceExternalId: 'meeting:abc',
+    } as any;
+    await (worker as any).applyDocumentAttribution(
+      meetingEvent,
+      { attachedRoleId: 'role-7', attachedThemeId: 'theme-9' },
+      ['block-1'],
+    );
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('doc-источник, но 0 блоков → ничего не пишет', async () => {
+    const { worker, updateMany, createMany } = buildDocAttributionWorker();
+    await (worker as any).applyDocumentAttribution(
+      docEvent,
+      { attachedRoleId: 'role-7', attachedThemeId: 'theme-9' },
+      [],
+    );
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('BlockIngestWorker.tryGetActorIdentity — chatbox per-message vs legacy', () => {
   it('chatbox С transcript.turns (authorPersonId) → НЕ отдаёт session-level authorPersonId', () => {
     const { worker } = buildAttributionWorker();

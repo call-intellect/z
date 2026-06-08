@@ -179,6 +179,11 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
           mimeType: doc.mimeType,
           uploaderId: doc.uploaderId,
           attachedRoleId: doc.attachedRoleId,
+          // ТЗ-4 Ф4 — явная привязка документа в граф: тема (attachedThemeId)
+          // и смысловой тип (docType). block-ingest применяет их детерминированно
+          // ПОСЛЕ создания блоков (перебивает LLM-роль, линкует блоки к теме).
+          attachedThemeId: doc.attachedThemeId,
+          docType: doc.docType,
           parsedText: parsed.text,
           metadata: parsed.metadata,
         },

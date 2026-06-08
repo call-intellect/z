@@ -371,6 +371,19 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      // ── ТЗ-4 Ф4: документная привязка в граф ──
+      // Явная привязка человека при загрузке документа (attachedRoleId /
+      // attachedThemeId) перебивает LLM-роль и связывает блоки документа с темой.
+      // Только для doc-источника. Применяется ДАЖЕ если LLM не вернул ни одной
+      // роли (в этом и смысл — явная атрибуция действует независимо от извлечения).
+      // Best-effort: ошибка не валит ingest. См. applyDocumentAttribution.
+      await this.applyDocumentAttribution(event, payload, blockIds).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: документная привязка (ТЗ-4 Ф4) не удалась — пропуск',
+        );
+      });
+
       // ── Группа Б: типизированные сущности через GraphService.upsertEntity ──
       // Decision имеет приоритет: LLM-вернутый item затирает auto-create.
       const llmDecisionBlockIds = new Set<string>();
@@ -1657,6 +1670,52 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       result.documentId = ext.slice('doc:'.length);
     }
     return result;
+  }
+
+  /**
+   * ТЗ-4 Ф4 — документная привязка влияет на граф. Для RawEvent doc-источника
+   * (`sourceExternalId='doc:<id>'`) применяет явную привязку, заданную человеком
+   * при загрузке документа, ПОСЛЕ создания всех блоков:
+   *   - `attachedRoleId` → перебивает LLM-роль: всем блокам документа
+   *     `roleId = attachedRoleId`, `roleRelevant = true` (updateMany).
+   *   - `attachedThemeId` → связывает все блоки документа с темой графа
+   *     (ThemeIdeaBlock с weight=0.8; чуть ниже дефолта 1.0 — явная привязка
+   *     ценна, но слабее «органической» кластеризации).
+   *
+   * Идемпотентно: `updateMany` повторяемо, `createMany({ skipDuplicates })`
+   * не дублирует строки при ретрае (PK `[themeId, blockId]`). Применяется
+   * ДАЖЕ когда LLM не разрешил ни одной роли — явная атрибуция действует
+   * независимо от извлечения. НЕ трогает алгоритмы кластеризации/извлечения.
+   */
+  private async applyDocumentAttribution(
+    event: RawEvent,
+    payload: unknown,
+    blockIds: string[],
+  ): Promise<void> {
+    if (!event.sourceExternalId?.startsWith('doc:') || blockIds.length === 0) {
+      return;
+    }
+    const p = (payload ?? {}) as {
+      attachedRoleId?: string | null;
+      attachedThemeId?: string | null;
+    };
+    if (p.attachedRoleId) {
+      await this.prisma.ideaBlock.updateMany({
+        where: { id: { in: blockIds }, tenantId: event.tenantId },
+        data: { roleId: p.attachedRoleId, roleRelevant: true },
+      });
+    }
+    if (p.attachedThemeId) {
+      const themeId = p.attachedThemeId;
+      await this.prisma.themeIdeaBlock.createMany({
+        data: blockIds.map((blockId) => ({
+          themeId,
+          blockId,
+          weight: new Prisma.Decimal('0.8'),
+        })),
+        skipDuplicates: true,
+      });
+    }
   }
 
   private parseDecidedAt(input: string | null | undefined): Date | null {

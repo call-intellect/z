@@ -111,6 +111,20 @@
   --sidebar-w: 248px;
   --sidebar-w-collapsed: 64px;
 
+  /* Modern dashboard language (redesign 2026-06-08) — для CSS-потребителей.
+     Зеркало TS-токенов в src/ui/components/dashboard/modern/tokens.ts. */
+  --modern-page-bg:
+    radial-gradient(1200px 600px at 12% -8%, oklch(0.3 0.09 290 / 0.55), transparent 60%),
+    radial-gradient(1000px 700px at 100% 0%, oklch(0.28 0.08 235 / 0.45), transparent 55%),
+    linear-gradient(180deg, oklch(0.17 0.035 280), oklch(0.13 0.025 275));
+  --glass-surface: linear-gradient(
+    180deg,
+    oklch(0.30 0.035 280 / 0.55),
+    oklch(0.22 0.03 278 / 0.5)
+  );
+  --glass-border: oklch(1 0 0 / 0.08);
+  --glass-blur: blur(14px) saturate(1.3);
+
   color-scheme: dark;
 }
 
@@ -175,6 +189,13 @@
   --shadow-soft: var(--shadow-card-soft);
   --shadow-elevated: var(--shadow-card-raised);
   --shadow-glow-mint: 0 0 24px oklch(0.62 0.07 155 / 0.22);
+
+  /* Modern dashboard language — placeholders для светлой темы (калибровка
+     светлой версии — отдельная фаза; здесь просто не-ломающие значения). */
+  --modern-page-bg: linear-gradient(180deg, oklch(0.985 0.005 85), oklch(0.96 0.006 85));
+  --glass-surface: oklch(1 0 0 / 0.7);
+  --glass-border: oklch(0.22 0.01 60 / 0.08);
+  --glass-blur: blur(14px) saturate(1.1);
 
   color-scheme: light;
 }

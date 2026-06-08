@@ -872,6 +872,30 @@ enum DocumentKind {
   markdown
   /// Создаётся из text.adapter (фронт /dump → POST /api/v1/dumps).
   text
+  /// ТЗ-4 Ф1 — Excel-таблица (.xlsx). Парсер ExcelJS → текст по листам.
+  xlsx
+  /// ТЗ-4 Ф1 — PowerPoint-презентация (.pptx). Текст по слайдам.
+  pptx
+  /// ТЗ-4 Ф1 — HTML-страница (выгрузка из вики/Confluence/Notion).
+  html
+  /// ТЗ-4 Ф1 — Rich Text Format (.rtf).
+  rtf
+  /// ТЗ-4 Ф1 — OpenDocument Text (.odt).
+  odt
+  /// ТЗ-4 Ф1 — CSV-таблица. Парсится как текст по строкам.
+  csv
+  other
+}
+
+/// ТЗ-4 Ф1 (manual-document-upload) — смысловой тип документа (что это по сути),
+/// в отличие от `DocumentKind` (формат файла). Заполняется вручную при загрузке
+/// или предлагается классификатором (`suggestedDocType`).
+enum DocumentType {
+  regulation
+  policy
+  instruction
+  process
+  job_description
   other
 }
 
@@ -4024,6 +4048,8 @@ model Theme {
   entities   ThemeEntity[]
   cards      Card[]           @relation("CardBornFromTheme")
   goalLinks  GoalTheme[]
+  /// ТЗ-4 Ф1 — документы, привязанные к этой теме (Document.attachedThemeId).
+  documents  Document[]       @relation("DocumentTheme")
 
   @@index([tenantId, status])
   @@index([tenantId, branch])
@@ -4877,6 +4903,25 @@ model Document {
   status         DocumentStatus @default(uploaded)
   /// Если документ привязан к Role — wizard step-4 или /structure → Загрузить должностную.
   attachedRoleId String?
+
+  /// ТЗ-4 Ф1 — смысловой тип документа (регламент/политика/инструкция/…). null =
+  /// не классифицирован вручную; подсказка хранится в `suggestedDocType`.
+  docType           DocumentType?
+  /// ТЗ-4 Ф1 — привязка документа к теме графа знаний (опц.).
+  attachedThemeId   String?
+  attachedTheme     Theme?        @relation("DocumentTheme", fields: [attachedThemeId], references: [id], onDelete: SetNull)
+  /// ТЗ-4 Ф1 — привязка документа к проекту трекера (опц.).
+  attachedProjectId String?
+  attachedProject   Project?      @relation("DocumentProject", fields: [attachedProjectId], references: [id], onDelete: SetNull)
+  /// ТЗ-4 Ф1 — хэш содержимого для дедупликации повторных загрузок.
+  contentHash       String?
+  /// ТЗ-4 Ф1 — предложенный классификатором смысловой тип (до подтверждения пользователем).
+  suggestedDocType  DocumentType?
+  /// ТЗ-4 Ф1 — предложенная классификатором тема (Theme.id) до подтверждения.
+  suggestedThemeId  String?
+  /// ТЗ-4 Ф1 — id batch-импорта (массовая загрузка); группирует документы одной операции.
+  importBatchId     String?
+
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
@@ -4903,6 +4948,10 @@ model Document {
   @@index([tenantId, status])
   @@index([tenantId, uploaderId])
   @@index([tenantId, attachedRoleId])
+  @@index([tenantId, docType])
+  @@index([tenantId, contentHash])
+  @@index([tenantId, attachedThemeId])
+  @@index([importBatchId])
   @@map("documents")
 }
 
@@ -8380,6 +8429,10 @@ model Project {
   /// привязанные к проекту (бриф, ТЗ, протокол, инструкция). См. модель
   /// `ProjectDocument` ниже и plans/tz/2026-05-27-tracker-project-documents.md.
   documents       ProjectDocument[]
+  /// ТЗ-4 Ф1 — документы (Document), привязанные к этому проекту
+  /// (Document.attachedProjectId). Имя поля `attachedDocuments`, т.к. `documents`
+  /// уже занято под `ProjectDocument[]` (rich-text доки трекера).
+  attachedDocuments Document[]      @relation("DocumentProject")
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])

@@ -170,6 +170,16 @@ const registry = new Map<string, ZodTypeAny>([
   // ── Agent-chain overhaul Фаза 4.1 — авто-привязка задач к целям (goals.*) ──
   ['goals.goalTaskLinkEnabled', z.boolean()],
 
+  // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ──────
+  // goal-vector: мин. покрытие commitmentAuthorPersonId для атрибуции автору.
+  ['goals.author_coverage_min', UNIT_INTERVAL],
+  // надёжность обещаний: мин. знаменатель, ниже которого «мало данных».
+  ['reliability.min_denominator', POSITIVE_INT],
+  // probe-триггеры burnout-детектора (пороги детекции).
+  ['probe.reply_latency_rise.factor', z.number().positive()],
+  ['probe.workload_overload.load_percent', POSITIVE_INT],
+  ['probe.meeting_noshows.count', POSITIVE_INT],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

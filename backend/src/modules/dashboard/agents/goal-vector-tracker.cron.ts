@@ -2,8 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { resolveOperationsTenantTop } from '../../operations/utils/tenant-top';
 import {
   GOAL_VECTOR_TRACKER_JSON_SCHEMA,
   GOAL_VECTOR_TRACKER_SYSTEM_PROMPT,
@@ -21,8 +24,9 @@ import {
  *   1. Собирает per-Person артефакты за последнюю неделю (понедельник 00:00):
  *        - IdeaBlock signalType='idea' (Person как author через
  *          IdeaBlockEntity.role='subject').
- *        - IdeaBlock signalType='commitment' kept / broken (через
- *          commitmentRecipientPersonId / commitmentStatus).
+ *        - IdeaBlock signalType='commitment' kept / broken (по АВТОРУ слова
+ *          commitmentAuthorPersonId / commitmentStatus; при низком покрытии
+ *          author — fallback на commitmentRecipientPersonId, см. ниже Ф3.D.1).
  *        - Issue completed (completedAt в неделю) + IssueAssignee.userId →
  *          Person.userId.
  *   2. Передаёт {goalTitle, goalDescription, artefacts[]} в LLM
@@ -34,6 +38,14 @@ import {
  * Best-effort: LLM-fail / parse-fail логируется, но не валит остальные Goals/Orgs.
  *
  * Cache-friendly: SYSTEM статичен, артефакты — в конце user.
+ *
+ * ТЗ-1 Ф3.D.1 (2026-06-08): атрибуция commitment kept/broken переехала с
+ * адресата (`commitmentRecipientPersonId`) на АВТОРА слова
+ * (`commitmentAuthorPersonId`) — кто дал обещание, тот и набирает pro/contra.
+ * Но `commitmentAuthorPersonId` бывает NULL: чтобы молча не выбросить такие
+ * обещания, перед прогоном по Org измеряем `commitment_author_coverage_ratio`
+ * и, если покрытие ниже `goals.author_coverage_min`, на этот прогон откатываемся
+ * на адресата (`chooseAttributionField`).
  */
 @Injectable()
 export class GoalVectorTrackerCron {
@@ -44,10 +56,15 @@ export class GoalVectorTrackerCron {
   private static readonly MAX_ARTEFACTS_PER_GOAL = 100;
   /** Максимум блоков-источников IdeaBlock текста — для контекста LLM. */
   private static readonly TEXT_TRUNCATE = 280;
+  /** Code-fallback для `goals.author_coverage_min` (см. AdminSetting). */
+  private static readonly DEFAULT_AUTHOR_COVERAGE_MIN = 0.6;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   /** Weekly Mon 05:00 UTC. */
@@ -88,9 +105,24 @@ export class GoalVectorTrackerCron {
     let parseErrors = 0;
     let errors = 0;
 
+    const authorCoverageMin = await this.cfg.getDynamic<number>(
+      'goals.author_coverage_min',
+      'GOALS_AUTHOR_COVERAGE_MIN',
+      GoalVectorTrackerCron.DEFAULT_AUTHOR_COVERAGE_MIN,
+    );
+
     for (const org of orgs) {
       orgsProcessed++;
       try {
+        // ТЗ-1 Ф3.D.1 — решаем, чем атрибутировать commitment в этом Org:
+        // авторством (фикс) или адресатом (fallback при низком покрытии).
+        const attribution = await this.resolveAttributionField(
+          org.id,
+          weekStart,
+          weekEnd,
+          authorCoverageMin,
+        );
+
         const goals = await this.prisma.goal.findMany({
           where: {
             tenantId: org.id,
@@ -110,6 +142,7 @@ export class GoalVectorTrackerCron {
               goalDescription: goal.description,
               weekStart,
               weekEnd,
+              attributionField: attribution,
             });
             contributionsUpserted += stats.contributionsUpserted;
             parseErrors += stats.parseErrors;
@@ -139,6 +172,47 @@ export class GoalVectorTrackerCron {
     };
   }
 
+  /**
+   * ТЗ-1 Ф3.D.1 — на уровне Org измеряет долю `commitment` с непустым
+   * `commitmentAuthorPersonId` за неделю (`commitment_author_coverage_ratio`),
+   * эмитит gauge и решает поле атрибуции через чистую `chooseAttributionField`.
+   * При покрытии < `author_coverage_min` — WARN + fallback на адресата.
+   */
+  private async resolveAttributionField(
+    tenantId: string,
+    weekStart: Date,
+    weekEnd: Date,
+    authorCoverageMin: number,
+  ): Promise<'author' | 'recipient'> {
+    const baseWhere: Prisma.IdeaBlockWhereInput = {
+      tenantId,
+      signalType: 'commitment',
+      commitmentDueDate: { gte: weekStart, lt: weekEnd },
+      commitmentStatus: { in: ['fulfilled', 'missed'] },
+    };
+
+    const [total, withAuthor] = await Promise.all([
+      this.prisma.ideaBlock.count({ where: baseWhere }),
+      this.prisma.ideaBlock.count({
+        where: { ...baseWhere, commitmentAuthorPersonId: { not: null } },
+      }),
+    ]);
+
+    const coverage = total === 0 ? 1 : withAuthor / total;
+    const tenantTop = resolveOperationsTenantTop(tenantId);
+    this.metrics.setCommitmentAuthorCoverageRatio({ tenantTop, value: coverage });
+
+    const field = chooseAttributionField(coverage, authorCoverageMin);
+    if (field === 'recipient' && total > 0) {
+      this.logger.warn(
+        `goal-vector-tracker org=${tenantId}: покрытие commitmentAuthorPersonId ` +
+          `${(coverage * 100).toFixed(1)}% < порога ${(authorCoverageMin * 100).toFixed(0)}% ` +
+          '— атрибуция commitment откатывается на адресата (recipient) на этот прогон.',
+      );
+    }
+    return field;
+  }
+
   private async processGoal(args: {
     tenantId: string;
     tenantName: string;
@@ -147,6 +221,7 @@ export class GoalVectorTrackerCron {
     goalDescription: string;
     weekStart: Date;
     weekEnd: Date;
+    attributionField: 'author' | 'recipient';
   }): Promise<{ contributionsUpserted: number; parseErrors: number }> {
     const artefacts = await this.collectArtefacts(args);
     if (artefacts.length === 0) {
@@ -229,6 +304,7 @@ export class GoalVectorTrackerCron {
     tenantId: string;
     weekStart: Date;
     weekEnd: Date;
+    attributionField: 'author' | 'recipient';
   }): Promise<GoalVectorArtefact[]> {
     const out: GoalVectorArtefact[] = [];
 
@@ -273,7 +349,11 @@ export class GoalVectorTrackerCron {
       });
     }
 
-    // 2. Commitment kept / broken — recipient = Person.
+    // 2. Commitment kept / broken — ТЗ-1 Ф3.D.1: атрибуция на АВТОРА слова
+    //    (`commitmentAuthor`), при низком покрытии author — fallback на адресата
+    //    (`commitmentRecipient`). Поле выбрано на уровне Org в
+    //    `resolveAttributionField` и передано через `attributionField`.
+    const useAuthor = args.attributionField === 'author';
     const commits = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -285,6 +365,8 @@ export class GoalVectorTrackerCron {
         id: true,
         name: true,
         commitmentStatus: true,
+        commitmentAuthorPersonId: true,
+        commitmentAuthor: { select: { id: true, name: true } },
         commitmentRecipientPersonId: true,
         commitmentRecipient: { select: { id: true, name: true } },
       },
@@ -292,10 +374,11 @@ export class GoalVectorTrackerCron {
       orderBy: { commitmentDueDate: 'desc' },
     });
     for (const c of commits) {
-      if (!c.commitmentRecipient) continue;
+      const subject = useAuthor ? c.commitmentAuthor : c.commitmentRecipient;
+      if (!subject) continue;
       out.push({
-        personId: c.commitmentRecipient.id,
-        personName: c.commitmentRecipient.name,
+        personId: subject.id,
+        personName: subject.name,
         kind: c.commitmentStatus === 'fulfilled'
           ? 'commitment_kept'
           : 'commitment_broken',
@@ -385,6 +468,21 @@ function truncate(text: string, limit: number): string {
 
 function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
+}
+
+/**
+ * ТЗ-1 Ф3.D.1 — чистое решение поля атрибуции commitment kept/broken.
+ *
+ * `coverage` — доля `commitment` с непустым `commitmentAuthorPersonId` (0..1).
+ * `min` — порог `goals.author_coverage_min`. При `coverage >= min` используем
+ * АВТОРА слова (фикс), иначе откатываемся на адресата (`recipient`), чтобы не
+ * выбросить молча обещания с NULL-автором.
+ */
+export function chooseAttributionField(
+  coverage: number,
+  min: number,
+): 'author' | 'recipient' {
+  return coverage >= min ? 'author' : 'recipient';
 }
 
 /** Аналог CommitmentsService.extractAuthor — subject → fallback first. */

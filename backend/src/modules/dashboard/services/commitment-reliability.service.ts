@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
@@ -29,6 +30,14 @@ export interface CommitmentReliabilityDto {
 
   /** kept / max(1, kept+broken+overdue) * 100. */
   reliabilityPercent: number;
+
+  /**
+   * ТЗ-1 Ф3.D.2 — «мало данных»: знаменатель текущего окна
+   * (`kept+broken+overdue`) меньше `reliability.min_denominator`. Когда true —
+   * `reliabilityPercent` НЕ показывать как достоверный (1/1=100% при крошечном
+   * знаменателе вводит в заблуждение); UI должен рисовать «мало данных».
+   */
+  reliabilityLowData: boolean;
 
   /**
    * Дельта vs предыдущее окно той же длины. Может быть отрицательной.
@@ -85,9 +94,13 @@ const CACHE_TTL_SECONDS = 5 * 60;
 export class CommitmentReliabilityService {
   private readonly logger = new Logger(CommitmentReliabilityService.name);
 
+  /** Code-fallback для `reliability.min_denominator` (см. AdminSetting). */
+  private static readonly DEFAULT_MIN_DENOMINATOR = 3;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   /**
@@ -210,6 +223,16 @@ export class CommitmentReliabilityService {
     const curStats = this.bucketStats(rows, curStart, now, now);
     const reliabilityPercent = this.calcPercent(curStats);
 
+    // ТЗ-1 Ф3.D.2 — «мало данных» при крошечном знаменателе (1/1=100% врёт).
+    const minDenominator = await this.cfg.getDynamic<number>(
+      'reliability.min_denominator',
+      'RELIABILITY_MIN_DENOMINATOR',
+      CommitmentReliabilityService.DEFAULT_MIN_DENOMINATOR,
+    );
+    const curDenom = curStats.kept + curStats.broken + curStats.overdue;
+    const reliabilityLowData =
+      reliabilityOrLowData(curStats.kept, curDenom, minDenominator) === null;
+
     // Предыдущее окно [now - 2*windowDays, now - windowDays)
     const prevStart = new Date(now.getTime() - 2 * windowDays * DAY_MS);
     const prevEnd = curStart;
@@ -239,6 +262,7 @@ export class CommitmentReliabilityService {
       overdue: curStats.overdue,
       pendingActive: curStats.pendingActive,
       reliabilityPercent,
+      reliabilityLowData,
       delta14d,
       sparkline12w,
     };
@@ -321,4 +345,21 @@ export class CommitmentReliabilityService {
     if (denom === 0) return 0;
     return Math.round((stats.kept / denom) * 100);
   }
+}
+
+/**
+ * ТЗ-1 Ф3.D.2 — чистая защита от ложного 100% при крошечном знаменателе.
+ *
+ * Возвращает процент `round(kept/denom*100)` при `denom >= minDenom`, иначе
+ * `null` («мало данных»). При `denom <= 0` всегда `null`. Не показываем
+ * достоверный процент, когда обещаний слишком мало (1/1 = 100% вводит в
+ * заблуждение).
+ */
+export function reliabilityOrLowData(
+  kept: number,
+  denom: number,
+  minDenom: number,
+): number | null {
+  if (denom <= 0 || denom < minDenom) return null;
+  return Math.round((kept / denom) * 100);
 }

@@ -1,6 +1,7 @@
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -69,6 +70,30 @@ export class S3Service implements OnModuleDestroy {
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
     this.logger.debug({ key, expiresIn }, 'S3 presignGet OK');
     return { url, expiresAt };
+  }
+
+  /**
+   * Возвращает presigned URL для прямой ЗАГРУЗКИ объекта браузером
+   * (`PutObject`). Используется ручной загрузкой встреч (ТЗ-5 Ф2): файл
+   * (≤2 ГБ) льётся напрямую в S3 минуя backend — без OOM/timeout на трубе.
+   *
+   * `contentType` зашивается в подпись (`PutObjectCommand.ContentType`) —
+   * клиент ОБЯЗАН отправить тот же `Content-Type` в PUT, иначе подпись не
+   * сойдётся. `ttlSeconds` по умолчанию — 1 час (хватает залить большой файл).
+   */
+  async presignPut(
+    key: string,
+    contentType: string,
+    ttlSeconds = 3600,
+  ): Promise<string> {
+    const command = new PutObjectCommand({
+      Bucket: this.cfg.s3.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+    const url = await getSignedUrl(this.client, command, { expiresIn: ttlSeconds });
+    this.logger.debug({ key, expiresIn: ttlSeconds, contentType }, 'S3 presignPut OK');
+    return url;
   }
 
   /**
@@ -141,6 +166,35 @@ export class S3Service implements OnModuleDestroy {
       ContentType: args.contentType,
     });
     await this.client.send(command);
+  }
+
+  /**
+   * Перечисляет ключи под префиксом (`ListObjectsV2`). Используется ingest'ом
+   * ручной загрузки (ТЗ-5 Ф2): расширение исходного файла переменное, поэтому
+   * воркер находит `meetings/<id>/upload/source.*` листингом префикса.
+   *
+   * Возвращает все ключи (с пагинацией по `ContinuationToken`). На наших
+   * объёмах под одним meeting-префиксом единицы объектов — пагинация почти
+   * никогда не сработает, но обрабатываем её корректно.
+   */
+  async listKeys(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const resp = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.cfg.s3.bucket,
+          Prefix: prefix,
+          ...(token ? { ContinuationToken: token } : {}),
+        }),
+      );
+      for (const obj of resp.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      token = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+    } while (token);
+    this.logger.debug({ prefix, count: keys.length }, 'S3 listKeys OK');
+    return keys;
   }
 
   /**

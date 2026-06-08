@@ -85,6 +85,7 @@ import { MailInboundModule } from './modules/mail/inbound/mail-inbound.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
+import { MeetingUploadsModule } from './modules/meeting-uploads/meeting-uploads.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
@@ -240,6 +241,10 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     WebhooksModule,
     // Retention cron — нужен S3Service из RecordingsModule.
     RetentionModule,
+    // ТЗ-5 Ф2 — ручная загрузка встреч (presigned PUT + ingest). После
+    // RecordingsModule: использует S3Service (presignPut/listKeys/putObject)
+    // и compositeKey. Ingest-воркер живёт в WorkersModule.
+    MeetingUploadsModule,
 
     // Phase 8 — admin endpoints + дополнительные Crossmark endpoints.
     AdminModule,

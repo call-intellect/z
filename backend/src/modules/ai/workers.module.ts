@@ -61,6 +61,9 @@ import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.work
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
+// ТЗ-5 Ф2 — MeetingUploadIngestWorker (ручная загрузка встреч). Инжектит
+// MeetingUploadsQueueService из @Global MeetingUploadsModule (enqueue upload-transcribe).
+import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
@@ -174,6 +177,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // composite MP4 (ffmpeg -movflags +faststart). Consumer `recording.faststart`,
     // producer — webhook egress_ended(composite) при RECORDING_FASTSTART_ENABLED.
     FaststartWorker,
+    // ТЗ-5 Ф2 — ingest-воркер ручной загрузки встреч. Consumer
+    // `meeting.upload-ingest`: ffprobe → нормализация аудио (mono 16к opus) +
+    // faststart нативного видео; Recording(ready); FSM до recording_ready;
+    // enqueue meeting.upload-transcribe (воркер очереди transcribe — Ф3).
+    // Concurrency=1 (ffmpeg тяжёлый), идемпотентен (FSM-guard + фикс. jobId).
+    MeetingUploadIngestWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,

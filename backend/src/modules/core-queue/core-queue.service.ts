@@ -415,12 +415,24 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   async enqueueDocumentImport(args: {
     tenantId: string;
     importId: string;
+    /**
+     * ТЗ-4 Ф9 — параметры Confluence (только для source=confluence). `encryptedToken`
+     * — уже зашифрованный `CryptoService.encrypt(apiToken)`; в открытом виде в Redis
+     * не попадает. Воркер расшифрует его перед вызовом `ConfluenceClient`.
+     */
+    confluence?: {
+      baseUrl: string;
+      email: string;
+      spaceKey: string;
+      encryptedToken: string;
+    };
   }): Promise<{ jobId: string }> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.DOCUMENT_IMPORT);
     const jobId = `docimport_${args.importId}`;
     const payload: DocumentImportJobData = {
       tenantId: args.tenantId,
       importId: args.importId,
+      ...(args.confluence ? { confluence: args.confluence } : {}),
     };
     await q.add('document-import', this.stamp(payload), { jobId });
     this.logger.debug(

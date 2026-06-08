@@ -58,6 +58,9 @@ import {
   type DocumentDetailDto,
   type DocumentDto,
   type DocumentExtractedEntitiesDto,
+  ImportConfluenceBodySchema,
+  type ImportConfluenceBodyDto,
+  type ImportConfluenceResultDto,
   ImportZipBodySchema,
   type ImportZipBodyDto,
   type ImportZipResultDto,
@@ -221,7 +224,7 @@ export class DocumentsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
-      'Массовый импорт документов из ZIP-архива (ТЗ-4 Ф7). Поле `file` = .zip; поддержанные внутри файлы станут отдельными документами.',
+      'Массовый импорт документов из ZIP-архива (ТЗ-4 Ф7/Ф8). Поле `file` = .zip; поддержанные внутри файлы станут отдельными документами. `source=notion` — экспорт Notion (имена страниц чистятся от 32-hex id).',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -229,6 +232,12 @@ export class DocumentsController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary', description: 'ZIP-архив' },
+        source: {
+          type: 'string',
+          enum: ['upload_zip', 'notion'],
+          description:
+            'Источник архива: `upload_zip` (обычный, по умолчанию) или `notion` (экспорт Notion).',
+        },
         attachedThemeId: { type: 'string', description: 'Привязка к теме графа (для всех файлов)' },
         attachedProjectId: { type: 'string', description: 'Привязка к проекту (для всех файлов)' },
         docType: {
@@ -269,12 +278,53 @@ export class DocumentsController {
       tenantId: t,
       createdById: person.id,
       zip: { buffer: file.buffer, size: file.size },
+      source: body.source,
       attachedThemeId: body.attachedThemeId,
       attachedProjectId: body.attachedProjectId,
       docType: body.docType,
     });
 
     await this.coreQueue.enqueueDocumentImport({ tenantId: t, importId });
+    return { importId };
+  }
+
+  @Post('import-confluence')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Импорт страниц пространства Confluence Cloud (ТЗ-4 Ф9). JSON-тело с подключением; страницы пространства станут отдельными документами. API-токен шифруется и НЕ хранится в БД.',
+  })
+  async importConfluence(
+    @Body(new ZodValidationPipe(ImportConfluenceBodySchema))
+    body: ImportConfluenceBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ImportConfluenceResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    const person = await this.requirePerson(t, user.id);
+
+    const { importId } = await this.imports.createConfluenceImport({
+      tenantId: t,
+      createdById: person.id,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
+    });
+
+    // Токен шифруем перед попаданием в job-payload (Redis) — открытым он там
+    // не оседает; воркер расшифрует его прямо перед вызовом Confluence.
+    const encryptedToken = this.imports.encryptConfluenceToken(body.apiToken);
+    await this.coreQueue.enqueueDocumentImport({
+      tenantId: t,
+      importId,
+      confluence: {
+        baseUrl: body.baseUrl,
+        email: body.email,
+        spaceKey: body.spaceKey,
+        encryptedToken,
+      },
+    });
     return { importId };
   }
 

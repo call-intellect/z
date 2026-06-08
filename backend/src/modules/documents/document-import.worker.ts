@@ -43,7 +43,23 @@ export class DocumentImportWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<DocumentImportJobData>(
       CORE_QUEUE_NAMES.DOCUMENT_IMPORT,
       async (job: Job<DocumentImportJobData>) => {
-        await this.importer.processImport(job.data.importId);
+        const { importId, confluence } = job.data;
+        if (confluence) {
+          // ТЗ-4 Ф9: токен пришёл зашифрованным в payload'е (Redis). Расшифровываем
+          // ровно здесь — открытый токен живёт только в памяти воркера на время
+          // вызова и НЕ оседает в БД/Redis.
+          const apiToken = this.importer.decryptConfluenceToken(
+            confluence.encryptedToken,
+          );
+          await this.importer.processImport(importId, {
+            baseUrl: confluence.baseUrl,
+            email: confluence.email,
+            spaceKey: confluence.spaceKey,
+            apiToken,
+          });
+          return;
+        }
+        await this.importer.processImport(importId);
       },
       {
         connection: this.redis.client,

@@ -335,15 +335,32 @@ export interface DumpCreatedJobData {
 }
 
 /**
- * Payload для job'а `core.document-import` (ТЗ-4 Ф7). Минимальный —
+ * Payload для job'а `core.document-import` (ТЗ-4 Ф7/Ф8/Ф9). Минимальный —
  * `importId` + `tenantId`. Воркер сам подтянет `DocumentImport` из БД,
- * проверит status (idempotency-guard) и достанет ZIP-байты.
+ * проверит status (idempotency-guard) и достанет ZIP-байты (для ZIP/Notion).
+ *
+ * ТЗ-4 Ф9 (Confluence): API-токен НЕ хранится в БД. Он шифруется через
+ * `CryptoService.encrypt` и кладётся в `confluence.encryptedToken` ЭТОГО
+ * payload'а (BullMQ-payload лежит в Redis — шифрование не даёт токену осесть
+ * там в открытом виде; воркер расшифровывает его перед вызовом клиента). Поля
+ * присутствуют только для source=confluence-импортов; для ZIP/Notion — undefined.
  */
 export interface DocumentImportJobData {
   importId: string;
   tenantId: string;
   /** Проброс traceId цепочки (для сшивки логов). */
   traceId?: string;
+  /**
+   * ТЗ-4 Ф9 — параметры подключения к Confluence (только для source=confluence).
+   * `encryptedToken` — `CryptoService.encrypt(apiToken)` (формат `gcm:v1:...`),
+   * расшифровывается воркером непосредственно перед `ConfluenceClient`.
+   */
+  confluence?: {
+    baseUrl: string;
+    email: string;
+    spaceKey: string;
+    encryptedToken: string;
+  };
 }
 
 /**

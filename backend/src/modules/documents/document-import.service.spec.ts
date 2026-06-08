@@ -2,9 +2,14 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
+import type { CryptoService } from '../../common/crypto/crypto.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { S3Service } from '../recordings/s3.service';
 
+import {
+  ConfluenceAuthError,
+  type ConfluenceClient,
+} from './confluence-client';
 import { DocumentImportService } from './document-import.service';
 import type { DocumentsService } from './documents.service';
 
@@ -26,6 +31,7 @@ import type { DocumentsService } from './documents.service';
 interface BatchRow {
   id: string;
   tenantId: string;
+  source: 'upload_zip' | 'notion' | 'confluence';
   status: 'pending' | 'processing' | 'completed' | 'failed';
   totalFiles: number;
   doneFiles: number;
@@ -42,7 +48,10 @@ interface BatchRow {
 
 const ACCEPTED = ['pdf', 'docx', 'xlsx', 'pptx', 'md', 'txt', 'html', 'rtf', 'odt', 'csv'];
 
-function buildService(batch: BatchRow) {
+function buildService(
+  batch: BatchRow,
+  confluencePages?: ConfluenceClient['fetchSpacePages'],
+) {
   // Stateful in-memory DocumentImport row. updateMany соблюдает where.status,
   // чтобы воспроизвести status-guard идемпотентности.
   const prisma = {
@@ -89,20 +98,36 @@ function buildService(batch: BatchRow) {
     })),
   } as unknown as TypedConfigService;
 
+  const fetchSpacePages = vi.fn(
+    confluencePages ?? (async () => []),
+  );
+  const confluence = { fetchSpacePages } as unknown as ConfluenceClient;
+  // Crypto-мок: encrypt/decrypt round-trip без реального ключа (для Ф9 транзита).
+  const crypto = {
+    encrypt: vi.fn((s: string) => `gcm:v1:enc(${s})`),
+    decrypt: vi.fn((s: string) => s.replace(/^gcm:v1:enc\((.*)\)$/, '$1')),
+  } as unknown as CryptoService;
+
   const service = new DocumentImportService(
     prisma as never,
     s3,
     coreQueue,
     cfg,
     documents,
+    confluence,
+    crypto,
   );
-  return { service, prisma, createOne, batch };
+  return { service, prisma, createOne, batch, fetchSpacePages };
 }
 
-function baseBatch(zip: Uint8Array): BatchRow {
+function baseBatch(
+  zip: Uint8Array,
+  source: BatchRow['source'] = 'upload_zip',
+): BatchRow {
   return {
     id: 'imp-1',
     tenantId: 'tenant-1',
+    source,
     status: 'pending',
     totalFiles: 0,
     doneFiles: 0,
@@ -193,5 +218,100 @@ describe('DocumentImportService.processImport', () => {
     expect(batch.status).toBe('failed');
     const log = batch.errorLog as Array<{ file: string; error: string }>;
     expect(log[0]?.file).toBe('(архив)');
+  });
+
+  // ─────────────────────────── Ф8 — Notion ──────────────────────────────────
+
+  it('Notion-экспорт → имена страниц чищены от 32-hex id, source=notion', async () => {
+    const zip = zipSync({
+      'Команда abcdef0123456789abcdef0123456789/Регламент онбординга 0123456789abcdef0123456789abcdef.md':
+        strToU8('# Онбординг\nшаги'),
+      'База знаний 11112222333344445555666677778888.md': strToU8('# База'),
+    });
+    const { service, createOne, batch } = buildService(baseBatch(zip, 'notion'));
+
+    await service.processImport('imp-1');
+
+    expect(batch.status).toBe('completed');
+    expect(batch.doneFiles).toBe(2);
+    expect(createOne).toHaveBeenCalledTimes(2);
+
+    // Имена очищены: нет 32-hex id, путь сохранён хлебной крошкой.
+    const names = (createOne.mock.calls as unknown[][]).map(
+      (c) =>
+        (c[0] as { file: { originalName: string } }).file.originalName,
+    );
+    expect(names).toContain('Команда / Регламент онбординга');
+    expect(names).toContain('База знаний');
+    // Никакого hex-хвоста не осталось.
+    for (const n of names) {
+      expect(n).not.toMatch(/[0-9a-f]{32}/i);
+    }
+    // kind выведен из .md → markdown (формат не сломан чисткой имени).
+    expect(createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'markdown', importBatchId: 'imp-1' }),
+    );
+  });
+
+  // ─────────────────────────── Ф9 — Confluence ──────────────────────────────
+
+  it('Confluence: 2 страницы из клиента → 2 Document(text), source=confluence', async () => {
+    const fetchPages = async () => [
+      { title: 'Политика отпусков', text: 'Текст про отпуска' },
+      { title: 'Регламент релизов', text: 'Текст про релизы' },
+    ];
+    // Confluence-batch без ZIP (zipInline=null).
+    const batchRow = baseBatch(new Uint8Array([]), 'confluence');
+    batchRow.zipInline = null;
+    batchRow.zipSize = 0;
+    const { service, createOne, batch, fetchSpacePages } = buildService(
+      batchRow,
+      fetchPages,
+    );
+
+    await service.processImport('imp-1', {
+      baseUrl: 'https://acme.atlassian.net',
+      email: 'a@acme.com',
+      apiToken: 'secret-token',
+      spaceKey: 'ENG',
+    });
+
+    expect(fetchSpacePages).toHaveBeenCalledTimes(1);
+    expect(batch.status).toBe('completed');
+    expect(batch.doneFiles).toBe(2);
+    expect(batch.failedFiles).toBe(0);
+    expect(createOne).toHaveBeenCalledTimes(2);
+    expect(createOne).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'text', importBatchId: 'imp-1' }),
+    );
+  });
+
+  it('Confluence: неверный токен → status=failed + confluence_auth_failed', async () => {
+    const fetchPages = async () => {
+      throw new ConfluenceAuthError('доступ отклонён', 401);
+    };
+    const batchRow = baseBatch(new Uint8Array([]), 'confluence');
+    batchRow.zipInline = null;
+    const { service, createOne, batch } = buildService(batchRow, fetchPages);
+
+    await service.processImport('imp-1', {
+      baseUrl: 'https://acme.atlassian.net',
+      email: 'a@acme.com',
+      apiToken: 'bad-token',
+      spaceKey: 'ENG',
+    });
+
+    expect(createOne).not.toHaveBeenCalled();
+    expect(batch.status).toBe('failed');
+    const log = batch.errorLog as Array<{ file: string; error: string }>;
+    expect(log[0]?.file).toBe('(confluence)');
+    expect(log[0]?.error).toContain('confluence_auth_failed');
+  });
+
+  it('encrypt/decrypt токена — round-trip через CryptoService', () => {
+    const { service } = buildService(baseBatch(new Uint8Array([])));
+    const enc = service.encryptConfluenceToken('my-secret');
+    expect(enc).not.toBe('my-secret');
+    expect(service.decryptConfluenceToken(enc)).toBe('my-secret');
   });
 });

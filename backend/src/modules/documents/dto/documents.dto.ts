@@ -74,28 +74,61 @@ export interface UploadDocumentResultDto {
   items: UploadDocumentItemDto[];
 }
 
+const DocTypeEnumSchema = z.enum([
+  'regulation',
+  'policy',
+  'instruction',
+  'process',
+  'job_description',
+  'other',
+]);
+
 /**
- * ТЗ-4 Ф7 — атрибуция batch-импорта ZIP (`POST /api/v1/documents/import-zip`).
+ * ТЗ-4 Ф7/Ф8 — атрибуция batch-импорта ZIP (`POST /api/v1/documents/import-zip`).
  * Поля передаются как form-fields вместе с файлом архива (`file`). Применяются
  * ко ВСЕМ Document'ам, созданным из записей архива.
+ *
+ * ТЗ-4 Ф8 (`source`): `upload_zip` (обычный архив, по умолчанию) или `notion`
+ * (экспорт Notion — те же `.md`/`.csv`, но имена несут дерево страниц + 32-hex
+ * id, который чистится). `confluence` сюда НЕ принимается — у него отдельный
+ * JSON-эндпоинт (`/import-confluence`), архив не передаётся.
  */
 export const ImportZipBodySchema = z.object({
+  source: z.enum(['upload_zip', 'notion']).optional(),
   attachedThemeId: z.string().cuid().optional(),
   attachedProjectId: z.string().cuid().optional(),
-  docType: z
-    .enum([
-      'regulation',
-      'policy',
-      'instruction',
-      'process',
-      'job_description',
-      'other',
-    ])
-    .optional(),
+  docType: DocTypeEnumSchema.optional(),
 });
 export type ImportZipBodyDto = z.infer<typeof ImportZipBodySchema>;
 
 export interface ImportZipResultDto {
+  importId: string;
+}
+
+/**
+ * ТЗ-4 Ф9 — тело `POST /api/v1/documents/import-confluence` (JSON, без файла).
+ * Тянет страницы одного пространства Confluence Cloud и заводит их как
+ * Document'ы (source=confluence). `apiToken` НЕ хранится в БД — шифруется
+ * (`CryptoService`) и кладётся в зашифрованном виде в job-payload.
+ *
+ *   - `baseUrl` — адрес инстанса, например `https://acme.atlassian.net`.
+ *   - `email` — email учётки Atlassian (логин Basic-auth).
+ *   - `apiToken` — API-токен Atlassian (НЕ пароль).
+ *   - `spaceKey` — ключ пространства (например `ENG`).
+ *   - `attachedThemeId` / `attachedProjectId` / `docType` — batch-атрибуция (опц.).
+ */
+export const ImportConfluenceBodySchema = z.object({
+  baseUrl: z.string().trim().url().max(500),
+  email: z.string().trim().email().max(320),
+  apiToken: z.string().trim().min(1).max(2000),
+  spaceKey: z.string().trim().min(1).max(255),
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: DocTypeEnumSchema.optional(),
+});
+export type ImportConfluenceBodyDto = z.infer<typeof ImportConfluenceBodySchema>;
+
+export interface ImportConfluenceResultDto {
   importId: string;
 }
 

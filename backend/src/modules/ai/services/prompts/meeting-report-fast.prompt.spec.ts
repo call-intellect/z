@@ -83,6 +83,14 @@ describe('meeting-report-fast — builder по типу встречи', () => {
       const firstLineOfTemplate = template.split('\n')[0] ?? '';
       // Длинная сигнатура шаблона уникальна — проверим, что она в system есть.
       expect(system).toContain(firstLineOfTemplate);
+      // C1 — ASR-нота (withAsrNote) применена ко всем типам.
+      expect(system).toContain('автоматического распознавания речи');
+      // C5 — единая шкала confidence (withConfidenceCalibration).
+      expect(system).toContain('Шкала confidence (0..1)');
+      // C6 — правило анти-галлюцинации имён (статичный текст в SYSTEM).
+      expect(system).toContain(
+        'Имена участников бери ТОЛЬКО из переданного в конце сообщения списка',
+      );
     },
   );
 
@@ -99,10 +107,26 @@ describe('meeting-report-fast — builder по типу встречи', () => {
     const user = buildMeetingReportFastUserPrompt({
       meetingTitle: 'Sync 2026-05-25',
       transcript: '[00:00-00:05] Alice: Привет.',
+      participants: ['Alice', 'Боб'],
+      meetingDateIso: '2026-05-25',
     });
     expect(user).toContain('Sync 2026-05-25');
     expect(user).toContain('[00:00-00:05] Alice: Привет.');
     expect(user).toContain(MEETING_REPORT_FAST_TOOL_NAME);
+    // C6/C2 — переменный хвост user-сообщения (cache-friendly).
+    expect(user).toContain('Участники встречи (используй ТОЛЬКО эти имена): Alice, Боб');
+    expect(user).toContain('Дата встречи (ISO): 2026-05-25');
+  });
+
+  it('buildMeetingReportFastUserPrompt: пустой список участников и нет даты', () => {
+    const user = buildMeetingReportFastUserPrompt({
+      meetingTitle: 'Sync',
+      transcript: '[00:00-00:05] Alice: Привет.',
+      participants: [],
+      meetingDateIso: null,
+    });
+    expect(user).toContain('список участников недоступен');
+    expect(user).toContain('Дата встречи (ISO): неизвестна');
   });
 
   it('buildMeetingReportFastPrompt возвращает system + user', () => {
@@ -110,9 +134,12 @@ describe('meeting-report-fast — builder по типу встречи', () => {
       meetingType: 'sales',
       meetingTitle: 'Demo CRM',
       transcript: '[00:00-00:10] Иван: Покажите цены.',
+      participants: ['Иван'],
+      meetingDateIso: '2026-05-25',
     });
     expect(system).toContain('«sales»');
     expect(user).toContain('Demo CRM');
+    expect(user).toContain('Участники встречи (используй ТОЛЬКО эти имена): Иван');
   });
 });
 
@@ -270,6 +297,8 @@ describe('meeting-report-fast — snapshot (guard от случайных пра
     const user = buildMeetingReportFastUserPrompt({
       meetingTitle: 'Sync 2026-05-25',
       transcript: '[00:00-00:05] Alice: Привет.\n[00:05-00:10] Боб: Поехали.',
+      participants: ['Alice', 'Боб'],
+      meetingDateIso: '2026-05-25',
     });
     expect(user).toMatchSnapshot('user-basic');
   });

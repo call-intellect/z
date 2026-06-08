@@ -200,12 +200,27 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       data: { reportFastStatus: 'processing', reportFastError: null },
     });
 
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
+    // список участников встречи. Используется ДВАЖДЫ: (1) C6/C2 — имена и
+    // дата встречи в промпт (анти-галлюцинация имён, разрешение сроков);
+    // (2) пост-фактум резолв `assigneeUserId` из `assigneeRaw` в writeTasks.
+    const participants = await this.participantContext.loadForMeeting(meetingId);
+
     // ── 1. Промпт ──
     const transcriptText = formatTranscript(turns);
     const built = buildMeetingReportFastPrompt({
       meetingType: meeting.type,
       meetingTitle: meeting.title,
       transcript: transcriptText,
+      // C6 — отображаемые имена участников (как в formatParticipantsForPrompt:
+      // fullName в скобках, если отличается от display name).
+      participants: participants.map((p) =>
+        p.fullName && p.fullName !== p.displayName
+          ? `${p.displayName} (${p.fullName})`
+          : p.displayName,
+      ),
+      // C2 — дата встречи (YYYY-MM-DD) для разрешения относительных сроков.
+      meetingDateIso: meeting.startedAt?.toISOString().slice(0, 10) ?? null,
     });
 
     // Защита от prompt-injection: оборачиваем user-секцию в маркеры,
@@ -304,11 +319,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
 
     // ── 3. Запись результатов ──
     const failures: string[] = [];
-
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
-    // список участников встречи для жёсткого резолва `assigneeUserId` в
-    // извлечённых задачах (после Ф0.2 включает и приглашённых сотрудников).
-    const participants = await this.participantContext.loadForMeeting(meetingId);
 
     // 3a. Chapters (пересоздаём только fast-главы; legacy/v2 не трогаем).
     try {

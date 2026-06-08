@@ -31,6 +31,8 @@ import { z } from 'zod';
 
 import type { LlmTool } from '../llm.types';
 
+import { withAsrNote, withConfidenceCalibration } from './common';
+
 /** taskType для LlmRouter (см. llm-router.service.ts ALL_LLM_TASK_TYPES). */
 export const MEETING_REPORT_FAST_TASK_TYPE = 'meeting-report-fast' as const;
 
@@ -410,7 +412,7 @@ export function buildMeetingReportFastSystemPrompt(
   args: BuildSystemPromptArgs,
 ): string {
   const summaryTemplate = getSummaryTemplateForType(args.meetingType);
-  return `Ты — аналитик деловых видеовстреч. Получаешь транскрипт встречи типа «${args.meetingType}» и возвращаешь полный комплексный анализ через инструмент ${MEETING_REPORT_FAST_TOOL_NAME}.
+  const base = `Ты — аналитик деловых видеовстреч. Получаешь транскрипт встречи типа «${args.meetingType}» и возвращаешь полный комплексный анализ через инструмент ${MEETING_REPORT_FAST_TOOL_NAME}.
 
 Анализ состоит из 4 секций. Все 4 — обязательны.
 
@@ -458,6 +460,10 @@ recommendations: 3-7 действий «как сделать встречу л�
 
 strengths: 2-4 пункта что было хорошо.
 
+═══ Имена участников ═══
+
+Имена участников бери ТОЛЬКО из переданного в конце сообщения списка участников. Если говорящий не сопоставляется со списком — пиши роль/«участник», НЕ выдумывай имя и НЕ транскрибируй как звучит.
+
 ═══ Тон и язык ═══
 
 - Все строки на русском.
@@ -465,6 +471,7 @@ strengths: 2-4 пункта что было хорошо.
 - Не выдумывай данных, которых нет в транскрипте.
 
 ВАЖНО: верни результат строго через вызов инструмента ${MEETING_REPORT_FAST_TOOL_NAME}. Не пиши ничего вне tool_use.`;
+  return withAsrNote(withConfidenceCalibration(base));
 }
 
 // ──────────────────────────── User prompt builder ────────────────────────────
@@ -474,10 +481,23 @@ export interface MeetingReportFastUserContext {
   meetingTitle: string;
   /** Полный транскрипт встречи (склейка `[mm:ss-mm:ss] Speaker: text`). */
   transcript: string;
+  /**
+   * C6 (анти-галлюцинация имён) — отображаемые имена участников встречи.
+   * Подаются в КОНЦЕ user-сообщения (переменные данные, cache-friendly).
+   * Пустой массив → «список участников недоступен».
+   */
+  participants: readonly string[];
+  /**
+   * C2 (meetingDateIso) — дата встречи в формате ISO (YYYY-MM-DD) для
+   * разрешения относительных сроков. null если неизвестна.
+   */
+  meetingDateIso: string | null;
 }
 
 /**
- * User-сообщение LLM. Передаёт заголовок встречи + полный транскрипт.
+ * User-сообщение LLM. Передаёт заголовок встречи + полный транскрипт, а в
+ * самом КОНЦЕ — переменный блок с участниками и датой встречи (cache-friendly:
+ * стабильный SYSTEM, переменные данные только в хвосте user).
  *
  * ВАЖНО: воркер ДОЛЖЕН обернуть результат в `wrapUserData(...)` из
  * `common.ts` (защита от prompt-injection — F1.2). Здесь возвращаем
@@ -486,6 +506,10 @@ export interface MeetingReportFastUserContext {
 export function buildMeetingReportFastUserPrompt(
   ctx: MeetingReportFastUserContext,
 ): string {
+  const participantsLine =
+    ctx.participants.length > 0
+      ? ctx.participants.join(', ')
+      : 'список участников недоступен';
   return [
     `Заголовок встречи: ${ctx.meetingTitle}`,
     '',
@@ -493,6 +517,10 @@ export function buildMeetingReportFastUserPrompt(
     ctx.transcript,
     '',
     `Верни полный анализ через инструмент ${MEETING_REPORT_FAST_TOOL_NAME}.`,
+    '',
+    '---',
+    `Участники встречи (используй ТОЛЬКО эти имена): ${participantsLine}`,
+    `Дата встречи (ISO): ${ctx.meetingDateIso ?? 'неизвестна'}`,
   ].join('\n');
 }
 
@@ -503,12 +531,16 @@ export function buildMeetingReportFastPrompt(args: {
   meetingType: MeetingType;
   meetingTitle: string;
   transcript: string;
+  participants: readonly string[];
+  meetingDateIso: string | null;
 }): { system: string; user: string } {
   return {
     system: buildMeetingReportFastSystemPrompt({ meetingType: args.meetingType }),
     user: buildMeetingReportFastUserPrompt({
       meetingTitle: args.meetingTitle,
       transcript: args.transcript,
+      participants: args.participants,
+      meetingDateIso: args.meetingDateIso,
     }),
   };
 }

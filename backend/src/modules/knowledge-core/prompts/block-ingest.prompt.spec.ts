@@ -49,4 +49,12 @@ describe('block-ingest prompt — signalType recall (Ф1)', () => {
   it('содержит ASR-ноту (withAsrNote)', () => {
     expect(system).toContain('автоматического распознавания речи');
   });
+
+  // C6 agent-chain-overhaul — анти-галлюцинация имён: имена людей берём ТОЛЬКО
+  // из реплик/спикеров; если имя не звучало — null, не выдумываем.
+  it('содержит правило анти-галлюцинации имён (C6)', () => {
+    expect(system).toContain(
+      'Имена людей (поля *NameGuess, recipient, decidedBy и т.п.) бери ТОЛЬКО из реплик/спикеров',
+    );
+  });
 });

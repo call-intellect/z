@@ -182,6 +182,10 @@ const STEPS: Step[] = [
   // кэширует 81-99% без ручного cache_control. Идемпотентен (всегда update до
   // DeepSeek). На чистом старте дефолтный сид уже пишет DeepSeek → skipBootstrap.
   { phase: 'patch', script: 'scripts/patch-llm-routes-report-chain-deepseek.ts', hint: 'summary/report-by-type/tasks → DeepSeek (кэш)', skipBootstrap: true },
+  // 2026-06-08 Ship-On (ТЗ enable-shipped-features-by-default Ф3) — перевести
+  // готовые AdminSetting-флаги в true на существующем проде (seed их не
+  // перезатирает). Уважает admin-override (updatedBy != null → no-op). Идемпотентен.
+  { phase: 'patch', script: 'scripts/patch-enable-shipped-flags.ts', skipBootstrap: true, hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)' },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси
@@ -444,6 +448,17 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-commitment-author.ts',
     hint: 'ТЗ-D: заполнение commitmentAuthorPersonId для исторических обещаний',
+    skipBootstrap: true,
+  },
+  // 2026-06-08 Часть B Ф3 (ТЗ enable-shipped-features-by-default) — снять ложные
+  // subject=менеджер связи от chatbox (cross-attribution: реплики клиента
+  // приписывались менеджеру). Скрипт по умолчанию dry-run; агрегатор запускает
+  // с --apply. Идемпотентен (повтор → 0). mentioned и не-chatbox subject не трогает.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-chatbox-subject-cleanup.ts',
+    args: ['--apply'],
+    hint: 'очистка ложных subject=менеджер от chatbox (cross-attribution)',
     skipBootstrap: true,
   },
 

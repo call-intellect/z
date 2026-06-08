@@ -273,11 +273,11 @@ function buildSettings(): SettingSeed[] {
     // Ф1 (knowledge-access) — расширенная привязка автора на ВСЕ типы знания.
     // Дефолт TRUE — who-ось должна быть непуста и для не-reasoning фактов.
     ['knowledge.subjectAttributionAllTypes', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ALL_TYPES', true), 'high', 'Привязка автора (subject) на ВСЕ типы знания, не только reasoning (false = только reasoning-семейство)'],
-    // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — поэтапная раскатка единой
-    // видимой задачи из встречи. Дефолт FALSE — текущее поведение (Task создаётся,
-    // потребители читают Task). true = из встречи рождается только tracker Issue;
-    // пользовательский Task для action-items не создаётся, потребители читают Issue.
-    ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', false), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
+    // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — единая видимая задача из
+    // встречи. Ship-On (2026-06-08): дефолт TRUE — из встречи рождается только
+    // tracker Issue; пользовательский Task для action-items не создаётся,
+    // потребители читают Issue. false = legacy (Task создаётся, потребители читают Task).
+    ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', true), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
     // Ф1 idea direct-path (2026-06-08) — материализация идей напрямую из блока
     // встречи (signalType='idea'), идемпотентно по sourceBlockId. Дефолт TRUE —
     // Идея не должна зависеть на 100% от 2-го LLM-вызова Specialist 3.6.
@@ -364,11 +364,13 @@ function buildSettings(): SettingSeed[] {
 
   // ── Feature-flags (feature.*) — продуктовые тумблеры.
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
-  // Default OFF: фича включается super_admin'ом из админки после готовности UI.
+  // Ship-On (2026-06-08): дефолт TRUE. Риск галлюцинации схемы смягчён
+  // human-gate — Кора показывает превью схемы, пользователь подтверждает
+  // создание таблицы; кривое молча не создаётся. Откат — AdminSetting → false.
   const features: Array<[string, unknown, Severity, string]> = [
     [
       'feature.tables_text_to_schema',
-      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', false),
+      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', true),
       'medium',
       'Создание Smart-таблиц по текстовому описанию (Text-to-Schema)',
     ],

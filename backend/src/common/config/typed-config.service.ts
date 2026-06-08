@@ -1368,7 +1368,7 @@ export class TypedConfigService {
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',
         undefined,
-        false,
+        true,
       ),
       thresholdMin: this.resolveSync<number>(
         'knowledge.curationThresholdMin',
@@ -2043,7 +2043,8 @@ export class TypedConfigService {
     };
     const dialogLayerRaw = process.env.CONCIERGE_DIALOG_LAYER_ENABLED;
     const dialogLayerEnabled =
-      dialogLayerRaw !== undefined &&
+      dialogLayerRaw === undefined ||
+      dialogLayerRaw === '' ||
       ['true', '1', 'yes', 'on'].includes(dialogLayerRaw.trim().toLowerCase());
     // Agents v2 Фаза B2 (2026-05-30) — PRM step-scorer (shadow).
     const parseBoolDefaultFalse = (raw: string | undefined): boolean => {

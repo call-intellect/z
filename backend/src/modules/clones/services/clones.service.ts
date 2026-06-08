@@ -760,15 +760,13 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    // 7. Topic-density guard (порог зависит от mode).
-    const requiredBlocksOverride =
-      mode === 'judgmental'
-        ? Math.max(1, Math.floor(this.cfg.skill.cloneTopicMinBlocks / 2))
-        : null;
+    // 7. Topic-density guard. ТЗ 2026-06-08 (Ф6/G.1): анти-дипфейк-гейт един
+    //     для factual и judgmental — judgmental БОЛЬШЕ не понижает порог до
+    //     1 блока. Передаём null → берётся дефолт cfg.skill.cloneTopicMinBlocks.
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
-      requiredBlocksOverride,
+      requiredBlocksOverride: null,
     });
     if (topicDensity.refused) {
       return this.persistTopicStarvedRefusal({
@@ -969,14 +967,12 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    const requiredBlocksOverride =
-      mode === 'judgmental'
-        ? Math.max(1, Math.floor(this.cfg.skill.cloneTopicMinBlocks / 2))
-        : null;
+    // ТЗ 2026-06-08 (Ф6/G.1): анти-дипфейк-гейт един для factual и judgmental —
+    // judgmental БОЛЬШЕ не понижает порог. null → дефолт cloneTopicMinBlocks.
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
-      requiredBlocksOverride,
+      requiredBlocksOverride: null,
     });
     if (topicDensity.refused) {
       return this.persistTopicStarvedRefusal({
@@ -2738,11 +2734,19 @@ export class ClonesService {
     const blockMap = new Map<string, CloneBlock>(
       subgraph.reasoningBlocks.map((b) => [b.id, b]),
     );
-    const regex = /\[BLOCK:([a-zA-Z0-9_-]+)\]/g;
+    // ТЗ 2026-06-08 (Ф6/G.2): решения (decisions) цитируются как
+    // `[DECISION:id]` наравне с `[BLOCK:id]`. В subgraph.decisions нет
+    // meeting-метаданных, поэтому переносим statement в snippet.
+    const decisionMap = new Map<
+      string,
+      { id: string; statement: string; rationale: string | null }
+    >(subgraph.decisions.map((d) => [d.id, d]));
     const seen = new Set<string>();
     const out: CloneCitationDto[] = [];
+
+    const blockRegex = /\[BLOCK:([a-zA-Z0-9_-]+)\]/g;
     let m: RegExpExecArray | null;
-    while ((m = regex.exec(answerText)) !== null) {
+    while ((m = blockRegex.exec(answerText)) !== null) {
       const id = m[1];
       if (!id) continue;
       if (seen.has(id)) continue;
@@ -2758,6 +2762,21 @@ export class ClonesService {
         snippet: b.snippet ?? undefined,
       });
     }
+
+    const decisionRegex = /\[DECISION:([a-zA-Z0-9_-]+)\]/g;
+    while ((m = decisionRegex.exec(answerText)) !== null) {
+      const id = m[1];
+      if (!id) continue;
+      if (seen.has(id)) continue; // общий dedup с BLOCK-веткой
+      seen.add(id);
+      const d = decisionMap.get(id);
+      // Даже если решения нет в subgraph — id не теряем (минимальная citation).
+      out.push({
+        blockId: id,
+        snippet: d?.statement ?? undefined,
+      });
+    }
+
     return out;
   }
 

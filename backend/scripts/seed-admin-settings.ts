@@ -278,6 +278,10 @@ function buildSettings(): SettingSeed[] {
     // потребители читают Task). true = из встречи рождается только tracker Issue;
     // пользовательский Task для action-items не создаётся, потребители читают Issue.
     ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', false), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
+    // Ф1 idea direct-path (2026-06-08) — материализация идей напрямую из блока
+    // встречи (signalType='idea'), идемпотентно по sourceBlockId. Дефолт TRUE —
+    // Идея не должна зависеть на 100% от 2-го LLM-вызова Specialist 3.6.
+    ['knowledge.ideaDirectPathEnabled', envBool('KNOWLEDGE_IDEA_DIRECT_PATH_ENABLED', true), 'high', 'Idea direct-path — материализация идей напрямую из блока встречи (kill-switch, дефолт включён)'],
     // МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE
     // (false = только Postgres, Cypher-вызовы no-op). Дефолт TRUE — граф критичен.
     ['graph.ageEnabled', envBool('GRAPH_AGE_ENABLED', true), 'high', 'Kill-switch записи в граф AGE (false = только Postgres)'],

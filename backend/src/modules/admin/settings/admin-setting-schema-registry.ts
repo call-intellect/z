@@ -104,6 +104,9 @@ const registry = new Map<string, ZodTypeAny>([
   // пользовательский Task для action-items НЕ создаётся, а потребители
   // читают задачи встречи из Issue. Дефолт FALSE — текущее поведение (Task).
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
+  // Ф1 idea direct-path (2026-06-08) — kill-switch материализации Idea
+  // напрямую из блока встречи (signalType='idea') в block-ingest.
+  ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],

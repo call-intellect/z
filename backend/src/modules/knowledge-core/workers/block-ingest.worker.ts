@@ -331,6 +331,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // Соберём id блоков, у которых signalType='decision' — для fallback-
       // Decision (если LLM не вернул отдельный decisions[] item).
       const decisionBlockIds = new Set<string>();
+      // Ф1 idea direct-path: blockId → embedding блока (переиспользуем уже
+      // посчитанный vector, чтобы тонкая Idea была KNN-discoverable).
+      const ideaEmbeddingByBlockId = new Map<string, number[] | null>();
 
       for (let i = 0; i < blocksInOrder.length; i++) {
         const block = blocksInOrder[i] as ExtractedBlock;
@@ -361,6 +364,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           indexToBlockId.set(i, blockId);
           if (block.signalType === 'decision') {
             decisionBlockIds.add(blockId);
+          }
+          if (block.signalType === 'idea') {
+            ideaEmbeddingByBlockId.set(blockId, vector ?? null);
           }
         }
       }
@@ -645,6 +651,84 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             ) === 'age_unavailable'
           )
             systemFailure = true;
+        }
+      }
+
+      // ── Ф1 idea direct-path (за kill-switch knowledge.ideaDirectPathEnabled) ──
+      // Детерминированная материализация Idea из блоков signalType='idea',
+      // чтобы Идея не зависела на 100% от 2-го LLM-вызова Specialist 3.6
+      // (extractDraft может упасть/отсеять по confidence<0.4 → Идея терялась).
+      // Идемпотентно по sourceBlockId; дубль против Specialist 3.6 исключён
+      // его guard'ом (он обогащает, а не создаёт второй раз).
+      if (this.cfg.knowledgeCore.ideaDirectPathEnabled && ideaEmbeddingByBlockId.size > 0) {
+        const ideaCandidateIds = [...ideaEmbeddingByBlockId.keys()];
+        // Уже материализованные блоки (повторный прогон / частичный сбой).
+        const existingIdeas = await this.prisma.idea.findMany({
+          where: { tenantId: event.tenantId, sourceBlockIds: { hasSome: ideaCandidateIds } },
+          select: { sourceBlockIds: true },
+        });
+        const coveredBlockIds = new Set<string>();
+        for (const it of existingIdeas) for (const bid of it.sourceBlockIds) coveredBlockIds.add(bid);
+
+        const toCreate = ideaCandidateIds.filter((bid) => !coveredBlockIds.has(bid));
+        if (toCreate.length > 0) {
+          const rows = await this.prisma.ideaBlock.findMany({
+            where: { id: { in: toCreate } },
+            select: { id: true, tenantId: true, trustedAnswer: true, confidence: true, dataClass: true, createdAt: true },
+          });
+          let createdAny = false;
+          for (const row of rows) {
+            const statement = (row.trustedAnswer ?? '').trim();
+            if (!statement) continue; // пустую идею не материализуем
+            try {
+              const conf = Math.max(0, Math.min(1, Number(row.confidence)));
+              const idea = await this.prisma.idea.create({
+                data: {
+                  tenantId: row.tenantId,
+                  kind: 'internal',
+                  statement,
+                  rationale: null,
+                  weight: new Prisma.Decimal(1.5),
+                  supporterCount: 1,
+                  firstProposedAt: row.createdAt,
+                  lastDiscussedAt: row.createdAt,
+                  status: 'captured',
+                  sourceBlockIds: [row.id],
+                  confidence: new Prisma.Decimal(conf),
+                  dataClass: row.dataClass,
+                  createdByUserId: null,
+                },
+              });
+              createdAny = true;
+              this.metrics.incExtractionEntity({ type: 'idea' });
+              // Переиспользуем embedding блока → Idea KNN-discoverable.
+              const emb = ideaEmbeddingByBlockId.get(row.id);
+              if (emb && emb.length > 0) {
+                try {
+                  const vecStr = `[${emb.join(',')}]`;
+                  await this.prisma.$executeRawUnsafe(
+                    `UPDATE "ideas" SET "embedding" = $1::vector WHERE "id" = $2`,
+                    vecStr,
+                    idea.id,
+                  );
+                } catch {
+                  // graceful — embedding не критичен для существования идеи
+                }
+              }
+            } catch (err) {
+              this.logger.warn(
+                { blockId: row.id, err: err instanceof Error ? err.message : String(err) },
+                'block-ingest: idea direct-path create упал — пропуск блока',
+              );
+            }
+          }
+          if (createdAny) {
+            try {
+              await this.coreQueue.enqueueIdeaClusterer({ tenantId: event.tenantId });
+            } catch {
+              // graceful
+            }
+          }
         }
       }
 

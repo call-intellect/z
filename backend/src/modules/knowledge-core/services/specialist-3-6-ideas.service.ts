@@ -125,6 +125,48 @@ export class Specialist36Service {
       return;
     }
 
+    // Ф1 idea direct-path dedup (2026-06-08): если Idea уже материализована из
+    // ЭТОГО блока (block-ingest direct-path ИЛИ прошлый прогон специалиста при
+    // ретрае джоба) — НЕ создаём дубль. Обогащаем существующую (supporters /
+    // sourceBlockIds / weight), как KNN-merge, и выходим. Детерминированно по
+    // sourceBlockId — не зависит от наличия embedding'а у direct-path идеи.
+    const alreadyMaterialized = await this.prisma.idea.findFirst({
+      where: {
+        tenantId: block.tenantId,
+        sourceBlockIds: { has: block.id },
+        status: { notIn: ['rejected', 'archived'] },
+      },
+    });
+    if (alreadyMaterialized) {
+      try {
+        await this.updateExistingIdea({ existing: alreadyMaterialized, block });
+      } catch (err) {
+        this.logger.warn(
+          {
+            blockId: block.id,
+            ideaId: alreadyMaterialized.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-6: обогащение уже-материализованной идеи упало — пропуск',
+        );
+      }
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-6-ideas',
+        action: 'merged',
+        message: `Idea уже материализована из блока ${block.id} — обогащена ${alreadyMaterialized.id}`,
+        orgId: block.tenantId,
+        details: {
+          type: 'idea',
+          intoId: alreadyMaterialized.id,
+          blockId: block.id,
+          reason: 'source_block_dedup',
+        },
+      });
+      return;
+    }
+
     try {
       const queryText = this.buildQueryText(block);
       const matched = await this.findMatchingIdea({

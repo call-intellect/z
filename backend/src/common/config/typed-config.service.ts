@@ -813,6 +813,15 @@ export class TypedConfigService {
       // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
       // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
       biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
+      // Ф1 idea direct-path (2026-06-08): block-ingest материализует Idea
+      // напрямую из блока signalType='idea' (идемпотентно по sourceBlockId),
+      // чтобы Идея не зависела на 100% от 2-го LLM-вызова Specialist 3.6.
+      // Kill-switch (AdminSetting, дефолт ON) — откат без редеплоя при дублях.
+      ideaDirectPathEnabled: this.resolveSync<boolean>(
+        'knowledge.ideaDirectPathEnabled',
+        undefined,
+        true,
+      ),
     } as const;
   }
 

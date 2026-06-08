@@ -436,9 +436,12 @@ export class DocumentsService {
 // ─────────────────────────── helpers ─────────────────────────────────────
 
 /**
- * Определяет `DocumentKind` по MIME и расширению. Совпадает с подходом в
- * ТЗ §4.1 (pdf/docx/markdown/text/other). При неуверенности (octet-stream)
- * — пробуем по расширению, иначе `other` (адаптер откажет с `failed`).
+ * Определяет `DocumentKind` по MIME и расширению. ТЗ §4.1 + ТЗ-4 Ф2
+ * (xlsx/csv/pptx/html/rtf/odt). При неуверенности (octet-stream) — пробуем по
+ * расширению, иначе `other` (адаптер откажет с `failed`).
+ *
+ * Порядок важен: специфичные форматы (csv/markdown) проверяем ДО общего
+ * `text/*`, иначе `text/csv`/`text/markdown` упадут в ветку `text`.
  */
 function detectKind(mimeType: string, fileName: string): DocumentKind {
   const mime = mimeType.toLowerCase();
@@ -452,6 +455,39 @@ function detectKind(mimeType: string, fileName: string): DocumentKind {
   ) {
     return 'docx';
   }
+  if (
+    mime ===
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    mime === 'application/vnd.ms-excel' ||
+    ext === 'xlsx' ||
+    ext === 'xls'
+  ) {
+    return 'xlsx';
+  }
+  if (
+    mime ===
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+    ext === 'pptx'
+  ) {
+    return 'pptx';
+  }
+  if (
+    mime === 'application/vnd.oasis.opendocument.text' ||
+    ext === 'odt'
+  ) {
+    return 'odt';
+  }
+  if (
+    mime === 'application/rtf' ||
+    mime === 'text/rtf' ||
+    ext === 'rtf'
+  ) {
+    return 'rtf';
+  }
+  if (mime === 'text/html' || ext === 'html' || ext === 'htm') {
+    return 'html';
+  }
+  if (mime === 'text/csv' || ext === 'csv') return 'csv';
   if (
     mime === 'text/markdown' ||
     mime === 'text/x-markdown' ||

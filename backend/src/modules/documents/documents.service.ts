@@ -184,83 +184,136 @@ export class DocumentsService {
       deduped: boolean;
     }> = [];
     for (const { file, kind } of prepared) {
-      const name = file.originalName.slice(0, 500);
-      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
-
-      const existing = await this.prisma.document.findFirst({
-        where: { tenantId, contentHash, deletedAt: null },
-        select: { id: true, status: true },
-      });
-      if (existing) {
-        items.push({
-          id: existing.id,
-          status: existing.status,
-          name,
-          deduped: true,
-        });
-        this.logger.log(
-          { tenantId, existingId: existing.id, contentHash, name },
-          'documents.uploadMany: дубль по contentHash — Document не создан',
-        );
-        continue;
-      }
-
-      // inline vs S3 storage.
-      const useS3 = file.size > this.cfg.document.inlineThresholdBytes;
-      let s3Key: string | null = null;
-      if (useS3) {
-        const objectKey = `documents/${tenantId}/${randomUUID()}.bin`;
-        await this.s3.putObject({
-          key: objectKey,
-          body: file.buffer,
-          contentType: file.mimeType,
-        });
-        s3Key = objectKey;
-      }
-
-      // Prisma 7 для `Bytes` ожидает `Uint8Array<ArrayBuffer>` — копируем.
-      const inlineBytes = useS3 ? null : Uint8Array.from(file.buffer);
-      const doc = await this.prisma.document.create({
-        data: {
-          tenantId,
-          uploaderId: uploaderPersonId,
-          kind,
-          name,
-          mimeType: file.mimeType.slice(0, 100),
-          s3Key,
-          inlineContent: inlineBytes,
-          originalSize: file.size,
-          status: 'uploaded',
-          contentHash,
-          attachedRoleId: attachedRoleId ?? null,
-          attachedThemeId: attachedThemeId ?? null,
-          attachedProjectId: attachedProjectId ?? null,
-          docType: docType ?? null,
-        },
-      });
-
-      await this.coreQueue.enqueueDocumentUploaded({
+      const item = await this.createOne({
         tenantId,
-        documentId: doc.id,
+        uploaderPersonId,
+        file,
+        kind,
+        attachedRoleId,
+        attachedThemeId,
+        attachedProjectId,
+        docType,
       });
-
-      this.logger.log(
-        {
-          documentId: doc.id,
-          tenantId,
-          uploaderPersonId,
-          kind,
-          sizeBytes: file.size,
-          storage: useS3 ? 's3' : 'inline',
-          contentHash,
-        },
-        'documents.uploadMany: Document создан, document.uploaded опубликован',
-      );
-
-      items.push({ id: doc.id, status: doc.status, name, deduped: false });
+      items.push(item);
     }
 
     return { items };
+  }
+
+  /**
+   * Создаёт ОДИН `Document` из подготовленного буфера: dedup по `contentHash`,
+   * выбор inline/S3-хранилища, persist, enqueue `core.document-uploaded`.
+   *
+   * Извлечено из `uploadMany`, чтобы переиспользовать в ТЗ-4 Ф7 (массовый
+   * импорт ZIP — `DocumentImportService`): тот сам прогоняет формат/размер per-
+   * entry и зовёт `createOne` с `importBatchId`. Никакой pre-validation тут нет
+   * — caller обязан её выполнить (`uploadMany`/`DocumentImportService`).
+   *
+   * `kind` опционален — если не передан, выводится из mime/имени (как в
+   * `uploadMany`). Возвращает `{ id, status, name, deduped }`.
+   */
+  async createOne(args: {
+    tenantId: string;
+    uploaderPersonId: string;
+    file: {
+      buffer: Buffer;
+      originalName: string;
+      mimeType: string;
+      size: number;
+    };
+    kind?: DocumentKind;
+    attachedRoleId?: string;
+    attachedThemeId?: string;
+    attachedProjectId?: string;
+    docType?: DocumentType;
+    importBatchId?: string;
+  }): Promise<{
+    id: string;
+    status: DocumentStatus;
+    name: string;
+    deduped: boolean;
+  }> {
+    const {
+      tenantId,
+      uploaderPersonId,
+      file,
+      attachedRoleId,
+      attachedThemeId,
+      attachedProjectId,
+      docType,
+      importBatchId,
+    } = args;
+    const kind = args.kind ?? detectKind(file.mimeType, file.originalName);
+    const name = file.originalName.slice(0, 500);
+    const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+
+    const existing = await this.prisma.document.findFirst({
+      where: { tenantId, contentHash, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      this.logger.log(
+        { tenantId, existingId: existing.id, contentHash, name },
+        'documents.createOne: дубль по contentHash — Document не создан',
+      );
+      return { id: existing.id, status: existing.status, name, deduped: true };
+    }
+
+    // inline vs S3 storage.
+    const useS3 = file.size > this.cfg.document.inlineThresholdBytes;
+    let s3Key: string | null = null;
+    if (useS3) {
+      const objectKey = `documents/${tenantId}/${randomUUID()}.bin`;
+      await this.s3.putObject({
+        key: objectKey,
+        body: file.buffer,
+        contentType: file.mimeType,
+      });
+      s3Key = objectKey;
+    }
+
+    // Prisma 7 для `Bytes` ожидает `Uint8Array<ArrayBuffer>` — копируем.
+    const inlineBytes = useS3 ? null : Uint8Array.from(file.buffer);
+    const doc = await this.prisma.document.create({
+      data: {
+        tenantId,
+        uploaderId: uploaderPersonId,
+        kind,
+        name,
+        mimeType: file.mimeType.slice(0, 100),
+        s3Key,
+        inlineContent: inlineBytes,
+        originalSize: file.size,
+        status: 'uploaded',
+        contentHash,
+        attachedRoleId: attachedRoleId ?? null,
+        attachedThemeId: attachedThemeId ?? null,
+        attachedProjectId: attachedProjectId ?? null,
+        docType: docType ?? null,
+        importBatchId: importBatchId ?? null,
+      },
+    });
+
+    await this.coreQueue.enqueueDocumentUploaded({
+      tenantId,
+      documentId: doc.id,
+    });
+
+    this.logger.log(
+      {
+        documentId: doc.id,
+        tenantId,
+        uploaderPersonId,
+        kind,
+        sizeBytes: file.size,
+        storage: useS3 ? 's3' : 'inline',
+        contentHash,
+        importBatchId: importBatchId ?? null,
+      },
+      'documents.createOne: Document создан, document.uploaded опубликован',
+    );
+
+    return { id: doc.id, status: doc.status, name, deduped: false };
   }
 
   /**
@@ -618,7 +671,7 @@ export class DocumentsService {
  * Порядок важен: специфичные форматы (csv/markdown) проверяем ДО общего
  * `text/*`, иначе `text/csv`/`text/markdown` упадут в ветку `text`.
  */
-function detectKind(mimeType: string, fileName: string): DocumentKind {
+export function detectKind(mimeType: string, fileName: string): DocumentKind {
   const mime = mimeType.toLowerCase();
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
 
@@ -684,7 +737,7 @@ function detectKind(mimeType: string, fileName: string): DocumentKind {
  * Маппинг учитывает расхождение enum'а и белого списка:
  *   DocumentKind `markdown` → токен `md`; `text` → `txt`.
  */
-function formatToken(kind: DocumentKind, fileName: string): string {
+export function formatToken(kind: DocumentKind, fileName: string): string {
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
   if (ext && ext !== fileName.toLowerCase()) {
     // Канонизируем синонимы расширений к токенам белого списка.

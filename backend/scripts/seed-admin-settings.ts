@@ -535,6 +535,8 @@ function buildSettings(): SettingSeed[] {
       'medium',
       'Белый список расширений документов, принимаемых при загрузке',
     ],
+    // ТЗ-4 Ф7 — массовый импорт ZIP-архива.
+    ['documents.maxZipSizeMb', envInt('DOCUMENT_MAX_ZIP_SIZE_MB', 200), 'medium', 'Максимальный размер ZIP-архива при массовом импорте (МБ)'],
   ];
   for (const [key, value, severity, description] of documents) {
     out.push({ key, value, category: 'content', section: 'documents', severity, description });

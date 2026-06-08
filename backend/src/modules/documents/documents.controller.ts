@@ -12,11 +12,12 @@ import {
   Param,
   Post,
   Query,
+  UploadedFile,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBody,
   ApiConsumes,
@@ -44,10 +45,12 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
+import { DocumentImportService } from './document-import.service';
 import { DocumentsService } from './documents.service';
 import {
   CreateTextDumpSchema,
@@ -55,6 +58,9 @@ import {
   type DocumentDetailDto,
   type DocumentDto,
   type DocumentExtractedEntitiesDto,
+  ImportZipBodySchema,
+  type ImportZipBodyDto,
+  type ImportZipResultDto,
   ListDocumentsQuerySchema,
   type ListDocumentsQuery,
   toDecisionProvenance,
@@ -98,6 +104,9 @@ const UPLOAD_FILES_MAX_COUNT = 50;
 export class DocumentsController {
   constructor(
     @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(DocumentImportService)
+    private readonly imports: DocumentImportService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
@@ -206,6 +215,67 @@ export class DocumentsController {
       userId: user.id,
       content: body.content,
     });
+  }
+
+  @Post('import-zip')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Массовый импорт документов из ZIP-архива (ТЗ-4 Ф7). Поле `file` = .zip; поддержанные внутри файлы станут отдельными документами.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'ZIP-архив' },
+        attachedThemeId: { type: 'string', description: 'Привязка к теме графа (для всех файлов)' },
+        attachedProjectId: { type: 'string', description: 'Привязка к проекту (для всех файлов)' },
+        docType: {
+          type: 'string',
+          enum: [
+            'regulation',
+            'policy',
+            'instruction',
+            'process',
+            'job_description',
+            'other',
+          ],
+          description: 'Смысловой тип документа (для всех файлов)',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async importZip(
+    @UploadedFile() file: MulterFile | undefined,
+    @Body(new ZodValidationPipe(ImportZipBodySchema))
+    body: ImportZipBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ImportZipResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    if (!file) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'file_required', message: 'Архив обязателен' },
+      });
+    }
+    const person = await this.requirePerson(t, user.id);
+
+    const { importId } = await this.imports.createBatch({
+      tenantId: t,
+      createdById: person.id,
+      zip: { buffer: file.buffer, size: file.size },
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
+    });
+
+    await this.coreQueue.enqueueDocumentImport({ tenantId: t, importId });
+    return { importId };
   }
 
   @Get()

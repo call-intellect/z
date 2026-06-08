@@ -1123,28 +1123,35 @@ export class TypedConfigService {
     maxSizeBytes: number;
     maxFilesPerUpload: number;
     acceptedFormats: readonly string[];
+    /** ТЗ-4 Ф7 — потолок размера ZIP-архива массового импорта (МБ). */
+    maxZipSizeMb: number;
+    maxZipSizeBytes: number;
   }> {
-    const [maxSizeMb, maxFilesPerUpload, acceptedFormats] = await Promise.all([
-      this.getDynamic<number>('documents.maxSizeMb', 'DOCUMENT_MAX_SIZE_MB', 50),
-      this.getDynamic<number>('documents.maxFilesPerUpload', undefined, 20),
-      this.getDynamic<readonly string[]>('documents.acceptedFormats', undefined, [
-        'pdf',
-        'docx',
-        'xlsx',
-        'pptx',
-        'md',
-        'txt',
-        'html',
-        'rtf',
-        'odt',
-        'csv',
-      ]),
-    ]);
+    const [maxSizeMb, maxFilesPerUpload, acceptedFormats, maxZipSizeMb] =
+      await Promise.all([
+        this.getDynamic<number>('documents.maxSizeMb', 'DOCUMENT_MAX_SIZE_MB', 50),
+        this.getDynamic<number>('documents.maxFilesPerUpload', undefined, 20),
+        this.getDynamic<readonly string[]>('documents.acceptedFormats', undefined, [
+          'pdf',
+          'docx',
+          'xlsx',
+          'pptx',
+          'md',
+          'txt',
+          'html',
+          'rtf',
+          'odt',
+          'csv',
+        ]),
+        this.getDynamic<number>('documents.maxZipSizeMb', undefined, 200),
+      ]);
     return {
       maxSizeMb,
       maxSizeBytes: maxSizeMb * 1024 * 1024,
       maxFilesPerUpload,
       acceptedFormats,
+      maxZipSizeMb,
+      maxZipSizeBytes: maxZipSizeMb * 1024 * 1024,
     };
   }
 

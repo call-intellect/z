@@ -9,6 +9,11 @@ import { CurationModule } from '../curation/curation.module';
 // ai_ready) и в Specialist33DecisionsWorker (для enqueueDecisionHygiene
 // после processBlock).
 import { DashboardModule } from '../dashboard/dashboard.module';
+// ТЗ-4 Ф7 — DocumentImportWorker инжектит DocumentImportService из
+// DocumentsModule (он экспортируется). Воркер очереди `core.document-import`
+// крутится in-process.
+import { DocumentImportWorker } from '../documents/document-import.worker';
+import { DocumentsModule } from '../documents/documents.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -131,6 +136,9 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // ChatboxModule (он экспортируется). Воркер очереди `chatbox.sync`
     // крутится in-process.
     ChatboxModule,
+    // ТЗ-4 Ф7 — DocumentImportWorker инжектит DocumentImportService из
+    // DocumentsModule (экспортируется). Воркер очереди `core.document-import`.
+    DocumentsModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
@@ -307,6 +315,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
     DocumentIngestAdapter,
     TextIngestAdapter,
+    // ТЗ-4 Ф7 — consumer `core.document-import`. По importId распаковывает ZIP
+    // и создаёт Document'ы (re-use DocumentsService.createOne + dedup + enqueue
+    // core.document-uploaded). Идемпотентно (status-guard в processImport).
+    DocumentImportWorker,
 
     // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.4 §2.6) —
     // Specialist 3-13: consumer `core.specialist-routing` jobName='3-13-sprint-helper'

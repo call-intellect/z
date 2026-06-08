@@ -19,6 +19,7 @@ import {
   CORE_DEFAULT_JOB_OPTIONS,
   CORE_QUEUE_NAMES,
   type CoreQueueName,
+  type DocumentImportJobData,
   type DocumentUploadedJobData,
   type DumpCreatedJobData,
   type EntityResolverJobData,
@@ -401,6 +402,29 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('document-uploaded', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.document-uploaded documentId=${args.documentId} tenantId=${args.tenantId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * ТЗ-4 Ф7 — публикация события `document.import` (массовый импорт ZIP).
+   * Consumer — `DocumentImportWorker`. Идемпотентность через
+   * `jobId = docimport_<importId>` — повторный enqueue для того же батча в окне
+   * дедупа BullMQ не создаст дубль (а воркер дополнительно делает status-guard).
+   */
+  async enqueueDocumentImport(args: {
+    tenantId: string;
+    importId: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.DOCUMENT_IMPORT);
+    const jobId = `docimport_${args.importId}`;
+    const payload: DocumentImportJobData = {
+      tenantId: args.tenantId,
+      importId: args.importId,
+    };
+    await q.add('document-import', this.stamp(payload), { jobId });
+    this.logger.debug(
+      `enqueue core.document-import importId=${args.importId} tenantId=${args.tenantId}`,
     );
     return { jobId };
   }

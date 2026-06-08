@@ -85,6 +85,17 @@ export const CORE_QUEUE_NAMES = {
    */
   DUMP_CREATED: 'core.dump-created',
   /**
+   * Document-import (ТЗ-4 Ф7 — массовый импорт ZIP): consumer —
+   * `DocumentImportWorker`. По `{ importId }` достаёт сохранённый ZIP (inline в
+   * `DocumentImport`-метаданных или S3 — см. `DocumentImportService`),
+   * распаковывает через `fflate.unzipSync`, для каждой поддерживаемой записи
+   * создаёт `Document` (re-use `DocumentsService.uploadMany` логики: dedup по
+   * contentHash + enqueue `core.document-uploaded`), несёт batch-атрибуцию и
+   * `importBatchId`. Неподдержанные/битые записи — в `errorLog`, `failedFiles++`.
+   * jobId = `docimport_<importId>` — идемпотентно (status-guard в воркере).
+   */
+  DOCUMENT_IMPORT: 'core.document-import',
+  /**
    * SBA α-3 — RouterService.dispatch публикует jobs в эту очередь после
    * persist'а IdeaBlock'а. `jobName` = имя специалиста (`3-1-regulations`,
    * `3-3-decisions`, …, `3-14-goals`, `3-13-sprint-helper`).
@@ -321,6 +332,18 @@ export interface DumpCreatedJobData {
   uploaderPersonId: string;
   /** Готовый текст дампа — без парсинга. */
   content: string;
+}
+
+/**
+ * Payload для job'а `core.document-import` (ТЗ-4 Ф7). Минимальный —
+ * `importId` + `tenantId`. Воркер сам подтянет `DocumentImport` из БД,
+ * проверит status (idempotency-guard) и достанет ZIP-байты.
+ */
+export interface DocumentImportJobData {
+  importId: string;
+  tenantId: string;
+  /** Проброс traceId цепочки (для сшивки логов). */
+  traceId?: string;
 }
 
 /**

@@ -227,6 +227,26 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📦 2026-06-08 — ТЗ-4 Ф7: массовый импорт документов из ZIP-архива
+
+> Контракт: `plans/analysis/2026-06-08-manual-document-upload-and-import.md` (ТЗ-4 Ф7). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** новый канал загрузки — пользователь грузит ZIP, каждый поддержанный файл внутри становится отдельным Document (re-use существующего ingest-пути → граф). Новая очередь BullMQ `core.document-import` + воркер. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (лимит — AdminSetting с code-fallback). Библиотека `fflate` (pure-TS, уже была транзитивной — теперь явная зависимость).
+
+- **Шаг 1 — AdminSetting** (засеивается `seed-admin-settings.ts`, см. Шаг 7; code-fallback есть):
+  - `documents.maxZipSizeMb` (int, **default 200**) — потолок размера ZIP-архива массового импорта. ENV-fallback `DOCUMENT_MAX_ZIP_SIZE_MB` (опц.). Зарегистрирован в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608210000_document_import`): `+ enum DocumentImportSource`, `+ enum DocumentImportStatus`, `+ table document_import` (FK → `Org` ON DELETE CASCADE, индекс по (tenantId, status)). Все изменения аддитивны (CREATE TYPE / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-settings.ts` пополнен ключом `documents.maxZipSizeMb` (default 200, секция `documents`). Защищает admin-edited. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-settings.ts`). Без сидера работает на code-дефолте 200.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новая очередь `core.document-import` + `DocumentImportWorker`, эндпоинт `POST /api/v1/documents/import-zip`, новая зависимость `fflate`; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новая очередь/воркер в логах backend (без ERROR): `DocumentImportWorker запущен (core.document-import)`.
+  - Новый REST: Swagger `/api/docs` → `POST /api/v1/documents/import-zip` (owner/admin write).
+  - Зависимость на месте: `docker compose exec backend node -e "require('fflate')"` — без ошибки.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

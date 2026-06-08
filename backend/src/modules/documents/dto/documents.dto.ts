@@ -74,6 +74,31 @@ export interface UploadDocumentResultDto {
   items: UploadDocumentItemDto[];
 }
 
+/**
+ * ТЗ-4 Ф7 — атрибуция batch-импорта ZIP (`POST /api/v1/documents/import-zip`).
+ * Поля передаются как form-fields вместе с файлом архива (`file`). Применяются
+ * ко ВСЕМ Document'ам, созданным из записей архива.
+ */
+export const ImportZipBodySchema = z.object({
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: z
+    .enum([
+      'regulation',
+      'policy',
+      'instruction',
+      'process',
+      'job_description',
+      'other',
+    ])
+    .optional(),
+});
+export type ImportZipBodyDto = z.infer<typeof ImportZipBodySchema>;
+
+export interface ImportZipResultDto {
+  importId: string;
+}
+
 export const ListDocumentsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),

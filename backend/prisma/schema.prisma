@@ -908,6 +908,23 @@ enum DocumentStatus {
   failed
 }
 
+/// ТЗ-4 Ф7 — источник массового импорта документов. `upload_zip` —
+/// загруженный пользователем ZIP-архив; `notion` / `confluence` —
+/// зарезервированы под Ф8/Ф9 (переиспользуют тот же batch-pipeline).
+enum DocumentImportSource {
+  upload_zip
+  notion
+  confluence
+}
+
+/// ТЗ-4 Ф7 — статус batch-импорта документов.
+enum DocumentImportStatus {
+  pending // создан, ждёт воркера
+  processing // воркер распаковывает и создаёт Document'ы
+  completed // все записи обработаны
+  failed // фатальная ошибка (битый архив / превышение лимита)
+}
+
 /// Статус сборки карты должности (Фаза 0d, RoleProfileAgent).
 enum RoleProfileStatus {
   forming // данных <N блоков идей с role_relevant=true
@@ -2416,6 +2433,7 @@ model Org {
   jobDescriptions JobDescription[]
   skills          Skill[]
   documents       Document[]
+  documentImports DocumentImport[]
   roleProfiles    RoleProfile[]
   // Группа Б
   missions        Mission[]
@@ -4953,6 +4971,51 @@ model Document {
   @@index([tenantId, attachedThemeId])
   @@index([importBatchId])
   @@map("documents")
+}
+
+/// ТЗ-4 Ф7 — batch-импорт документов (ZIP-архив → N Document'ов).
+///
+/// Создаётся синхронно в `POST /api/v1/documents/import-zip` (status=pending),
+/// затем `DocumentImportWorker` (очередь `core.document-import`) распаковывает
+/// архив и для каждой поддерживаемой записи создаёт `Document` с
+/// `importBatchId = <этот id>`. Прогресс пишется в `doneFiles`/`failedFiles`,
+/// ошибки по конкретным записям — в `errorLog` (массив `{file, error}`).
+///
+/// ZIP хранится так же, как Document (inline ≤ inlineThreshold, иначе S3),
+/// чтобы воркер мог его прочитать. После обработки байты остаются как audit-
+/// артефакт (retention — отдельной фазой).
+model DocumentImport {
+  id          String               @id @default(cuid())
+  tenantId    String
+  source      DocumentImportSource
+  status      DocumentImportStatus @default(pending)
+  totalFiles  Int                  @default(0)
+  doneFiles   Int                  @default(0)
+  failedFiles Int                  @default(0)
+  /// Лог ошибок по записям: [{ file: string, error: string }]. null — ошибок нет.
+  errorLog    Json?
+  /// Person.id (НЕ User.id) — кто инициировал импорт.
+  createdById String
+
+  /// Batch-атрибуция, применяемая ко всем созданным Document'ам (опц.).
+  attachedThemeId   String?
+  attachedProjectId String?
+  docType           DocumentType?
+
+  /// S3-ключ архива; null если использован `zipInline`.
+  zipS3Key   String? @db.VarChar(500)
+  /// Inline-байты архива; null если использован S3.
+  zipInline  Bytes?
+  /// Размер архива в байтах (для логов/лимитов).
+  zipSize    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("document_import")
 }
 
 /// SBA β-7 — BrandVoiceProfile. 1:1 на Org-запись «голоса бренда».

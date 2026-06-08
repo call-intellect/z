@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { S3Service } from '../recordings/s3.service';
 
+import { DocumentImportService } from './document-import.service';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 
@@ -21,7 +22,10 @@ import { DocumentsService } from './documents.service';
  */
 @Module({
   controllers: [DocumentsController],
-  providers: [DocumentsService, S3Service],
-  exports: [DocumentsService],
+  // ТЗ-4 Ф7 — DocumentImportService нужен и контроллеру (createBatch), и
+  // DocumentImportWorker (processImport, регистрируется в WorkersModule).
+  // Экспортируем его, чтобы WorkersModule мог инжектить через DI.
+  providers: [DocumentsService, DocumentImportService, S3Service],
+  exports: [DocumentsService, DocumentImportService],
 })
 export class DocumentsModule {}

@@ -265,6 +265,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['documents.maxSizeMb', POSITIVE_INT],
   ['documents.maxFilesPerUpload', POSITIVE_INT],
   ['documents.acceptedFormats', z.array(z.string())],
+  // ТЗ-4 Ф7 — потолок размера ZIP-архива массового импорта (МБ).
+  ['documents.maxZipSizeMb', POSITIVE_INT],
 
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.

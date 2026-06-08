@@ -2282,3 +2282,24 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - Frontend: `useShallow` на селекторах `/tables/[id]` (ТЗ A, React #185); русские типы встреч + `<title> '%s — Кора'` + канон `/chat`→ChatV2 (ТЗ C).
 
 [[../index|← index]]
+
+## Остаток цепочки агентов без golden — новые арбитры + direct-path (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`](../../plans/tz/2026-06-08-agent-chain-remaining-no-golden.md). Ветка `feature/retest2-agent-chain-overhaul` (коммиты `7430162e..accdfe7b`). AI-пайплайн/taskType — [[../01_projects/ai-jobs]] §«Остаток цепочки агентов»; cron'ы — [[../01_projects/workers-queues]].
+
+### Новые сервисы
+
+- **`backend/src/modules/meetings/ — MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр серой зоны (taskType `task-dedupe`, `deepseek-v4-flash`) → удаляет fast-черновики-дубли. Вызывается из `tasks-extract.worker` + `meeting-report-fast.worker`. Флаг `AdminSetting.meetings.taskDedupeEnabled` (default **OFF**) + порог `meetings.taskDedupeThreshold` (0.85). Метрика `z_task_dedupe_total{result}`. Маршрут — `seed-llm-task-routes-task-dedupe.ts` (в `apply-prod-deploy.ts` STEPS).
+- **`backend/src/modules/knowledge-core/ — GoalTaskLinkerService`** + **`GoalTaskLinkerCron`** (Ф4.1, `@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) + on-event из специалиста `3-14-goals` — LLM-арбитр `goal-task-link` (`deepseek-v4-flash`) привязывает AI-цель встречи к её задачам (`Issue.goalId`, non-destructive). Флаг `AdminSetting.goals.goalTaskLinkEnabled` (default **OFF**). Метрика `z_goal_task_link_total{result}`. Закрывает «LLM-арбитр Goal↔Task (Ф4.1) отложен» из §«Авто-привязка Goal↔Theme». Маршрут — `seed-llm-task-routes-goal-task-link.ts` (в STEPS).
+
+### Прочие правки (Ф1/Ф2/Ф6 + ТЗ B/D)
+
+- `block-ingest.worker` — idea direct-path: детерминированная материализация Idea из блоков `signalType='idea'` (без LLM) + анти-дубль guard по `sourceBlockId` в специалисте `3-6-ideas`. Флаг `knowledge.ideaDirectPathEnabled` (default **ON**) (Ф1).
+- Ф2 hardening экстракторов (code-промпты, без seed): ASR-нота/калибровка/анти-галлюцинация имён/`meetingDateIso` на `meeting-report-fast`+`block-ingest`; ASR/калибровка на `block-distill`/`theme-classify`/`axis-classify`/`knowledge-clone-extract`/`chapters-v2`/`goal-hierarchy-link`/`entity-merge-arbiter`; C8 `entity-merge` SYSTEM↔код; C3 булевы гейты `isDecision`/`isIdea`.
+- Ф6 smoke: `BusinessMetricsService.getLlmCacheHitRatio` + `provider-smoke-test.cron.checkCacheHitRatio` (WARN при низком кэш-хите DeepSeek). Метрики `z_llm_calls_total{provider}`, `z_llm_cache_hit_ratio_below_threshold{provider}`. Флаги `llm.cacheSmokeEnabled` (true) / `llm.cacheHitRatioWarnThreshold` (0.6).
+- ТЗ B: Express5 named-wildcard в `app.module` (`'{*path}'` / `'api/v1/{*path}'`) + JSON-резилиенс (`tryParseJson` + ретрай×2 + validate) в `intake-auto-triage.worker` & `meeting-speaker-analyzer.worker`.
+- ТЗ D: `parseVoxResult` расширен на `extendedResult` + PII-safe диагностика `vox.no_words` (+`extendedResultKeys`/`taskParamsKeys`).
+
+**Миграций БД НЕТ** (schema.prisma не менялся; `Issue.goalId` уже существовал). **Новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
+
+[[../index|← index]]

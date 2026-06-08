@@ -96,6 +96,41 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔁 2026-06-08 — Ретест №2: остаток цепочки агентов без golden (ТЗ `agent-chain-remaining-no-golden`)
+
+> Контракт: `plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`. Ветка `feature/retest2-agent-chain-overhaul`, 7 коммитов `7430162e..accdfe7b`: Ф1 idea direct-path `7430162e`, Ф2 промпты `0c283e60`/`6dd216f5`/`0dfe170f`, Ф5 Р2 task-dedupe `a933138e`, Ф4.1 goal-task-link `e174baaa`, Ф6 smoke cache-hit `f28200cb`, ТЗ B код-хвост `c457403d`, ТЗ D Vox `accdfe7b`.
+>
+> **Зачем для прода:** Ф1 — детерминированная материализация Idea из блоков (recall идей без LLM-плодёжа); Ф2 — ASR-нота/калибровка/анти-галлюцинация имён/булевы гейты на экстракторах (качество извлечения, code-промпты); Ф5 Р2 — семантический дедуп задач встречи (LLM-арбитр серой зоны, за флагом OFF); Ф4.1 — авто-привязка AI-цели встречи к её задачам (Issue.goalId, за флагом OFF); Ф6 — smoke cache-hit-ratio WARN по DeepSeek (видимость экономии кэша); ТЗ B — Express5 named-wildcard + JSON-резилиенс в 2 воркерах; ТЗ D — Vox word-timings из extendedResult + PII-safe диагностика. **Миграций БД НЕТ** (schema.prisma не менялся, все флаги через `resolveSync`). **Новых ENV в `env.schema.ts` НЕТ** (флаги читаются `resolveSync` с code-дефолтом при отсутствии ENV). Новые арбитры — за флагами OFF (поведение прода не меняется до явного включения владельцем).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch**:
+  - **Новых ENV НЕТ** (`env.schema.ts` не трогался). Все новые тумблеры — **AdminSetting-ключи** (читаются через `resolveSync`, code-fallback при отсутствии записи; засеиваются `seed-admin-settings.ts`, см. Шаг 7):
+    - `knowledge.ideaDirectPathEnabled` (bool, **default true**) — детерминированная материализация Idea из блоков `signalType='idea'` в `block-ingest.worker` (Ф1). Дедуп по `sourceBlockId` (guard в specialist-3-6-ideas). OFF — вернуть старое поведение (идеи только через LLM-специалиста).
+    - `meetings.taskDedupeEnabled` (bool, **default false**) — семантический дедуп задач встречи (`MeetingTaskDedupeService`, embedding KNN + LLM-арбитр серой зоны, удаляет fast-черновики-дубли). **Флип ON владельцем после прод-наблюдения** (data-affecting: удаляет Task-черновики).
+    - `meetings.taskDedupeThreshold` (number, **default 0.85**) — порог косинусной близости для KNN-кандидатов дедупа.
+    - `goals.goalTaskLinkEnabled` (bool, **default false**) — авто-привязка AI-цели встречи к её Issue (`Issue.goalId`, non-destructive) через LLM-арбитр (`GoalTaskLinkerService` + cron). **Флип ON владельцем после прод-наблюдения** (новый арбитр + cron).
+    - `llm.cacheSmokeEnabled` (bool, **default true**) — включает проверку cache-hit-ratio DeepSeek в `provider-smoke-test.cron`.
+    - `llm.cacheHitRatioWarnThreshold` (number, **default 0.6**) — порог WARN: если доля кэш-хитов DeepSeek ниже — smoke пишет WARN (видимость, что правки SYSTEM ломают кэш).
+  - **taskDedupe / goalTaskLink остаются OFF на выкате** — это новые арбитры с побочными эффектами (удаление черновиков / запись `Issue.goalId`). Включать только после прод-наблюдения метрик `z_task_dedupe_total` / `z_goal_task_link_total` через админку настроек (super_admin).
+- **Шаг 4 — Prisma** — **не требуется** (schema.prisma не менялся; `Issue.goalId` уже существовал, дедуп оперирует существующими `Task`/`Issue`/`MeetingChapter`).
+- **Шаг 5 — postgres-init.sql** — **не затронут** (новых HNSW/GIN/partial/extension нет).
+- **Шаг 7 — Seed** — **2 новых маршрута + пополнение `seed-admin-settings.ts`**, все идемпотентны и **уже в `apply-prod-deploy.ts` STEPS** (прогон агрегатора их подхватит):
+  - `scripts/seed-llm-task-routes-task-dedupe.ts` — taskType `task-dedupe` → `deepseek-v4-flash` (cheap-арбитр серой зоны). Phase `seed-llm-routes`.
+  - `scripts/seed-llm-task-routes-goal-task-link.ts` — taskType `goal-task-link` → `deepseek-v4-flash` (cheap-арбитр). Phase `seed-llm-routes`. Маршрут нужен заранее — иначе при включении флага вызов поедет по аварийному `DEFAULT_FALLBACK_CHAIN`.
+  - `scripts/seed-admin-settings.ts` пополнен новыми ключами (`knowledge.ideaDirectPathEnabled`, `meetings.taskDedupeEnabled`, `meetings.taskDedupeThreshold`, `goals.goalTaskLinkEnabled`, `llm.cacheSmokeEnabled`, `llm.cacheHitRatioWarnThreshold`) — идемпотентно, защищает admin-edited. Уже в агрегаторе.
+  - Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Без сидов всё работает на code-дефолтах (`resolveSync`).
+- **Промпт-правки (Ф2) — отдельной seed-операции НЕ требуют.** ASR-нота/калибровка/анти-галлюцинация имён/`meetingDateIso` на `meeting-report-fast`+`block-ingest`; ASR/калибровка на `block-distill`/`theme-classify`/`axis-classify`/`knowledge-clone-extract`/`chapters-v2`/`goal-hierarchy-link`/`entity-merge-arbiter`; C8 `entity-merge` SYSTEM «5→1»; C3 булевы гейты `isDecision`/`isIdea` на decision/idea extract — это **code-промпты** (prompt registry с code-fallback), едут с деплоем кода.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingTaskDedupeService` (modules/meetings), `GoalTaskLinkerService` + `GoalTaskLinkerCron` (modules/knowledge-core), idea direct-path в `block-ingest.worker`, smoke cache-hit в `provider-smoke-test.cron` + `BusinessMetricsService.getLlmCacheHitRatio`, Express5 named-wildcard в `app.module` + JSON-резилиенс в `intake-auto-triage.worker`/`meeting-speaker-analyzer.worker`, `parseVoxResult` extendedResult): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron (grep в логах backend через ≥30 мин): `goal-task-linker` (`@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) — строки запуска присутствуют, без ERROR. Cron `provider-smoke-test` теперь дополнительно делает `checkCacheHitRatio` (WARN при доле кэша DeepSeek ниже `llm.cacheHitRatioWarnThreshold`).
+  - Новые taskType (read-only): `docker compose exec backend bun run scripts/diag-routes.ts` → `task-dedupe` и `goal-task-link` ведут на `deepseek-v4-flash`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'z_task_dedupe_total|z_goal_task_link_total|z_llm_calls_total|z_llm_cache_hit_ratio_below_threshold'` → `z_task_dedupe_total{result}` (дедуп задач), `z_goal_task_link_total{result}` (привязка цель↔задача), `z_llm_calls_total{provider}` (знаменатель кэш-доли), `z_llm_cache_hit_ratio_below_threshold{provider}` (gauge — 1 если ниже порога) присутствуют.
+  - Флаги (по умолчанию): `task-dedupe`/`goal-task-link` — OFF, удалений/привязок нет; `idea-direct-path` — ON (идеи материализуются детерминированно из блоков `signalType='idea'`); cache-smoke — ON (WARN в логах при низком кэш-хите DeepSeek).
+  - **Включение data-affecting флагов — отдельно, после наблюдения:** `meetings.taskDedupeEnabled` и `goals.goalTaskLinkEnabled` флипнуть в админке настроек только после проверки метрик/логов на тест-встрече.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🩹 2026-06-06 — Стабильность прода: 6 ТЗ (ветка `feature/prod-stability-2026-06-06`)
 
 > Контракты: `plans/tz/2026-06-06-{frontend-stability-chunk-and-video, recording-pipeline-reliability-reconcile, meeting-tasks-quality-dedup-asr, graph-arbiter-json-resilience, meeting-report-copy-download-actions, agent-quality-golden-harness}.md`.

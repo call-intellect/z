@@ -296,3 +296,35 @@ Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard)
 - `tracker.autoAcceptConfidenceThreshold` (AdminSetting, дефолт **0.75**, был мёртвый hardcoded 0.92) — порог авто-принятия Issue из встречи. См. [[admin]] §AdminSetting.
 
 [[../index|← index]]
+
+## Остаток цепочки агентов без golden — новые арбитры + direct-path (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`](../../plans/tz/2026-06-08-agent-chain-remaining-no-golden.md). Ветка `feature/retest2-agent-chain-overhaul` (коммиты `7430162e..accdfe7b`). Сервисы/cron — [[workers-queues]] и [[../02_architecture/module-map]] §«Остаток цепочки агентов».
+
+### Новые taskType (оба cheap, `deepseek-v4-flash`)
+
+| taskType | Что делает | Цепочка | Флаг | Метрика |
+|---|---|---|---|---|
+| `task-dedupe` | семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр **серой зоны** (одна задача в двух формулировках) → удаляет fast-черновики-дубли | `deepseek-v4-flash` (cheap) | `meetings.taskDedupeEnabled` (default **OFF**), порог `meetings.taskDedupeThreshold` (0.85) | `z_task_dedupe_total{result}` |
+| `goal-task-link` | привязка AI-цели встречи к её задачам: LLM-арбитр «какая задача относится к этой цели» → пишет `Issue.goalId` (non-destructive) | `deepseek-v4-flash` (cheap) | `goals.goalTaskLinkEnabled` (default **OFF**) | `z_goal_task_link_total{result}` |
+
+Оба маршрута засеиваются `seed-llm-task-routes-task-dedupe.ts` / `seed-llm-task-routes-goal-task-link.ts` (зарегистрированы в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`). Без маршрута вызов при включении флага упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — поэтому маршрут заведён заранее, до флипа флага. **Оба флага OFF по умолчанию** (data-affecting: дедуп удаляет Task-черновики, link пишет `Issue.goalId`) — владелец включает после прод-наблюдения.
+
+- `task-dedupe` вызывается из `tasks-extract.worker` + `meeting-report-fast.worker` (сервис `MeetingTaskDedupeService`, modules/meetings).
+- `goal-task-link` вызывается из cron `GoalTaskLinkerCron` (@Cron 30m) + on-event из специалиста `3-14-goals` (сервис `GoalTaskLinkerService`, modules/knowledge-core).
+
+### Idea direct-path в block-ingest (без LLM)
+
+- **Детерминированная материализация Idea** из блоков `signalType='idea'` в `block-ingest.worker` (без отдельного LLM-вызова — recall идей без плодёжа). Дедуп по `sourceBlockId` (guard в специалисте `3-6-ideas`, чтобы LLM-специалист не задублировал материализованные идеи). Флаг `knowledge.ideaDirectPathEnabled` (default **ON**); OFF → идеи только через LLM-специалиста (старое поведение).
+
+### Ф2 — hardening экстракторов (code-промпты, без seed)
+
+ASR-нота `withAsrNote` / калибровка уверенности / анти-галлюцинация имён / `meetingDateIso` добавлены на `meeting-report-fast` + `block-ingest`; ASR/калибровка — на `block-distill` / `theme-classify` / `axis-classify` / `knowledge-clone-extract` / `chapters-v2` / `goal-hierarchy-link` / `entity-merge-arbiter`. C8: `entity-merge` SYSTEM приведён к коду («5→1»). C3: булевы гейты `isDecision` / `isIdea` на decision/idea extract + разрешён пустой результат (анти-плодёж). Всё — **code-промпты** (prompt registry с code-fallback, prompt-caching-friendly: стабильный SYSTEM), едут с деплоем кода, отдельной seed-операции не требуют.
+
+### Ф6 — smoke cache-hit-ratio
+
+- Метрики `z_llm_calls_total{provider}` (знаменатель) + `z_llm_cache_hit_ratio_below_threshold{provider}` (gauge). `BusinessMetricsService.getLlmCacheHitRatio` считает долю кэш-хитов; `provider-smoke-test.cron.checkCacheHitRatio` пишет WARN, если доля кэша DeepSeek ниже порога (видимость, что правки SYSTEM ломают prompt-caching). Флаги `llm.cacheSmokeEnabled` (default **true**) + `llm.cacheHitRatioWarnThreshold` (0.6).
+
+**Миграций БД НЕТ, новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
+
+[[../index|← index]]

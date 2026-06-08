@@ -14,6 +14,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
@@ -219,42 +220,54 @@ export class IntakeAutoTriageWorker
       recentIssues,
     });
 
-    // 3. LLM-вызов.
-    let parsed: TriageLlmOutput | null;
-    try {
-      const result = await this.llm.call({
-        taskType: 'intake-auto-triage',
-        tenantId,
-        systemPrompt: INTAKE_AUTO_TRIAGE_SYSTEM,
-        userMessage,
-        responseFormat: {
-          type: 'json_schema',
-          name: 'intake_auto_triage',
-          schema: INTAKE_AUTO_TRIAGE_SCHEMA as unknown as Record<string, unknown>,
-          strict: true,
-        },
-        dataClass: 'internal',
-        sourceRef: { type: 'intake', id: intake.id },
-      });
-      parsed = parseTriageOutput(result.text);
-    } catch (err) {
-      this.logger.warn(
-        {
-          intakeIssueId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'intake-auto-triage: LLM упал — оставляем pending',
-      );
-      this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'llm_error' });
-      // throw нужен, чтобы BullMQ retry'нул (по политике 5 попыток).
-      throw err;
+    // 3. LLM-вызов с устойчивым разбором (ТЗ B Фаза 4): tryParseJson + ретрай×2
+    //    + validate-callback (router уйдёт на secondary на битом JSON, как
+    //    entity-graph/block-link). Раньше одиночный JSON.parse молча терял
+    //    триаж на ```json-обёртке/преамбуле.
+    let parsed: TriageLlmOutput | null = null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await this.llm.call({
+          taskType: 'intake-auto-triage',
+          tenantId,
+          systemPrompt: INTAKE_AUTO_TRIAGE_SYSTEM,
+          userMessage,
+          responseFormat: {
+            type: 'json_schema',
+            name: 'intake_auto_triage',
+            schema: INTAKE_AUTO_TRIAGE_SCHEMA as unknown as Record<string, unknown>,
+            strict: true,
+          },
+          dataClass: 'internal',
+          sourceRef: { type: 'intake', id: intake.id },
+          validate: (text) => parseTriageOutput(text) !== null,
+        });
+        lastErr = null;
+        parsed = parseTriageOutput(result.text);
+        if (parsed) break;
+        this.logger.warn(
+          { intakeIssueId, attempt },
+          'intake-auto-triage: невалидный JSON LLM — повтор',
+        );
+      } catch (err) {
+        lastErr = err;
+        this.logger.warn(
+          { intakeIssueId, attempt, err: err instanceof Error ? err.message : String(err) },
+          'intake-auto-triage: LLM упал — повтор',
+        );
+      }
     }
     if (!parsed) {
+      this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'llm_error' });
+      if (lastErr) {
+        // LLM реально падал (сеть/прокси) → throw для BullMQ-ретрая (политика 5 попыток).
+        throw lastErr;
+      }
       this.logger.warn(
         { intakeIssueId },
-        'intake-auto-triage: LLM вернул невалидный JSON',
+        'intake-auto-triage: LLM вернул невалидный JSON (2 попытки) — оставляем pending',
       );
-      this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'llm_error' });
       return;
     }
 
@@ -521,13 +534,15 @@ interface TriageLlmOutput {
 }
 
 function parseTriageOutput(text: string): TriageLlmOutput | null {
-  try {
-    const j = JSON.parse(text);
-    if (typeof j !== 'object' || j === null) return null;
-    return j as TriageLlmOutput;
-  } catch {
+  // tryParseJson снимает ```json-обёртку и вытаскивает первый {…} из прозы;
+  // на мусор возвращает { raw: text } — это не валидный триаж.
+  const raw = tryParseJson(text);
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if ('raw' in o && Object.keys(o).length === 1 && typeof o.raw === 'string') {
     return null;
   }
+  return o as TriageLlmOutput;
 }
 
 function resolveProjectId(

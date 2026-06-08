@@ -683,12 +683,12 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware).forRoutes('{*path}');
 
     // RequestContextMiddleware — оборачивает запрос в AsyncLocalStorage-контекст
     // ПОСЛЕ RequestIdMiddleware (нужен req.id) и ПЕРЕД TenantMiddleware/guards,
     // чтобы LogService мог читать requestId/userId/orgId на горячем пути.
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware).forRoutes('{*path}');
 
     // TenantMiddleware — выставляет `req.tenantId` ДО глобальных guards
     // (SubscriptionGuard / EntitlementGuard), чтобы они могли работать на
@@ -697,7 +697,7 @@ export class AppModule implements NestModule {
     // TenantGuard, который бежит ПОСЛЕ глобальных guards → 403 tenant_required
     // на /api/v1/dashboard/director и других gated-эндпоинтах.
     // Single-org fallback остаётся в TenantGuard (нужен req.user.id).
-    consumer.apply(TenantMiddleware).forRoutes('api/v1/*');
+    consumer.apply(TenantMiddleware).forRoutes('api/v1/{*path}');
 
     // NB: сохранение `req.rawBody` для всех запросов — глобально через
     // `express.json({ verify })` в `main.ts`. Это нужно для проверки HMAC-

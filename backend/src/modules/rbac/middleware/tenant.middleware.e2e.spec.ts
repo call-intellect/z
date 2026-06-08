@@ -38,7 +38,7 @@ class OrgsProbeController {
 @Module({ controllers: [OrgsProbeController] })
 class ProbeModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(TenantMiddleware).forRoutes('api/v1/*');
+    consumer.apply(TenantMiddleware).forRoutes('api/v1/{*path}');
   }
 }
 

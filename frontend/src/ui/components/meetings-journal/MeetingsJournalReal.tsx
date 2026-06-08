@@ -26,8 +26,10 @@ import {
   Sparkles,
   Tag as TagIcon,
   Trash2,
+  Upload,
   UserPlus,
   Users,
+  UserSquare2,
   X,
 } from 'lucide-react';
 
@@ -68,6 +70,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -93,6 +96,8 @@ const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
   failed: 'Ошибка',
   // Запись в порядке, упала только AI-ветка (транскрибация/отчёт).
   ai_failed: 'Отчёт не готов',
+  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
+  awaiting_speakers: 'Подпишите говорящих',
 };
 
 type Group = 'today' | 'week' | 'earlier';
@@ -292,12 +297,28 @@ export function MeetingsJournalReal() {
             <h1 className="text-xl font-semibold tracking-tight">Мои встречи</h1>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{data?.total ?? items.length}</Badge>
-              <Button asChild size="sm">
-                <Link href="/meetings/create">
-                  <Plus size={13} />
-                  Новая
-                </Link>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus size={13} />
+                    Новая
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => router.push('/meetings/create')}
+                  >
+                    <Plus size={14} />
+                    Создать встречу
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => router.push('/meetings/upload')}
+                  >
+                    <Upload size={14} />
+                    Загрузить запись
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -463,6 +484,8 @@ function MeetingRowCard({
   const isFailed = item.status === 'failed';
   // Запись есть, но AI-отчёт не сформирован — мягкий «warning», не «danger».
   const isAiFailed = item.status === 'ai_failed';
+  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
+  const isAwaitingSpeakers = item.status === 'awaiting_speakers';
 
   return (
     <div
@@ -512,6 +535,12 @@ function MeetingRowCard({
             className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
           />
         )}
+        {isAwaitingSpeakers && (
+          <span
+            aria-label="Нужно подписать говорящих"
+            className="mt-1 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-warning"
+          />
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-6 text-xs text-fg-tertiary">
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -550,6 +579,21 @@ function MeetingRowCard({
             }}
           >
             <Copy size={12} /> Скопировать ссылку
+          </Button>
+        </div>
+      )}
+      {isAwaitingSpeakers && (
+        <div className="flex flex-wrap items-center gap-2 pl-6 pt-1">
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 border-chip-warning-fg/40 px-2 text-xs text-chip-warning-fg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link href={`/meetings/${item.id}/speakers`}>
+              <UserSquare2 size={12} /> Подписать говорящих →
+            </Link>
           </Button>
         </div>
       )}

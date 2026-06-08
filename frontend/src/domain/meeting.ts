@@ -1,5 +1,9 @@
 import { MEETING_STATUSES } from './enums';
 import type { MeetingStatus, MeetingType, ParticipantRole } from './enums';
+import type {
+  SpeakerAssignmentApi,
+  UploadSpeakerApi,
+} from '@/api/meetings.api';
 
 /**
  * Единый русский справочник подписей типов встреч.
@@ -263,6 +267,8 @@ const STATUS_VIEW: Record<MeetingStatus, { label: string; tone: MeetingStatusTon
   failed: { label: 'Ошибка', tone: 'danger' },
   // Запись есть, AI-ветка упала — это НЕ полный провал, поэтому «warning».
   ai_failed: { label: 'Запись готова · отчёт не удался', tone: 'warning' },
+  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
+  awaiting_speakers: { label: 'Подпишите говорящих', tone: 'warning' },
 };
 
 const TONE_CHIP_CLASS: Record<MeetingStatusTone, string> = {
@@ -299,3 +305,59 @@ export function isJoinableStatus(status: MeetingStatus): boolean {
 /** Список всех статусов с их представлением — для фильтров/легенд. */
 export const MEETING_STATUS_VIEWS: ReadonlyArray<{ status: MeetingStatus } & MeetingStatusView> =
   MEETING_STATUSES.map((status) => ({ status, ...meetingStatusView(status) }));
+
+// ─────────────── Говорящие загруженной записи (ТЗ-5 Ф5) ───────────────
+
+/**
+ * UiModel говорящего на экране подписи. В отличие от ApiDto тут уже посчитаны
+ * доля времени (`timePercent`), флаг «нужно подписать» и подпись-плейсхолдер
+ * для лейбла дорожки.
+ */
+export type UploadSpeakerUi = {
+  /** Технический лейбл дорожки (SPEAKER_00 и т.п.) — ключ, не переводить. */
+  label: string;
+  /** Текущее отображаемое имя говорящего. */
+  displayLabel: string;
+  turnsCount: number;
+  speakingSeconds: number;
+  /** Доля времени говорящего от суммы всех (0..100, целое). */
+  timePercent: number;
+  sampleText: string;
+  assignment: SpeakerAssignmentApi;
+  personId: string | null;
+  externalName: string | null;
+  externalCompany: string | null;
+  externalPosition: string | null;
+  mergedIntoLabel: string | null;
+  /** Говорящий реально звучал в записи (а не пустая дорожка). */
+  hasSpeech: boolean;
+};
+
+/**
+ * Маппер ApiDto → UiModel. `totalSpeakingSeconds` нужен для расчёта доли
+ * времени; передаётся вызывающим (сумма по всем говорящим).
+ */
+export function uploadSpeakerFromApi(
+  api: UploadSpeakerApi,
+  totalSpeakingSeconds: number,
+): UploadSpeakerUi {
+  const timePercent =
+    totalSpeakingSeconds > 0
+      ? Math.round((api.speakingSeconds / totalSpeakingSeconds) * 100)
+      : 0;
+  return {
+    label: api.label,
+    displayLabel: api.displayLabel,
+    turnsCount: api.turnsCount,
+    speakingSeconds: api.speakingSeconds,
+    timePercent,
+    sampleText: api.sampleText,
+    assignment: api.assignment,
+    personId: api.personId ?? null,
+    externalName: api.externalName ?? null,
+    externalCompany: api.externalCompany ?? null,
+    externalPosition: api.externalPosition ?? null,
+    mergedIntoLabel: api.mergedIntoLabel ?? null,
+    hasSpeech: api.speakingSeconds > 0,
+  };
+}

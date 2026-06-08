@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
@@ -12,6 +12,8 @@ import {
   type Decision,
   type Document,
   type DocumentKind,
+  type DocumentStatus,
+  type DocumentType,
   type IdeaBlock,
   type Metric,
   type Policy,
@@ -67,6 +69,204 @@ export class DocumentsService {
 
   // ─────────────────────────── upload (multipart) ───────────────────────
 
+  /**
+   * ТЗ-4 Ф3 — multipart-загрузка одного или нескольких файлов c атрибуцией и
+   * дедупликацией по `contentHash` (sha256 буфера на момент загрузки).
+   *
+   * Алгоритм:
+   *   1. Лимиты (Ф6, из AdminSetting): кол-во ≤ `maxFilesPerUpload`; per-file
+   *      `kind ∈ acceptedFormats`, размер ≤ `maxSizeMb`, не пустой.
+   *   2. Атрибуция: Role/Theme/Project должны принадлежать tenantId.
+   *   3. Per-file: `contentHash = sha256(buffer)`. Если Document с тем же
+   *      `{tenantId, contentHash, deletedAt:null}` уже есть — НЕ создаём дубль,
+   *      возвращаем `{ id, status, name, deduped:true }`.
+   *      Иначе — создаём (inline/S3) + enqueue ingest, `deduped:false`.
+   */
+  async uploadMany(args: {
+    tenantId: string;
+    uploaderPersonId: string;
+    files: Array<{
+      buffer: Buffer;
+      originalName: string;
+      mimeType: string;
+      size: number;
+    }>;
+    attachedRoleId?: string;
+    attachedThemeId?: string;
+    attachedProjectId?: string;
+    docType?: DocumentType;
+  }): Promise<{
+    items: Array<{
+      id: string;
+      status: DocumentStatus;
+      name: string;
+      deduped: boolean;
+    }>;
+  }> {
+    const {
+      tenantId,
+      uploaderPersonId,
+      files,
+      attachedRoleId,
+      attachedThemeId,
+      attachedProjectId,
+      docType,
+    } = args;
+
+    if (files.length === 0) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'file_required', message: 'Файл обязателен' },
+      });
+    }
+
+    // 1. Лимиты Ф6 — «живые» крутилки из AdminSetting (ENV-fallback → default).
+    const limits = await this.cfg.documentLimits();
+    if (files.length > limits.maxFilesPerUpload) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'too_many_files',
+          message: `За одну загрузку можно отправить не более ${limits.maxFilesPerUpload} файлов`,
+        },
+      });
+    }
+    const accepted = new Set(limits.acceptedFormats.map((f) => f.toLowerCase()));
+
+    // 2. Per-file pre-validation (формат + размер + не пустой) ДО любых
+    //    записей в БД/S3 — чтобы частично корректный батч не оставлял мусор.
+    const prepared = files.map((file) => {
+      const kind = detectKind(file.mimeType, file.originalName);
+      const ext = formatToken(kind, file.originalName);
+      if (!accepted.has(ext)) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'unsupported_format',
+            message: `Формат «${ext}» не поддерживается (файл «${file.originalName}»)`,
+          },
+        });
+      }
+      if (file.size > limits.maxSizeBytes) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'file_too_large',
+            message: `Файл «${file.originalName}» превышает лимит ${limits.maxSizeMb} МБ`,
+          },
+        });
+      }
+      if (file.size === 0) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'document_empty',
+            message: `Файл «${file.originalName}» пустой`,
+          },
+        });
+      }
+      return { file, kind };
+    });
+
+    // 3. Атрибуция: Role/Theme/Project должны принадлежать tenantId.
+    await this.assertAttributionBelongsToTenant({
+      tenantId,
+      attachedRoleId,
+      attachedThemeId,
+      attachedProjectId,
+    });
+
+    // 4. Per-file: dedup по contentHash → create + enqueue.
+    const items: Array<{
+      id: string;
+      status: DocumentStatus;
+      name: string;
+      deduped: boolean;
+    }> = [];
+    for (const { file, kind } of prepared) {
+      const name = file.originalName.slice(0, 500);
+      const contentHash = createHash('sha256').update(file.buffer).digest('hex');
+
+      const existing = await this.prisma.document.findFirst({
+        where: { tenantId, contentHash, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        items.push({
+          id: existing.id,
+          status: existing.status,
+          name,
+          deduped: true,
+        });
+        this.logger.log(
+          { tenantId, existingId: existing.id, contentHash, name },
+          'documents.uploadMany: дубль по contentHash — Document не создан',
+        );
+        continue;
+      }
+
+      // inline vs S3 storage.
+      const useS3 = file.size > this.cfg.document.inlineThresholdBytes;
+      let s3Key: string | null = null;
+      if (useS3) {
+        const objectKey = `documents/${tenantId}/${randomUUID()}.bin`;
+        await this.s3.putObject({
+          key: objectKey,
+          body: file.buffer,
+          contentType: file.mimeType,
+        });
+        s3Key = objectKey;
+      }
+
+      // Prisma 7 для `Bytes` ожидает `Uint8Array<ArrayBuffer>` — копируем.
+      const inlineBytes = useS3 ? null : Uint8Array.from(file.buffer);
+      const doc = await this.prisma.document.create({
+        data: {
+          tenantId,
+          uploaderId: uploaderPersonId,
+          kind,
+          name,
+          mimeType: file.mimeType.slice(0, 100),
+          s3Key,
+          inlineContent: inlineBytes,
+          originalSize: file.size,
+          status: 'uploaded',
+          contentHash,
+          attachedRoleId: attachedRoleId ?? null,
+          attachedThemeId: attachedThemeId ?? null,
+          attachedProjectId: attachedProjectId ?? null,
+          docType: docType ?? null,
+        },
+      });
+
+      await this.coreQueue.enqueueDocumentUploaded({
+        tenantId,
+        documentId: doc.id,
+      });
+
+      this.logger.log(
+        {
+          documentId: doc.id,
+          tenantId,
+          uploaderPersonId,
+          kind,
+          sizeBytes: file.size,
+          storage: useS3 ? 's3' : 'inline',
+          contentHash,
+        },
+        'documents.uploadMany: Document создан, document.uploaded опубликован',
+      );
+
+      items.push({ id: doc.id, status: doc.status, name, deduped: false });
+    }
+
+    return { items };
+  }
+
+  /**
+   * Backward-compat обёртка над `uploadMany` для одиночного файла. Сохраняет
+   * прежний контракт `{ id, status }` (использовался до ТЗ-4 Ф3).
+   */
   async upload(args: {
     tenantId: string;
     uploaderPersonId: string;
@@ -78,30 +278,37 @@ export class DocumentsService {
     };
     attachedRoleId?: string;
   }): Promise<{ id: string; status: string }> {
-    const { tenantId, uploaderPersonId, file, attachedRoleId } = args;
-
-    // 1. Лимит размера. Жёсткая проверка до записи в БД, чтобы не плодить
-    //    Document.status='failed' c "слишком большим".
-    if (file.size > this.cfg.document.maxSizeBytes) {
+    const { items } = await this.uploadMany({
+      tenantId: args.tenantId,
+      uploaderPersonId: args.uploaderPersonId,
+      files: [args.file],
+      attachedRoleId: args.attachedRoleId,
+    });
+    const first = items[0];
+    if (!first) {
+      // Недостижимо: при непустом files[] uploadMany возвращает ≥1 item.
       throw new BadRequestException({
         ok: false,
-        error: {
-          code: 'document_too_large',
-          message: `Файл превышает лимит ${this.cfg.document.maxSizeMb} МБ`,
-        },
+        error: { code: 'file_required', message: 'Файл обязателен' },
       });
     }
-    if (file.size === 0) {
-      throw new BadRequestException({
-        ok: false,
-        error: { code: 'document_empty', message: 'Файл пустой' },
-      });
-    }
+    return { id: first.id, status: first.status };
+  }
 
-    // 2. Определяем kind по MIME и расширению.
-    const kind = detectKind(file.mimeType, file.originalName);
+  /**
+   * Проверяет, что заданные привязки документа принадлежат tenantId.
+   * Зеркалит существующую role-проверку и расширяет на Theme/Project (ТЗ-4 Ф3).
+   * На несоответствие — machine-coded 404.
+   */
+  private async assertAttributionBelongsToTenant(args: {
+    tenantId: string;
+    attachedRoleId?: string;
+    attachedThemeId?: string;
+    attachedProjectId?: string;
+  }): Promise<void> {
+    const { tenantId, attachedRoleId, attachedThemeId, attachedProjectId } =
+      args;
 
-    // 3. Если задан attachedRoleId — убеждаемся, что Role принадлежит Org.
     if (attachedRoleId) {
       const role = await this.prisma.role.findUnique({
         where: { id: attachedRoleId },
@@ -114,62 +321,30 @@ export class DocumentsService {
         });
       }
     }
-
-    // 4. Решаем inline vs S3 storage.
-    const useS3 = file.size > this.cfg.document.inlineThresholdBytes;
-    let s3Key: string | null = null;
-
-    if (useS3) {
-      // Заранее генерим id для предсказуемого s3-пути. Document.id сам
-      // выставится cuid'ом — но мы держим ОТДЕЛЬНЫЙ суффикс ради S3 ключа,
-      // чтобы s3 PUT шёл до INSERT (если INSERT упадёт — S3 безвреден).
-      const objectKey = `documents/${tenantId}/${randomUUID()}.bin`;
-      await this.s3.putObject({
-        key: objectKey,
-        body: file.buffer,
-        contentType: file.mimeType,
+    if (attachedThemeId) {
+      const theme = await this.prisma.theme.findUnique({
+        where: { id: attachedThemeId },
+        select: { tenantId: true },
       });
-      s3Key = objectKey;
+      if (!theme || theme.tenantId !== tenantId) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'theme_not_found', message: 'Тема не найдена' },
+        });
+      }
     }
-
-    // 5. Создаём Document.
-    // Prisma 7 для `Bytes`-поля ожидает `Uint8Array<ArrayBuffer>`. Buffer (с
-    // ArrayBufferLike) сам по себе не совместим — копируем в чистый Uint8Array.
-    const inlineBytes = useS3 ? null : Uint8Array.from(file.buffer);
-    const doc = await this.prisma.document.create({
-      data: {
-        tenantId,
-        uploaderId: uploaderPersonId,
-        kind,
-        name: file.originalName.slice(0, 500),
-        mimeType: file.mimeType.slice(0, 100),
-        s3Key,
-        inlineContent: inlineBytes,
-        originalSize: file.size,
-        status: 'uploaded',
-        attachedRoleId: attachedRoleId ?? null,
-      },
-    });
-
-    // 6. Публикуем job для DocumentIngestAdapter.
-    await this.coreQueue.enqueueDocumentUploaded({
-      tenantId,
-      documentId: doc.id,
-    });
-
-    this.logger.log(
-      {
-        documentId: doc.id,
-        tenantId,
-        uploaderPersonId,
-        kind,
-        sizeBytes: file.size,
-        storage: useS3 ? 's3' : 'inline',
-      },
-      'documents.upload: Document создан, document.uploaded опубликован',
-    );
-
-    return { id: doc.id, status: doc.status };
+    if (attachedProjectId) {
+      const project = await this.prisma.project.findUnique({
+        where: { id: attachedProjectId },
+        select: { tenantId: true },
+      });
+      if (!project || project.tenantId !== tenantId) {
+        throw new NotFoundException({
+          ok: false,
+          error: { code: 'project_not_found', message: 'Проект не найден' },
+        });
+      }
+    }
   }
 
   // ─────────────────────────── createTextDump (для /dumps) ──────────────
@@ -498,4 +673,33 @@ function detectKind(mimeType: string, fileName: string): DocumentKind {
   }
   if (mime.startsWith('text/') || ext === 'txt') return 'text';
   return 'other';
+}
+
+/**
+ * Нормализованный токен формата для сверки с `documents.acceptedFormats`
+ * (ТЗ-4 Ф6). Берёт расширение файла как основной источник (именно расширения
+ * перечислены в белом списке: `pdf,docx,xlsx,…,md,txt`), а если расширения
+ * нет — маппит из распознанного `DocumentKind`.
+ *
+ * Маппинг учитывает расхождение enum'а и белого списка:
+ *   DocumentKind `markdown` → токен `md`; `text` → `txt`.
+ */
+function formatToken(kind: DocumentKind, fileName: string): string {
+  const ext = (fileName.split('.').pop() ?? '').toLowerCase();
+  if (ext && ext !== fileName.toLowerCase()) {
+    // Канонизируем синонимы расширений к токенам белого списка.
+    if (ext === 'markdown') return 'md';
+    if (ext === 'htm') return 'html';
+    if (ext === 'xls') return 'xlsx';
+    return ext;
+  }
+  // Нет расширения — выводим из kind.
+  switch (kind) {
+    case 'markdown':
+      return 'md';
+    case 'text':
+      return 'txt';
+    default:
+      return kind;
+  }
 }

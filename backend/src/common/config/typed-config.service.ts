@@ -1108,6 +1108,46 @@ export class TypedConfigService {
     } as const;
   }
 
+  /**
+   * ТЗ-4 Ф6 — «живые» лимиты ручной загрузки документов (admin-editable).
+   * Читаются через `getDynamic` (AdminSetting → ENV-fallback → default).
+   *   - `maxSizeMb` — потолок размера одного файла (МБ).
+   *   - `maxFilesPerUpload` — максимум файлов в одном multipart-запросе.
+   *   - `acceptedFormats` — белый список расширений (`DocumentKind`-совместимый).
+   *
+   * Намеренно async (в отличие от sync-геттера `document`) — это
+   * owner-decision крутилки, редактируемые из админки без рестарта.
+   */
+  async documentLimits(): Promise<{
+    maxSizeMb: number;
+    maxSizeBytes: number;
+    maxFilesPerUpload: number;
+    acceptedFormats: readonly string[];
+  }> {
+    const [maxSizeMb, maxFilesPerUpload, acceptedFormats] = await Promise.all([
+      this.getDynamic<number>('documents.maxSizeMb', 'DOCUMENT_MAX_SIZE_MB', 50),
+      this.getDynamic<number>('documents.maxFilesPerUpload', undefined, 20),
+      this.getDynamic<readonly string[]>('documents.acceptedFormats', undefined, [
+        'pdf',
+        'docx',
+        'xlsx',
+        'pptx',
+        'md',
+        'txt',
+        'html',
+        'rtf',
+        'odt',
+        'csv',
+      ]),
+    ]);
+    return {
+      maxSizeMb,
+      maxSizeBytes: maxSizeMb * 1024 * 1024,
+      maxFilesPerUpload,
+      acceptedFormats,
+    };
+  }
+
   // ─────────────────────────── smart tables (Фаза 0) ────────────
   /**
    * Технические guard'ы Smart Tables (см. plans/tz/2026-05-31-smart-tables.md

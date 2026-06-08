@@ -260,6 +260,12 @@ const registry = new Map<string, ZodTypeAny>([
   ['portfolio.health.weight_dropped', NON_NEGATIVE_INT],
   ['operations.portfolio_health.enabled', z.boolean()],
 
+  // ── ТЗ-4 Ф6 (manual-document-upload) — лимиты ручной загрузки документов ──
+  // owner-decision крутилки (размер/кол-во/форматы) — редактируются super_admin.
+  ['documents.maxSizeMb', POSITIVE_INT],
+  ['documents.maxFilesPerUpload', POSITIVE_INT],
+  ['documents.acceptedFormats', z.array(z.string())],
+
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],

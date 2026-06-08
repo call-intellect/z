@@ -98,6 +98,18 @@ function parseShareDays(raw: string): number[] {
 }
 
 /**
+ * Парсит CSV-список расширений (например `'pdf,docx,csv'`) в массив строк.
+ * Используется для `documents.acceptedFormats` (ТЗ-4 Ф6) — храним `string[]`
+ * напрямую (Json), чтобы геттер `cfg.documentLimits()` получал готовый массив.
+ */
+function parseFormats(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+}
+
+/**
  * upsert одной AdminSetting. Если admin её уже редактировал (updatedBy != null),
  * то перезаписываем ТОЛЬКО метаданные (category/section/severity/description),
  * сохраняя value — это правило `safe-seed-rules` для admin-edited.
@@ -510,11 +522,19 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'security', severity, description });
   }
 
-  // ── Documents (documents.*) — 3.
+  // ── Documents (documents.*) — 5. (ТЗ-4 Ф6: +maxFilesPerUpload +acceptedFormats)
   const documents: Array<[string, unknown, Severity, string]> = [
     ['documents.parseTimeoutMs', envInt('DOCUMENT_PARSE_TIMEOUT_MS', 30000), 'medium', 'Таймаут парсинга документа (мс)'],
-    ['documents.maxSizeMb', envInt('DOCUMENT_MAX_SIZE_MB', 50), 'medium', 'Максимальный размер документа (МБ)'],
+    ['documents.maxSizeMb', envInt('DOCUMENT_MAX_SIZE_MB', 50), 'medium', 'Максимальный размер одного документа (МБ)'],
     ['documents.inlineThresholdMb', envInt('DOCUMENT_INLINE_THRESHOLD_MB', 5), 'medium', 'Порог inline-загрузки документа (МБ)'],
+    // ТЗ-4 Ф3/Ф6 — multipart-загрузка нескольких файлов.
+    ['documents.maxFilesPerUpload', envInt('DOCUMENT_MAX_FILES_PER_UPLOAD', 20), 'medium', 'Максимум файлов в одной операции загрузки'],
+    [
+      'documents.acceptedFormats',
+      parseFormats(env('DOCUMENT_ACCEPTED_FORMATS', 'pdf,docx,xlsx,pptx,md,txt,html,rtf,odt,csv')),
+      'medium',
+      'Белый список расширений документов, принимаемых при загрузке',
+    ],
   ];
   for (const [key, value, severity, description] of documents) {
     out.push({ key, value, category: 'content', section: 'documents', severity, description });

@@ -28,6 +28,51 @@ export const UploadDocumentQuerySchema = z.object({
 });
 export type UploadDocumentQuery = z.infer<typeof UploadDocumentQuerySchema>;
 
+/**
+ * ТЗ-4 Ф3 — атрибуция multipart-загрузки. Поля передаются как form-fields
+ * в том же multipart-теле, что и файлы (`files`). Валидируется отдельно от
+ * query (query-поле `attachedRoleId` остаётся работать для обратной
+ * совместимости; если задано и тут, и там — приоритет у body).
+ *
+ *   - `attachedRoleId` / `attachedThemeId` / `attachedProjectId` — привязка к
+ *     должности / теме графа / проекту трекера (все опц.; tenantId-проверка в
+ *     сервисе).
+ *   - `docType` — смысловой тип документа (enum совпадает с Prisma
+ *     `DocumentType`).
+ */
+export const UploadDocumentBodySchema = z.object({
+  attachedRoleId: z.string().cuid().optional(),
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: z
+    .enum([
+      'regulation',
+      'policy',
+      'instruction',
+      'process',
+      'job_description',
+      'other',
+    ])
+    .optional(),
+});
+export type UploadDocumentBodyDto = z.infer<typeof UploadDocumentBodySchema>;
+
+/**
+ * Результат multipart-загрузки (ТЗ-4 Ф3). Один элемент на загруженный файл.
+ *   - `deduped: true` — файл с тем же `contentHash` уже существует в Org;
+ *     новый Document НЕ создан, `id`/`status` — у существующего.
+ */
+export interface UploadDocumentItemDto {
+  id: string;
+  status: DocumentStatus;
+  name: string;
+  deduped: boolean;
+}
+
+export interface UploadDocumentResultDto {
+  items: UploadDocumentItemDto[];
+}
+
 export const ListDocumentsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),

@@ -12,11 +12,11 @@ import {
   Param,
   Post,
   Query,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBody,
   ApiConsumes,
@@ -65,9 +65,17 @@ import {
   toProcessProvenance,
   toRegulationProvenance,
   toToolProvenance,
+  UploadDocumentBodySchema,
+  type UploadDocumentBodyDto,
+  type UploadDocumentResultDto,
   UploadDocumentQuerySchema,
   type UploadDocumentQuery,
 } from './dto/documents.dto';
+
+/** Максимум файлов, который multer примет в одном multipart-запросе. Жёсткий
+ *  потолок «на трубе»; реальный per-Org лимит ниже — `documents.maxFilesPerUpload`
+ *  (AdminSetting, ТЗ-4 Ф6), проверяется в сервисе. */
+const UPLOAD_FILES_MAX_COUNT = 50;
 
 /**
  * `DocumentsController` (Фаза 0b knowledge-core).
@@ -96,46 +104,87 @@ export class DocumentsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Загрузить документ (PDF/DOCX/MD/TXT)' })
+  @ApiOperation({
+    summary:
+      'Загрузить документ(ы) (PDF/DOCX/XLSX/PPTX/MD/TXT/HTML/RTF/ODT/CSV). Поле `files` (несколько) или `file` (один, обратная совместимость).',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Несколько файлов (ТЗ-4 Ф3)',
+        },
         file: {
           type: 'string',
           format: 'binary',
+          description: 'Один файл (обратная совместимость)',
+        },
+        attachedRoleId: { type: 'string', description: 'Привязка к должности' },
+        attachedThemeId: { type: 'string', description: 'Привязка к теме графа' },
+        attachedProjectId: { type: 'string', description: 'Привязка к проекту' },
+        docType: {
+          type: 'string',
+          enum: [
+            'regulation',
+            'policy',
+            'instruction',
+            'process',
+            'job_description',
+            'other',
+          ],
+          description: 'Смысловой тип документа',
         },
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  // FileFieldsInterceptor принимает оба поля — `files[]` (новое) и `file` (legacy).
+  // Сливаем их в один список в обработчике; одиночный `file` остаётся рабочим.
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'files', maxCount: UPLOAD_FILES_MAX_COUNT },
+      { name: 'file', maxCount: 1 },
+    ]),
+  )
   async upload(
-    @UploadedFile() file: MulterFile | undefined,
+    @UploadedFiles()
+    uploaded: { files?: MulterFile[]; file?: MulterFile[] } | undefined,
     @Query(new ZodValidationPipe(UploadDocumentQuerySchema))
     query: UploadDocumentQuery,
+    @Body(new ZodValidationPipe(UploadDocumentBodySchema))
+    body: UploadDocumentBodyDto,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
-  ): Promise<{ id: string; status: string }> {
+  ): Promise<UploadDocumentResultDto> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    if (!file) {
+
+    const rawFiles = [...(uploaded?.files ?? []), ...(uploaded?.file ?? [])];
+    if (rawFiles.length === 0) {
       throw new BadRequestException({
         ok: false,
         error: { code: 'file_required', message: 'Файл обязателен' },
       });
     }
     const person = await this.requirePerson(t, user.id);
-    return this.documents.upload({
+
+    // Атрибуция: body имеет приоритет над query (query.attachedRoleId — legacy).
+    return this.documents.uploadMany({
       tenantId: t,
       uploaderPersonId: person.id,
-      file: {
-        buffer: file.buffer,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-      },
-      attachedRoleId: query.attachedRoleId,
+      files: rawFiles.map((f) => ({
+        buffer: f.buffer,
+        originalName: f.originalname,
+        mimeType: f.mimetype,
+        size: f.size,
+      })),
+      attachedRoleId: body.attachedRoleId ?? query.attachedRoleId,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
     });
   }
 

@@ -217,6 +217,10 @@ const registry = new Map<string, ZodTypeAny>([
   ['onboarding.silent_days', POSITIVE_INT],
   ['operations.onboarding_ramp.enabled', z.boolean()],
 
+  // ── ТЗ-2 Ф4 (daily-value-dashboards) — self-view недельного план-факта ──
+  // kill-switch self-эндпоинта /me/weekly-per-person (моя строка + среднее команды).
+  ['operations.per_person_self_view.enabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

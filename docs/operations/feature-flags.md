@@ -87,6 +87,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `chat_v2.feedback.enabled` | 🟢 ВКЛ | Оценка ответов AI-чата (палец вверх/вниз на ChatV2Message, web + Telegram/in_app) — несущая часть helped-rate месячной витрины. Выкл → `POST /chat-v2/messages/:id/feedback` отдаёт 403, оценка не собирается. (TZ-1 Ф5 daily-value) |
 | `dashboard.main_rework.enabled` | 🟢 ВКЛ | Новая компоновка главной директора — первый экран ≤7 величин (Польза/Настроение/Обещания/Висящие решения/Компас/AI-сводка/Top-1 риск) + единый компас + «Что узнали» + сворачивание виджетов знаний в drill-down. Бэкенд всегда считает `valueStrip`; флаг едет в DTO как `mainReworkEnabled` и гейтит только инфо-перекомпоновку первого экрана на фронте (современный визуал выкатывается безусловно). Выкл → прежняя раскладка первого экрана. (ТЗ-2 Ф1 daily-value-dashboards) |
 | `operations.dashboard_rework.enabled` | 🟢 ВКЛ | Новая раскладка COO-дашборда — capacity по командам, «сколько закрыли» (resolved-зеркало блокеров/конфликтов), хронические блокеры с «Причиной», приём переносов. Едет в overview DTO как `reworkEnabled`, гейтит инфо-перекомпоновку на фронте (визуал безусловно). Выкл → прежняя раскладка COO. (ТЗ-2 Ф2 daily-value-dashboards) |
+| `operations.per_person_self_view.enabled` | 🟢 ВКЛ | Self-view недельного план-факта рядовому — `GET /api/v1/me/weekly-per-person` (своя строка + средняя надёжность команды для стрелки «я vs команда»). Выкл → endpoint отдаёт пустой self DTO. (ТЗ-2 Ф4 daily-value-dashboards) |
 
 ---
 

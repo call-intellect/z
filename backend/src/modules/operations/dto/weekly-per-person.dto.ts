@@ -34,7 +34,16 @@ export interface WeeklyPersonRowDto {
   promisesKept: number;
   promisesBroken: number;
   promisesOverdue: number;
-  /** kept / max(1, kept+broken+overdue) * 100; null если знаменатель=0. */
+  /**
+   * ТЗ-2 Ф4 — обещания «без ответа»: `commitmentStatus='asked'` (probe ушёл,
+   * человек не подтвердил/не отверг). Подмножество данных за неделю; пересекается
+   * с promisesOverdue (если срок 'asked'-обещания уже прошёл, оно и тут, и там).
+   */
+  promisesNoAnswer: number;
+  /**
+   * kept / max(1, kept+broken+overdue) * 100; null если знаменатель < min_denominator
+   * (ТЗ-2 Ф4 — «мало данных»: при крошечном знаменателе 1/1=100% врёт).
+   */
   reliabilityPercent: number | null;
   /** Закрытые задачи (Task.assigneeUserId через Person.userId). */
   tasksDone: number;
@@ -50,4 +59,20 @@ export interface WeeklyPerPersonDto {
   topReliable: WeeklyPersonRowDto[];
   topRisk: WeeklyPersonRowDto[];
   rows: WeeklyPersonRowDto[];
+}
+
+/**
+ * ТЗ-2 Ф4 — self-view недельного план-факта (`GET /api/v1/me/weekly-per-person`).
+ *
+ * Любой авторизованный пользователь с Person-записью видит ТОЛЬКО свою строку
+ * (без RBAC operations-dashboard). `teamAverageReliabilityPercent` — среднее
+ * `reliabilityPercent` по не-null строкам всей команды за неделю, чтобы фронт
+ * нарисовал стрелку «я vs команда». null, если нет ни одной достоверной строки
+ * или у пользователя нет Person.
+ */
+export interface MyWeeklyPerPersonDto {
+  weekStart: string;
+  weekEnd: string;
+  row: WeeklyPersonRowDto | null;
+  teamAverageReliabilityPercent: number | null;
 }

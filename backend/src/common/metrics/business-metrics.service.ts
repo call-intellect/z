@@ -749,6 +749,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private dashboardValueStripServedTotal!: Counter<'tenant_top'>;
   private dashboardMainFirstScreenWidgetCount!: Gauge<'tenant_top'>;
 
+  // ── ТЗ-2 Ф4 — недельный план-факт по людям (self-view + «без ответа») ──
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private weeklyPerPersonSelfViewServedTotal!: Counter<'tenant_top'>;
+  private weeklyPerPersonNoAnswerTotal!: Counter<'tenant_top'>;
+
   // ── SBA β-8.1 — добивка панели операционного директора ────────────
   // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
   private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
@@ -3007,6 +3012,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.dashboardMainFirstScreenWidgetCount = this.getOrCreateGauge({
       name: 'dashboard_main_first_screen_widget_count',
       help: 'ТЗ-2 Ф1 — число величин на первом экране новой компоновки главной директора (≤7). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── ТЗ-2 Ф4 — недельный план-факт по людям ──
+    this.weeklyPerPersonSelfViewServedTotal = this.getOrCreateCounter({
+      name: 'weekly_per_person_self_view_served_total',
+      help: 'ТЗ-2 Ф4 — сколько раз отдан self-view недельного план-факта (/me/weekly-per-person). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.weeklyPerPersonNoAnswerTotal = this.getOrCreateCounter({
+      name: 'weekly_per_person_no_answer_total',
+      help: 'ТЗ-2 Ф4 — суммарное число обещаний «без ответа» (commitmentStatus=asked) при расчёте недельного план-факта. tenant_top — top-100 bucket через tenantTopOf.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -6667,6 +6684,33 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       args.count,
     );
+  }
+
+  /**
+   * ТЗ-2 Ф4 — фиксируем расчёт недельного план-факта:
+   *  - `weekly_per_person_no_answer_total{tenant_top}` += суммарные «без ответа»
+   *    (commitmentStatus='asked') за этот compute (если > 0).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf` (top-100 bucket).
+   */
+  recordWeeklyPerPersonCompute(args: {
+    tenantTop: string;
+    noAnswerTotal: number;
+  }): void {
+    if (Number.isFinite(args.noAnswerTotal) && args.noAnswerTotal > 0) {
+      this.weeklyPerPersonNoAnswerTotal.inc(
+        { tenant_top: args.tenantTop },
+        args.noAnswerTotal,
+      );
+    }
+  }
+
+  /**
+   * Counter `weekly_per_person_self_view_served_total{tenant_top}` (ТЗ-2 Ф4 —
+   * каждая успешная отдача self-view /me/weekly-per-person).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incWeeklyPerPersonSelfViewServed(args: { tenantTop: string }): void {
+    this.weeklyPerPersonSelfViewServedTotal.inc({ tenant_top: args.tenantTop });
   }
 
   // ────────────────────── SBA β-8.1 (COO добивка) ──────────────────────

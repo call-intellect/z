@@ -11,6 +11,7 @@ import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
 import { MyPromisesController } from './controllers/my-promises.controller';
+import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
 import { PersonalRelationsController } from './controllers/personal-relations.controller';
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
@@ -115,6 +116,9 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // TZ-1 Фаза 2 (daily-value-engine) — движок рядового: «Твой день» + «кто
     // знает X» (self-scope `/me/daily-brief`, `/me/knows-who`).
     MyDailyBriefController,
+    // ТЗ-2 Ф4 (daily-value-dashboards) — self-view недельного план-факта
+    // (`/me/weekly-per-person`): моя строка + среднее команды, без RBAC.
+    MyWeeklyPerPersonController,
   ],
   providers: [
     DailyCheckInService,

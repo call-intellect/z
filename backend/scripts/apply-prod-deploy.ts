@@ -76,6 +76,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-knowledge-improvement-agents.ts', hint: 'ideas.feed.* + insight.recheck_days + team_capacity.{overload,underload}_percent + onboarding.silent_days + 5 kill-switch (ideas.feed/insights.recheck/operations.{knowledge_at_risk,team_capacity,onboarding_ramp}.enabled) (TZ-1 Ф4 улучшения и знания)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-value-recap.ts', hint: 'operations.value_recap.enabled + chat_v2.feedback.{enabled,min_rated,retry_dedup_seconds} (TZ-1 Ф5 месячная витрина value-recap)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-dashboard.ts', hint: 'operations.dashboard_rework.enabled kill-switch (ТЗ-2 Ф2 новая раскладка COO-дашборда)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-per-person.ts', hint: 'operations.per_person_self_view.enabled kill-switch (ТЗ-2 Ф4 self-view /me/weekly-per-person)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },

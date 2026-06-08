@@ -218,6 +218,25 @@ const GoalsPulsePayloadSchema = z
   .strict();
 
 /**
+ * TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+ *
+ * Payload `Notification(eventType='operations.monthly_recap')`. Recipient —
+ * userId роли owner/coo Org'а. `snapshotId` ссылается на
+ * `ValueRecapSnapshot.id` (drill-down на `/dashboard/operations/value-recap`),
+ * `periodYm` — `YYYY-MM`. `body` — human-readable narrative (только твёрдые
+ * данные, без выдуманных рублей — Р6).
+ */
+const OperationsMonthlyRecapPayloadSchema = z
+  .object({
+    snapshotId: z.string().min(1).max(80),
+    periodYm: z.string().regex(/^\d{4}-\d{2}$/),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+/**
  * ТЗ 2026-05-26 (clone-access-grant-admin-api) §5 — payload уведомления
  * `clone.access_granted`. Отправляется получателю гранта (`grantedToUserId`)
  * один раз, при успешном POST `/api/v1/admin/clones/access-grants`.
@@ -356,6 +375,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
   // Goals OKR v2 Фаза 4 — еженедельный пульс целей.
   ['goals.pulse', GoalsPulsePayloadSchema],
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+  ['operations.monthly_recap', OperationsMonthlyRecapPayloadSchema],
   // T8 (2026-05-24) — @-упоминание в комментарии задачи трекера.
   ['issue.mention', IssueMentionPayloadSchema],
   // Calendar MVP (2026-05-25) — напоминание о событии календаря.

@@ -202,6 +202,31 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🟢 TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap + оценка ответов AI-чата
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 5). **Зависит от Ф0** (доставка push + бюджет), Ф3.B (`getDecisionThroughput`). BACKEND-ONLY (фронт-экран — отдельным ТЗ).
+>
+> **Зачем для прода:** (А) оценка «помог ли ответ» на ChatV2Message (палец вверх/вниз, web + Telegram/in_app) + агрегатор метрики чата (`GET /chat-v2/usage-stats`, type-guard citations = grounding-proxy, helped-rate скрыт при rated<min); (Б) месячная витрина value-recap на ТВЁРДЫХ данных (cron 1-го числа → build за прошлый месяц + push-first владельцу/COO eventType `operations.monthly_recap`) + эндпоинты read/opened/export(slides|json). **Честность Р6** (нет ₽/было→стало/medianHoursToAnswer/roiScore) гарантирована кодом (`assertNoForbiddenMetricKeys`) + unit-тестом. **2 миграции БД** (аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/admin/coo (usage-stats org-scope) + self (usage-stats self, feedback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-value-recap.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.value_recap.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг витрины. ENV-fallback `OPERATIONS_VALUE_RECAP_ENABLED`.
+  - `chat_v2.feedback.enabled` (bool, **default true**, kill-switch ON) — оценка ответов чата. ENV-fallback `CHAT_V2_FEEDBACK_ENABLED`.
+  - `chat_v2.feedback.min_rated` (int, **default 10**) — порог скрытия helped-rate («мало данных»).
+  - `chat_v2.feedback.retry_dedup_seconds` (int, **default 30**) — окно дедупа ретраев в метрике чата.
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260608180000_chat_v2_message_helpful`: `+ ChatV2Message.helpful (VARCHAR 8) / helpfulAt / helpfulComment` (все nullable, `ADD COLUMN IF NOT EXISTS`).
+  - `20260608180100_value_recap_snapshot`: `+ table value_recap_snapshot` (FK → `Org`, unique по (tenantId, periodYm), индекс по (tenantId, createdAt)).
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-value-recap.ts` — 4 ключа `operations.value_recap.enabled` + `chat_v2.feedback.{enabled,min_rated,retry_dedup_seconds}` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `value-recap-narrative` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-value-recap.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `ValueRecapService`+`ValueRecapCron` `@Cron('0 7 1 * *')`, `ChatV2FeedbackService`, 3 новых эндпоинта chat-v2 (feedback POST/DELETE + usage-stats), 3 новых эндпоинта value-recap (get/opened/export), новый eventType `operations.monthly_recap` (policy + payload-схема), новый LLM-taskType `value-recap-narrative`, 5 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron в логах backend (без ERROR, 1-го числа): `value-recap.cron: проход завершён`.
+  - Новые REST: Swagger `/api/docs` → `POST /api/v1/chat-v2/messages/:id/feedback`, `DELETE /api/v1/chat-v2/messages/:id/feedback`, `GET /api/v1/chat-v2/usage-stats` (self / org owner-coo); `GET /api/v1/dashboard/operations/value-recap`, `POST .../value-recap/:id/opened`, `GET .../value-recap/:id/export` (owner/admin/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'value_recap_built_total|value_recap_delivered_total|value_recap_opened_total|chat_v2_feedback_total|chat_v2_answered_with_citation_total'` — присутствуют.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

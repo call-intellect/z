@@ -83,6 +83,8 @@ _(пусто — все доставки в Telegram авторизованы в
 | `operations.knowledge_at_risk.enabled` | 🟢 ВКЛ | Еженедельный синтез знание-под-риском × уход человека (cron пн 05:00 → снимок + push РУКОВОДИТЕЛЮ носителя; носителю — ничего, этика). Выкл → снимки не строятся, пушей нет. (TZ-1 Ф4.C daily-value) |
 | `operations.team_capacity.enabled` | 🟢 ВКЛ | Capacity-агрегат по командам (`GET /dashboard/operations/team-capacity` + строка в COO-дайджесте: перегруз/недогруз по отделам). Выкл → endpoint/строка не считаются. (TZ-1 Ф4.D daily-value) |
 | `operations.onboarding_ramp.enabled` | 🟢 ВКЛ | Онбординг-рамп новичка (cron 07:00 → молчащий новичок старше `onboarding.silent_days` → push руководителю + новичку «спроси у памяти»). Выкл → рамп не считается, пушей нет. (TZ-1 Ф4.E daily-value) |
+| `operations.value_recap.enabled` | 🟢 ВКЛ | Месячная витрина value-recap (cron 1-го числа → build за прошлый месяц на твёрдых данных + push-first владельцу/COO). Выкл → витрина не строится, пушей нет. (TZ-1 Ф5 daily-value) |
+| `chat_v2.feedback.enabled` | 🟢 ВКЛ | Оценка ответов AI-чата (палец вверх/вниз на ChatV2Message, web + Telegram/in_app) — несущая часть helped-rate месячной витрины. Выкл → `POST /chat-v2/messages/:id/feedback` отдаёт 403, оценка не собирается. (TZ-1 Ф5 daily-value) |
 
 ---
 

@@ -293,6 +293,12 @@ export type LlmTaskType =
   //   чистый SQL/TS + embeddings, без LLM). Дешёвая задача → primary
   //   deepseek-v4-flash. Один вызов на Org в день. Без выдуманных фактов/₽.
   | 'blocker-synthesis-summary'
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+  // 'value-recap-narrative' — ТОЛЬКО человекочитаемая сводка ПОВЕРХ уже
+  //   посчитанных твёрдых цифр (счётчики/дельта — чистый SQL/TS, без LLM).
+  //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на Org в месяц.
+  //   Без выдуманных рублей; soft-цифры помечаются «оценка» (Р6).
+  | 'value-recap-narrative'
   // SBA β-8.2 — Promise Keeper («Хранитель обещаний»).
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
@@ -663,6 +669,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'personal-brief-hint',
   // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров
   'blocker-synthesis-summary',
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap
+  'value-recap-narrative',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
   'commitment-extract-status',

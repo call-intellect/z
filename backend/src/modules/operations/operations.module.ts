@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { ChatV2Module } from '../chat-v2/chat-v2.module';
 import { PendingActionsModule } from '../pending-actions/pending-actions.module';
 import { ProbeModule } from '../probe/probe.module';
 import { TrackerModule } from '../tracker/tracker.module';
@@ -33,6 +34,7 @@ import { GoalCascadeService } from './services/goal-cascade.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
+import { ValueRecapService } from './services/value-recap.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
 import { BlockerSynthesisCron } from './workers/blocker-synthesis.cron';
@@ -51,6 +53,7 @@ import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cro
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
+import { ValueRecapCron } from './workers/value-recap.cron';
 
 /**
  * SBA β-8 — OperationsModule.
@@ -90,6 +93,10 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // Action Center B3 — DailyDigestService использует PendingActionsService
     // для блока «Ждёт подтверждения» в ежедневном отчёте.
     PendingActionsModule,
+    // TZ-1 Фаза 5 (daily-value-engine) — ValueRecapService переиспользует
+    // ChatV2FeedbackService.getChatUsageStats (метрика чата в месячной витрине).
+    // ChatV2Module НЕ импортирует OperationsModule → циклической зависимости нет.
+    ChatV2Module,
   ],
   controllers: [
     OperationsDashboardController,
@@ -185,6 +192,11 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // listForTenant (isOnboardingStalled) + daily cron @Cron('0 7 * * *').
     OnboardingRampService,
     OnboardingRampCron,
+    // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap: сервис
+    // (build + read/opened/export, reuse getDecisionThroughput + getChatUsageStats)
+    // + cron @Cron('0 7 1 * *') (1-е число месяца, push-first владельцу/COO).
+    ValueRecapService,
+    ValueRecapCron,
   ],
   exports: [
     GoalCascadeService,
@@ -211,6 +223,8 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     KnowledgeAtRiskService,
     TeamCapacityService,
     OnboardingRampService,
+    // TZ-1 Фаза 5 (daily-value-engine) — экспортируем для тестов / reuse.
+    ValueRecapService,
   ],
 })
 export class OperationsModule {}

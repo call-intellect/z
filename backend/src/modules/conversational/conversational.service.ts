@@ -113,6 +113,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // Goals OKR v2 Фаза 4: еженедельный пульс целей (пн утром). Те же каналы,
   // что и недельная сводка COO — email уместен, in_app fallback.
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
+  // TZ-1 Фаза 5 (daily-value-engine): месячная витрина value-recap (1-е число).
+  // push-first владельцу/COO — те же каналы, что недельная сводка (email
+  // уместен для разбора, бот для мгновенного пинга, in_app fallback).
+  'operations.monthly_recap': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   // T8 (2026-05-24): @-упоминание в комментарии задачи. in-app (бейдж в UI)
   // обязателен; telegram/max — для мгновенных пушей. Email скучен — оставляем
   // как fallback в дайджест-режиме (не в этом event-type'е).

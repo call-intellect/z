@@ -351,6 +351,20 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+  // ТОЛЬКО человекочитаемая сводка поверх посчитанных твёрдых цифр (счётчики/
+  // дельта — SQL/TS, без LLM) → дешёвая задача, primary deepseek-v4-flash.
+  // Без выдуманных рублей; soft-цифры помечаются «оценка» (Р6).
+  {
+    taskType: 'value-recap-narrative',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap summary)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

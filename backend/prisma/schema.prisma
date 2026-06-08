@@ -2414,6 +2414,9 @@ model Org {
   // ── TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы ──
   personalDailyBriefs PersonalDailyBrief[]
 
+  // ── TZ-1 Фаза 5 (daily-value-engine) — месячные снимки value-recap ──
+  valueRecapSnapshots ValueRecapSnapshot[]
+
   // ── TZ-1 Фаза 3.A (daily-value-engine) — синтез блокеров ──
   blockerSyntheses BlockerSynthesis[]
 
@@ -6778,6 +6781,41 @@ model PersonalDailyBrief {
   @@map("personal_daily_brief")
 }
 
+/// TZ-1 Фаза 5 (daily-value-engine) — месячный снимок «что Кора сделала за
+/// месяц» (value-recap). Витрина владельцу (инструмент продления) на ТВЁРДЫХ
+/// данных: ведущая ось «снятая рутина» (счётчики из БД) + второй слой «команда
+/// лучше» (soft-цифры с плашкой «оценка» + знаменателем).
+///
+/// `ValueRecapCron` (`@Cron('0 7 1 * *')`, 1-е число месяца) обходит Org →
+/// `ValueRecapService.build` → upsert по `@@unique([tenantId, periodYm])`
+/// (идемпотентно) → push-first владельцу/COO (Telegram/email через бюджет Ф0,
+/// eventType `operations.monthly_recap`). `deliveredAt` — момент push,
+/// `openedAt` — клик владельца (drill-down на экран).
+///
+/// Запрещённые метрики (Р6) в `payloadJson` НЕ хранятся: часы×ставка=₽,
+/// было→стало «до Коры», medianHoursToAnswer, roiScore/alignment как KPI,
+/// «N знаний спасено». Гарантия — в `ValueRecapService` + unit-тест.
+model ValueRecapSnapshot {
+  id          String    @id @default(cuid())
+  tenantId    String
+  /// YYYY-MM — месяц снимка (например 2026-05).
+  periodYm    String    @db.VarChar(7)
+  /// Структурный payload витрины (счётчики снятой рутины + soft-слой + дельта
+  /// к прошлому месяцу + human-readable narrative). Контракт — `ValueRecapPayload`.
+  payloadJson Json
+  /// Когда отправлен push владельцу/COO (NULL — не отправляли).
+  deliveredAt DateTime?
+  /// Когда владелец открыл витрину (NULL — не открывал).
+  openedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodYm])
+  @@index([tenantId, createdAt])
+  @@map("value_recap_snapshot")
+}
+
 /// TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
 ///
 /// `BlockerSynthesisCron` (`@Cron('0 22 * * *')`, после вечернего окна
@@ -7492,6 +7530,15 @@ model ChatV2Message {
   /// Структура: { model: string, inputTokens: number, outputTokens: number,
   /// tier?: 'primary'|'secondary'|'tertiary', fallbackUsed?: boolean }.
   llmMeta        Json?
+  /// TZ-1 Фаза 5 (daily-value-engine) — оценка пользователя «помог ли ответ»:
+  /// 'up' | 'down'. Только для assistant-сообщений (на user-сообщение оценку
+  /// не ставим). NULL — не оценивали. Эталон формы — AiResultFeedback.reaction.
+  /// Несущая часть честного helped-rate месячной витрины (value-recap).
+  helpful        String?            @db.VarChar(8)
+  /// TZ-1 Фаза 5 — когда поставлена/обновлена оценка `helpful`.
+  helpfulAt      DateTime?
+  /// TZ-1 Фаза 5 — опциональный комментарий к оценке (что не так / что помогло).
+  helpfulComment String?            @db.Text
   createdAt      DateTime           @default(now())
 
   @@index([conversationId, createdAt])

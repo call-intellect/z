@@ -3,7 +3,12 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
+  NotFoundException,
+  Param,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -51,6 +56,14 @@ import type {
   OperationsTeamTemperatureDto,
 } from '../dto/operations-dashboard.dto';
 import {
+  ValueRecapExportQuerySchema,
+  ValueRecapQuerySchema,
+  type ValueRecapExportDto,
+  type ValueRecapExportQuery,
+  type ValueRecapQuery,
+  type ValueRecapSnapshotDto,
+} from '../dto/value-recap.dto';
+import {
   TeamTemperatureQuerySchema,
   type TeamTemperatureQuery,
 } from '../dto/weekly-digest.dto';
@@ -62,6 +75,11 @@ import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 import { TeamCapacityService } from '../services/team-capacity.service';
+import {
+  shiftPeriod,
+  ValueRecapService,
+} from '../services/value-recap.service';
+import { buildValueRecapSlides } from '../utils/value-recap-export';
 
 /**
  * SBA β-8 — `GET /api/v1/dashboard/operations/*`.
@@ -91,6 +109,8 @@ export class OperationsDashboardController {
     private readonly teamCapacity: TeamCapacityService,
     @Inject(OnboardingRampService)
     private readonly onboardingRamp: OnboardingRampService,
+    @Inject(ValueRecapService)
+    private readonly valueRecap: ValueRecapService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
@@ -500,6 +520,122 @@ export class OperationsDashboardController {
       tenantId: tenantId!,
       now: new Date(),
     });
+  }
+
+  /**
+   * TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+   *
+   * Снимок `ValueRecapSnapshot` за `?period=YYYY-MM` (default — прошлый месяц).
+   * Если снимка нет — строит его на лету (idempotent build). Доступ —
+   * owner/admin/coo. Только твёрдые данные (Р6), count в паре с «% доведённых».
+   */
+  @Get('value-recap')
+  @ApiOperation({
+    summary:
+      'COO — месячная витрина «что Кора сделала за месяц» (снятая рутина + soft-слой)',
+  })
+  async valueRecapGet(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(ValueRecapQuerySchema))
+    q: ValueRecapQuery,
+  ): Promise<ValueRecapSnapshotDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const periodYm = q.period ?? this.previousMonth();
+
+    const existing = await this.valueRecap.getSnapshot({
+      tenantId: tenantId!,
+      periodYm,
+    });
+    if (existing) return existing;
+
+    // Нет снимка → строим на лету (идемпотентно). Возвращаем свежий.
+    const built = await this.valueRecap.build({ tenantId: tenantId!, periodYm });
+    const fresh = await this.valueRecap.getSnapshot({
+      tenantId: tenantId!,
+      periodYm,
+    });
+    return (
+      fresh ?? {
+        id: built.id,
+        periodYm,
+        payload: built.payload,
+        deliveredAt: null,
+        openedAt: null,
+        createdAt: new Date().toISOString(),
+      }
+    );
+  }
+
+  /**
+   * TZ-1 Фаза 5 — пометить витрину открытой (фиксация openedAt).
+   */
+  @Post('value-recap/:id/opened')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'COO — отметить месячную витрину открытой' })
+  async valueRecapOpened(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Param('id') id: string,
+  ): Promise<{ ok: true; opened: boolean }> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const opened = await this.valueRecap.markOpened({ tenantId: tenantId!, id });
+    if (!opened) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'recap_not_found', message: 'Витрина не найдена' },
+      });
+    }
+    return { ok: true, opened };
+  }
+
+  /**
+   * TZ-1 Фаза 5 — экспорт витрины. `format=slides` (default) — минимальный
+   * структурный набор печатаемых слайдов (заголовок + буллеты); `format=json`
+   * — сырой payload. Полноценный генератор презентаций НЕ блокирует фичу
+   * (отмечено в реестре не-сделанного). Доступ — owner/admin/coo.
+   */
+  @Get('value-recap/:id/export')
+  @ApiOperation({
+    summary:
+      'COO — экспорт месячной витрины (slides=структурные слайды / json=payload)',
+  })
+  async valueRecapExport(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(ValueRecapExportQuerySchema))
+    q: ValueRecapExportQuery,
+  ): Promise<ValueRecapExportDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const snap = await this.valueRecap.getById({ tenantId: tenantId!, id });
+    if (!snap) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'recap_not_found', message: 'Витрина не найдена' },
+      });
+    }
+    if (q.format === 'json') {
+      return { format: 'json', periodYm: snap.periodYm, payload: snap.payload };
+    }
+    return {
+      format: 'slides',
+      periodYm: snap.periodYm,
+      slides: buildValueRecapSlides(snap.payload),
+    };
+  }
+
+  /** Прошлый месяц YYYY-MM (default для value-recap). */
+  private previousMonth(): string {
+    const now = new Date();
+    const cur = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    return shiftPeriod(cur, -1);
   }
 
   /**

@@ -257,6 +257,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private teamCapacityOverloadTotal!: Counter<string>;
   private onboardingRampStalledTotal!: Counter<string>;
 
+  // ── TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap ──
+  private valueRecapBuiltTotal!: Counter<string>;
+  private valueRecapDeliveredTotal!: Counter<'channel'>;
+  private valueRecapOpenedTotal!: Counter<string>;
+  private chatV2FeedbackTotal!: Counter<'reaction'>;
+  private chatV2AnsweredWithCitation!: Gauge<'mode'>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1707,6 +1714,33 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'onboarding_ramp_stalled_total',
       help: 'TZ-1 Ф4.E — новичок не активировался за окно онбординга (молчит).',
       labelNames: [] as const,
+    });
+
+    // ── TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap ──
+    this.valueRecapBuiltTotal = this.getOrCreateCounter({
+      name: 'value_recap_built_total',
+      help: 'TZ-1 Ф5 — построено месячных снимков value-recap (upsert).',
+      labelNames: [] as const,
+    });
+    this.valueRecapDeliveredTotal = this.getOrCreateCounter({
+      name: 'value_recap_delivered_total',
+      help: 'TZ-1 Ф5 — доставлен месячный value-recap владельцу/COO по каналу (channel ∈ push|in_app|...).',
+      labelNames: ['channel'] as const,
+    });
+    this.valueRecapOpenedTotal = this.getOrCreateCounter({
+      name: 'value_recap_opened_total',
+      help: 'TZ-1 Ф5 — владелец открыл месячный value-recap (POST /value-recap/:id/opened).',
+      labelNames: [] as const,
+    });
+    this.chatV2FeedbackTotal = this.getOrCreateCounter({
+      name: 'chat_v2_feedback_total',
+      help: 'TZ-1 Ф5 — поставлена оценка ответа AI-чата (reaction ∈ up|down).',
+      labelNames: ['reaction'] as const,
+    });
+    this.chatV2AnsweredWithCitation = this.getOrCreateGauge({
+      name: 'chat_v2_answered_with_citation_total',
+      help: 'TZ-1 Ф5 — ответов AI-чата с привязкой к источнику (grounding-proxy, НЕ дефлекция) за окно (mode ∈ self|org).',
+      labelNames: ['mode'] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -4605,6 +4639,40 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `onboarding_ramp_stalled_total` (Ф4.E — молчащие новички). */
   incOnboardingRampStalled(): void {
     this.onboardingRampStalledTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 5 — месячная витрина value-recap ─────────
+
+  /** Counter `value_recap_built_total` (Ф5 — построено месячных снимков). */
+  incValueRecapBuilt(): void {
+    this.valueRecapBuiltTotal.inc();
+  }
+
+  /** Counter `value_recap_delivered_total{channel}` (Ф5 — доставка владельцу). */
+  incValueRecapDelivered(args: { channel: string }): void {
+    this.valueRecapDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  /** Counter `value_recap_opened_total` (Ф5 — владелец открыл витрину). */
+  incValueRecapOpened(): void {
+    this.valueRecapOpenedTotal.inc();
+  }
+
+  /** Counter `chat_v2_feedback_total{reaction}` (Ф5 — оценка ответа up|down). */
+  incChatV2Feedback(args: { reaction: 'up' | 'down' }): void {
+    this.chatV2FeedbackTotal.inc({ reaction: args.reaction });
+  }
+
+  /**
+   * Gauge `chat_v2_answered_with_citation_total{mode}` (Ф5 — grounding-proxy,
+   * НЕ «дефлекция»). Ставится по итогам агрегации `getChatUsageStats`.
+   */
+  setChatAnsweredWithCitation(args: { mode: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.chatV2AnsweredWithCitation.set(
+      { mode: args.mode },
+      Math.max(0, args.value),
+    );
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

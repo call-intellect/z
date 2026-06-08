@@ -12,6 +12,7 @@ import type { InboundMessage } from '../conversational/types/channel.types';
 import { ChatV2Controller } from './chat-v2.controller';
 import { ChatV2OrchestrationService } from './chat-v2.service';
 import { CardSpecialistRegistry } from './services/card-specialist-registry.service';
+import { ChatV2FeedbackService } from './services/chat-v2-feedback.service';
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
 import { IssueCardHandler } from './specialists/issue-card-handler.service';
@@ -111,6 +112,10 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
     CardSpecialistRegistry,
     ChatV2CleanupCron,
     ChatV2OmnichannelBridge,
+    // TZ-1 Фаза 5 (daily-value-engine) — оценка «помог ли ответ» +
+    // агрегатор метрики чата (getChatUsageStats). Экспортируется для
+    // ValueRecapService (OperationsModule импортирует ChatV2Module).
+    ChatV2FeedbackService,
     // Tracker Phase 3 part C (Wave 3, 2026-05-24) — Issue/Project как
     // источники для retrieval'а chat-v2. Регистрируются автоматически в
     // CardSpecialistRegistry через onModuleInit (паттерн как
@@ -126,6 +131,8 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
     ChatV2OrchestrationService,
     ChatV2ConversationsService,
     CardSpecialistRegistry,
+    // TZ-1 Фаза 5 — для ValueRecapService (метрика чата в месячной витрине).
+    ChatV2FeedbackService,
     // Export'им helper-сервисы, чтобы будущий расширенный ChatV2RetrievalService
     // мог вызывать getCitations / formatForChat напрямую.
     IssueCardHandler,

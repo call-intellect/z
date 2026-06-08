@@ -303,6 +303,23 @@ export function DirectorDashboardClient() {
             <Activity size={14} strokeWidth={1.75} className="shrink-0" />
             <span>Операционная сводка</span>
           </Link>
+          {/* ТЗ-2 Ф6 — pill-ссылки на портфель целей и витрину «Что сделала Кора». */}
+          <Link
+            href="/dashboard/portfolio"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            aria-label="Открыть портфель целей"
+          >
+            <Target size={14} strokeWidth={1.75} className="shrink-0" />
+            <span>Портфель целей</span>
+          </Link>
+          <Link
+            href="/dashboard/value-recap"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            aria-label="Открыть витрину «Что сделала Кора»"
+          >
+            <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
+            <span>Что сделала Кора</span>
+          </Link>
           <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
           <Button
             variant="outline"

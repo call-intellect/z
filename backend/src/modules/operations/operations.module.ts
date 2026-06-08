@@ -18,6 +18,9 @@ import { BlockerSynthesisService } from './services/blocker-synthesis.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { DecisionImplementationService } from './services/decision-implementation.service';
+import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
+import { OnboardingRampService } from './services/onboarding-ramp.service';
+import { TeamCapacityService } from './services/team-capacity.service';
 import { PromiseCascadeService } from './services/promise-cascade.service';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
@@ -37,6 +40,8 @@ import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.c
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
+import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
+import { OnboardingRampCron } from './workers/onboarding-ramp.cron';
 import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
@@ -167,6 +172,19 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // (findCascadesForTenant) + cron @Cron('0 8 * * *').
     PromiseCascadeService,
     PromiseCascadeCron,
+    // TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека:
+    // сервис (computeForTenant + listForTenant) + weekly cron @Cron('0 5 * * 1').
+    // Push только руководителю (носителю — ничего, этика).
+    KnowledgeAtRiskService,
+    KnowledgeAtRiskCron,
+    // TZ-1 Фаза 4.D (daily-value-engine) — capacity-агрегат по командам:
+    // сервис aggregate (group by department, classifyCapacity). Endpoint
+    // /dashboard/operations/team-capacity. Без cron (читается on-demand + COO).
+    TeamCapacityService,
+    // TZ-1 Фаза 4.E (daily-value-engine) — онбординг-рамп новичка: сервис
+    // listForTenant (isOnboardingStalled) + daily cron @Cron('0 7 * * *').
+    OnboardingRampService,
+    OnboardingRampCron,
   ],
   exports: [
     GoalCascadeService,
@@ -189,6 +207,10 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     BlockerSynthesisService,
     DecisionImplementationService,
     PromiseCascadeService,
+    // TZ-1 Фаза 4 (daily-value-engine) — экспортируем для тестов / reuse.
+    KnowledgeAtRiskService,
+    TeamCapacityService,
+    OnboardingRampService,
   ],
 })
 export class OperationsModule {}

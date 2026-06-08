@@ -112,7 +112,7 @@ export function daysBetween(fromDateLocal: string, toDateLocal: string): number 
 export function normalizeBlockerText(raw: string): string {
   return (raw ?? '')
     .toLowerCase()
-    .replace(/[«»"'`.,!?;:()\[\]{}]/g, ' ')
+    .replace(/[«»"'`.,!?;:()[\]{}]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 200);

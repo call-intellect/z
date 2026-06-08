@@ -26,6 +26,17 @@ export interface WeeklyDigestMetricsDto {
     failedDelta: number;
   };
   hangingDecisions: Array<{ decisionId: string; statement: string; ageDays: number }>;
+  /**
+   * TZ-1 Ф4.A (daily-value-engine) — топ идей недели (по weight + свежесть
+   * lastDiscussedAt). Опускается из дайджеста, если пусто (см. weekly-digest.prompt).
+   */
+  topIdeas?: Array<{
+    ideaId: string;
+    statement: string;
+    status: string;
+    weight: number;
+    supporterCount: number;
+  }>;
 }
 
 export interface WeeklyDigestSourcesDto {
@@ -33,6 +44,8 @@ export interface WeeklyDigestSourcesDto {
   insightIds: string[];
   goalIds: string[];
   decisionIds: string[];
+  /** TZ-1 Ф4.A — id идей, попавших в секцию недели (drill-down). */
+  ideaIds?: string[];
 }
 
 /**

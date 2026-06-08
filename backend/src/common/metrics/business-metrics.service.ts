@@ -248,6 +248,15 @@ export class BusinessMetricsService implements OnModuleInit {
   private decisionThroughputPercent!: Gauge<'tenant_top'>;
   private promiseCascadeAlertTotal!: Counter<string>;
 
+  // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──
+  private ideasTopServedTotal!: Counter<string>;
+  private ideaStatusAutoAdvancedTotal!: Counter<'to'>;
+  private ideaStatusChangedNotifiedTotal!: Counter<string>;
+  private insightRecheckedTotal!: Counter<'reactivated'>;
+  private knowledgeAtRiskTotal!: Counter<'severity'>;
+  private teamCapacityOverloadTotal!: Counter<string>;
+  private onboardingRampStalledTotal!: Counter<string>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1660,6 +1669,43 @@ export class BusinessMetricsService implements OnModuleInit {
     this.promiseCascadeAlertTotal = this.getOrCreateCounter({
       name: 'promise_cascade_alert_total',
       help: 'TZ-1 Ф3.C — дневной алерт каскада обещаний (просроченное обещание держит чужую работу).',
+      labelNames: [] as const,
+    });
+
+    // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──────
+    this.ideasTopServedTotal = this.getOrCreateCounter({
+      name: 'ideas_top_served_total',
+      help: 'TZ-1 Ф4.A — отдача ленты идей (GET /ideas/top).',
+      labelNames: [] as const,
+    });
+    this.ideaStatusAutoAdvancedTotal = this.getOrCreateCounter({
+      name: 'idea_status_auto_advanced_total',
+      help: 'TZ-1 Ф4.A — авто-продвижение статуса идеи при закрытии связанной задачи (label to = новый статус).',
+      labelNames: ['to'] as const,
+    });
+    this.ideaStatusChangedNotifiedTotal = this.getOrCreateCounter({
+      name: 'idea_status_changed_notified_total',
+      help: 'TZ-1 Ф4.A — уведомление автору/supporter\'ам о смене статуса идеи доставлено.',
+      labelNames: [] as const,
+    });
+    this.insightRecheckedTotal = this.getOrCreateCounter({
+      name: 'insight_rechecked_total',
+      help: 'TZ-1 Ф4.B — re-check митигированного инсайта (reactivated=true → вернулся в active).',
+      labelNames: ['reactivated'] as const,
+    });
+    this.knowledgeAtRiskTotal = this.getOrCreateCounter({
+      name: 'knowledge_at_risk_total',
+      help: 'TZ-1 Ф4.C — снимок знание-под-риском по совмещённой серьёзности (severity ∈ critical|warning|ok).',
+      labelNames: ['severity'] as const,
+    });
+    this.teamCapacityOverloadTotal = this.getOrCreateCounter({
+      name: 'team_capacity_overload_total',
+      help: 'TZ-1 Ф4.D — отдел помечен перегруженным агрегатом capacity.',
+      labelNames: [] as const,
+    });
+    this.onboardingRampStalledTotal = this.getOrCreateCounter({
+      name: 'onboarding_ramp_stalled_total',
+      help: 'TZ-1 Ф4.E — новичок не активировался за окно онбординга (молчит).',
       labelNames: [] as const,
     });
 
@@ -4517,6 +4563,48 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `promise_cascade_alert_total`. */
   incPromiseCascadeAlert(): void {
     this.promiseCascadeAlertTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 4 — улучшения и знания ───────────────────
+
+  /** Counter `ideas_top_served_total` (Ф4.A — отдача ленты идей). */
+  incIdeasTopServed(): void {
+    this.ideasTopServedTotal.inc();
+  }
+
+  /** Counter `idea_status_auto_advanced_total{to}` (Ф4.A — авто-морфинг статуса). */
+  incIdeaStatusAutoAdvanced(args: { to: string }): void {
+    this.ideaStatusAutoAdvancedTotal.inc({ to: args.to });
+  }
+
+  /** Counter `idea_status_changed_notified_total` (Ф4.A — автор уведомлён). */
+  incIdeaStatusChangedNotified(): void {
+    this.ideaStatusChangedNotifiedTotal.inc();
+  }
+
+  /**
+   * Counter `insight_rechecked_total{reactivated}` (Ф4.B — re-check митигаций).
+   * `reactivated` = 'true' если митигированный инсайт вернулся в active.
+   */
+  incInsightRechecked(args: { reactivated: boolean }): void {
+    this.insightRecheckedTotal.inc({
+      reactivated: args.reactivated ? 'true' : 'false',
+    });
+  }
+
+  /** Counter `knowledge_at_risk_total{severity}` (Ф4.C — знание-под-риском). */
+  incKnowledgeAtRisk(args: { severity: string }): void {
+    this.knowledgeAtRiskTotal.inc({ severity: args.severity });
+  }
+
+  /** Counter `team_capacity_overload_total` (Ф4.D — перегруженные команды). */
+  incTeamCapacityOverload(): void {
+    this.teamCapacityOverloadTotal.inc();
+  }
+
+  /** Counter `onboarding_ramp_stalled_total` (Ф4.E — молчащие новички). */
+  incOnboardingRampStalled(): void {
+    this.onboardingRampStalledTotal.inc();
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

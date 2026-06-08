@@ -91,7 +91,11 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
-  'idea.status_changed': ['in_app'],
+  // TZ-1 Фаза 4.A (daily-value-engine) — смена статуса идеи. Раньше только
+  // in_app → автор/supporter узнавал лишь зайдя в кабинет. Теперь добавлен
+  // telegram_bot (мгновенный пинг), in_app — fallback. Доставка push режется
+  // дневным бюджетом Ф0 (priorityTier по умолчанию 2).
+  'idea.status_changed': ['in_app', 'telegram_bot'],
   // SBA α-5: ответ chat-v2 — приоритет тому же каналу, где задан вопрос.
   // Если originChannelBindingId задан в sendChatReply, он перебивает policy.
   'chat.answer': ['in_app', 'telegram_bot', 'max_bot', 'email_smtp'],

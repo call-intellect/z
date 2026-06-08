@@ -37,6 +37,9 @@ import {
   type ListIdeasResponse,
   MyIdeasQuerySchema,
   type MyIdeasQuery,
+  TopIdeasQuerySchema,
+  type TopIdeasQuery,
+  type TopIdeasResponse,
 } from './dto/ideas.dto';
 import { IdeasService } from './services/ideas.service';
 
@@ -77,6 +80,21 @@ export class IdeasController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.list({ tenantId: t, userId: user.id, query: q });
+  }
+
+  @Get('ideas/top')
+  @ApiOperation({
+    summary:
+      'TZ-1 Ф4.A — топ идей (ре-ранк weight+свежесть+цель). Доступ owner/admin/coo.',
+  })
+  async top(
+    @Query(new ZodValidationPipe(TopIdeasQuerySchema)) q: TopIdeasQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<TopIdeasResponse> {
+    const t = this.requireTenant(tenantId);
+    await this.requireFeedAccess(user.id, t);
+    return this.svc.getTop({ tenantId: t, userId: user.id, query: q });
   }
 
   @Get('ideas/:id')
@@ -224,6 +242,27 @@ export class IdeasController {
         error: {
           code: 'forbidden',
           message: 'Только owner / admin могут изменять идеи',
+        },
+      });
+    }
+  }
+
+  /**
+   * TZ-1 Ф4.A — доступ к ленте идей (`GET /ideas/top`): owner/admin/coo
+   * (+ super_admin). Переиспользуем `canViewOperationsDashboard` — та же роль,
+   * что и для COO-дашборда (лента идей — управленческий виджет, не общий read).
+   */
+  private async requireFeedAccess(
+    userId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const ok = await this.rbac.canViewOperationsDashboard(userId, tenantId);
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden_role',
+          message: 'Лента идей доступна owner / admin / coo',
         },
       });
     }

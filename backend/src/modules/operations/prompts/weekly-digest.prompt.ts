@@ -31,6 +31,15 @@ export interface WeeklyDigestAggregates {
     failedDelta: number;
   };
   hangingDecisions: Array<{ statement: string; ageDays: number }>;
+  /**
+   * TZ-1 Ф4.A (daily-value-engine) — топ идей недели. Опускается из секции,
+   * если пусто (не пишем «нет идей»).
+   */
+  topIdeas?: Array<{
+    statement: string;
+    status: string;
+    supporterCount: number;
+  }>;
 }
 
 export const WEEKLY_DIGEST_SYSTEM_PROMPT = [
@@ -100,6 +109,16 @@ export function buildWeeklyDigestUserMessage(agg: WeeklyDigestAggregates): strin
     }
   }
 
+  if (agg.topIdeas && agg.topIdeas.length > 0) {
+    lines.push('');
+    lines.push('Идеи недели (топ-5 по весу):');
+    for (const i of agg.topIdeas.slice(0, 5)) {
+      lines.push(
+        `  - [${i.status}, поддержали ${i.supporterCount}] ${truncate(i.statement, 200)}.`,
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -161,6 +180,14 @@ export function buildFallbackDigestMarkdown(agg: WeeklyDigestAggregates): string
     lines.push('## Висящие решения');
     for (const d of agg.hangingDecisions.slice(0, 5)) {
       lines.push(`- ${d.statement} (возраст ${d.ageDays} дн.)`);
+    }
+  }
+
+  if (agg.topIdeas && agg.topIdeas.length > 0) {
+    lines.push('');
+    lines.push('## Идеи недели');
+    for (const i of agg.topIdeas.slice(0, 5)) {
+      lines.push(`- [${i.status}/поддержали ${i.supporterCount}] ${i.statement}`);
     }
   }
 

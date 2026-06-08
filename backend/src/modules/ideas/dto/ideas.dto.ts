@@ -49,6 +49,24 @@ export interface ListIdeasResponse {
   limit: number;
 }
 
+// ────────────── Top (Ф4.A — лента идей, виджет дашборда) ──────────────
+
+/**
+ * TZ-1 Фаза 4.A (daily-value-engine) — `GET /api/v1/ideas/top?limit=`.
+ * Топ идей по ре-ранку (weight + свежесть lastDiscussedAt + связь с целью).
+ * Сделано по образцу `GET /insights/top` (виджет Director Dashboard).
+ */
+export const TopIdeasQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(10),
+  })
+  .strict();
+export type TopIdeasQuery = z.infer<typeof TopIdeasQuerySchema>;
+
+export interface TopIdeasResponse {
+  items: IdeaListItemDto[];
+}
+
 // ────────────── Detail ──────────────
 
 export interface IdeaSupporterDto {

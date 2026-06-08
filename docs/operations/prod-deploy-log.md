@@ -174,6 +174,34 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания: лента идей · re-check инсайтов · знание-под-риском · capacity · онбординг
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 4). **Зависит от Ф0** (доставка push + бюджет) и Ф3 (авто-статус идеи из закрытия задач). BACKEND-ONLY (фронт-виджеты — отдельным ТЗ).
+>
+> **Зачем для прода:** (А) лента идей `GET /ideas/top` (ре-ранк weight+свежесть+цель) + авто-морфинг статуса идеи при закрытии связанной задачи (по общей цели) + расширена policy `idea.status_changed` (+telegram) + recognition `idea_shipped` при shipped + секция «Идеи недели» в недельном COO-дайджесте; (Б) re-check митигированных инсайтов в insight-clusterer cron (повтор паттерна → active) + «ты не один» в персональном брифе; (В) знание-под-риском × уход человека (weekly cron пн 05:00, push только руководителю); (Г) capacity-агрегат по командам (endpoint); (Д) онбординг-рамп новичка (daily cron 07:00, push руководителю + новичку). **1 миграция БД** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/admin/coo.
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-knowledge-improvement-agents.ts`, см. Шаг 7; code-fallback есть):
+  - `ideas.feed.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `IDEAS_FEED_ENABLED`.
+  - `insights.recheck.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `INSIGHTS_RECHECK_ENABLED`.
+  - `operations.knowledge_at_risk.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_KNOWLEDGE_AT_RISK_ENABLED`.
+  - `operations.team_capacity.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_TEAM_CAPACITY_ENABLED`.
+  - `operations.onboarding_ramp.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_ONBOARDING_RAMP_ENABLED`.
+  - `ideas.feed.rerank.{weight,freshness,goal_link}` (1/0.5/0.75), `ideas.feed.freshness_days` (int, **default 30**).
+  - `insight.recheck_days` (int, **default 14**).
+  - `team_capacity.overload_percent` (int, **default 120**), `team_capacity.underload_percent` (int, **default 50**).
+  - `onboarding.silent_days` (int, **default 5**).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608170000_knowledge_at_risk`): `+ table knowledge_at_risk_snapshot` (FK → `Org`/`persons`, индекс по (tenantId, combinedSeverity, snapshotAt)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-knowledge-improvement-agents.ts` — 14 ключей `ideas.feed.*` / `insight.recheck_days` / `insights.recheck.enabled` / `team_capacity.*` / `onboarding.silent_days` / `operations.{knowledge_at_risk,team_capacity,onboarding_ramp}.enabled` (см. Шаг 1). Защищает admin-edited. Без новых LLM-маршрутов (Ф4 без chat-LLM). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-knowledge-improvement-agents.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `KnowledgeAtRiskService`+`KnowledgeAtRiskCron` `@Cron('0 5 * * 1')`, `OnboardingRampService`+`OnboardingRampCron` `@Cron('0 7 * * *')`, `TeamCapacityService`, `IdeaStatusAutoAdvanceService` (@OnEvent `tracker.event_occurred`), `IdeasService.getTop`, re-check в insight-clusterer cron, 4 новых эндпоинта, расширена policy `idea.status_changed`, 7 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые cron в логах backend (без ERROR): `knowledge-at-risk.cron: проход завершён`, `onboarding-ramp.cron: проход завершён`; insight-clusterer лог содержит `totalReactivated`.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/ideas/top` (owner/admin/coo), `GET /api/v1/dashboard/operations/knowledge-at-risk`, `GET /api/v1/dashboard/operations/team-capacity`, `GET /api/v1/dashboard/operations/onboarding-ramp` (owner/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'ideas_top_served_total|idea_status_auto_advanced_total|idea_status_changed_notified_total|insight_rechecked_total|knowledge_at_risk_total|team_capacity_overload_total|onboarding_ramp_stalled_total'` — присутствуют.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

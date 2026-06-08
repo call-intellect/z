@@ -72,6 +72,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-customer-risk.ts', hint: 'customer_risk.window_days + weight.* + threshold.* + operations.customer_risk_radar.enabled (TZ-1 Ф1 радар клиентов)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-personal-brief.ts', hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-execution-agents.ts', hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + decision.stale_days + operations.{blocker_synthesis,decision_controller,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-knowledge-improvement-agents.ts', hint: 'ideas.feed.* + insight.recheck_days + team_capacity.{overload,underload}_percent + onboarding.silent_days + 5 kill-switch (ideas.feed/insights.recheck/operations.{knowledge_at_risk,team_capacity,onboarding_ramp}.enabled) (TZ-1 Ф4 улучшения и знания)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },

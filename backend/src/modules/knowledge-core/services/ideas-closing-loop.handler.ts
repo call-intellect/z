@@ -14,6 +14,7 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import {
   IDEA_STATUS_SUMMARIZE_JSON_SCHEMA,
   IDEA_STATUS_SUMMARIZE_SCHEMA_NAME,
@@ -61,6 +62,13 @@ export class IdeasClosingLoopHandler {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    /**
+     * TZ-1 Ф4.A — recognition при `shipped`. @Optional: spec-и конструируют
+     * handler позиционно без очереди → reuse безопасно деградирует.
+     */
+    @Optional()
+    @Inject(CoreQueueService)
+    private readonly coreQueue?: CoreQueueService,
   ) {}
 
   /**
@@ -146,6 +154,8 @@ export class IdeasClosingLoopHandler {
           this.metrics.incIdeaStatusChangeNotification({
             newStatus: event.newStatus,
           });
+          // TZ-1 Ф4.A — отдельный счётчик «уведомление о смене статуса доставлено».
+          this.metrics.incIdeaStatusChangedNotified();
         } catch (err) {
           this.logger.warn(
             {
@@ -154,6 +164,34 @@ export class IdeasClosingLoopHandler {
               err: err instanceof Error ? err.message : String(err),
             },
             'ideas-closing-loop: sendNotification failed for user',
+          );
+        }
+      }
+
+      // TZ-1 Ф4.A — на `shipped` → recognition автору идеи (reuse существующего
+      // механизма `core.recognition-formulate`, type='idea_shipped' — его уже
+      // агрегирует whoShined в COO-дайджесте). jobId идемпотентен по (idea, user).
+      if (event.newStatus === 'shipped' && idea.createdByUserId && this.coreQueue) {
+        try {
+          await this.coreQueue.enqueueRecognitionFormulate({
+            tenantId: event.tenantId,
+            toUserId: idea.createdByUserId,
+            type: 'idea_shipped',
+            contextEntityType: 'idea',
+            contextEntityId: idea.id,
+            contextPayload: {
+              status: 'shipped',
+              statement: idea.statement.slice(0, 200),
+            },
+            visibility: 'team',
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              ideaId: idea.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'ideas-closing-loop: enqueue idea_shipped recognition failed — best-effort',
           );
         }
       }

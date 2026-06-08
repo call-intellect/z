@@ -197,6 +197,26 @@ const registry = new Map<string, ZodTypeAny>([
   // ── TZ-1 Ф3.C (daily-value-engine) — каскад обещаний ──────────────────
   ['operations.promise_cascade.enabled', z.boolean()],
 
+  // ── TZ-1 Ф4 (daily-value-engine) — улучшения и знания ─────────────────
+  // Ф4.A — лента идей (ре-ранк + морфинг статуса).
+  ['ideas.feed.rerank.weight', z.number().nonnegative()],
+  ['ideas.feed.rerank.freshness', z.number().nonnegative()],
+  ['ideas.feed.rerank.goal_link', z.number().nonnegative()],
+  ['ideas.feed.freshness_days', POSITIVE_INT],
+  ['ideas.feed.enabled', z.boolean()],
+  // Ф4.B — re-check митигированных инсайтов.
+  ['insight.recheck_days', POSITIVE_INT],
+  ['insights.recheck.enabled', z.boolean()],
+  // Ф4.C — знание-под-риском × уход человека.
+  ['operations.knowledge_at_risk.enabled', z.boolean()],
+  // Ф4.D — capacity-агрегат по командам.
+  ['team_capacity.overload_percent', POSITIVE_INT],
+  ['team_capacity.underload_percent', NON_NEGATIVE_INT],
+  ['operations.team_capacity.enabled', z.boolean()],
+  // Ф4.E — онбординг-рамп новичка.
+  ['onboarding.silent_days', POSITIVE_INT],
+  ['operations.onboarding_ramp.enabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

@@ -58,6 +58,23 @@ export interface BriefKnowsWhoHint {
   confidence: number;
 }
 
+/**
+ * TZ-1 Ф4.B (daily-value-engine) — «ты не один»: сколько коллег сегодня
+ * уперлись в ту же тему (инсайт), и эскалирована ли она. Опционально —
+ * добавляется в бриф рядового только если найдено сов-падение, без отдельного
+ * пуша (избегаем спама — встраиваем в утренний бриф).
+ */
+export interface BriefInsightCoOccurrence {
+  /** id инсайта (общая тема). */
+  insightId: string;
+  /** Краткая суть инсайта. */
+  statement: string;
+  /** Сколько коллег (Person) сегодня тоже про это (включая меня). */
+  colleaguesCount: number;
+  /** Эскалирована ли тема (severity high/critical ИЛИ dynamicLabel=spike). */
+  escalated: boolean;
+}
+
 /** Полный payload персонального брифа (хранится в PersonalDailyBrief.payloadJson). */
 export interface PersonalDailyBriefPayload {
   /** YYYY-MM-DD — день брифа (локальная TZ Person'а). */
@@ -74,6 +91,11 @@ export interface PersonalDailyBriefPayload {
   hint: string;
   /** Skill-помощь по открытому блокеру (если найден носитель). */
   knowsWho: BriefKnowsWhoHint | null;
+  /**
+   * TZ-1 Ф4.B — «ты не один»: коллеги уперлись в ту же тему (инсайт).
+   * `null`/отсутствует — совпадений нет (опциональное, чтобы не ломать legacy).
+   */
+  insightCoOccurrence?: BriefInsightCoOccurrence | null;
   /** Сводные счётчики (для коротких push/баджей). */
   counts: {
     tasks: number;

@@ -135,6 +135,16 @@ export class WeeklyDigestService {
         statement: d.statement,
         ageDays: d.ageDays,
       })),
+      // TZ-1 Ф4.A — секция идей недели (опускается промптом, если пусто).
+      ...(aggregates.metrics.topIdeas && aggregates.metrics.topIdeas.length > 0
+        ? {
+            topIdeas: aggregates.metrics.topIdeas.map((i) => ({
+              statement: i.statement,
+              status: i.status,
+              supporterCount: i.supporterCount,
+            })),
+          }
+        : {}),
     };
 
     let bodyMarkdown: string;
@@ -215,6 +225,7 @@ export class WeeklyDigestService {
       goals,
       decisions,
       goalsPrev,
+      ideasRaw,
     ] = await Promise.all([
       // Чек-ины текущей недели — для долей green/yellow/red.
       this.prisma.dailyCheckIn.findMany({
@@ -291,7 +302,37 @@ export class WeeklyDigestService {
         },
         select: { id: true, status: true },
       }),
+      // TZ-1 Ф4.A — топ идей недели: активные (не rejected/archived),
+      // обсуждавшиеся за окно недели, по weight + свежесть lastDiscussedAt.
+      this.prisma.idea.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: {
+            gte: parseDateLocalToUtc(args.weekStart),
+            lte: endOfDayUtc(parseDateLocalToUtc(args.weekEnd)),
+          },
+        },
+        select: {
+          id: true,
+          statement: true,
+          status: true,
+          weight: true,
+          supporterCount: true,
+        },
+        orderBy: [{ weight: 'desc' }, { lastDiscussedAt: 'desc' }],
+        take: 5,
+      }),
     ]);
+
+    // TZ-1 Ф4.A — топ идей недели (опускается, если пусто).
+    const topIdeas = ideasRaw.map((i) => ({
+      ideaId: i.id,
+      statement: (i.statement ?? '').slice(0, 400),
+      status: i.status,
+      weight: Number(i.weight),
+      supporterCount: i.supporterCount,
+    }));
 
     // Доли по чек-инам.
     let g = 0;
@@ -385,6 +426,8 @@ export class WeeklyDigestService {
         failedDelta: failedNow - failedPrev,
       },
       hangingDecisions,
+      // TZ-1 Ф4.A — топ идей недели (пустой массив опускается на рендере).
+      ...(topIdeas.length > 0 ? { topIdeas } : {}),
     };
 
     const sources: WeeklyDigestSourcesDto = {
@@ -392,6 +435,9 @@ export class WeeklyDigestService {
       insightIds: insights.map((i) => i.id),
       goalIds: goals.map((g0) => g0.id),
       decisionIds: decisions.map((d) => d.id),
+      ...(topIdeas.length > 0
+        ? { ideaIds: topIdeas.map((i) => i.ideaId) }
+        : {}),
     };
 
     return { metrics, sources };

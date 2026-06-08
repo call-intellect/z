@@ -146,7 +146,7 @@ describe('CustomerRiskRadarService', () => {
 
     // signalCounts в create верны для A (2 churn).
     const createA = (upsertCalls as Array<{ create: { signalCounts: unknown } }>).find(
-      (c) => true,
+      () => true,
     );
     expect(createA).toBeTruthy();
     expect(metrics.incCustomerRiskSnapshots).toHaveBeenCalledWith({

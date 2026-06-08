@@ -18,6 +18,7 @@ describe('WeeklyDigestService', () => {
     goals?: unknown[];
     goalsPrev?: unknown[];
     decisions?: unknown[];
+    ideas?: unknown[];
     existing?: unknown;
     llmResult?: { text: string; modelUsed: string };
     llmReject?: Error;
@@ -46,6 +47,10 @@ describe('WeeklyDigestService', () => {
       },
       decision: {
         findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
+      },
+      // TZ-1 Ф4.A — секция «Идеи недели» в недельном дайджесте.
+      idea: {
+        findMany: vi.fn().mockResolvedValue(overrides.ideas ?? []),
       },
       weeklyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),

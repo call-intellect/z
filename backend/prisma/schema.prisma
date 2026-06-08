@@ -2417,6 +2417,9 @@ model Org {
   // ── TZ-1 Фаза 3.A (daily-value-engine) — синтез блокеров ──
   blockerSyntheses BlockerSynthesis[]
 
+  // ── TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека ──
+  knowledgeAtRiskSnapshots KnowledgeAtRiskSnapshot[]
+
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
 
@@ -4648,6 +4651,9 @@ model Person {
   /// TZ-1 Фаза 3.A (daily-value-engine) — кластеры блокеров, где этот Person
   /// ответственный (BlockerSynthesis.responsiblePersonId).
   blockerSyntheses            BlockerSynthesis[]                 @relation("BlockerSynthesisResponsible")
+  /// TZ-1 Фаза 4.C (daily-value-engine) — снимки знание-под-риском, где этот
+  /// Person — соло-эксперт под риском ухода (KnowledgeAtRiskSnapshot.soleExpertPersonId).
+  knowledgeAtRiskSnapshots    KnowledgeAtRiskSnapshot[]          @relation("KnowledgeAtRiskSoleExpert")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6821,6 +6827,37 @@ model BlockerSynthesis {
   @@unique([tenantId, clusterKey])
   @@index([tenantId, status, lastSeenDateLocal])
   @@map("blocker_synthesis")
+}
+
+/// TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека.
+///
+/// Еженедельный снимок `KnowledgeAtRiskCron`: пересечение critical bus-factor
+/// (категория знаний держится на одном соло-эксперте — из
+/// `KnowledgeRiskSnapshot.riskLevel='critical'`) × активных high-severity
+/// risk-флагов носителя (`Person.riskFlagsJson`/`engagementScore`). Результат —
+/// подсветка РУКОВОДИТЕЛЮ: «зона X на одном человеке, и он под риском ухода —
+/// продублируй / поговори». Носителю НИЧЕГО не уходит (этика).
+model KnowledgeAtRiskSnapshot {
+  id                 String  @id @default(cuid())
+  tenantId           String
+  /// Категория знаний (= KnowledgeRiskSnapshot.categoryName).
+  categoryName       String
+  /// Соло-эксперт (Person той же Org), если резолвится. NULL — не определился.
+  soleExpertPersonId String?
+  /// Уровень bus-factor категории: 'critical' (0-1 эксперт) | 'warning' | 'ok'.
+  busFactorLevel     String  @db.VarChar(16)
+  /// Уровень риска ухода носителя из riskFlags/engagementScore:
+  /// 'high' | 'medium' | 'low'. NULL — нет данных по носителю.
+  personRiskLevel    String? @db.VarChar(16)
+  /// Совмещённая серьёзность (computeCombinedSeverity): 'critical' | 'warning' | 'ok'.
+  combinedSeverity   String  @db.VarChar(16)
+  snapshotAt         DateTime @default(now())
+
+  org        Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  soleExpert Person? @relation("KnowledgeAtRiskSoleExpert", fields: [soleExpertPersonId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, combinedSeverity, snapshotAt])
+  @@map("knowledge_at_risk_snapshot")
 }
 
 /// TZ-1 Фаза 3.B (daily-value-engine) — join-таблица связи Decision↔Issue.

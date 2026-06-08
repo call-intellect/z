@@ -17,6 +17,7 @@ import { KnowsWhoService } from './knows-who.service';
 import {
   dedupBriefItems,
   dropPromisesThatBecameTasks,
+  type BriefInsightCoOccurrence,
   type BriefItem,
   type BriefKnowsWhoHint,
   type PersonalDailyBriefPayload,
@@ -66,7 +67,7 @@ export class PersonalDailyBriefService {
   }): Promise<PersonalDailyBriefPayload> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId: args.tenantId, id: args.personId },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, entityId: true },
     });
     const userId = person?.userId ?? null;
 
@@ -127,6 +128,13 @@ export class PersonalDailyBriefService {
       blockers: myBlockers,
     });
 
+    // 5b. TZ-1 Ф4.B — «ты не один»: коллеги уперлись в ту же тему (инсайт).
+    const insightCoOccurrence = await this.resolveInsightCoOccurrence({
+      tenantId: args.tenantId,
+      personId: args.personId,
+      personEntityId: person?.entityId ?? null,
+    });
+
     // 6. 1 подсказка дня (LLM + fallback).
     const overdueTaskCount = myTasks.filter((t) => t.overdue).length;
     const hintInput: PersonalBriefHintPromptInput = {
@@ -149,6 +157,7 @@ export class PersonalDailyBriefService {
       promisedToMe,
       hint,
       knowsWho,
+      insightCoOccurrence,
       counts: {
         tasks: myTasks.length,
         promises: myPromises.length,
@@ -387,6 +396,72 @@ export class PersonalDailyBriefService {
     }
   }
 
+  // ──────────────────────────── insight co-occurrence ─────────────────
+
+  /**
+   * TZ-1 Ф4.B — «ты не один»: ищем активный инсайт, в `personSubjectIds`
+   * которого упомянут этот сотрудник, и считаем сколько коллег (Person)
+   * затронуто той же темой. Эскалация — severity high/critical ИЛИ
+   * dynamicLabel=spike. Возвращает топ-1 (по числу коллег) или null.
+   *
+   * Цель — встроить «4 коллеги сегодня уперлись в то же» прямо в бриф (без
+   * отдельного пуша → без спама). Best-effort: на ошибке возвращаем null.
+   */
+  private async resolveInsightCoOccurrence(args: {
+    tenantId: string;
+    personId: string;
+    personEntityId: string | null;
+  }): Promise<BriefInsightCoOccurrence | null> {
+    if (!args.personEntityId) return null;
+    try {
+      const insights = await this.prisma.insight.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { in: ['active', 'mitigating'] },
+          personSubjectIds: { has: args.personEntityId },
+        },
+        select: {
+          id: true,
+          statement: true,
+          severity: true,
+          dynamicLabel: true,
+          personSubjectIds: true,
+        },
+        take: 25,
+      });
+      if (insights.length === 0) return null;
+      // Берём инсайт с наибольшим числом затронутых коллег (> 1, чтобы было
+      // «ты не один»; одиночное упоминание не сигнал сопричастности).
+      let best: BriefInsightCoOccurrence | null = null;
+      for (const ins of insights) {
+        const colleaguesCount = new Set(ins.personSubjectIds).size;
+        if (colleaguesCount < 2) continue;
+        const escalated =
+          ins.severity === 'high' ||
+          ins.severity === 'critical' ||
+          ins.dynamicLabel === 'spike';
+        if (!best || colleaguesCount > best.colleaguesCount) {
+          best = {
+            insightId: ins.id,
+            statement: (ins.statement ?? '').slice(0, 200),
+            colleaguesCount,
+            escalated,
+          };
+        }
+      }
+      return best;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'personal-daily-brief: insight co-occurrence упал — без сигнала',
+      );
+      return null;
+    }
+  }
+
   // ──────────────────────────── hint (LLM) ────────────────────────────
 
   private async buildHint(
@@ -571,7 +646,25 @@ export function parsePayload(
     promisedToMe: parseItems(obj.promisedToMe),
     hint: typeof obj.hint === 'string' ? obj.hint : '',
     knowsWho: parseKnowsWho(obj.knowsWho),
+    insightCoOccurrence: parseInsightCoOccurrence(obj.insightCoOccurrence),
     counts: parseCounts(obj.counts),
+  };
+}
+
+function parseInsightCoOccurrence(
+  raw: unknown,
+): BriefInsightCoOccurrence | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.insightId !== 'string' || typeof o.statement !== 'string') {
+    return null;
+  }
+  return {
+    insightId: o.insightId,
+    statement: o.statement,
+    colleaguesCount:
+      typeof o.colleaguesCount === 'number' ? o.colleaguesCount : 0,
+    escalated: o.escalated === true,
   };
 }
 

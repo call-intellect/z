@@ -37,6 +37,11 @@ import {
   type StalledDecisionsListDto,
 } from '../dto/execution-agents.dto';
 import type {
+  KnowledgeAtRiskListDto,
+  OnboardingRampListDto,
+  TeamCapacityListDto,
+} from '../dto/knowledge-improvement.dto';
+import type {
   OperationsDashboardBlockersListDto,
   OperationsDashboardCapacityListDto,
   OperationsDashboardOverviewDto,
@@ -53,7 +58,10 @@ import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
 import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
 import { DecisionImplementationService } from '../services/decision-implementation.service';
+import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
+import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
+import { TeamCapacityService } from '../services/team-capacity.service';
 
 /**
  * SBA β-8 — `GET /api/v1/dashboard/operations/*`.
@@ -77,6 +85,12 @@ export class OperationsDashboardController {
     private readonly blockerSynthesis: BlockerSynthesisService,
     @Inject(DecisionImplementationService)
     private readonly decisionImpl: DecisionImplementationService,
+    @Inject(KnowledgeAtRiskService)
+    private readonly knowledgeAtRisk: KnowledgeAtRiskService,
+    @Inject(TeamCapacityService)
+    private readonly teamCapacity: TeamCapacityService,
+    @Inject(OnboardingRampService)
+    private readonly onboardingRamp: OnboardingRampService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
@@ -418,6 +432,74 @@ export class OperationsDashboardController {
       tenantId: tenantId!,
     });
     return { items };
+  }
+
+  /**
+   * TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека.
+   *
+   * Последний снимок `KnowledgeAtRiskSnapshot` per category (critical → warning
+   * → ok). Доступ — owner/admin/coo. Носителю эти данные НЕ показываются —
+   * только руководству (этика).
+   */
+  @Get('knowledge-at-risk')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — знание-под-риском × уход человека (bus-factor × burnout)',
+  })
+  async knowledgeAtRiskList(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<KnowledgeAtRiskListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.knowledgeAtRisk.listForTenant({ tenantId: tenantId! });
+  }
+
+  /**
+   * TZ-1 Фаза 4.D (daily-value-engine) — загрузка команд.
+   *
+   * Агрегат `Appointment.loadPercent` по отделам (avg/max + перегруз/недогруз
+   * по AdminSetting-порогам). `empty=true`, если loadPercent нигде не заполнен.
+   * Доступ — owner/admin/coo.
+   */
+  @Get('team-capacity')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — загрузка команд (перегруз/недогруз по отделам)',
+  })
+  async teamCapacityList(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<TeamCapacityListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.teamCapacity.aggregate({ tenantId: tenantId! });
+  }
+
+  /**
+   * TZ-1 Фаза 4.E (daily-value-engine) — активация новичков.
+   *
+   * Новые сотрудники (по `Person.createdAt`, окно 2×silent_days) с флагом
+   * stalled (0 активности за `onboarding.silent_days`). Доступ — owner/admin/coo.
+   */
+  @Get('onboarding-ramp')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — активация новичков (молчащие новички)',
+  })
+  async onboardingRampList(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<OnboardingRampListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.onboardingRamp.listForTenant({
+      tenantId: tenantId!,
+      now: new Date(),
+    });
   }
 
   /**

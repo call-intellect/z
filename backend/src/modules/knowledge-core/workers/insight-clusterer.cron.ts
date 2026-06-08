@@ -4,6 +4,10 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  DEFAULT_INSIGHT_RECHECK_DAYS,
+  shouldReactivateInsight,
+} from '../services/insight-recheck.scoring';
 import { Specialist35Service } from '../services/specialist-3-5-insights.service';
 import { Specialist35ProbeService } from '../services/specialist-3-5-probe.service';
 
@@ -53,12 +57,18 @@ export class InsightClustererCron {
       });
       let totalRecalc = 0;
       let totalNoMitigation = 0;
+      let totalReactivated = 0;
+      const recheckEnabled = await this.isRecheckEnabled();
       for (const org of orgs) {
         try {
           totalRecalc += await this.recalcAllForOrg(org.id);
           totalNoMitigation += await this.probes.checkNoMitigationPlanForOrg(
             org.id,
           );
+          // TZ-1 Ф4.B — re-check митигированных инсайтов (повтор → active).
+          if (recheckEnabled) {
+            totalReactivated += await this.recheckMitigatedForOrg(org.id);
+          }
         } catch (err) {
           this.logger.warn(
             {
@@ -78,6 +88,7 @@ export class InsightClustererCron {
           orgs: orgs.length,
           totalRecalc,
           totalNoMitigation,
+          totalReactivated,
           clusterCron: this.cfg.insights.clusterCron,
         },
         'insight-clusterer: проход завершён',
@@ -88,6 +99,91 @@ export class InsightClustererCron {
         'insight-clusterer: непойманная ошибка',
       );
     }
+  }
+
+  /**
+   * TZ-1 Ф4.B — re-check митигированных инсайтов Org.
+   *
+   * Для каждого `Insight(status='mitigated')`:
+   *   1. считаем сколько блоков-источников появилось ПОСЛЕ митигации
+   *      (`createdAt > lastConfirmedAt`) — это свежие повторы паттерна;
+   *   2. чистой функцией `shouldReactivateInsight` решаем, вернуть ли в active
+   *      (прошло >= recheck_days и повтор есть);
+   *   3. при reactivate → status='active', lastObservedAt=now.
+   *
+   * Возвращает число реактивированных. Не бросает на отдельном инсайте.
+   */
+  private async recheckMitigatedForOrg(tenantId: string): Promise<number> {
+    const recheckDays = await this.cfg.getDynamic<number>(
+      'insight.recheck_days',
+      'INSIGHT_RECHECK_DAYS',
+      DEFAULT_INSIGHT_RECHECK_DAYS,
+    );
+    const insights = await this.prisma.insight.findMany({
+      where: { tenantId, status: 'mitigated' },
+      select: {
+        id: true,
+        status: true,
+        sourceBlockIds: true,
+        lastConfirmedAt: true,
+        lastObservedAt: true,
+      },
+      take: InsightClustererCron.BATCH_LIMIT,
+    });
+    const now = new Date();
+    let reactivated = 0;
+    for (const ins of insights) {
+      try {
+        if (ins.sourceBlockIds.length === 0) continue;
+        // Свежие повторы = блоки-источники, созданные ПОСЛЕ митигации.
+        const since = ins.lastConfirmedAt ?? ins.lastObservedAt;
+        const recentRecurringBlockCount = await this.prisma.ideaBlock.count({
+          where: {
+            id: { in: ins.sourceBlockIds },
+            tenantId,
+            createdAt: { gt: since },
+          },
+        });
+        const reactivate = shouldReactivateInsight(
+          {
+            status: ins.status,
+            mitigatedAt: ins.lastConfirmedAt,
+            lastObservedAt: ins.lastObservedAt,
+            recentRecurringBlockCount,
+          },
+          now,
+          recheckDays,
+        );
+        if (reactivate) {
+          await this.prisma.insight.update({
+            where: { id: ins.id },
+            data: { status: 'active', lastObservedAt: now },
+          });
+          reactivated++;
+          this.metrics.incInsightRechecked({ reactivated: true });
+        } else {
+          this.metrics.incInsightRechecked({ reactivated: false });
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            tenantId,
+            insightId: ins.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'insight-clusterer.recheck: упал — пропускаю инсайт',
+        );
+      }
+    }
+    return reactivated;
+  }
+
+  private async isRecheckEnabled(): Promise<boolean> {
+    return this.cfg.getDynamic<boolean>(
+      'insights.recheck.enabled',
+      'INSIGHTS_RECHECK_ENABLED',
+      true,
+    );
   }
 
   private async recalcAllForOrg(tenantId: string): Promise<number> {

@@ -12,6 +12,8 @@
 
 import { z } from 'zod';
 
+import { withAsrNote } from '../../ai/services/prompts/common';
+
 /**
  * Zod-схема ответа арбитра. При `verdict === 'merge'` `canonicalId`
  * обязателен — это валидируется на стороне сервиса.
@@ -36,7 +38,7 @@ export const BLOCK_DISTILL_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const BLOCK_DISTILL_SYSTEM_PROMPT = `Ты — арбитр дубликатов знания.
+export const BLOCK_DISTILL_SYSTEM_PROMPT = withAsrNote(`Ты — арбитр дубликатов знания.
 Получаешь один новый IdeaBlock и до 5 кандидатов-канонических блоков, ближайших к нему по эмбеддингу.
 Решаешь: новый блок — это перефразировка одного из кандидатов (verdict="merge"), или это отдельное самостоятельное знание (verdict="distinct").
 
@@ -47,4 +49,4 @@ export const BLOCK_DISTILL_SYSTEM_PROMPT = `Ты — арбитр дублика
 - Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
 - Если distinct — "canonicalId" не указывай.
 - "explanation" — короткое объяснение в 1-2 предложениях, на русском.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
+- Ответ — строго JSON по схеме. Никакого markdown.`);

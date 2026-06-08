@@ -16,6 +16,11 @@
 
 import { z } from 'zod';
 
+import {
+  withAsrNote,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
+
 /**
  * 12 веток компании из delivery M-07. В JSON-схеме / Zod к ним добавляется
  * sentinel `'none'` — он маппится в `null` (ветка не определилась) на стороне
@@ -67,7 +72,8 @@ export const ThemeClassifyResponseSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-export const THEME_CLASSIFY_SYSTEM_PROMPT = `Ты — аналитик, который называет тематические кластеры IdeaBlock'ов компании.
+export const THEME_CLASSIFY_SYSTEM_PROMPT = withAsrNote(
+  withConfidenceCalibration(`Ты — аналитик, который называет тематические кластеры IdeaBlock'ов компании.
 
 На вход — N блоков (criticalQuestion + trustedAnswer + signalType + tags) и список упомянутых сущностей.
 
@@ -94,4 +100,5 @@ export const THEME_CLASSIFY_SYSTEM_PROMPT = `Ты — аналитик, кото
 Правила:
 - Не выдумывай связи. Если блоки разнородные — низкий confidence.
 - name на русском, без эмодзи и без кавычек.
-- Ответ — строго JSON по схеме.`;
+- Ответ — строго JSON по схеме.`),
+);

@@ -14,9 +14,13 @@
  * в конце USER.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withAsrNote,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 
-export const GOAL_HIERARCHY_LINK_SYSTEM_PROMPT = withConfidenceCalibration(
+export const GOAL_HIERARCHY_LINK_SYSTEM_PROMPT = withAsrNote(
+  withConfidenceCalibration(
   [
     'Ты — knowledge-куратор по целям компании. Тебе дают новую цель-черновик и список ближайших существующих целей.',
     'Реши, чем является новая цель относительно существующих:',
@@ -31,6 +35,7 @@ export const GOAL_HIERARCHY_LINK_SYSTEM_PROMPT = withConfidenceCalibration(
     '',
     'Отвечай строго в формате JSON по предоставленной схеме на русском языке.',
   ].join('\n'),
+  ),
 );
 
 export const GOAL_HIERARCHY_LINK_USER_TEMPLATE = (args: {

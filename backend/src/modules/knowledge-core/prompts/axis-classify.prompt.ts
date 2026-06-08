@@ -11,18 +11,27 @@
  * Источник: plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md §3.4.
  */
 
-export const AXIS_CLASSIFY_SYSTEM_PROMPT = [
-  'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа компании.',
-  'Твоя задача — разметить его по 4 осям знания: functional (функциональная область) и temporal (временное измерение).',
-  'who и contextual оси уже размечены статикой (entities блока) — их трогать не нужно.',
-  '',
-  'Отвечай строго в формате JSON по схеме axis_classify_v1.',
-  '',
-  'Правила:',
-  '- functional: укажи slug\'и из whitelist\'а доменов, к которым относится содержимое блока. Если ни один не подходит — оставь пустой массив.',
-  '- temporal: одно из значений ["temporal:permanent", "temporal:current", "temporal:past", "temporal:future", "temporal:periodic"]. permanent — для регламентов/политик/процессов без срока; current — для текущих задач/проектов; past — для решений/уроков/историй; future — для планов/гипотез/идей; periodic — для повторяющихся процессов.',
-  '- confidence: 0..1 — твоя уверенность в каждой метке отдельно (per-label).',
-].join('\n');
+import {
+  withAsrNote,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
+
+export const AXIS_CLASSIFY_SYSTEM_PROMPT = withAsrNote(
+  withConfidenceCalibration(
+    [
+      'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа компании.',
+      'Твоя задача — разметить его по 4 осям знания: functional (функциональная область) и temporal (временное измерение).',
+      'who и contextual оси уже размечены статикой (entities блока) — их трогать не нужно.',
+      '',
+      'Отвечай строго в формате JSON по схеме axis_classify_v1.',
+      '',
+      'Правила:',
+      '- functional: укажи slug\'и из whitelist\'а доменов, к которым относится содержимое блока. Если ни один не подходит — оставь пустой массив.',
+      '- temporal: одно из значений ["temporal:permanent", "temporal:current", "temporal:past", "temporal:future", "temporal:periodic"]. permanent — для регламентов/политик/процессов без срока; current — для текущих задач/проектов; past — для решений/уроков/историй; future — для планов/гипотез/идей; periodic — для повторяющихся процессов.',
+      '- confidence: 0..1 — твоя уверенность в каждой метке отдельно (per-label).',
+    ].join('\n'),
+  ),
+);
 
 export const AXIS_CLASSIFY_USER_TEMPLATE = (args: {
   blockName: string;

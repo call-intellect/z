@@ -7,6 +7,7 @@
 
 import type {
   DailyDigestApi,
+  DailyDigestChronicBlockerApi,
   DailyDigestEventApi,
   DailyDigestMetricsApi,
   DailyDigestPersonShinedApi,
@@ -34,6 +35,19 @@ export interface DailyDigestPersonShinedDomain
   extends DailyDigestPersonShinedApi {}
 export interface DailyDigestPersonStruggledDomain
   extends DailyDigestPersonStruggledApi {}
+/** ТЗ-2 Ф3 — domain-зеркало хронического блокера (identity-маппинг). */
+export interface DailyDigestChronicBlockerDomain
+  extends DailyDigestChronicBlockerApi {}
+
+/** ТЗ-2 Ф3 — русские лейблы статуса хронического блокера. */
+export const CHRONIC_BLOCKER_STATUS_LABEL: Record<
+  DailyDigestChronicBlockerDomain['status'],
+  string
+> = {
+  new: 'новый',
+  recurring: 'повторяется',
+  resolved: 'закрыт',
+};
 
 export interface DailyDigestDomain {
   id: string;
@@ -52,6 +66,8 @@ export interface DailyDigestDomain {
   urgentItems: DailyDigestUrgentItemDomain[];
   whoShined: DailyDigestPersonShinedDomain[];
   whoStruggled: DailyDigestPersonStruggledDomain[];
+  // ТЗ-2 Ф3 — хронические блокеры.
+  chronicBlockers: DailyDigestChronicBlockerDomain[];
 }
 
 export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
@@ -71,5 +87,6 @@ export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
     urgentItems: dto.urgentItems ?? [],
     whoShined: dto.whoShined ?? [],
     whoStruggled: dto.whoStruggled ?? [],
+    chronicBlockers: dto.chronicBlockers ?? [],
   };
 }

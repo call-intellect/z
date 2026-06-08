@@ -10,12 +10,18 @@ import useSWR from 'swr';
 import { ApiError } from '@/api/api-error';
 import {
   weeklyDigestApi,
+  type WeeklyDeltaApi,
   type WeeklyForecastItemApi,
   type WeeklyKpiDeltaApi,
   type WeeklyOperationsDigestApi,
   type WeeklyTeamDynamicsRowApi,
 } from '@/api/weekly-digest.api';
 import { CountUp } from '@/ui/components/dashboard/charts';
+import {
+  CHART,
+  GlassCard,
+  MODERN_PAGE_BG,
+} from '@/ui/components/dashboard/modern';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
 import { WeeklyPerPersonWidget } from './WeeklyPerPersonWidget';
@@ -58,7 +64,8 @@ export function WeeklyDigestClient() {
   const nextWeekDisabled = nextWeek > today;
 
   return (
-    <div className="p-6">
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div className="p-6">
       {/* §5.2 — Sticky-header. */}
       <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
@@ -118,6 +125,7 @@ export function WeeklyDigestClient() {
       <div className="mt-6">
         <WeeklyPerPersonWidget weekStart={weekStart} />
       </div>
+      </div>
     </div>
   );
 }
@@ -129,12 +137,16 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
   const kpiDeltas = data.kpiDeltas ?? [];
   const teamDynamics = data.teamDynamics ?? [];
   const forecast = data.forecast ?? [];
+  // ТЗ-2 Ф3 — идеи недели и дельты по разделам (страхуем от старых ответов).
+  const topIdeas = data.metrics.topIdeas ?? [];
+  const sectionDeltas = data.sectionDeltas;
   return (
     <div className="space-y-6">
       {/* Pulse Wave 2 §2.2 — 4 KPI с дельтами наверху для быстрого «пульса». */}
       <KpiDeltasSection items={kpiDeltas} />
       <TeamDynamicsSection items={teamDynamics} />
       <ForecastSection items={forecast} />
+      <IdeasSection items={topIdeas} delta={sectionDeltas?.ideas ?? null} />
 
       <section className="rounded border bg-bg-card p-4">
         <h2 className="text-lg font-semibold">Температура команды</h2>
@@ -159,7 +171,10 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
 
       {data.metrics.topBlockers.length > 0 ? (
         <section className="rounded border bg-bg-card p-4">
-          <h2 className="text-lg font-semibold">Повторяющиеся блокеры</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">Повторяющиеся блокеры</h2>
+            <DeltaLabel delta={sectionDeltas?.blockers ?? null} />
+          </div>
           <ul className="mt-2 space-y-1 text-sm">
             {data.metrics.topBlockers.map((b, i) => {
               const tone = blockerTone(b.count);
@@ -180,7 +195,10 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
 
       {data.metrics.topInsights.length > 0 ? (
         <section className="rounded border bg-bg-card p-4">
-          <h2 className="text-lg font-semibold">Главные сигналы</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">Главные сигналы</h2>
+            <DeltaLabel delta={sectionDeltas?.insights ?? null} />
+          </div>
           <ul className="mt-2 space-y-1 text-sm">
             {data.metrics.topInsights.map((it) => {
               const tone = insightDynamicTone(it.dynamicLabel);
@@ -572,6 +590,97 @@ function forecastMetricLabel(
     default:
       return metric;
   }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * ТЗ-2 Ф3 — идеи за неделю + дельты по разделам (неделя к неделе).
+ * Цвета — парные/современные токены. Без hex / text-white / slate.
+ * ────────────────────────────────────────────────────────────────────── */
+
+type WeeklyIdea = NonNullable<
+  WeeklyOperationsDigestApi['metrics']['topIdeas']
+>[number];
+
+function IdeasSection({
+  items,
+  delta,
+}: {
+  items: WeeklyIdea[];
+  delta: WeeklyDeltaApi | null;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <GlassCard>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">Идеи за неделю</h2>
+        <DeltaLabel delta={delta} />
+      </div>
+      <ul className="mt-2 space-y-1 text-sm">
+        {items.map((idea) => (
+          <li
+            key={idea.ideaId}
+            className="flex flex-wrap items-center gap-2 rounded-md p-2"
+          >
+            <span className="rounded bg-bg-overlay px-2 py-0.5 text-[11px] text-fg-secondary">
+              {ideaStatusLabel(idea.status)}
+            </span>
+            <span className="flex-1 text-fg-primary">{idea.statement}</span>
+            <span className="text-xs text-fg-secondary">
+              вес {idea.weight}
+            </span>
+            <span className="text-xs text-fg-tertiary">
+              сторонников: {idea.supporterCount}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </GlassCard>
+  );
+}
+
+/** ТЗ-2 Ф3 — русские лейблы статуса идеи. */
+function ideaStatusLabel(status: string): string {
+  switch (status) {
+    case 'captured':
+      return 'зафиксирована';
+    case 'in_discussion':
+      return 'в обсуждении';
+    case 'accepted':
+      return 'принята';
+    case 'in_progress':
+      return 'в работе';
+    case 'shipped':
+      return 'внедрена';
+    case 'rejected':
+      return 'отклонена';
+    case 'archived':
+      return 'в архиве';
+    default:
+      return status;
+  }
+}
+
+/**
+ * ТЗ-2 Ф3 — компактная дельта раздела «к прошлой неделе».
+ * delta>0 → «↑ N» (мята), delta<0 → «↓ N» (янтарь/красный),
+ * delta===0 → «без изменений», delta/blok===null → «—».
+ */
+function DeltaLabel({ delta }: { delta: WeeklyDeltaApi | null }) {
+  if (!delta || delta.delta === null) {
+    return <span className="text-xs text-fg-tertiary">—</span>;
+  }
+  const d = delta.delta;
+  if (d === 0) {
+    return <span className="text-xs text-fg-tertiary">без изменений</span>;
+  }
+  const tone =
+    d > 0 ? CHART.mint : CHART.amber;
+  const arrow = d > 0 ? '↑' : '↓';
+  return (
+    <span className="text-xs tabular-nums" style={{ color: tone }}>
+      {arrow} {Math.abs(d)} к прошлой неделе
+    </span>
+  );
 }
 
 /**

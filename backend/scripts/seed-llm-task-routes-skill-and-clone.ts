@@ -122,6 +122,24 @@ const SEEDS: TaskRouteSeed[] = [
     ],
   },
   {
+    taskType: 'skill-trait-verify',
+    playbookSection:
+      '§2.1 grounding-верификатор черты — дешёвый JSON in/out.',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+  {
     taskType: 'executable-persona-compile',
     playbookSection: '§2.1 persona compile — структурированный текст 300–800 слов.',
     chain: [

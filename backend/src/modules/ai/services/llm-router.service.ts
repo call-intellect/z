@@ -172,6 +172,7 @@ export type LlmTaskType =
   //   (persona prompt + subgraph context + question → текст + citations).
   | 'skill-trait-detect'
   | 'skill-trait-merge'
+  | 'skill-trait-verify' // grounding-проверка черты клона перед персоной
   | 'executable-persona-compile'
   | 'clone-respond'
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
@@ -604,6 +605,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',
+  'skill-trait-verify',
   'executable-persona-compile',
   'clone-respond',
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2

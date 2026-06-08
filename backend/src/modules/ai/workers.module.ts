@@ -40,6 +40,7 @@ import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
+import { SkillTraitVerifyCron } from '../knowledge-core/workers/skill-trait-verify.cron';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
 import { Specialist314GoalsWorker } from '../knowledge-core/workers/specialist-3-14-goals.worker';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
@@ -258,6 +259,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     SkillProfileRebuildWorker,
     // SBA γ-1 — cron `0 5 * * *`: daily decay confidence + archive старых traits.
     SkillProfileRecalibrateCron,
+    // Ф3(D) clone-quality-improvements (2026-06-08) — cron `30 3 * * *`:
+    // grounding-проверка pending_verification черт перед персоной
+    // (grounded → active; иначе pending; fail-open promote при ошибке LLM).
+    SkillTraitVerifyCron,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — cron `0 3 * * *`:
     // нормализация Смысловых блоков навыка (slияние близких SkillTraitConcept,
     // архивация без активных traits старше N месяцев). За час до decay-cron.

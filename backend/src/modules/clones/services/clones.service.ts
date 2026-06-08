@@ -2111,7 +2111,12 @@ export class ClonesService {
     sourceBlockIds: string[];
     firstObservedAt: Date;
     lastConfirmedAt: Date;
-    status: 'active' | 'superseded_by' | 'archived' | 'misleading';
+    status:
+      | 'active'
+      | 'superseded_by'
+      | 'archived'
+      | 'misleading'
+      | 'pending_verification';
   }): SkillTraitDto {
     return {
       id: t.id,

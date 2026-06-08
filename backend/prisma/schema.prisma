@@ -7295,11 +7295,14 @@ enum SkillConfidence {
 ///   - superseded_by: заменена более новой формулировкой (см. supersededById).
 ///   - archived: давно не подтверждалась (>SKILL_ARCHIVE_MONTHS).
 ///   - misleading: пометил direct manager / admin как неверную.
+///   - pending_verification: черта создана, ждёт grounding-проверки
+///     (skill-trait-verify); в персону НЕ попадает, пока не станет active.
 enum SkillTraitStatus {
   active
   superseded_by
   archived
   misleading
+  pending_verification
 }
 
 /// PersonaScope — область охвата исполняемой персоны.

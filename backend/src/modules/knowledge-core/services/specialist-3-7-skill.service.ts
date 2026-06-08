@@ -31,6 +31,12 @@ import {
   SKILL_TRAIT_MERGE_SYSTEM_PROMPT,
   SKILL_TRAIT_MERGE_USER_TEMPLATE,
 } from '../prompts/skill-trait-merge.prompt';
+import {
+  SKILL_TRAIT_VERIFY_JSON_SCHEMA,
+  SKILL_TRAIT_VERIFY_SCHEMA_NAME,
+  SKILL_TRAIT_VERIFY_SYSTEM_PROMPT,
+  SKILL_TRAIT_VERIFY_USER_TEMPLATE,
+} from '../prompts/skill-trait-verify.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { SkillTraitConceptService } from './skill-trait-concept.service';
@@ -140,6 +146,123 @@ export class Specialist37Service {
         where: { personId: args.personId },
       });
     }
+  }
+
+  /**
+   * Ф3(D) — grounding-проверка pending_verification черт перед попаданием в
+   * персону. grounded=true → active; иначе остаётся pending (decay уберёт).
+   * Fail-open (Р2): ошибка/таймаут LLM → промоут в active (как было до D).
+   *
+   * Вызывается из SkillTraitVerifyCron батчем (default limit 100).
+   */
+  async verifyPendingTraits(
+    limit = 100,
+  ): Promise<{ checked: number; promoted: number; held: number }> {
+    let checked = 0;
+    let promoted = 0;
+    let held = 0;
+    try {
+      const pending = await this.prisma.skillTrait.findMany({
+        where: { status: 'pending_verification' },
+        select: {
+          id: true,
+          category: true,
+          statement: true,
+          sourceBlockIds: true,
+          profileId: true,
+          profile: { select: { tenantId: true } },
+        },
+        take: limit,
+      });
+
+      for (const trait of pending) {
+        checked++;
+        const tenantId = trait.profile?.tenantId ?? null;
+        try {
+          // Цитаты-источники: дословные reasoning-блоки (critical/trusted).
+          const blockIds = trait.sourceBlockIds.slice(0, 10);
+          const blocks = blockIds.length
+            ? await this.prisma.ideaBlock.findMany({
+                where: { id: { in: blockIds } },
+                select: {
+                  id: true,
+                  criticalQuestion: true,
+                  trustedAnswer: true,
+                },
+              })
+            : [];
+          const quotes = blocks.map((b) => ({
+            blockId: b.id,
+            quote: `${b.criticalQuestion} ${b.trustedAnswer}`.slice(0, 600),
+          }));
+
+          const res = await this.llm.call({
+            taskType: 'skill-trait-verify',
+            systemPrompt: SKILL_TRAIT_VERIFY_SYSTEM_PROMPT,
+            userMessage: SKILL_TRAIT_VERIFY_USER_TEMPLATE({
+              category: trait.category,
+              statement: trait.statement,
+              quotes,
+            }),
+            tenantId,
+            responseFormat: {
+              type: 'json_schema',
+              name: SKILL_TRAIT_VERIFY_SCHEMA_NAME,
+              schema: SKILL_TRAIT_VERIFY_JSON_SCHEMA,
+              strict: true,
+            },
+            sourceRef: { type: 'skill_profile', id: trait.profileId },
+            dataClass: 'internal',
+          });
+
+          const parsed = JSON.parse(res.text) as { grounded?: unknown };
+          const grounded = parsed.grounded === true;
+          if (grounded) {
+            await this.prisma.skillTrait.update({
+              where: { id: trait.id },
+              data: { status: 'active' },
+            });
+            promoted++;
+          } else {
+            // Не грунтовано — оставляем pending (decay уберёт).
+            held++;
+          }
+        } catch (err) {
+          // FAIL-OPEN (Р2): ошибка LLM/parse → промоут в active, не блокируем
+          // формирование клона из-за недоступности верификатора.
+          this.logger.warn(
+            {
+              traitId: trait.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-7.verifyPendingTraits: verify упал — fail-open promote в active',
+          );
+          try {
+            await this.prisma.skillTrait.update({
+              where: { id: trait.id },
+              data: { status: 'active' },
+            });
+            promoted++;
+          } catch (updErr) {
+            this.logger.warn(
+              {
+                traitId: trait.id,
+                err:
+                  updErr instanceof Error ? updErr.message : String(updErr),
+              },
+              'specialist-3-7.verifyPendingTraits: fail-open update тоже упал — skip',
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'specialist-3-7.verifyPendingTraits: выборка/проход упали',
+      );
+      return { checked, promoted, held };
+    }
+    return { checked, promoted, held };
   }
 
   /**
@@ -853,7 +976,10 @@ export class Specialist37Service {
           sourceBlockIds: args.draft.sourceBlockIds.slice(0, 50),
           firstObservedAt: this.safeDate(args.draft.firstObservedAt),
           lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
-          status: 'active',
+          // Ф3(D) — новая черта создаётся в pending_verification: в персону
+          // НЕ попадает, пока skill-trait-verify cron не подтвердит grounding
+          // (grounded=true → active; ошибка LLM → fail-open active).
+          status: 'pending_verification',
         },
       });
       if (args.embedding) {

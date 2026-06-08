@@ -45,13 +45,14 @@ export const SKILL_TRAIT_MERGE_USER_TEMPLATE = (args: {
     statement: string;
     confidence: string;
     lastConfirmedAt: string;
+    bucket: 'hard' | 'band';
   }>;
 }): string => {
   const candidateLines = args.candidates.length
     ? args.candidates
         .map(
           (c, i) =>
-            `  ${i + 1}. [id=${c.id}] «${c.category}» (${c.confidence}, последнее подтверждение ${c.lastConfirmedAt}): ${c.statement}`,
+            `  ${i + 1}. [id=${c.id}] (${c.bucket === 'band' ? 'СЛАБОЕ совпадение' : 'сильное совпадение'}) «${c.category}» (${c.confidence}, последнее подтверждение ${c.lastConfirmedAt}): ${c.statement}`,
         )
         .join('\n')
     : '  (кандидатов нет)';
@@ -64,6 +65,7 @@ export const SKILL_TRAIT_MERGE_USER_TEMPLATE = (args: {
     'Близкие существующие активные черты (top-K по cosine):',
     candidateLines,
     '',
+    'Правило для кандидатов со СЛАБЫМ совпадением: выбирай merge или supersedes ТОЛЬКО если смысловая категория совпадает с черновиком; иначе verdict=new.',
     'Верни JSON-объект по схеме `skill_trait_merge_v1`.',
   ].join('\n');
 };

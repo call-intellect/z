@@ -472,3 +472,130 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
     expect(mergeOrCreate).not.toHaveBeenCalled();
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Ф5(F) — арбитраж мёртвой зоны merge 0.78–0.85: драфт-близнец в [0.78,0.85)
+// судится арбитром (bucket:'band'), а не форс-new. <0.78 → форс-new. ≥0.85 →
+// bucket:'hard' (как раньше). threshold = traitSimilarityThreshold = 0.85.
+// ───────────────────────────────────────────────────────────────────────────
+
+interface ArbiterMocks {
+  embedQuery: ReturnType<typeof vi.fn>;
+  queryRawUnsafe: ReturnType<typeof vi.fn>;
+}
+
+const ARBITER_DRAFT = {
+  category: 'оценка сроков',
+  statement: 'Откладывает коммит по срокам до сбора данных.',
+  confidence: 'medium' as const,
+  sourceBlockIds: ['b9'],
+  firstObservedAt: new Date().toISOString(),
+  lastConfirmedAt: new Date().toISOString(),
+};
+
+/** Строит сервис для прямого вызова private mergeOrCreate с замоканным KNN. */
+function buildArbiterService(distance: number): {
+  svc: Specialist37Service;
+  callMergeArbiterSpy: ReturnType<typeof vi.fn>;
+  createNewTraitSpy: ReturnType<typeof vi.fn>;
+  mergeIntoExistingSpy: ReturnType<typeof vi.fn>;
+  mocks: ArbiterMocks;
+  mergeOrCreate: (a: { profile: unknown; draft: typeof ARBITER_DRAFT }) => Promise<string>;
+} {
+  const mocks: ArbiterMocks = {
+    embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    queryRawUnsafe: vi.fn().mockResolvedValue([
+      {
+        id: 'cand-1',
+        category: 'оценка сроков',
+        statement: 'Раньше переносил оценку сроков на потом.',
+        confidence: 'low',
+        lastConfirmedAt: new Date(),
+        observationCount: 2,
+        sourceBlockIds: ['b1', 'b2'],
+        distance,
+      },
+    ]),
+  };
+  const prisma = { $queryRawUnsafe: mocks.queryRawUnsafe };
+  const cfg = { skill: { traitSimilarityThreshold: 0.85 } };
+  const embedder = { embedQuery: mocks.embedQuery };
+  const svc = new Specialist37Service(
+    prisma as never,
+    cfg as never,
+    {} as never, // llm
+    embedder as never,
+    {} as never, // metrics
+    {} as never, // probes
+    {} as never, // concepts
+  );
+  const internal = svc as unknown as Record<string, unknown>;
+  const callMergeArbiterSpy = vi
+    .fn()
+    .mockResolvedValue({ verdict: 'new', targetId: null, reasoning: 'ok' });
+  const createNewTraitSpy = vi.fn().mockResolvedValue('created');
+  const mergeIntoExistingSpy = vi.fn().mockResolvedValue(undefined);
+  internal.callMergeArbiter = callMergeArbiterSpy;
+  internal.createNewTrait = createNewTraitSpy;
+  internal.mergeIntoExisting = mergeIntoExistingSpy;
+  const mergeOrCreate = (
+    internal.mergeOrCreate as (a: unknown) => Promise<string>
+  ).bind(svc) as never;
+  return {
+    svc,
+    callMergeArbiterSpy,
+    createNewTraitSpy,
+    mergeIntoExistingSpy,
+    mocks,
+    mergeOrCreate,
+  };
+}
+
+const ARBITER_PROFILE = { id: PROFILE_ID, tenantId: TENANT };
+
+describe('Specialist37Service.mergeOrCreate — Ф5(F) арбитраж 0.78–0.85', () => {
+  it('cosine 0.80 (distance 0.20) → арбитр ВЫЗВАН с bucket:band (не сразу createNewTrait)', async () => {
+    const t = buildArbiterService(0.2);
+    const res = await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    expect(t.callMergeArbiterSpy).toHaveBeenCalledTimes(1);
+    const passedCandidates = t.callMergeArbiterSpy.mock.calls[0]![0].candidates;
+    expect(passedCandidates).toHaveLength(1);
+    expect(passedCandidates[0].bucket).toBe('band');
+    // verdict='new' → создаётся новая (createNewTrait), но ПОСЛЕ арбитража.
+    expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
+    expect(res).toBe('created');
+  });
+
+  it('cosine 0.80 + verdict=merge → mergeIntoExisting вызван (band-кандидат смерджен)', async () => {
+    const t = buildArbiterService(0.2);
+    t.callMergeArbiterSpy.mockResolvedValue({
+      verdict: 'merge',
+      targetId: 'cand-1',
+      reasoning: 'та же черта',
+    });
+    const res = await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    expect(t.mergeIntoExistingSpy).toHaveBeenCalledTimes(1);
+    expect(t.createNewTraitSpy).not.toHaveBeenCalled();
+    expect(res).toBe('merged');
+  });
+
+  it('cosine 0.70 (distance 0.30) < 0.78 → НЕ в candidates → форс-new (арбитр НЕ вызван)', async () => {
+    const t = buildArbiterService(0.3);
+    const res = await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    expect(t.callMergeArbiterSpy).not.toHaveBeenCalled();
+    expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
+    expect(res).toBe('created');
+  });
+
+  it('cosine 0.90 (distance 0.10) ≥ 0.85 → bucket:hard, арбитр вызван', async () => {
+    const t = buildArbiterService(0.1);
+    await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    expect(t.callMergeArbiterSpy).toHaveBeenCalledTimes(1);
+    const passedCandidates = t.callMergeArbiterSpy.mock.calls[0]![0].candidates;
+    expect(passedCandidates[0].bucket).toBe('hard');
+  });
+});

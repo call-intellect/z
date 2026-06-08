@@ -70,6 +70,10 @@ export class Specialist37Service {
   private static readonly GROUP_SIMILARITY_THRESHOLD = 0.78;
   /** Top-K кандидатов для skill-trait-merge KNN-арбитра. */
   private static readonly MERGE_KNN_TOP_K = 5;
+  /** Ф5(F) — нижний порог попадания в арбитраж merge. Кандидаты в [0.78,0.85)
+   *  («band») всё равно судятся арбитром (не форс-new), но мерджатся только при
+   *  совпадении смысловой категории. ≥0.85 — «hard». */
+  private static readonly ARBITRATION_FLOOR = 0.78;
   /** Максимум блоков, загружаемых из БД за один rebuild (защита от взрыва токенов). */
   private static readonly MAX_BLOCKS_PER_REBUILD = 200;
   /** Максимум групп, обрабатываемых LLM за один rebuild. */
@@ -737,6 +741,7 @@ export class Specialist37Service {
       lastConfirmedAt: Date;
       observationCount: number;
       sourceBlockIds: string[];
+      bucket: 'hard' | 'band';
     }> = [];
 
     let embedding: number[] | null;
@@ -775,9 +780,13 @@ export class Specialist37Service {
           args.profile.id,
           vec,
         );
-        // cosine_distance = 1 - cosine_sim. Фильтруем по threshold по близости.
+        // cosine_distance = 1 - cosine_sim. Ф5(F): фильтруем по ARBITRATION_FLOOR
+        // (0.78) — кандидаты в [0.78,threshold) («band») всё равно судятся арбитром
+        // (не форс-new), но помечаются как слабое совпадение. rows уже отсортированы
+        // по distance asc = similarity desc; cap top-3.
         candidates = rows
-          .filter((r) => 1 - r.distance >= threshold)
+          .filter((r) => 1 - r.distance >= Specialist37Service.ARBITRATION_FLOOR)
+          .slice(0, 3)
           .map((r) => ({
             id: r.id,
             category: r.category,
@@ -786,6 +795,9 @@ export class Specialist37Service {
             lastConfirmedAt: r.lastConfirmedAt,
             observationCount: r.observationCount,
             sourceBlockIds: r.sourceBlockIds ?? [],
+            bucket: (1 - r.distance >= threshold ? 'hard' : 'band') as
+              | 'hard'
+              | 'band',
           }));
       } catch (err) {
         this.logger.debug(
@@ -876,6 +888,7 @@ export class Specialist37Service {
       statement: string;
       confidence: SkillConfidence;
       lastConfirmedAt: Date;
+      bucket: 'hard' | 'band';
     }>;
   }): Promise<MergeVerdict> {
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты, исходно из транскриптов).
@@ -892,6 +905,7 @@ export class Specialist37Service {
         statement: c.statement,
         confidence: c.confidence,
         lastConfirmedAt: c.lastConfirmedAt.toISOString(),
+        bucket: c.bucket,
       })),
     });
     let result: LlmCallResult;

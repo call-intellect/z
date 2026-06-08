@@ -126,6 +126,18 @@ export type DirectorDashboardThemeApi = {
   lastSignalAt: string | null;
 };
 
+/**
+ * ТЗ-2 Ф1 — «почему так» / источник сигнала (provenance) для drill-down в новой
+ * компоновке главной. Если первое evidence резолвится во встречу —
+ * `{ meetingId, meetingTitle }`; если в решение — `{ decisionId }`; иначе `null`.
+ * `evidenceMeetingId` оставлен без изменений для backward-compat.
+ */
+export type DirectorDashboardSignalReasonRefApi = {
+  meetingId?: string;
+  meetingTitle?: string;
+  decisionId?: string;
+};
+
 export type DirectorDashboardSignalApi = {
   id: string;
   name: string;
@@ -134,6 +146,8 @@ export type DirectorDashboardSignalApi = {
   criticalQuestion: string;
   trustedAnswer: string;
   evidenceMeetingId: string | null;
+  /** ТЗ-2 Ф1 — provenance-ссылка «почему так». Опц. для backward-compat. */
+  reasonSourceRef?: DirectorDashboardSignalReasonRefApi | null;
 };
 
 export type DirectorDashboardSignalCountersApi = {
@@ -254,6 +268,26 @@ export type DirectorDashboardKpiApi = {
 
 export type DirectorDashboardKpiDomain = DirectorDashboardKpiApi;
 
+// ─── ТЗ-2 Ф1 — «Полоса пользы» (Value Strip) ────────────────────────────────
+
+/**
+ * 5 твёрдых счётчиков за период — снятая Корой рутина («Польза»).
+ *   - `meetingsProtocoled`        — встречи с готовым AI-отчётом в окне;
+ *   - `tasksExtracted`            — задачи, извлечённые в окне;
+ *   - `decisionsExtracted`        — решения, зафиксированные в окне;
+ *   - `questionsAnsweredByMemory` — ответы AI-чата с привязкой к источнику;
+ *   - `commitmentsKept`           — выполненные обещания в окне.
+ */
+export type DirectorDashboardValueStripApi = {
+  meetingsProtocoled: number;
+  tasksExtracted: number;
+  decisionsExtracted: number;
+  questionsAnsweredByMemory: number;
+  commitmentsKept: number;
+};
+
+export type DirectorDashboardValueStripDomain = DirectorDashboardValueStripApi;
+
 export type DirectorDashboardApi = {
   period: DirectorDashboardPeriod;
   generatedAt: string;
@@ -296,6 +330,17 @@ export type DirectorDashboardApi = {
    * до false можно безопасно.
    */
   isEmpty?: boolean;
+  /**
+   * ТЗ-2 Ф1 — «Полоса пользы»: 5 твёрдых счётчиков снятой рутины за период.
+   * Опц. для backward-compat со старым backend; UI падает до нулей.
+   */
+  valueStrip?: DirectorDashboardValueStripApi;
+  /**
+   * ТЗ-3 Ф2 — «новая компоновка главной включена». На backend ничего не
+   * гейтит (`valueStrip` считается всегда); это переключатель раскладки
+   * первого экрана. Опц. — UI падает до `true`.
+   */
+  mainReworkEnabled?: boolean;
 };
 
 // ─── Domain-модели ──────────────────────────────────────────────────────────
@@ -310,6 +355,9 @@ export type DirectorDashboardThemeDomain = {
   lastSignalAt: Date | null;
 };
 
+export type DirectorDashboardSignalReasonRefDomain =
+  DirectorDashboardSignalReasonRefApi;
+
 export type DirectorDashboardSignalDomain = {
   id: string;
   name: string;
@@ -318,6 +366,8 @@ export type DirectorDashboardSignalDomain = {
   criticalQuestion: string;
   trustedAnswer: string;
   evidenceMeetingId: string | null;
+  /** ТЗ-2 Ф1 — provenance-ссылка «почему так». null, если backend не вернул. */
+  reasonSourceRef: DirectorDashboardSignalReasonRefDomain | null;
 };
 
 export type DirectorDashboardSignalCountersDomain = DirectorDashboardSignalCountersApi;
@@ -407,6 +457,13 @@ export type DirectorDashboardDomain = {
    * Frontend рисует баннер «образец» (см. `SampleStoryBanner`).
    */
   isEmpty: boolean;
+  /**
+   * ТЗ-2 Ф1 — «Полоса пользы». Всегда заполнена (backend считает всегда);
+   * при отсутствии в ответе старого backend падает до нулей.
+   */
+  valueStrip: DirectorDashboardValueStripDomain;
+  /** ТЗ-3 Ф2 — новая компоновка главной включена. Дефолт `true`. */
+  mainReworkEnabled: boolean;
 };
 
 // ─── Mappers ────────────────────────────────────────────────────────────────
@@ -436,6 +493,29 @@ function signalFromApi(
     criticalQuestion: api.criticalQuestion,
     trustedAnswer: api.trustedAnswer,
     evidenceMeetingId: api.evidenceMeetingId,
+    reasonSourceRef: api.reasonSourceRef ?? null,
+  };
+}
+
+/** ТЗ-2 Ф1 — нулевая «Полоса пользы» (фолбэк, если backend не вернул блок). */
+const EMPTY_VALUE_STRIP: DirectorDashboardValueStripDomain = {
+  meetingsProtocoled: 0,
+  tasksExtracted: 0,
+  decisionsExtracted: 0,
+  questionsAnsweredByMemory: 0,
+  commitmentsKept: 0,
+};
+
+function valueStripFromApi(
+  api: DirectorDashboardValueStripApi | undefined,
+): DirectorDashboardValueStripDomain {
+  if (!api) return EMPTY_VALUE_STRIP;
+  return {
+    meetingsProtocoled: api.meetingsProtocoled ?? 0,
+    tasksExtracted: api.tasksExtracted ?? 0,
+    decisionsExtracted: api.decisionsExtracted ?? 0,
+    questionsAnsweredByMemory: api.questionsAnsweredByMemory ?? 0,
+    commitmentsKept: api.commitmentsKept ?? 0,
   };
 }
 
@@ -580,6 +660,8 @@ export function directorDashboardFromApi(
     goalsTree: api.goalsTree ? api.goalsTree.map(goalTreeNodeFromApi) : null,
     goalsPulse: api.goalsPulse ?? null,
     isEmpty: api.isEmpty ?? false,
+    valueStrip: valueStripFromApi(api.valueStrip),
+    mainReworkEnabled: api.mainReworkEnabled ?? true,
   };
 }
 

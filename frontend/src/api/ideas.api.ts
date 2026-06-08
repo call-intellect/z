@@ -70,6 +70,14 @@ export interface IdeasListResponseApi {
   limit: number;
 }
 
+/**
+ * TZ-1 Ф4.A — ответ `GET /api/v1/ideas/top?limit=N`.
+ * Топ идей по ре-ранку (weight + свежесть + связь с целью). Без пагинации.
+ */
+export interface TopIdeasResponseApi {
+  items: IdeaListItemApi[];
+}
+
 export interface IdeaClusterApi {
   id: string;
   name: string;
@@ -126,6 +134,21 @@ export const ideasApi = {
   async myIdeas(req: MyIdeasRequest = {}): Promise<IdeasListResponseApi> {
     const url = `/api/v1/me/ideas${qs(req as Record<string, string | number | undefined>)}`;
     return apiClient.get<IdeasListResponseApi>(url);
+  },
+
+  /**
+   * TZ-1 Ф4.A — топ идей (виджет дашборда «Идеи»). Ре-ранк weight+свежесть+цель.
+   * Доступ: owner / admin / coo (canViewOperationsDashboard).
+   *
+   * Эндпоинт без `:orgId` в пути → tenant резолвится из заголовка `X-Org-Id`.
+   * `apiClient` ставит дефолтный `X-Org-Id` сам, но передаём явно через
+   * `orgHeaders(orgId)` для надёжности (как в `linkGoal`).
+   */
+  async top(orgId: string, limit = 5): Promise<TopIdeasResponseApi> {
+    return apiClient.get<TopIdeasResponseApi>(
+      `/api/v1/ideas/top${qs({ limit })}`,
+      { headers: orgHeaders(orgId) },
+    );
   },
 
   async changeStatus(

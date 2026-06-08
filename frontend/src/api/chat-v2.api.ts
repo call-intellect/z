@@ -109,6 +109,40 @@ export interface ChatV2ListConversationsResponseApi {
   limit: number;
 }
 
+/**
+ * TZ-1 Фаза 5 — метрика чата за окно.
+ * Контракт: `GET /api/v1/chat-v2/usage-stats?from=&to=&scope=self|org`.
+ * Источник: `backend/.../dto/chat-v2-feedback.dto.ts:ChatV2UsageStatsDto`.
+ *
+ * `helpedRateHidden=true` → процент «помог ли ответ» скрыт (rated < minRated),
+ * UI показывает «мало данных». `answeredWithCitation` — ответы с источником
+ * (grounding-proxy, НЕ «дефлекция»).
+ */
+export interface ChatV2UsageStatsApi {
+  from: string;
+  to: string;
+  scope: 'self' | 'org';
+  asked: number;
+  answered: number;
+  answeredWithCitation: number;
+  rated: number;
+  helpedUp: number;
+  helpedRatePercent: number | null;
+  feedbackCoveragePercent: number;
+  groundedRatePercent: number;
+  helpedRateHidden: boolean;
+  minRated: number;
+}
+
+export interface ChatV2UsageStatsQuery {
+  /** YYYY-MM-DD; default — начало текущего месяца. */
+  from?: string;
+  /** YYYY-MM-DD; default — сейчас. */
+  to?: string;
+  /** 'self' — мои диалоги; 'org' — по всей Org (owner/coo). Default 'self'. */
+  scope?: 'self' | 'org';
+}
+
 export const chatV2Api = {
   ask: (body: ChatV2AskBody) =>
     apiClient.post<ChatV2AskResponseApi>('/api/v1/chat-v2/messages', body),
@@ -129,6 +163,22 @@ export const chatV2Api = {
     apiClient.get<ChatV2ConversationWithMessagesApi>(
       `/api/v1/chat-v2/conversations/${encodeURIComponent(id)}`,
     ),
+
+  /**
+   * TZ-1 Фаза 5 — метрика чата за окно (asked/answered/grounding-proxy/
+   * helped-rate). `scope='org'` доступен owner/coo, остальным сервер вернёт
+   * только self. Tenant резолвится из дефолтного `X-Org-Id` (apiClient).
+   */
+  usageStats: (query?: ChatV2UsageStatsQuery) => {
+    const params = new URLSearchParams();
+    if (query?.from) params.set('from', query.from);
+    if (query?.to) params.set('to', query.to);
+    if (query?.scope) params.set('scope', query.scope);
+    const qs = params.toString();
+    return apiClient.get<ChatV2UsageStatsApi>(
+      `/api/v1/chat-v2/usage-stats${qs ? `?${qs}` : ''}`,
+    );
+  },
 
   pinConversation: (id: string, pinned: boolean) =>
     apiClient.post<ChatV2ConversationApi>(

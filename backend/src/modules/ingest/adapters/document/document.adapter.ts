@@ -15,6 +15,7 @@ import {
   CORE_QUEUE_NAMES,
   type DocumentUploadedJobData,
 } from '../../../core-queue/queues';
+import { DocumentAttributionService } from '../../../documents/document-attribution.service';
 import { S3Service } from '../../../recordings/s3.service';
 import { IngestService } from '../../ingest.service';
 import {
@@ -66,6 +67,10 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
     private readonly parser: DocumentParserService,
     @Inject(IngestService) private readonly ingest: IngestService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
+    // ТЗ-4 Ф10 — подсказка атрибуции (docType + тема) после парсинга, если
+    // документ загружен без явной атрибуции. Best-effort, гейтится kill-switch'ем.
+    @Inject(DocumentAttributionService)
+    private readonly attribution: DocumentAttributionService,
   ) {}
 
   onModuleInit(): void {
@@ -199,6 +204,13 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
         },
         'document-uploaded: успешно распарсили и создали RawEvent',
       );
+
+      // ТЗ-4 Ф10 — подсказка атрибуции (docType + тема) ТОЛЬКО для документов
+      // без явной атрибуции. Best-effort: сервис сам гейтится kill-switch'ем,
+      // идемпотентен и никогда не бросает — он не должен ломать ingest.
+      if (doc.docType === null && doc.attachedThemeId === null) {
+        await this.attribution.suggestForDocument({ documentId, tenantId });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const isUserVisible =

@@ -1,0 +1,142 @@
+/**
+ * ТЗ-4 Ф10 (manual-document-upload) — Seed AdminSetting для kill-switch
+ * LLM-подсказки атрибуции загруженного документа (docType + тема графа).
+ *
+ * Регистрирует kill-switch (редактируется super_admin'ом в админке,
+ * code-fallback `true` в `DocumentAttributionService` через
+ * `TypedConfigService.getDynamic(..., default=true)`):
+ *
+ *   - `documents.ai_attribution.enabled` (bool, default true) — kill-switch (ON).
+ *     Гейтит подсказку атрибуции: после успешного парсинга документа БЕЗ явной
+ *     атрибуции (`docType` и `attachedThemeId` оба null) дешёвый классификатор
+ *     `document-attribution-suggest` предлагает смысловой тип + тему и пишет их в
+ *     `Document.suggestedDocType`/`suggestedThemeId` (НЕ применяет — человек
+ *     подтверждает, Р3). OFF → подсказка не строится, suggested* остаются null.
+ *
+ * Запуск:
+ *   bun run scripts/seed-admin-setting-document-attribution.ts
+ *
+ * Идемпотентность (skill `safe-seed-rules`):
+ *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
+ *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
+ *     метаданные (category/section/severity/description).
+ *   - Системная запись — обновим value на текущий fallback.
+ */
+
+import { type Prisma } from '@prisma/client';
+
+import { createPrismaClient } from './_lib/prisma';
+
+const prisma = createPrismaClient();
+
+type Severity = 'low' | 'medium' | 'high' | 'destructive';
+
+interface SettingSeed {
+  key: string;
+  value: unknown;
+  category: string;
+  section: string;
+  severity: Severity;
+  description: string;
+}
+
+const SEEDS: SettingSeed[] = [
+  {
+    key: 'documents.ai_attribution.enabled',
+    value: true,
+    category: 'content',
+    section: 'documents',
+    severity: 'medium',
+    description:
+      'Kill-switch (ON): LLM-подсказка атрибуции документа (смысловой тип + тема) после парсинга, если документ загружен без явной атрибуции. Пишет в Document.suggested* (человек подтверждает, авто-применения нет). OFF → подсказка не строится.',
+  },
+];
+
+interface Counters {
+  created: number;
+  updated: number;
+  skippedAdminEdited: number;
+}
+
+async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<void> {
+  const existing = await prisma.adminSetting.findUnique({
+    where: { key: seed.key },
+    select: { updatedBy: true },
+  });
+  const valueInput = seed.value as Prisma.InputJsonValue;
+
+  if (!existing) {
+    await prisma.adminSetting.create({
+      data: {
+        key: seed.key,
+        value: valueInput,
+        category: seed.category,
+        section: seed.section,
+        severity: seed.severity,
+        description: seed.description,
+      },
+    });
+    counters.created++;
+    console.log(`[create] ${seed.key}`);
+    return;
+  }
+
+  // Admin-edited — не трогаем value, обновляем только метаданные.
+  if (existing.updatedBy && existing.updatedBy !== 'system') {
+    await prisma.adminSetting.update({
+      where: { key: seed.key },
+      data: {
+        category: seed.category,
+        section: seed.section,
+        severity: seed.severity,
+        description: seed.description,
+      },
+    });
+    counters.skippedAdminEdited++;
+    console.log(`[skip:admin-edited] ${seed.key}`);
+    return;
+  }
+
+  await prisma.adminSetting.update({
+    where: { key: seed.key },
+    data: {
+      value: valueInput,
+      category: seed.category,
+      section: seed.section,
+      severity: seed.severity,
+      description: seed.description,
+    },
+  });
+  counters.updated++;
+  console.log(`[update] ${seed.key}`);
+}
+
+async function main(): Promise<void> {
+  console.log('=== seed-admin-setting-document-attribution START ===');
+
+  const counters: Counters = {
+    created: 0,
+    updated: 0,
+    skippedAdminEdited: 0,
+  };
+
+  for (const seed of SEEDS) {
+    await upsertSetting(seed, counters);
+  }
+
+  console.log(
+    `created=${counters.created}, updated=${counters.updated}, skipped_admin_edited=${counters.skippedAdminEdited}`,
+  );
+  console.log('=== seed-admin-setting-document-attribution DONE ===');
+}
+
+main()
+  .catch((err) => {
+    console.error('seed-admin-setting-document-attribution FAILED:', err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    void prisma.$disconnect();
+  });
+
+export { SEEDS };

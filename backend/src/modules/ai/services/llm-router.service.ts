@@ -555,7 +555,16 @@ export type LlmTaskType =
   // (ставит Issue.goalId только где null). РИСКОВО (мис-атрибуция) → за флагом
   // goals.goalTaskLinkEnabled DEFAULT OFF; при сомнении develops=false. Дешёвый:
   // primary deepseek-v4-flash. Cache-friendly: SYSTEM статичен, цель+задачи в USER.
-  | 'goal-task-link';
+  | 'goal-task-link'
+  // ТЗ-4 Ф10 (manual-document-upload) — document-attribution-suggest: подсказка
+  // атрибуции загруженного документа (смысловой тип docType + тема графа). Один
+  // вызов на документ без явной атрибуции (docType=null И attachedThemeId=null):
+  // первые ~2000 символов parsedText + список тем Org → { docType, themeId|null,
+  // confidence }. Результат пишется в Document.suggested* (человек подтверждает,
+  // авто-применения НЕТ — Р3). Дешёвый классификатор: primary deepseek-v4-flash.
+  // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
+  // переменное (текст + темы) в КОНЦЕ user.
+  | 'document-attribution-suggest';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -759,6 +768,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link (авто-привязка
   // задач встречи к AI-цели, DEFAULT OFF).
   'goal-task-link',
+  // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
+  // темы для загруженного документа без явной атрибуции; human-in-the-loop).
+  'document-attribution-suggest',
 ] as const;
 
 /**

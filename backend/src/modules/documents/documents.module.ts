@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { S3Service } from '../recordings/s3.service';
 
 import { ConfluenceClient } from './confluence-client';
+import { DocumentAttributionService } from './document-attribution.service';
 import { DocumentImportService } from './document-import.service';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
@@ -26,7 +27,15 @@ import { DocumentsService } from './documents.service';
   // ТЗ-4 Ф7 — DocumentImportService нужен и контроллеру (createBatch), и
   // DocumentImportWorker (processImport, регистрируется в WorkersModule).
   // Экспортируем его, чтобы WorkersModule мог инжектить через DI.
-  providers: [DocumentsService, DocumentImportService, ConfluenceClient, S3Service],
-  exports: [DocumentsService, DocumentImportService],
+  // ТЗ-4 Ф10 — DocumentAttributionService зовётся из DocumentIngestAdapter
+  // (WorkersModule) после успешного парсинга → тоже экспортируем.
+  providers: [
+    DocumentsService,
+    DocumentImportService,
+    DocumentAttributionService,
+    ConfluenceClient,
+    S3Service,
+  ],
+  exports: [DocumentsService, DocumentImportService, DocumentAttributionService],
 })
 export class DocumentsModule {}

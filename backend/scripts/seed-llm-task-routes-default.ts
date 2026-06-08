@@ -365,6 +365,23 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // ТЗ-4 Ф10 (manual-document-upload) — document-attribution-suggest.
+  // Дешёвый классификатор атрибуции документа (docType + тема) → primary
+  // deepseek-v4-flash (как theme-classify/table-*). JSON object, человек
+  // подтверждает (авто-применения нет, Р3). За kill-switch
+  // `documents.ai_attribution.enabled` (DEFAULT ON), но маршрут должен
+  // существовать, иначе при первом вызове он поедет по аварийному
+  // DEFAULT_FALLBACK_CHAIN.
+  {
+    taskType: 'document-attribution-suggest',
+    group: 'knowledge-core',
+    playbookSection: '§11 classifier (cheap attribution hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

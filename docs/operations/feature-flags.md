@@ -90,6 +90,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `operations.per_person_self_view.enabled` | 🟢 ВКЛ | Self-view недельного план-факта рядовому — `GET /api/v1/me/weekly-per-person` (своя строка + средняя надёжность команды для стрелки «я vs команда»). Выкл → endpoint отдаёт пустой self DTO. (ТЗ-2 Ф4 daily-value-dashboards) |
 | `me.daily_value_widgets.enabled` | 🟢 ВКЛ | 4 виджета ежедневной ценности в `/me` (память помогла / мой план-факт / судьба идей / признания) + self-эндпоинты `GET /me/ideas`, `GET /me/recognitions`. Выкл → эндпоинты отдают пустой список (виджеты graceful-empty). (ТЗ-2 Ф5 daily-value-dashboards) |
 | `operations.portfolio_health.enabled` | 🟢 ВКЛ | Дашборд здоровья портфеля целей: cron пн 05:00 пишет недельный `PortfolioHealthSnapshot`, `GET /operations/portfolio-health` (healthScore 0–100 + светофор + распределение по статусам + MoSCoW-разрез + дельта неделя-к-неделе). Выкл → cron не пишет, endpoint отдаёт пустой скелет. (ТЗ-2 Ф6.A daily-value-dashboards) |
+| `documents.ai_attribution.enabled` | 🟢 ВКЛ | LLM-подсказка атрибуции загруженного документа: после парсинга документа БЕЗ явной атрибуции (`docType` и `attachedThemeId` оба пусты) дешёвый классификатор `document-attribution-suggest` предлагает смысловой тип + тему графа и пишет их в `Document.suggested*` (человек подтверждает в UI — авто-применения нет, Р3). Выкл → подсказка не строится, `suggested*` остаются пустыми. (ТЗ-4 Ф10 manual-document-upload) |
 
 ---
 

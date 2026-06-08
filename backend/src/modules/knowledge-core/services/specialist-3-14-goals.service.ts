@@ -33,6 +33,7 @@ import {
 } from '../prompts/goal-hierarchy-link.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { GoalTaskLinkerService } from './goal-task-linker.service';
 import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
 /** Метрика-тип для core_specialist_*. */
@@ -93,6 +94,16 @@ export class Specialist314GoalsService {
   @Optional()
   @Inject(GoalThemeLinkerService)
   private readonly goalThemeLinker?: GoalThemeLinkerService;
+
+  /**
+   * Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+   * новой AI-цели (`goal-task-link`, DEFAULT OFF). Тот же property-injection
+   * паттерн, что и goalThemeLinker (не сдвигаем позиционные аргументы тестов).
+   * @Optional: в spec-конструкторе сервис не передаётся → хук no-op.
+   */
+  @Optional()
+  @Inject(GoalTaskLinkerService)
+  private readonly goalTaskLinker?: GoalTaskLinkerService;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -303,6 +314,24 @@ export class Specialist314GoalsService {
               err: err instanceof Error ? err.message : String(err),
             },
             'goal-theme-linker on-event: ошибка (не критично)',
+          );
+        }
+      }
+
+      // Agent-chain overhaul Фаза 4.1 — on-event LLM-привязка задач встречи к
+      // новой AI-цели (DEFAULT OFF — линкер сам no-op при выключенном флаге).
+      // Best-effort: ошибка только логируется. На момент создания цели задач
+      // может ещё не быть (триаж позже) — это ок, GoalTaskLinkerCron догонит.
+      if (this.goalTaskLinker) {
+        try {
+          await this.goalTaskLinker.linkGoalTasks(block.tenantId, goal.id);
+        } catch (err) {
+          this.logger.warn(
+            {
+              goalId: goal.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'goal-task-linker on-event: ошибка (не критично)',
           );
         }
       }

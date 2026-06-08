@@ -27,6 +27,7 @@ import { EntityResolutionService } from './services/entity-resolution.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
+import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
@@ -264,6 +265,12 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // GoalTheme source='ai'). Закрывает «0 тем» у AI-целей. Инжектится
     // Specialist314GoalsService (on-event) и GoalThemeLinkerCron (WorkersModule).
     GoalThemeLinkerService,
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — GoalTaskLinkerService.
+    // LLM-привязка задач встречи к AI-цели (goal-task-link, DEFAULT OFF,
+    // non-destructive). Инжектится Specialist314GoalsService (on-event) и
+    // GoalTaskLinkerCron (WorkersModule). LlmRouterService берётся из @Global
+    // AiModule (HTTP) / зарегистрирован в WorkersModule (worker-процесс).
+    GoalTaskLinkerService,
   ],
   exports: [
     SegmentBuilderService,
@@ -378,6 +385,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Agent-chain overhaul Фаза 4.2 — экспорт для Specialist314GoalsService
     // (on-event хук) и GoalThemeLinkerCron (WorkersModule, догоночный sweep).
     GoalThemeLinkerService,
+    // Agent-chain overhaul Фаза 4.1 — экспорт для Specialist314GoalsService
+    // (on-event хук) и GoalTaskLinkerCron (WorkersModule, догоночный sweep).
+    GoalTaskLinkerService,
   ],
 })
 export class KnowledgeCoreModule {}

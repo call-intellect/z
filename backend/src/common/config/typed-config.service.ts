@@ -1429,6 +1429,10 @@ export class TypedConfigService {
    *   - `themeAutolinkLlmEnabled` — вкл LLM-дозор серой зоны авто-привязки
    *     (agent-chain overhaul Фаза 4.2 step 3). Default false; ветка не
    *     реализована (golden-gated отдельной задачей) — флаг существует, no-op.
+   *   - `goalTaskLinkEnabled` — вкл LLM-арбитр авто-привязки задач встречи к
+   *     AI-цели (agent-chain overhaul Фаза 4.1, `goal-task-link`). Default false:
+   *     новый арбитр, риск мис-атрибуции, golden нет. Non-destructive (ставит
+   *     Issue.goalId только где null). При выключенном флаге линкер — no-op.
    */
   get goals() {
     return {
@@ -1439,6 +1443,11 @@ export class TypedConfigService {
       ),
       themeAutolinkLlmEnabled: this.resolveSync<boolean>(
         'goals.themeAutolinkLlmEnabled',
+        undefined,
+        false,
+      ),
+      goalTaskLinkEnabled: this.resolveSync<boolean>(
+        'goals.goalTaskLinkEnabled',
         undefined,
         false,
       ),

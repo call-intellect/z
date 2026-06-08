@@ -344,6 +344,9 @@ function buildSettings(): SettingSeed[] {
   const goals: Array<[string, unknown, Severity, string]> = [
     ['goals.themeAutolinkMinWeight', envFloat('GOAL_THEME_AUTOLINK_MIN_WEIGHT', 0.15), 'medium', 'Порог веса авто-привязки темы к цели (провенанс/co-mention)'],
     ['goals.themeAutolinkLlmEnabled', envBool('GOAL_THEME_AUTOLINK_LLM_ENABLED', false), 'medium', 'Вкл LLM-дозор для серой зоны авто-привязки тем к целям'],
+    // Ф4.1 agent-chain-overhaul — LLM-арбитр привязки задач встречи к AI-цели.
+    // DEFAULT OFF: новый арбитр, риск мис-атрибуции, golden нет. Non-destructive.
+    ['goals.goalTaskLinkEnabled', envBool('GOAL_TASK_LINK_ENABLED', false), 'medium', 'Вкл LLM-привязку задач встречи к AI-цели (ставит Issue.goalId только где пусто). Риск мис-атрибуции — по умолчанию выключено'],
   ];
   for (const [key, value, severity, description] of goals) {
     out.push({ key, value, category: 'ai', section: 'goals', severity, description });

@@ -412,6 +412,11 @@ export class BusinessMetricsService implements OnModuleInit {
   // Goal↔Theme. method: 'provenance' (блоки-источники цели уже в теме) |
   // 'comention' (тема упоминает те же сущности). Эмитит GoalThemeLinkerService.
   private goalThemeAutolinkTotal!: Counter<'method'>;
+  // Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+  // AI-цели (goal-task-link, DEFAULT OFF). result: 'linked' (Issue.goalId
+  // проставлен) | 'rejected' (арбитр develops=false / низкий confidence / уже
+  // не null) | 'fallback' (арбитр провалился) | 'skipped' (резерв).
+  private goalTaskLinkTotal!: Counter<'result'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -2020,6 +2025,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'goal_theme_autolink_total',
       help: 'knowledge-core — детерминированные авто-привязки Goal↔Theme (GoalTheme source=ai). method: provenance (блоки-источники цели уже в теме) | comention (тема упоминает те же сущности).',
       labelNames: ['method'] as const,
+    });
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач↔цели.
+    this.goalTaskLinkTotal = this.getOrCreateCounter({
+      name: 'z_goal_task_link_total',
+      help: 'knowledge-core — LLM-привязка задач встречи к AI-цели (goal-task-link, DEFAULT OFF). result: linked (Issue.goalId проставлен) | rejected (develops=false / низкий confidence / уже привязана) | fallback (арбитр провалился) | skipped.',
+      labelNames: ['result'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -4886,6 +4897,17 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incGoalThemeAutolink(args: { method: string }): void {
     this.goalThemeAutolinkTotal.inc({ method: args.method });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+   * AI-цели (`goal-task-link`, DEFAULT OFF). Эмитит GoalTaskLinkerService по
+   * каждой задаче-вердикту. result ∈ linked | rejected | fallback | skipped.
+   * optional-safe (?.): сервис инжектит метрику как @Optional() — мок/worker
+   * могут не иметь.
+   */
+  incGoalTaskLink(args: { result: string }): void {
+    this.goalTaskLinkTotal.inc({ result: args.result });
   }
 
   /**

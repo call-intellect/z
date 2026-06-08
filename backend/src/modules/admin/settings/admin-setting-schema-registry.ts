@@ -161,6 +161,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['goals.themeAutolinkMinWeight', UNIT_INTERVAL],
   ['goals.themeAutolinkLlmEnabled', z.boolean()],
 
+  // ── Agent-chain overhaul Фаза 4.1 — авто-привязка задач к целям (goals.*) ──
+  ['goals.goalTaskLinkEnabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

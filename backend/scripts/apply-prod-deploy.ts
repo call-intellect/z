@@ -106,6 +106,10 @@ const STEPS: Step[] = [
     'goals',
     // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
     'task-dedupe',
+    // Ф4.1 (2026-06-08) — goal-task-link (LLM-привязка задач встречи к AI-цели,
+    // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
+    // поедет по аварийному DEFAULT_FALLBACK_CHAIN.
+    'goal-task-link',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

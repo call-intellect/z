@@ -22,6 +22,7 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
@@ -184,6 +185,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // strategic-alignment.worker делал ранний return. GoalThemeLinkerService
     // берётся из @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
     GoalThemeLinkerCron,
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — cron каждые 30 мин:
+    // догоночная LLM-привязка задач встречи к свежим AI-целям (createdAt>=now-7д).
+    // За флагом goals.goalTaskLinkEnabled (DEFAULT OFF) — линкер сам no-op при
+    // выключенном флаге / отсутствии ungoaled-задач. Non-destructive. Сервис из
+    // @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
+    GoalTaskLinkerCron,
     ReframingCron,
     ThemeClustererCron,
     CardRollupV2Worker,

@@ -523,7 +523,14 @@ export type LlmTaskType =
   // скрыть задачу) → за флагом DEFAULT OFF; при сомнении → 'different'.
   // Дешёвый арбитр: primary deepseek-v4-flash; secondary gpt-5.4-mini;
   // tertiary ollama qwen3.5:9b. Cache-friendly: SYSTEM статичен, две задачи в USER.
-  | 'task-dedupe';
+  | 'task-dedupe'
+  // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link: батч-арбитр
+  // авто-привязки задач встречи к AI-цели. Один вызов на цель: цель + список
+  // ungoaled-задач встречи → по каждой { develops, confidence }. Non-destructive
+  // (ставит Issue.goalId только где null). РИСКОВО (мис-атрибуция) → за флагом
+  // goals.goalTaskLinkEnabled DEFAULT OFF; при сомнении develops=false. Дешёвый:
+  // primary deepseek-v4-flash. Cache-friendly: SYSTEM статичен, цель+задачи в USER.
+  | 'goal-task-link';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -715,6 +722,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'experiment-summarize-lessons',
   // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
   'task-dedupe',
+  // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link (авто-привязка
+  // задач встречи к AI-цели, DEFAULT OFF).
+  'goal-task-link',
 ] as const;
 
 /**

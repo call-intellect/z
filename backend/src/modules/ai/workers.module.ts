@@ -64,6 +64,10 @@ import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cr
 // ТЗ-5 Ф2 — MeetingUploadIngestWorker (ручная загрузка встреч). Инжектит
 // MeetingUploadsQueueService из @Global MeetingUploadsModule (enqueue upload-transcribe).
 import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
+// ТЗ-5 Ф3 — MeetingUploadTranscribeWorker (диаризация загруженной встречи).
+// Инжектит VoxService (локальный провайдер этого модуля) + S3/Meetings/Prisma
+// из @Global-модулей; ставит встречу в awaiting_speakers БЕЗ анализа (гейт Ф4).
+import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
@@ -183,6 +187,12 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // enqueue meeting.upload-transcribe (воркер очереди transcribe — Ф3).
     // Concurrency=1 (ffmpeg тяжёлый), идемпотентен (FSM-guard + фикс. jobId).
     MeetingUploadIngestWorker,
+    // ТЗ-5 Ф3 — transcribe-воркер ручной загрузки встреч. Consumer
+    // `meeting.upload-transcribe`: Vox(diarization) → Transcript.turns +
+    // MeetingUploadSpeaker[]; FSM до awaiting_speakers. ГЕЙТ: анализ НЕ ставит
+    // (после ручной разметки спикеров — Ф4 — встреча уходит в ai_processing).
+    // Concurrency=1, идемпотентен (FSM-guard + фикс. jobId + upsert).
+    MeetingUploadTranscribeWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,

@@ -754,6 +754,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private weeklyPerPersonSelfViewServedTotal!: Counter<'tenant_top'>;
   private weeklyPerPersonNoAnswerTotal!: Counter<'tenant_top'>;
 
+  // ── ТЗ-2 Ф5 — виджеты ежедневной ценности в /me (self-эндпоинты) ──
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private myIdeasFateServedTotal!: Counter<'tenant_top'>;
+  private myRecognitionsServedTotal!: Counter<'tenant_top'>;
+
   // ── SBA β-8.1 — добивка панели операционного директора ────────────
   // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
   private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
@@ -3024,6 +3029,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.weeklyPerPersonNoAnswerTotal = this.getOrCreateCounter({
       name: 'weekly_per_person_no_answer_total',
       help: 'ТЗ-2 Ф4 — суммарное число обещаний «без ответа» (commitmentStatus=asked) при расчёте недельного план-факта. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── ТЗ-2 Ф5 — виджеты ежедневной ценности в /me ──
+    this.myIdeasFateServedTotal = this.getOrCreateCounter({
+      name: 'me_ideas_fate_served_total',
+      help: 'ТЗ-2 Ф5 — сколько раз отдан self-эндпоинт «судьба моих идей» (/me/ideas). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.myRecognitionsServedTotal = this.getOrCreateCounter({
+      name: 'me_recognitions_served_total',
+      help: 'ТЗ-2 Ф5 — сколько раз отдан self-эндпоинт «полученные признания» (/me/recognitions). tenant_top — top-100 bucket через tenantTopOf.',
       labelNames: ['tenant_top'] as const,
     });
 
@@ -6711,6 +6728,24 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incWeeklyPerPersonSelfViewServed(args: { tenantTop: string }): void {
     this.weeklyPerPersonSelfViewServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `me_ideas_fate_served_total{tenant_top}` (ТЗ-2 Ф5 — каждая успешная
+   * отдача self-эндпоинта «судьба моих идей» /me/ideas).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incMyIdeasFateServed(args: { tenantTop: string }): void {
+    this.myIdeasFateServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `me_recognitions_served_total{tenant_top}` (ТЗ-2 Ф5 — каждая
+   * успешная отдача self-эндпоинта «полученные признания» /me/recognitions).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incMyRecognitionsServed(args: { tenantTop: string }): void {
+    this.myRecognitionsServedTotal.inc({ tenant_top: args.tenantTop });
   }
 
   // ────────────────────── SBA β-8.1 (COO добивка) ──────────────────────

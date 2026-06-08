@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { ChatV2Module } from '../chat-v2/chat-v2.module';
+import { IdeasModule } from '../ideas/ideas.module';
 import { PendingActionsModule } from '../pending-actions/pending-actions.module';
 import { ProbeModule } from '../probe/probe.module';
 import { TrackerModule } from '../tracker/tracker.module';
@@ -10,6 +11,7 @@ import { DailyDigestController } from './controllers/daily-digest.controller';
 import { MyCheckInsController } from './controllers/my-check-ins.controller';
 import { MyCustomerRiskController } from './controllers/my-customer-risk.controller';
 import { MyDailyBriefController } from './controllers/my-daily-brief.controller';
+import { MyDailyValueController } from './controllers/my-daily-value.controller';
 import { MyPromisesController } from './controllers/my-promises.controller';
 import { MyWeeklyPerPersonController } from './controllers/my-weekly-per-person.controller';
 import { OperationsDashboardController } from './controllers/operations-dashboard.controller';
@@ -98,6 +100,10 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // ChatV2FeedbackService.getChatUsageStats (метрика чата в месячной витрине).
     // ChatV2Module НЕ импортирует OperationsModule → циклической зависимости нет.
     ChatV2Module,
+    // ТЗ-2 Ф5 (daily-value-dashboards) — MyDailyValueController переиспользует
+    // IdeasService.listMine (судьба моих идей). IdeasModule экспортирует
+    // IdeasService; Ideas НЕ импортирует OperationsModule → цикла нет.
+    IdeasModule,
   ],
   controllers: [
     OperationsDashboardController,
@@ -119,6 +125,10 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // ТЗ-2 Ф4 (daily-value-dashboards) — self-view недельного план-факта
     // (`/me/weekly-per-person`): моя строка + среднее команды, без RBAC.
     MyWeeklyPerPersonController,
+    // ТЗ-2 Ф5 (daily-value-dashboards) — виджеты ежедневной ценности в /me:
+    // судьба моих идей (`/me/ideas`) + полученные признания (`/me/recognitions`),
+    // оба self-scope, гейт `me.daily_value_widgets.enabled`.
+    MyDailyValueController,
   ],
   providers: [
     DailyCheckInService,

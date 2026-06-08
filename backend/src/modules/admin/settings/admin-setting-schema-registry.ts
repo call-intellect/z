@@ -221,6 +221,10 @@ const registry = new Map<string, ZodTypeAny>([
   // kill-switch self-эндпоинта /me/weekly-per-person (моя строка + среднее команды).
   ['operations.per_person_self_view.enabled', z.boolean()],
 
+  // ── ТЗ-2 Ф5 (daily-value-dashboards) — виджеты ежедневной ценности в /me ──
+  // kill-switch self-эндпоинтов /me/ideas + /me/recognitions (4 виджета /me).
+  ['me.daily_value_widgets.enabled', z.boolean()],
+
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],

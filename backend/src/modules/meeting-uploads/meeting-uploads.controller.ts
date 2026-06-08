@@ -9,6 +9,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -25,11 +26,16 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
 import {
+  SpeakerAssignmentsSchema,
   UploadCreateSchema,
+  type SpeakerAssignmentsDto,
   type UploadCreateDto,
   type UploadCreateResultDto,
   type UploadCompleteResultDto,
   type UploadPlaybackResultDto,
+  type UploadSpeakersConfirmResultDto,
+  type UploadSpeakersDraftResultDto,
+  type UploadSpeakersResultDto,
 } from './dto/meeting-uploads.dto';
 import { MeetingUploadsService } from './meeting-uploads.service';
 
@@ -115,6 +121,56 @@ export class MeetingUploadsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.uploads.getPlayback(id, user.id);
+  }
+
+  // ─────────────────────── Разметка спикеров (ТЗ-5 Ф4) ─────────────────────
+
+  @Get(':id/speakers')
+  @ApiOperation({
+    summary:
+      'Спикеры диаризации загруженной встречи + транскрипт для ручной разметки (только в статусе awaiting_speakers).',
+  })
+  async getSpeakers(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<UploadSpeakersResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.uploads.getSpeakers(id, t);
+  }
+
+  @Put(':id/speakers')
+  @ApiOperation({
+    summary:
+      'Сохранить черновик разметки спикеров (назначение метки: сотрудник / внешний / исключить / слить). Анализ не запускается.',
+  })
+  async saveSpeakerDraft(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SpeakerAssignmentsSchema))
+    body: SpeakerAssignmentsDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<UploadSpeakersDraftResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.uploads.saveSpeakerDraft(id, t, body.assignments);
+  }
+
+  @Post(':id/speakers/confirm')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary:
+      'Подтвердить разметку спикеров — создаёт участников, переразмечает транскрипт реальными именами и запускает AI-анализ. Идемпотентно.',
+  })
+  async confirmSpeakers(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<UploadSpeakersConfirmResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.uploads.confirmSpeakers(id, t);
   }
 
   // ─────────────────────────── helpers ───────────────────────────────────

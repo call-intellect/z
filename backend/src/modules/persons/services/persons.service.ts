@@ -804,6 +804,70 @@ export class PersonsService {
     }
   }
 
+  /**
+   * Find-or-create внешнего контакта по (tenantId, name, company) — для
+   * подтверждения разметки спикеров загруженной встречи (ТЗ-5 Ф4).
+   *
+   * Дубль-защита: сначала ищем активного (deletedAt=NULL) Person в той же Org
+   * с совпадающим `name` (case-insensitive) И `company` (case-insensitive;
+   * NULL/'' трактуем эквивалентно). Если найден — возвращаем его id (при
+   * необходимости дозаполняем пустые company/jobTitle, не перетирая
+   * заполненные). Иначе создаём `Person(relationship='external')` с
+   * company/jobTitle.
+   *
+   * @param tx — опциональный транзакционный клиент.
+   */
+  async findOrCreateExternal(
+    args: {
+      tenantId: string;
+      name: string;
+      company?: string | null;
+      jobTitle?: string | null;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ id: string }> {
+    const db = tx ?? this.prisma;
+    const name = args.name.trim();
+    const company = args.company?.trim() || null;
+    const jobTitle = args.jobTitle?.trim() || null;
+
+    // Поиск по (tenant, name, company). company NULL/'' трактуем эквивалентно.
+    const candidates = await db.person.findMany({
+      where: {
+        tenantId: args.tenantId,
+        deletedAt: null,
+        name: { equals: name, mode: 'insensitive' },
+      },
+      select: { id: true, company: true, jobTitle: true },
+    });
+    const norm = (v: string | null): string => (v ?? '').trim().toLowerCase();
+    const match = candidates.find((c) => norm(c.company) === norm(company));
+    if (match) {
+      // Дозаполняем пустые поля, не перетирая заполненные.
+      const data: Prisma.PersonUpdateInput = {};
+      if (company && !match.company) data.company = company;
+      if (jobTitle && !match.jobTitle) data.jobTitle = jobTitle;
+      if (Object.keys(data).length > 0) {
+        await db.person.update({ where: { id: match.id }, data });
+      }
+      return { id: match.id };
+    }
+
+    const created = await db.person.create({
+      data: {
+        tenantId: args.tenantId,
+        userId: null,
+        name,
+        email: '',
+        relationship: 'external',
+        company,
+        jobTitle,
+      },
+      select: { id: true },
+    });
+    return { id: created.id };
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private async assertDepartmentExists(

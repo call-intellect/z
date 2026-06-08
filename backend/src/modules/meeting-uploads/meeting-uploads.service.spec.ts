@@ -42,7 +42,30 @@ function make(setup: {
     enqueueUploadIngest: vi.fn(async () => ({ jobId: 'job-1' })),
   } as unknown as MeetingUploadsQueueService;
 
-  const service = new MeetingUploadsService(prisma, s3, cfg, queue);
+  const meetings = {
+    transitionStatus: vi.fn(async () => ({})),
+  } as any;
+  const persons = {
+    findOrCreateExternal: vi.fn(async () => ({ id: 'ext-person' })),
+  } as any;
+  const aiQueue = {
+    enqueueAnalyze: vi.fn(async () => undefined),
+    enqueueBehaviorMetrics: vi.fn(async () => undefined),
+  } as any;
+  const coreQueue = {
+    enqueueMeetingReportFast: vi.fn(async () => undefined),
+  } as any;
+
+  const service = new MeetingUploadsService(
+    prisma,
+    s3,
+    cfg,
+    queue,
+    meetings,
+    persons,
+    aiQueue,
+    coreQueue,
+  );
   return { service, prisma, s3, queue };
 }
 

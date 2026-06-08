@@ -111,6 +111,157 @@ function buildBlock(overrides: Partial<ExtractedBlock> = {}): ExtractedBlock {
   };
 }
 
+/**
+ * Фикс cross-attribution chatbox — субъект атрибутируется ПО ГОВОРЯЩЕМУ
+ * сегмента (per-message), а не session-level менеджером:
+ *   - tryGetActorIdentity: chatbox с transcript.turns (authorPersonId) НЕ
+ *     отдаёт session-level authorPersonId; legacy chatbox (без turns) — отдаёт.
+ *   - attributeSubject: блок в client-сегменте (authorPersonId=null) → subject
+ *     НЕ пишется; блок в manager-сегменте → resolveSubjectEntityId(personId
+ *     менеджера); meeting-сегмент (без authorPersonId) → прежний путь
+ *     (speakerParticipantId).
+ */
+function buildAttributionWorker() {
+  const resolveSubjectEntityId = vi.fn(async () => 'ent-1');
+  const upsert = vi.fn(async () => ({}));
+  const incSubjectAttribution = vi.fn();
+  const getDynamic = vi.fn(async () => true);
+  const prisma = {
+    ideaBlockEntity: { upsert },
+  } as any;
+  const entities = { resolveSubjectEntityId } as any;
+  const metrics = { incSubjectAttribution } as any;
+  const cfg = { getDynamic } as any;
+  const worker = new BlockIngestWorker(
+    {} as any, // redis
+    prisma, // prisma
+    {} as any, // s3
+    {} as any, // segments
+    {} as any, // extractor
+    {} as any, // embeddings
+    entities, // entities
+    {} as any, // coreQueue
+    {} as any, // gate
+    {} as any, // graph
+    metrics, // metrics
+    {} as any, // axisClassifier
+    cfg, // cfg
+    {} as any, // blockAccessDeriver
+  );
+  return { worker, resolveSubjectEntityId, upsert, incSubjectAttribution };
+}
+
+describe('BlockIngestWorker.tryGetActorIdentity — chatbox per-message vs legacy', () => {
+  it('chatbox С transcript.turns (authorPersonId) → НЕ отдаёт session-level authorPersonId', () => {
+    const { worker } = buildAttributionWorker();
+    const payload = {
+      kind: 'chatbox_chat_session',
+      responsible: { personId: 'p-manager' },
+      transcript: {
+        turns: [
+          { speaker: 'Клиент', text: 'q', startSec: 0, endSec: 0.9, authorPersonId: null },
+          { speaker: 'Менеджер', text: 'a', startSec: 1, endSec: 1.9, authorPersonId: 'p-manager' },
+        ],
+      },
+    };
+    const identity = (worker as any).tryGetActorIdentity(payload);
+    expect(identity.authorPersonId).toBeNull();
+  });
+
+  it('chatbox БЕЗ turns (legacy) → отдаёт responsible.personId (back-compat)', () => {
+    const { worker } = buildAttributionWorker();
+    const payload = {
+      kind: 'chatbox_chat_session',
+      responsible: { personId: 'p-manager' },
+    };
+    const identity = (worker as any).tryGetActorIdentity(payload);
+    expect(identity.authorPersonId).toBe('p-manager');
+  });
+});
+
+describe('BlockIngestWorker.attributeSubject — атрибуция по говорящему сегмента', () => {
+  const tenantEvent = {
+    id: 'raw-1',
+    tenantId: 'tenant-1',
+    sourceType: 'chatbox',
+    occurredAt: new Date('2026-06-04T12:00:00.000Z'),
+    dataClass: 'sensitive',
+  } as any;
+
+  it('блок в client-сегменте (authorPersonId=null) → subject НЕ пишется', async () => {
+    const { worker, resolveSubjectEntityId, upsert } = buildAttributionWorker();
+    // chatbox per-message сегменты: первый — клиентский (author=null).
+    const segments = [
+      { startMs: 0, endMs: 900, speakers: ['Клиент'], text: 'q', speakerParticipantId: null, authorPersonId: null },
+      { startMs: 1000, endMs: 1900, speakers: ['Менеджер'], text: 'a', speakerParticipantId: null, authorPersonId: 'p-manager' },
+    ];
+    await (worker as any).attributeSubject({
+      event: tenantEvent,
+      block: buildBlock({ signalType: 'reasoning', evidenceStartMs: 0, evidenceEndMs: 0 }),
+      blockId: 'block-1',
+      segments,
+      authorUserId: null,
+      authorPersonId: null,
+      authorEmail: null,
+    });
+    expect(resolveSubjectEntityId).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('блок в manager-сегменте → resolveSubjectEntityId(authorPersonId=менеджер); subject пишется', async () => {
+    const { worker, resolveSubjectEntityId, upsert } = buildAttributionWorker();
+    const segments = [
+      { startMs: 0, endMs: 900, speakers: ['Клиент'], text: 'q', speakerParticipantId: null, authorPersonId: null },
+      { startMs: 1000, endMs: 1900, speakers: ['Менеджер'], text: 'a', speakerParticipantId: null, authorPersonId: 'p-manager' },
+    ];
+    await (worker as any).attributeSubject({
+      event: tenantEvent,
+      block: buildBlock({ signalType: 'expertise', evidenceStartMs: 1000, evidenceEndMs: 1000 }),
+      blockId: 'block-2',
+      segments,
+      authorUserId: null,
+      authorPersonId: null,
+      authorEmail: null,
+    });
+    expect(resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({
+        authorPersonId: 'p-manager',
+        speakerParticipantId: null,
+        speakerName: null,
+        authorUserId: null,
+        authorEmail: null,
+      }),
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGRESSION: meeting-сегмент (без authorPersonId, со speakerParticipantId) → прежний путь', async () => {
+    const { worker, resolveSubjectEntityId } = buildAttributionWorker();
+    // meeting-сегмент: поле authorPersonId ОТСУТСТВУЕТ.
+    const segments = [
+      { startMs: 0, endMs: 5000, speakers: ['Алиса'], text: 'рассуждение', speakerParticipantId: 'pt-1' },
+    ];
+    await (worker as any).attributeSubject({
+      event: { ...tenantEvent, sourceType: 'meeting' },
+      block: buildBlock({ signalType: 'reasoning', evidenceStartMs: 1200, evidenceEndMs: 1200 }),
+      blockId: 'block-3',
+      segments,
+      authorUserId: null,
+      authorPersonId: null,
+      authorEmail: null,
+    });
+    expect(resolveSubjectEntityId).toHaveBeenCalledWith(
+      'tenant-1',
+      expect.objectContaining({
+        speakerParticipantId: 'pt-1',
+        speakerName: 'Алиса',
+        authorPersonId: null,
+      }),
+    );
+  });
+});
+
 describe('BlockIngestWorker — KC-Temporal W1.1 validFrom', () => {
   it('проставляет validFrom = event.occurredAt при cfg.bitemporal.enabled=true', async () => {
     const { worker, fakeTx } = buildWorker(true);

@@ -17,6 +17,14 @@ export interface Segment {
    * fullText/freeNote/fallback сегментов.
    */
   speakerParticipantId?: string | null;
+  /**
+   * Детерминированная identity автора сегмента как Person.id — для chatbox
+   * (per-message сегментация). undefined — identity берётся из
+   * speakerParticipantId (встречи) / session-level (одно-авторные источники).
+   * null — автор известен как «не сотрудник» (клиент в переписке): subject НЕ
+   * пишется (fail-closed). Свойство присутствует ТОЛЬКО у chatbox-сегментов.
+   */
+  authorPersonId?: string | null;
 }
 
 /** Структура turn'а в transcript meeting-payload. См. MeetingIngestAdapter. */
@@ -27,6 +35,11 @@ interface MeetingTurn {
   endSec: number;
   /** Фаза 0.3 — participantId дорожки спикера (для атрибуции авторства). */
   speakerParticipantId?: string | null;
+  /**
+   * chatbox per-message — детерминированная identity автора turn'а как
+   * Person.id (string=сотрудник) либо null (клиент). undefined для встреч.
+   */
+  authorPersonId?: string | null;
 }
 
 interface MeetingTranscript {
@@ -157,6 +170,11 @@ export class SegmentBuilderService {
           text,
           // В группе один speaker — берём participantId из первого turn'а.
           speakerParticipantId: group[0]?.speakerParticipantId ?? null,
+          // chatbox per-message: поле присутствует ТОЛЬКО если turn его несёт
+          // (иначе встречи получили бы authorPersonId=null вместо undefined).
+          ...(group[0]?.authorPersonId !== undefined
+            ? { authorPersonId: group[0].authorPersonId }
+            : {}),
         });
         buffer = [];
         bufferChars = 0;

@@ -895,6 +895,23 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (typeof payload !== 'object' || payload === null) return empty;
     const p = payload as Record<string, unknown>;
 
+    // chatbox с per-message сегментацией (transcript.turns с authorPersonId) —
+    // НЕ отдаём session-level authorPersonId: subject пишется по говорящему
+    // сегмента в attributeSubject (fail-closed по клиентским репликам).
+    const t = p['transcript'];
+    const turns =
+      t && typeof t === 'object'
+        ? (t as { turns?: unknown }).turns
+        : undefined;
+    const hasPerMessageAuthors =
+      Array.isArray(turns) &&
+      turns.some(
+        (tn) =>
+          tn !== null &&
+          typeof tn === 'object' &&
+          'authorPersonId' in (tn as Record<string, unknown>),
+      );
+
     // tracker — actor.userId
     const actor = p['actor'];
     if (actor && typeof actor === 'object') {
@@ -903,9 +920,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         return { ...empty, authorUserId: uid };
       }
     }
-    // chatbox — responsible.personId (linkedPersonId)
+    // chatbox — responsible.personId (linkedPersonId). При per-message
+    // сегментации session-level автор НЕ отдаётся (fail-open на клиентские
+    // реплики) — проваливаемся дальше; subject ставится по сегменту.
     const resp = p['responsible'];
-    if (resp && typeof resp === 'object') {
+    if (resp && typeof resp === 'object' && !hasPerMessageAuthors) {
       const pid = (resp as { personId?: unknown }).personId;
       if (typeof pid === 'string' && pid.trim().length > 0) {
         return { ...empty, authorPersonId: pid };
@@ -1250,36 +1269,58 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           args.block.evidenceStartMs >= s.startMs &&
           args.block.evidenceStartMs <= s.endMs,
       ) ?? null;
-    const speakerParticipantId = seg?.speakerParticipantId ?? null;
-    const speakerName = seg?.speakers?.[0] ?? null;
 
-    const subjectEntityId = await this.entities.resolveSubjectEntityId(
-      args.event.tenantId,
-      {
-        authorPersonId: args.authorPersonId ?? null,
-        authorEmail: args.authorEmail ?? null,
-        speakerParticipantId,
-        speakerName,
-        authorUserId: args.authorUserId,
-      },
-    );
+    // chatbox per-message: сегмент несёт детерминированного автора
+    // (string=сотрудник, null=клиент → subject НЕ пишем). Для встреч/одно-
+    // авторных источников поле отсутствует → прежнее поведение.
+    const segHasAuthor =
+      seg !== null &&
+      Object.prototype.hasOwnProperty.call(seg, 'authorPersonId');
 
-    // Ф1 — метрика доли субъект-атрибуций по источнику identity. Считается и при
-    // null-результате (via='none'), но ПОСЛЕ kill-switch (выключенная атрибуция
-    // не считается). via — по приоритету фактически присутствующего источника.
-    const via: string = subjectEntityId
-      ? args.authorPersonId
-        ? 'personId'
-        : args.authorUserId
-          ? 'userId'
-          : args.authorEmail
-            ? 'email'
-            : speakerParticipantId
-              ? 'participant'
-              : speakerName
-                ? 'name'
-                : 'none'
-      : 'none';
+    let subjectEntityId: string | null;
+    let via: string;
+    if (segHasAuthor) {
+      const segAuthor = seg?.authorPersonId ?? null;
+      subjectEntityId = segAuthor
+        ? await this.entities.resolveSubjectEntityId(args.event.tenantId, {
+            authorPersonId: segAuthor,
+            authorEmail: null,
+            speakerParticipantId: null,
+            speakerName: null,
+            authorUserId: null,
+          })
+        : null; // клиентская реплика — subject-менеджер не пишем
+      // Ф1 — метрика доли субъект-атрибуций по источнику identity. Считается
+      // и при null-результате (via='none'), но ПОСЛЕ kill-switch.
+      via = subjectEntityId ? 'personId' : 'none';
+    } else {
+      const speakerParticipantId = seg?.speakerParticipantId ?? null;
+      const speakerName = seg?.speakers?.[0] ?? null;
+      subjectEntityId = await this.entities.resolveSubjectEntityId(
+        args.event.tenantId,
+        {
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
+          speakerParticipantId,
+          speakerName,
+          authorUserId: args.authorUserId,
+        },
+      );
+      // via — по приоритету фактически присутствующего источника identity.
+      via = subjectEntityId
+        ? args.authorPersonId
+          ? 'personId'
+          : args.authorUserId
+            ? 'userId'
+            : args.authorEmail
+              ? 'email'
+              : speakerParticipantId
+                ? 'participant'
+                : speakerName
+                  ? 'name'
+                  : 'none'
+        : 'none';
+    }
     this.metrics.incSubjectAttribution({ via });
 
     if (!subjectEntityId) return;
@@ -1302,11 +1343,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         blockId: args.blockId,
         entityId: subjectEntityId,
         signalType: args.block.signalType,
-        via: speakerParticipantId
-          ? 'speakerParticipantId'
-          : args.authorUserId
-            ? 'authorUserId'
-            : 'speakerName',
+        via,
       },
       'block-ingest: автор помечен role=subject',
     );
@@ -1344,19 +1381,47 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           args.block.evidenceStartMs >= s.startMs &&
           args.block.evidenceStartMs <= s.endMs,
       ) ?? null;
-    const speakerParticipantId = seg?.speakerParticipantId ?? null;
-    const speakerName = seg?.speakers?.[0] ?? null;
 
-    const authorPersonId = await this.entities.resolveSubjectPersonId(
-      args.event.tenantId,
-      {
-        speakerParticipantId,
-        speakerName,
-        authorUserId: args.authorUserId,
-        authorPersonId: args.authorPersonId ?? null,
-        authorEmail: args.authorEmail ?? null,
-      },
-    );
+    // chatbox per-message: сегмент несёт детерминированного автора (string=
+    // сотрудник, null=клиент → обещание клиента менеджеру НЕ приписываем).
+    // Для встреч/одно-авторных источников поле отсутствует → прежний путь.
+    const segHasAuthor =
+      seg !== null &&
+      Object.prototype.hasOwnProperty.call(seg, 'authorPersonId');
+
+    let authorPersonId: string | null;
+    let via: string;
+    if (segHasAuthor) {
+      const segAuthor = seg?.authorPersonId ?? null;
+      authorPersonId = segAuthor
+        ? await this.entities.resolveSubjectPersonId(args.event.tenantId, {
+            speakerParticipantId: null,
+            speakerName: null,
+            authorUserId: null,
+            authorPersonId: segAuthor,
+            authorEmail: null,
+          })
+        : null;
+      via = 'personId';
+    } else {
+      const speakerParticipantId = seg?.speakerParticipantId ?? null;
+      const speakerName = seg?.speakers?.[0] ?? null;
+      authorPersonId = await this.entities.resolveSubjectPersonId(
+        args.event.tenantId,
+        {
+          speakerParticipantId,
+          speakerName,
+          authorUserId: args.authorUserId,
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
+        },
+      );
+      via = speakerParticipantId
+        ? 'speakerParticipantId'
+        : args.authorUserId
+          ? 'authorUserId'
+          : 'speakerName';
+    }
     if (!authorPersonId) return;
 
     await this.prisma.ideaBlock.update({
@@ -1368,11 +1433,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       {
         blockId: args.blockId,
         authorPersonId,
-        via: speakerParticipantId
-          ? 'speakerParticipantId'
-          : args.authorUserId
-            ? 'authorUserId'
-            : 'speakerName',
+        via,
       },
       'block-ingest: автор обещания проставлен (commitmentAuthorPersonId)',
     );

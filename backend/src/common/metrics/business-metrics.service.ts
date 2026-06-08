@@ -229,6 +229,11 @@ export class BusinessMetricsService implements OnModuleInit {
   private channelBindingCampaignInvitedTotal!: Counter<'tenant_top'>;
   private checkinPromptDeliveredTotal!: Counter<'channel'>;
 
+  // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
+  private customerRiskSnapshotsTotal!: Counter<'level'>;
+  private customerRiskRadarFailedTotal!: Counter<'reason'>;
+  private customerRiskManagerNotifiedTotal!: Counter<string>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1581,6 +1586,23 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'checkin_prompt_delivered_total',
       help: 'TZ-1 Ф0 — доставлен дневной чек-ин prompt по каналу (channel ∈ telegram_bot|max_bot|in_app|email_smtp).',
       labelNames: ['channel'] as const,
+    });
+
+    // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
+    this.customerRiskSnapshotsTotal = this.getOrCreateCounter({
+      name: 'customer_risk_snapshots_total',
+      help: 'TZ-1 Ф1 — построено снимков риска клиента (level ∈ critical|warning|ok).',
+      labelNames: ['level'] as const,
+    });
+    this.customerRiskRadarFailedTotal = this.getOrCreateCounter({
+      name: 'customer_risk_radar_failed_total',
+      help: 'TZ-1 Ф1 — сбой радара клиентов (reason ∈ compute_failed|notify_failed).',
+      labelNames: ['reason'] as const,
+    });
+    this.customerRiskManagerNotifiedTotal = this.getOrCreateCounter({
+      name: 'customer_risk_manager_notified_total',
+      help: 'TZ-1 Ф1 — отправлено push ответственному менеджеру по клиенту под риском.',
+      labelNames: [] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -4369,6 +4391,23 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `checkin_prompt_delivered_total{channel}`. */
   incCheckinPromptDelivered(args: { channel: string }): void {
     this.checkinPromptDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  // ──────────────── TZ-1 Фаза 1 — радар клиентов под риском ───────────
+
+  /** Counter `customer_risk_snapshots_total{level}`. */
+  incCustomerRiskSnapshots(args: { level: string }): void {
+    this.customerRiskSnapshotsTotal.inc({ level: args.level });
+  }
+
+  /** Counter `customer_risk_radar_failed_total{reason}`. */
+  incCustomerRiskRadarFailed(args: { reason: string }): void {
+    this.customerRiskRadarFailedTotal.inc({ reason: args.reason });
+  }
+
+  /** Counter `customer_risk_manager_notified_total`. */
+  incCustomerRiskManagerNotified(): void {
+    this.customerRiskManagerNotifiedTotal.inc();
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

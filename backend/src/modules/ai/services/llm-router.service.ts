@@ -275,6 +275,12 @@ export type LlmTaskType =
   //   агрегата за вчерашние сутки. Один вызов в день на Org. Та же цепочка
   //   провайдеров, что и у operations-weekly-digest.
   | 'operations-daily-digest'
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
+  // 'customer-risk-digest' — ТОЛЬКО финальная человекочитаемая формулировка
+  //   подсказки по клиенту под риском (агрегация — чистый SQL/TS, без LLM).
+  //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на клиента под
+  //   риском в день. Без ₽-оценок (Р6).
+  | 'customer-risk-digest'
   // SBA β-8.2 — Promise Keeper («Хранитель обещаний»).
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
@@ -639,6 +645,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском
+  'customer-risk-digest',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
   'commitment-extract-status',

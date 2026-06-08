@@ -141,6 +141,19 @@ export interface DailyDigestPersonStruggledDto {
   link: string;
 }
 
+/**
+ * TZ-1 Фаза 1 (daily-value-engine) — клиент под риском в COO-дайджесте.
+ *
+ * Топ-N по riskScore из `CustomerRiskSnapshot` (critical/warning). Runtime-
+ * вычислено, не персистится в metricsJson. Если снимков нет — секция пуста.
+ */
+export interface DailyDigestCustomerAtRiskDto {
+  customerName: string;
+  riskLevel: 'critical' | 'warning';
+  /** Краткий бейдж по преобладающим сигналам (без ₽). */
+  badge: string;
+}
+
 export interface DailyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -162,6 +175,8 @@ export interface DailyOperationsDigestDto {
   whoShined: DailyDigestPersonShinedDto[];
   /** Кто просел вчера — для разговора с глазу на глаз. */
   whoStruggled: DailyDigestPersonStruggledDto[];
+  /** TZ-1 Ф1 — клиенты под риском (топ по riskScore). Пусто, если снимков нет. */
+  customersAtRisk: DailyDigestCustomerAtRiskDto[];
 }
 
 /**

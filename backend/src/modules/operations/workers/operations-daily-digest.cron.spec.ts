@@ -63,6 +63,8 @@ describe('OperationsDailyDigestCron', () => {
       markDelivered: vi.fn().mockResolvedValue(undefined),
       // Action Center B3 — персональный блок «Ждёт подтверждения».
       buildPendingActionsLine: vi.fn().mockResolvedValue(null),
+      // TZ-1 Ф1 — строка «Клиенты под риском» (best-effort).
+      buildCustomersAtRiskLine: vi.fn().mockResolvedValue(null),
     };
     const conversational = {
       sendNotification: vi.fn().mockResolvedValue({ id: 'n1' }),

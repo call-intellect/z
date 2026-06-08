@@ -22,6 +22,11 @@ import {
   type OpenCommitmentsQuery,
   type OpenCommitmentsListDto,
 } from '../dto/commitments.dto';
+import {
+  CustomerRiskQuerySchema,
+  type CustomerRiskQuery,
+  type CustomerRiskListDto,
+} from '../dto/customer-risk.dto';
 import type {
   OperationsDashboardBlockersListDto,
   OperationsDashboardCapacityListDto,
@@ -36,6 +41,7 @@ import {
   type TeamTemperatureQuery,
 } from '../dto/weekly-digest.dto';
 import { CommitmentsService } from '../services/commitments.service';
+import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 
 /**
@@ -54,6 +60,8 @@ export class OperationsDashboardController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(CommitmentsService)
     private readonly commitments: CommitmentsService,
+    @Inject(CustomerRiskRadarService)
+    private readonly customerRisk: CustomerRiskRadarService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
@@ -281,6 +289,30 @@ export class OperationsDashboardController {
       coveragePercent,
       gatePassed: coveragePercent >= 70,
     };
+  }
+
+  /**
+   * TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
+   *
+   * Список снимков `CustomerRiskSnapshot` за последний день с drill-down
+   * (signalCounts, topBlocks, динамика). Фильтр `?level=critical|warning|ok`,
+   * `?limit=` (1..100, default 20). Доступ — owner/admin/coo.
+   */
+  @Get('customer-risk')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — клиенты под риском (топ по riskScore, drill-down)',
+  })
+  async customerRiskList(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(CustomerRiskQuerySchema))
+    q: CustomerRiskQuery,
+  ): Promise<CustomerRiskListDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.customerRisk.listForTenant({ tenantId: tenantId!, query: q });
   }
 
   /**

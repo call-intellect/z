@@ -195,6 +195,16 @@ const registry = new Map<string, ZodTypeAny>([
   ['notifications.daily_budget.enabled', z.boolean()],
   ['notifications.binding_campaign.enabled', z.boolean()],
 
+  // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──────
+  ['customer_risk.window_days', POSITIVE_INT],
+  ['customer_risk.weight.churn_risk', NON_NEGATIVE_INT],
+  ['customer_risk.weight.objection', NON_NEGATIVE_INT],
+  ['customer_risk.weight.pain', NON_NEGATIVE_INT],
+  ['customer_risk.weight.feature_request', NON_NEGATIVE_INT],
+  ['customer_risk.threshold.critical', NON_NEGATIVE_INT],
+  ['customer_risk.threshold.warning', NON_NEGATIVE_INT],
+  ['operations.customer_risk_radar.enabled', z.boolean()],
+
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],

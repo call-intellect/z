@@ -69,6 +69,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-chatbox.ts', hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-notification-budget.ts', hint: 'notifications.daily_budget.* + quiet_hours.* + binding_campaign.enabled (TZ-1 Ф0 daily-value)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-customer-risk.ts', hint: 'customer_risk.window_days + weight.* + threshold.* + operations.customer_risk_radar.enabled (TZ-1 Ф1 радар клиентов)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-execution-agents.ts', hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (TZ-1 Ф3.D достоверность)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },

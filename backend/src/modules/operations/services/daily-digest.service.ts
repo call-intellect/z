@@ -14,6 +14,7 @@ import type {
   DailyDigestUrgentItemDto,
   DailyDigestPersonShinedDto,
   DailyDigestPersonStruggledDto,
+  DailyDigestCustomerAtRiskDto,
 } from '../dto/daily-digest.dto';
 import {
   DAILY_DIGEST_PROMPT_VERSION,
@@ -24,6 +25,8 @@ import {
   parseDailyDigestLlmResponse,
 } from '../prompts/daily-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
+
+import { CustomerRiskRadarService } from './customer-risk-radar.service';
 
 /**
  * SBA β-8.3 — DailyDigestService.
@@ -56,6 +59,9 @@ export class DailyDigestService {
     private readonly metrics: BusinessMetricsService,
     @Inject(PendingActionsService)
     private readonly pendingActions: PendingActionsService,
+    // TZ-1 Фаза 1 (daily-value-engine) — мост секции «Клиенты под риском».
+    @Inject(CustomerRiskRadarService)
+    private readonly customerRisk: CustomerRiskRadarService,
   ) {}
 
   /**
@@ -293,6 +299,39 @@ export class DailyDigestService {
   }
 
   /**
+   * TZ-1 Ф1 — строка «Клиенты под риском» для тела дайджеста (Telegram/in_app).
+   * Возвращает готовую markdown-строку (с переводом строки в начале) или `null`,
+   * если снимков нет. Best-effort: при ошибке радара — `null`, не валит дайджест.
+   */
+  async buildCustomersAtRiskLine(args: {
+    tenantId: string;
+  }): Promise<string | null> {
+    try {
+      const top = await this.customerRisk.topForDigest({
+        tenantId: args.tenantId,
+        limit: 3,
+      });
+      if (top.length === 0) return null;
+      const lines = top.map(
+        (c) =>
+          `• ${c.customerName.slice(0, 60)} — ${
+            c.riskLevel === 'critical' ? 'критический' : 'повышенный'
+          }`,
+      );
+      return `\n\n⚠️ Клиенты под риском:\n${lines.join('\n')}`;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: строка «Клиенты под риском» упала — пропускаю',
+      );
+      return null;
+    }
+  }
+
+  /**
    * Агрегация источников: чек-ины, новые блокеры, просроченные обещания,
    * цели, новые high-severity инсайты, решения за вчерашний день.
    * Выделена для тестирования без LLM.
@@ -521,6 +560,8 @@ export class DailyDigestService {
       urgentItems: [],
       whoShined: [],
       whoStruggled: [],
+      // TZ-1 Ф1 — реально заполняется enrichDto() → computeRuntimeSections().
+      customersAtRisk: [],
     };
   }
 
@@ -572,6 +613,7 @@ export class DailyDigestService {
     urgentItems: DailyDigestUrgentItemDto[];
     whoShined: DailyDigestPersonShinedDto[];
     whoStruggled: DailyDigestPersonStruggledDto[];
+    customersAtRisk: DailyDigestCustomerAtRiskDto[];
   }> {
     const [dayStart, dayEnd] = this.parseDayBoundsMsk(args.dateLocal);
     const now = new Date();
@@ -962,7 +1004,31 @@ export class DailyDigestService {
     }
     const whoStruggled = Array.from(struggledMap.values()).slice(0, 8);
 
-    return { eventsToday, urgentItems, whoShined, whoStruggled };
+    // ============== customersAtRisk (TZ-1 Ф1) ==============
+    // Топ клиентов под риском (critical/warning) по riskScore. Best-effort:
+    // если радар не строил снимков — секция пустая, дайджест не ломается.
+    let customersAtRisk: DailyDigestCustomerAtRiskDto[] = [];
+    try {
+      const top = await this.customerRisk.topForDigest({
+        tenantId: args.tenantId,
+        limit: 5,
+      });
+      customersAtRisk = top.map((c) => ({
+        customerName: c.customerName,
+        riskLevel: c.riskLevel === 'critical' ? 'critical' : 'warning',
+        badge: buildCustomerRiskBadge(c.signalCounts),
+      }));
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'daily-digest: секция «Клиенты под риском» упала — пропускаю',
+      );
+    }
+
+    return { eventsToday, urgentItems, whoShined, whoStruggled, customersAtRisk };
   }
 
   /**
@@ -1070,6 +1136,24 @@ function pluralizeBlagodarnost(n: number): string {
 function pluralizeObeshchanie(n: number): string {
   // 1 обещание / 2 обещания / 5 обещаний.
   return pluralRu(n, 'обещание', 'обещания', 'обещаний');
+}
+
+/**
+ * TZ-1 Ф1 — короткий бейдж по преобладающим сигналам клиента (без ₽). Например
+ * «отток ×2, возражения ×1».
+ */
+function buildCustomerRiskBadge(counts: {
+  churn_risk: number;
+  objection: number;
+  pain: number;
+  feature_request: number;
+}): string {
+  const parts: string[] = [];
+  if (counts.churn_risk > 0) parts.push(`отток ×${counts.churn_risk}`);
+  if (counts.objection > 0) parts.push(`возражения ×${counts.objection}`);
+  if (counts.pain > 0) parts.push(`боли ×${counts.pain}`);
+  if (counts.feature_request > 0) parts.push(`доработки ×${counts.feature_request}`);
+  return parts.join(', ') || 'сигналы';
 }
 
 /**

@@ -97,6 +97,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 💰 2026-06-08 — TZ-1 Фаза 1: Радар клиентов и сделок под риском (деньги)
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 1). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. **Зависит от Ф0** (доставка push + бюджет).
+>
+> **Зачем для прода:** дневной агент группирует клиентские сигналы (отток/возражения/боли/доработки) по `Entity{type=customer}`, ранжирует по money-риску, кладёт секцию «Клиенты под риском» в COO-дайджест и шлёт push ответственному менеджеру по его клиенту. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-customer-risk.ts`, см. Шаг 7; code-fallback есть):
+  - `customer_risk.window_days` (int, **default 14**) — окно накопления сигналов.
+  - `customer_risk.weight.churn_risk` / `.objection` / `.pain` / `.feature_request` (int, **default 5 / 3 / 2 / 1**) — веса сигналов (churn весомее). Правка в админке меняет ранжирование без деплоя.
+  - `customer_risk.threshold.critical` / `.warning` (int, **default 10 / 4**) — пороги уровня риска.
+  - `operations.customer_risk_radar.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг радара. ENV-fallback `OPERATIONS_CUSTOMER_RISK_RADAR_ENABLED`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608140000_customer_risk_snapshot`): `+ table customer_risk_snapshot` (FK → `Org`/`Entity`/`persons`, 3 индекса, unique по (tenantId, customerEntityId, dateLocal)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-customer-risk.ts` — 8 ключей `customer_risk.*` + `operations.customer_risk_radar.enabled` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `customer-risk-digest` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-customer-risk.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `CustomerRiskRadarService`, `CustomerRiskRadarCron` `@Cron('0 21 * * *')`, секция «Клиенты под риском» в COO-дайджесте, `GET /api/v1/dashboard/operations/customer-risk`, `GET /api/v1/me/customer-risk`, новый taskType `customer-risk-digest`, 3 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `customer-risk-radar.cron: проход завершён` (≤ след. 21:00 UTC), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/customer-risk` (owner/coo) и `GET /api/v1/me/customer-risk` (self).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'customer_risk_snapshots_total|customer_risk_radar_failed_total|customer_risk_manager_notified_total'` — присутствуют.
+  - Маршрут LLM: `customer-risk-digest` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

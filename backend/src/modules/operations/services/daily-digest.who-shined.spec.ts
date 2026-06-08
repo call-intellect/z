@@ -89,12 +89,14 @@ function buildSvc(overrides: {
     setCooDailyDigestAge: vi.fn(),
   };
   const pendingActions = { getCount: vi.fn() };
+  const customerRisk = { topForDigest: vi.fn().mockResolvedValue([]) };
 
   const svc = new DailyDigestService(
     prisma as never,
     llm as never,
     metrics as never,
     pendingActions as never,
+    customerRisk as never,
   );
   return { svc, prisma };
 }

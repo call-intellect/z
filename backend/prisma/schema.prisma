@@ -2408,6 +2408,9 @@ model Org {
   // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──
   notificationBudgetLedgers NotificationBudgetLedger[]
 
+  // ── TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов ──
+  customerRiskSnapshots CustomerRiskSnapshot[]
+
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
 
@@ -3316,6 +3319,9 @@ model Entity {
   role       Role?       @relation("RoleEntity")
   /// SBA α-9 wave 2 — линковка с Department.
   department Department? @relation("DepartmentEntity")
+  /// TZ-1 Фаза 1 (daily-value-engine) — дневные снимки риска клиента
+  /// (только для Entity{type=customer}).
+  customerRiskSnapshots CustomerRiskSnapshot[] @relation("CustomerRiskSnapshotEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -4628,6 +4634,9 @@ model Person {
   consentLogs                 ConsentLog[]
   /// TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений per-person.
   notificationBudgetLedgers   NotificationBudgetLedger[]
+  /// TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов, где этот Person
+  /// ответственный менеджер (CustomerRiskSnapshot.responsiblePersonId).
+  customerRiskSnapshots       CustomerRiskSnapshot[]             @relation("CustomerRiskSnapshotResponsible")
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -6660,6 +6669,50 @@ model NotificationBudgetLedger {
   @@unique([tenantId, personId, dateLocal])
   @@index([tenantId, dateLocal])
   @@map("notification_budget_ledger")
+}
+
+/// TZ-1 Фаза 1 (daily-value-engine) — дневной снимок риска клиента.
+///
+/// Дневной агент `CustomerRiskRadarCron` группирует IdeaBlock'и
+/// signalType ∈ {churn_risk, objection, pain, feature_request} по
+/// Entity{type=customer} (через IdeaBlockEntity), копит за окно (default 14
+/// дней) и ранжирует по money-риску. Веса/пороги/окно — AdminSetting, не код.
+///
+/// Идемпотентность — `@@unique([tenantId, customerEntityId, dateLocal])`:
+/// повторный прогон за тот же день перезаписывает снимок (upsert).
+model CustomerRiskSnapshot {
+  id               String @id @default(cuid())
+  tenantId         String
+  /// Entity{type=customer}.id — клиент, по которому считается риск.
+  customerEntityId String
+  /// YYYY-MM-DD (МСК) — день снимка.
+  dateLocal        String @db.VarChar(10)
+  /// { churn_risk, objection, pain, feature_request } — счётчики за окно.
+  signalCounts     Json
+  /// Размер окна накопления в днях (на момент снимка; из AdminSetting).
+  windowDays       Int    @default(14)
+  /// Взвешенная сумма сигналов: churn_risk*w1 + objection*w2 + pain*w3 +
+  /// feature_request*w4. Веса — AdminSetting.
+  riskScore        Decimal @db.Decimal(8, 4)
+  /// 'critical' | 'warning' | 'ok' — по порогам critical/warning (AdminSetting).
+  riskLevel        String  @db.VarChar(16)
+  /// До 20 IdeaBlock.id-источников (для drill-down).
+  topBlockIdsJson  Json
+  /// Ответственный менеджер (Person той же Org). NULL если не резолвится по
+  /// сделке/Project.customerCardId→owner. НЕ выдумываем.
+  responsiblePersonId String?
+  /// Когда отправлен push ответственному менеджеру (NULL — не отправляли).
+  deliveredManagerAt  DateTime?
+  snapshotAt          DateTime @default(now())
+
+  org             Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerEntity  Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId], references: [id], onDelete: Cascade)
+  responsible     Person? @relation("CustomerRiskSnapshotResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, customerEntityId, dateLocal])
+  @@index([tenantId, riskLevel, snapshotAt(sort: Desc)])
+  @@index([tenantId, responsiblePersonId])
+  @@map("customer_risk_snapshot")
 }
 
 /// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.

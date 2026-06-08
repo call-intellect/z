@@ -312,6 +312,19 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
+  // ТОЛЬКО финальная формулировка подсказки (агрегация — SQL/TS, без LLM) →
+  // дешёвая задача, primary deepseek-v4-flash. Без ₽-оценок (Р6).
+  {
+    taskType: 'customer-risk-digest',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
-import { ArrowLeft, Loader2, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/contexts/auth-context';
 import { TierGate } from '@/ui/components/TierGate';
 import { Badge } from '@/ui/shadcn/badge';
+import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import {
   Select,
@@ -150,6 +151,27 @@ function MemberRow({
   onLinked: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      await chatboxApi.createMemberPerson(member.id);
+      toast.success('Сотрудник создан и связан');
+      onLinked();
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.code === 'chatbox_member_already_linked'
+      ) {
+        toast.error('Менеджер уже связан с сотрудником');
+      } else {
+        toast.error(errMessage(e, 'Не удалось создать сотрудника'));
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleChange = async (value: string) => {
     const personId = value === NONE_VALUE ? null : value;
@@ -193,26 +215,46 @@ function MemberRow({
         )}
       </div>
 
-      <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
-        <Select
-          value={member.linkedPersonId ?? NONE_VALUE}
-          onValueChange={(v) => void handleChange(v)}
-          disabled={saving}
-        >
-          <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Выберите сотрудника" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE_VALUE}>— Не связан —</SelectItem>
-            {personOptions.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.canonicalName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {saving && (
-          <Loader2 size={16} className="animate-spin text-fg-tertiary" />
+      <div className="flex flex-col gap-2 sm:w-72 sm:shrink-0">
+        <div className="flex items-center gap-2">
+          <Select
+            value={member.linkedPersonId ?? NONE_VALUE}
+            onValueChange={(v) => void handleChange(v)}
+            disabled={saving || creating}
+          >
+            <SelectTrigger className="flex-1">
+              <SelectValue placeholder="Выберите сотрудника" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>— Не связан —</SelectItem>
+              {personOptions.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.canonicalName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {saving && (
+            <Loader2 size={16} className="animate-spin text-fg-tertiary" />
+          )}
+        </div>
+
+        {!member.linkedPersonId && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => void handleCreate()}
+            disabled={saving || creating}
+            title="Создать сотрудника компании на основе этого менеджера и связать"
+          >
+            {creating ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <UserPlus size={14} />
+            )}
+            Создать сотрудника
+          </Button>
         )}
       </div>
     </div>

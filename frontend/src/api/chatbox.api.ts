@@ -18,6 +18,7 @@ export type ChatboxIntegrationApi = {
   workspaceId: string;
   workspaceName: string;
   syncMode: ChatboxSyncMode;
+  analysisEnabled: boolean;
   status: ChatboxStatus;
   lastError: string | null;
   lastFullSyncAt: string | null;
@@ -59,6 +60,7 @@ export type SaveChatboxIntegrationRequest = {
   token?: string;
   workspaceId: string;
   syncMode: ChatboxSyncMode;
+  analysisEnabled?: boolean;
 };
 
 // --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
@@ -179,8 +181,9 @@ export const chatboxApi = {
   getIntegration: () =>
     apiClient.get<ChatboxIntegrationApi | null>('/api/v1/chatbox/integration'),
 
+  // Бэк отдаёт голый массив воркспейсов (уже отфильтрованных по OWNER/ADMIN).
   listWorkspaces: (token: string) =>
-    apiClient.post<{ workspaces: ChatboxWorkspaceApi[]; total: number }>(
+    apiClient.post<ChatboxWorkspaceApi[]>(
       '/api/v1/chatbox/integration/workspaces',
       { token },
     ),
@@ -232,5 +235,12 @@ export const chatboxApi = {
     apiClient.put<{ ok: true; member: ChatboxMemberApi }>(
       '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/link',
       { personId },
+    ),
+
+  // Создать сотрудника Коры из менеджера ChatBox и сразу привязать.
+  createMemberPerson: (id: string) =>
+    apiClient.post<{ ok: true; member: ChatboxMemberApi }>(
+      '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/create-person',
+      {},
     ),
 };

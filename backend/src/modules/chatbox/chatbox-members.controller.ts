@@ -6,6 +6,7 @@ import {
   Get,
   Inject,
   Param,
+  Post,
   Put,
   UseGuards,
 } from '@nestjs/common';
@@ -71,6 +72,21 @@ export class ChatboxMembersController {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
     const member = await this.service.linkMember(t, id, body.personId);
+    return { ok: true, member };
+  }
+
+  @Post(':id/create-person')
+  @ApiOperation({
+    summary: 'Создать сотрудника Коры из члена ChatBox и связать с ним',
+  })
+  async createPerson(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; member: ChatboxMemberDto }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    const member = await this.service.createPersonAndLink(t, user.id, id);
     return { ok: true, member };
   }
 

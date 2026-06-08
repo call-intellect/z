@@ -51,13 +51,14 @@ export class ChatboxAnalyzeQueueService
     }
   }
 
-  /** Поставить job анализа. Дедуп по jobId `chatbox-analyze:${sessionId}`. */
+  /** Поставить job анализа. Дедуп по jobId `chatbox-analyze-${sessionId}`. */
   async enqueue(
     tenantId: string,
     sessionId: string,
   ): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
-    const jobId = `chatbox-analyze:${sessionId}`;
+    // BullMQ запрещает ':' в custom jobId ("Custom Id cannot contain :") — дефис.
+    const jobId = `chatbox-analyze-${sessionId}`;
     await queue.add('analyze', { tenantId, sessionId }, { jobId });
     this.logger.debug(
       `enqueue: tenant=${tenantId} session=${sessionId} jobId=${jobId}`,

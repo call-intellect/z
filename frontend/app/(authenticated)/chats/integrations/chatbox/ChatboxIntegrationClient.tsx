@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { Loader2, MessagesSquare, RefreshCw, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/ui/shadcn/select';
+import { Switch } from '@/ui/shadcn/switch';
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
@@ -117,11 +118,11 @@ function ConnectForm({ onConnected }: { onConnected: () => void }) {
     setChecking(true);
     try {
       const res = await chatboxApi.listWorkspaces(token.trim());
-      setWorkspaces(res.workspaces);
-      if (res.workspaces.length > 0) {
-        setWorkspaceId(res.workspaces[0]!.id);
+      setWorkspaces(res);
+      if (res.length > 0) {
+        setWorkspaceId(res[0]!.id);
       }
-      if (res.workspaces.length === 0) {
+      if (res.length === 0) {
         toast.error('В этом аккаунте нет доступных пространств');
       }
     } catch (e) {
@@ -266,12 +267,46 @@ function ConnectedView({
   const [syncMode, setSyncMode] = useState<ChatboxSyncMode>(
     integration.syncMode,
   );
+  const [analysisEnabled, setAnalysisEnabled] = useState(
+    integration.analysisEnabled,
+  );
+  const [savingAnalysis, setSavingAnalysis] = useState(false);
   const [savingMode, setSavingMode] = useState(false);
   const [syncingScope, setSyncingScope] = useState<ChatboxSyncScope | null>(
     null,
   );
   const [deleting, setDeleting] = useState(false);
+  // Идёт ли синхронизация (для прогресса): пока true — опрашиваем статус.
+  const [syncing, setSyncing] = useState(false);
+  const syncBaselineRef = useRef<string | null>(null);
+  const syncStartMsRef = useRef<number>(0);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+
+  // Общий с SyncStatusCard опрос статуса (один SWR-ключ → общий кэш).
+  // Пока syncing — поллим каждые 2.5с, иначе не дёргаем.
+  const { data: syncStatus, mutate: mutateStatus } = useSWR(
+    ['chatbox-sync-status'],
+    () => chatboxApi.syncStatus(),
+    { refreshInterval: syncing ? 2500 : 0 },
+  );
+
+  // Завершение синка: ловим появление НОВОЙ полной синхронизации
+  // (lastFullSyncAt сдвинулся) либо страховочный таймаут 4 минуты.
+  useEffect(() => {
+    if (!syncing) return;
+    const curFull =
+      syncStatus && 'lastFullSyncAt' in syncStatus
+        ? syncStatus.lastFullSyncAt
+        : null;
+    const done =
+      (curFull && curFull !== syncBaselineRef.current) ||
+      Date.now() - syncStartMsRef.current > 240_000;
+    if (done) {
+      setSyncing(false);
+      toast.success('Синхронизация завершена');
+      onChanged();
+    }
+  }, [syncing, syncStatus, onChanged]);
 
   const statusVariant =
     integration.status === 'connected'
@@ -279,6 +314,25 @@ function ConnectedView({
       : integration.status === 'error'
         ? 'danger'
         : 'secondary';
+
+  const handleToggleAnalysis = async (next: boolean) => {
+    setAnalysisEnabled(next);
+    setSavingAnalysis(true);
+    try {
+      await chatboxApi.saveIntegration({
+        workspaceId: integration.workspaceId,
+        syncMode: integration.syncMode,
+        analysisEnabled: next,
+      });
+      toast.success(next ? 'AI-анализ включён' : 'AI-анализ выключен');
+      onChanged();
+    } catch (e) {
+      setAnalysisEnabled(!next); // откат при ошибке
+      toast.error(errMessage(e, 'Не удалось сохранить'));
+    } finally {
+      setSavingAnalysis(false);
+    }
+  };
 
   const handleSaveMode = async () => {
     setSavingMode(true);
@@ -300,7 +354,15 @@ function ConnectedView({
     setSyncingScope(scope);
     try {
       await chatboxApi.sync(scope);
-      toast.success('Запущена синхронизация');
+      // Точка отсчёта для детекта завершения.
+      syncBaselineRef.current =
+        syncStatus && 'lastFullSyncAt' in syncStatus
+          ? syncStatus.lastFullSyncAt
+          : null;
+      syncStartMsRef.current = Date.now();
+      setSyncing(true);
+      void mutateStatus();
+      toast.success('Синхронизация запущена');
     } catch (e) {
       toast.error(errMessage(e, 'Не удалось запустить синхронизацию'));
     } finally {
@@ -383,12 +445,40 @@ function ConnectedView({
         </CardContent>
       </Card>
 
+      {/* AI-анализ */}
+      <Card>
+        <CardHeader>
+          <CardTitle>AI-анализ переписок</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-fg-secondary">
+                Когда включено, Кора строит summary диалогов и добавляет знания
+                из переписок в граф (расходует LLM). Выключено — чаты просто
+                зеркалятся без анализа.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-0.5">
+              {savingAnalysis && (
+                <Loader2 size={14} className="animate-spin text-fg-tertiary" />
+              )}
+              <Switch
+                checked={analysisEnabled}
+                onCheckedChange={(v) => void handleToggleAnalysis(v)}
+                disabled={savingAnalysis}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Синхронизация */}
       <Card>
         <CardHeader>
           <CardTitle>Синхронизация</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2">
             {SYNC_SCOPES.map(({ scope, label }) => (
               <Button
@@ -396,9 +486,9 @@ function ConnectedView({
                 variant={scope === 'all' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => void handleSync(scope)}
-                disabled={syncingScope !== null}
+                disabled={syncingScope !== null || syncing}
               >
-                {syncingScope === scope ? (
+                {syncingScope === scope || (syncing && scope === 'all') ? (
                   <Loader2 size={14} className="animate-spin" />
                 ) : (
                   <RefreshCw size={14} />
@@ -407,6 +497,23 @@ function ConnectedView({
               </Button>
             ))}
           </div>
+
+          {syncing && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border-subtle bg-bg-card p-3 text-sm">
+              <Loader2 size={14} className="animate-spin text-accent" />
+              <span className="font-medium text-fg-primary">
+                Идёт синхронизация…
+              </span>
+              {syncStatus && 'counts' in syncStatus && (
+                <span className="text-fg-tertiary">
+                  собрано: {syncStatus.counts.chats.toLocaleString('ru-RU')} чатов ·{' '}
+                  {syncStatus.counts.messages.toLocaleString('ru-RU')} сообщений ·{' '}
+                  {syncStatus.counts.customers.toLocaleString('ru-RU')} клиентов ·{' '}
+                  {syncStatus.counts.sessions.toLocaleString('ru-RU')} сессий
+                </span>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

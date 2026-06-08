@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { PersonsService } from '../persons/services/persons.service';
 
 import { ChatboxMembersService } from './chatbox-members.service';
 
@@ -37,7 +38,13 @@ describe('ChatboxMembersService', () => {
         findFirst: vi.fn(),
       },
     };
-    service = new ChatboxMembersService(prismaMock as unknown as PrismaService);
+    const personsMock = {
+      create: vi.fn(),
+    };
+    service = new ChatboxMembersService(
+      prismaMock as unknown as PrismaService,
+      personsMock as unknown as PersonsService,
+    );
   });
 
   describe('listMembers', () => {

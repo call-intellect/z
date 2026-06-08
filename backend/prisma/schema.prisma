@@ -10445,6 +10445,9 @@ model ChatboxIntegration {
   workspaceId       String
   workspaceName     String?
   syncMode          ChatboxSyncMode          @default(daily)
+  /// Включён ли AI-анализ переписок (LLM-summary сессий + мост в knowledge-core).
+  /// По умолчанию ВЫКЛ — синк зеркалит чаты, но LLM не дёргаем, пока не включат.
+  analysisEnabled   Boolean                  @default(false)
   status            ChatboxIntegrationStatus @default(connected)
   lastError         String?                  @db.Text
   webhookExternalId String?

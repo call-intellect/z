@@ -125,7 +125,7 @@ describe('ChatboxIntegrationService', () => {
       .mockResolvedValueOnce(null) // existing внутри upsert()
       .mockResolvedValueOnce(makeRow()); // повторный read в конце upsert()
     clientMock.listWorkspaces.mockResolvedValue({
-      workspaces: [{ id: 'ws1', name: 'WS', role: 'USER' }],
+      workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
     });
     prismaMock.chatboxIntegration.upsert.mockResolvedValue(makeRow());
@@ -187,7 +187,7 @@ describe('ChatboxIntegrationService', () => {
       .mockResolvedValueOnce(existing) // existing внутри upsert()
       .mockResolvedValueOnce(existing); // повторный read в конце
     clientMock.listWorkspaces.mockResolvedValue({
-      workspaces: [{ id: 'ws1', name: 'WS', role: 'USER' }],
+      workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
     });
     prismaMock.chatboxIntegration.upsert.mockResolvedValue(existing);
@@ -223,7 +223,7 @@ describe('ChatboxIntegrationService', () => {
       .mockResolvedValueOnce(null) // existing внутри upsert()
       .mockResolvedValueOnce(makeRow({ syncMode: 'realtime' })); // финальный read
     clientMock.listWorkspaces.mockResolvedValue({
-      workspaces: [{ id: 'ws1', name: 'WS', role: 'USER' }],
+      workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
     });
     prismaMock.chatboxIntegration.upsert.mockResolvedValue(savedRow);
@@ -262,7 +262,7 @@ describe('ChatboxIntegrationService', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(makeRow({ syncMode: 'realtime' }));
     clientMock.listWorkspaces.mockResolvedValue({
-      workspaces: [{ id: 'ws1', name: 'WS', role: 'USER' }],
+      workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
     });
     prismaMock.chatboxIntegration.upsert.mockResolvedValue(savedRow);
@@ -297,7 +297,7 @@ describe('ChatboxIntegrationService', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(makeRow());
     clientMock.listWorkspaces.mockResolvedValue({
-      workspaces: [{ id: 'ws1', name: 'WS', role: 'USER' }],
+      workspaces: [{ id: 'ws1', name: 'WS', role: 'OWNER' }],
       total: 1,
     });
     prismaMock.chatboxIntegration.upsert.mockResolvedValue(savedRow);

@@ -58,6 +58,7 @@ export type ChatboxIntegrationView = {
   workspaceName: string;
   syncMode: ChatboxSyncMode;
   syncModeLabel: string;
+  analysisEnabled: boolean;
   status: ChatboxStatus;
   statusLabel: string;
   lastError: string | null;
@@ -84,6 +85,7 @@ export function mapIntegration(
     workspaceName: api.workspaceName,
     syncMode: api.syncMode,
     syncModeLabel: chatboxSyncModeLabel(api.syncMode),
+    analysisEnabled: api.analysisEnabled,
     status: api.status,
     statusLabel: chatboxStatusLabel(api.status),
     lastError: api.lastError ?? null,

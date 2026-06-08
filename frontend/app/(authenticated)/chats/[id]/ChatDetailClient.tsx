@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   ChevronLeft,
+  Download,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -10,7 +11,7 @@ import {
   Send,
   Video,
 } from 'lucide-react';
-import { Fragment, useCallback, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
@@ -36,6 +37,43 @@ function formatTime(d: Date | null): string {
   return d.toLocaleString('ru-RU');
 }
 
+/** Точная пометка отправителя по типу из ChatBox. */
+const SENDER_TYPE_LABEL: Record<string, string> = {
+  CLIENT: 'Клиент',
+  USER: 'Менеджер',
+  ASSISTANT: 'ИИ-бот',
+  QUALITY_CONTROL: 'Контроль качества',
+};
+function senderTypeLabel(type: string): string {
+  return SENDER_TYPE_LABEL[type] ?? 'Сотрудник';
+}
+
+/** Собрать переписку в текст и скачать .txt. */
+function exportConversation(
+  clientName: string,
+  messages: ChatboxMessageView[],
+): void {
+  const lines = messages.map((m) => {
+    const who = `${m.senderName || senderTypeLabel(m.senderType)} (${senderTypeLabel(
+      m.senderType,
+    )})`;
+    const body = m.text ?? `[${m.contentType}]`;
+    return `[${formatTime(m.externalCreatedAt)}] ${who}:\n${body}\n`;
+  });
+  const header = `Переписка с «${clientName || 'Без имени'}»\nЭкспорт из Коры\n${'='.repeat(40)}\n\n`;
+  const blob = new Blob([header + lines.join('\n')], {
+    type: 'text/plain;charset=utf-8',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chat-${clientName || 'export'}.txt`.replace(/\s+/g, '_');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ChatDetailClient({ chatId }: { chatId: string }) {
   return (
     <TierGate feature="feature.chatbox">
@@ -57,6 +95,13 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
 
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const messageCount = messagesSwr.data?.length ?? 0;
+
+  // Автоскролл к последнему сообщению при загрузке/обновлении ленты.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [messageCount]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -124,7 +169,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
   const messages = messagesSwr.data ?? [];
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 py-6">
+    <div className="mx-auto w-full max-w-3xl px-4 py-6">
       <BackLink />
 
       {/* Шапка */}
@@ -143,6 +188,16 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary">
             {chatboxChatStatusLabel(chat.status)}
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto gap-1"
+            onClick={() => exportConversation(chat.clientName, messages)}
+            disabled={messages.length === 0}
+            title="Скачать переписку в .txt"
+          >
+            <Download size={14} /> Экспорт
+          </Button>
         </div>
         <div className="mt-1 text-xs text-fg-tertiary">
           Ответственный: {chat.responsibleName ?? '—'}
@@ -171,8 +226,8 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         )}
       </header>
 
-      {/* Лента сообщений */}
-      <div className="mb-4 flex-1 space-y-3 overflow-y-auto rounded-lg border border-border-subtle bg-bg-card p-4">
+      {/* Лента сообщений — скроллится сама, страница не растёт */}
+      <div className="mb-4 h-[60vh] min-h-[280px] space-y-3 overflow-y-auto rounded-lg border border-border-subtle bg-bg-card p-4">
         {messagesSwr.isLoading && !messagesSwr.data && (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -208,6 +263,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
             </Fragment>
           );
         })}
+        <div ref={bottomRef} />
       </div>
 
       {/* Ответ менеджера */}
@@ -299,17 +355,26 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
   const isManager = message.isOutboundFromKora || message.senderRole === 'manager';
   const attachment = attachmentOf(message);
 
+  const bubbleClass = isManager
+    ? 'bg-accent text-white'
+    : 'border border-border-subtle bg-bg-overlay text-fg-primary';
+  const metaClass = isManager ? 'text-white/70' : 'text-fg-tertiary';
+  const badgeClass = isManager
+    ? 'bg-white/20 text-white'
+    : 'bg-bg-card text-fg-secondary';
+
   return (
     <div className={`flex ${isManager ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-          isManager
-            ? 'bg-accent-muted text-accent-fg'
-            : 'bg-bg-subtle text-fg-primary'
-        }`}
-      >
-        <div className="mb-0.5 text-xs font-medium opacity-80">
-          {message.senderName}
+      <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass}`}>
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="text-xs font-semibold">
+            {message.senderName || senderTypeLabel(message.senderType)}
+          </span>
+          <span
+            className={`rounded-full px-1.5 py-px text-[10px] font-medium ${badgeClass}`}
+          >
+            {senderTypeLabel(message.senderType)}
+          </span>
         </div>
 
         {attachment ? (
@@ -334,7 +399,7 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
           <div className="whitespace-pre-wrap break-words">{message.text}</div>
         ) : null}
 
-        <div className="mt-0.5 text-[10px] opacity-70">
+        <div className={`mt-0.5 text-[10px] ${metaClass}`}>
           {formatTime(message.externalCreatedAt)}
         </div>
       </div>

@@ -1494,3 +1494,24 @@ enum SourceType { meeting chat phone_call bot email web_form external conversati
 - **`MeetingTypeConfig.defaultClosedGroupKind String? @db.VarChar(20)`** — admin-editable дефолт закрытости по типу встречи. null = открыто; `interview`→'personal' (засидено: bootstrap-sync + патч `patch-meeting-type-closed-defaults.ts`).
 
 [[../index|← index]]
+
+## `SkillTraitStatus += pending_verification` (качество клона, TZ#2 Ф3, 2026-06-08)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф3 (D). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Миграция **`20260608120000_add_skill_trait_pending_verification`** (рукописная — добавляет значение в enum при отсутствии dev-БД). Полная карта изменений клона — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-08».
+
+Enum `SkillTraitStatus` (`schema.prisma:7300`) получил новый член:
+
+```prisma
+enum SkillTraitStatus {
+  active
+  superseded_by
+  archived
+  misleading
+  pending_verification   // новое: черта создана, ждёт grounding-проверки (skill-trait-verify); в persona НЕ попадает, пока не станет active
+}
+```
+
+- `createNewTraitRaw` создаёт черту в **`pending_verification`** (а не сразу `active`); persona берёт только `active`-черты.
+- Ночной `SkillTraitVerifyCron @Cron('30 3 * * *')` → `Specialist37Service.verifyPendingTraits()` (LLM `skill-trait-verify`) переводит grounded → `active`, негрунд → `held`; FAIL-OPEN на ошибке LLM → `active`. См. [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
+
+[[../index|← index]]

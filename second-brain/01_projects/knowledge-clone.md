@@ -122,6 +122,20 @@ KNOWLEDGE_CLONE_MIN_BLOCKS_FOR_PROFILE=10
 
 Seed-script: `bun run seed:llm-task-routes-knowledge-clone` (idempotent, `--update-existing` для force-обновления НЕ помеченных admin'ом записей).
 
+## Атрибуция по говорящему — chatbox (Ф1/B1–B2, 2026-06-08)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф1 (A). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Профильная заметка по chatbox — [[chatbox-integration]]; механизм subject-атрибуции встреч — [[../02_architecture/knowledge-core]] §«Детерминированная subject-атрибуция».
+
+**Проблема (до фикса):** при ingest'е сессии клиентского чата (chatbox) все блоки сессии атрибутировались **session-level ответственному менеджеру** — клиентские реплики ошибочно записывались как высказывания/обязательства/знания менеджера (cross-attribution клиент → менеджер), искажая и knowledge-, и skill-профиль.
+
+**Решение — атрибуция по автору сегмента:**
+- `Segment` / `MeetingTurn` получили поле **`authorPersonId`** (`segment-builder.service.ts`). Для chatbox `chatbox-ingest.service.ts` шлёт `transcript.turns` посегментно (**1 turn = 1 сообщение**, синтетические таймкоды): `authorPersonId = null` для реплики клиента, `responsible.personId` — для реплики менеджера.
+- `block-ingest.worker`: `tryGetActorIdentity` **не отдаёт session-level менеджера** при per-message сегментации; `attributeSubject` / `attributeCommitmentAuthor` резолвят subject по говорящему конкретного сегмента → клиентская реплика **subject НЕ пишется** (fail-closed для клиента).
+- **Встречи и одно-авторные источники не изменены** — там автор и так известен по `speakerParticipantId`.
+- **Важная разница носителя identity:** у chatbox **нет записей `Participant`**, поэтому identity несётся как **`Person.id` прямо в сегменте** (поле `authorPersonId`), а НЕ как `speakerParticipantId` (как у встреч). Ловушка — см. [[../02_architecture/code-pitfalls]] §«chatbox: атрибуция всех блоков сессии».
+
+**Backfill истории:** `backend/scripts/backfill-chatbox-subject-cleanup.ts` (коммит `bb7701dc`) — разовая очистка ранее накопленной неверной атрибуции chatbox-блоков.
+
 ## Что отложено
 
 - Dashboard widget «Топ-5 людей с богатыми профилями» (β-2.13) — отложен.

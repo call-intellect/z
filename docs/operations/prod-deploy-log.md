@@ -70,6 +70,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
+
+> Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.
+>
+> **Зачем для прода:** TZ#1 — надёжность импорта таблиц (retry pass-1, union опций, type-guard, Jaccard-dedup); TZ#2 — качество клона сотрудника (атрибуция chatbox по говорящему, verify-гейт черт, confidence из дат, decay 1-шаг, split-floor, арбитраж merge); TZ#3 — включение готовых фич дефолтом + очистка отравленных данных. **Всё авто-применяется агрегатором** `apply-prod-deploy.ts --mode update` (migrate-контейнер на каждом `up`).
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `CONCIERGE_DIALOG_LAYER_ENABLED`** (`typed-config.service.ts`) — **дефолт переведён OFF→ON** (TZ#3). Новой ENV нет; kill-switch сохранён: `CONCIERGE_DIALOG_LAYER_ENABLED=false` в `.env` всё ещё выключает. На выкате ENV можно НЕ трогать (включится сам).
+  - Новые AdminSetting-крутилки (code-fallback, регистрации/seed НЕ требуют): `table.agent.draft_max_attempts`(3), `table.import.dedup_col_jaccard`(0.6), `knowledge.skillProfileMinObservations`(тек.), `knowledge.skillClusterMinObservations`(3). Работают без записи в БД.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608120000_add_skill_trait_pending_verification`: `ALTER TYPE "SkillTraitStatus" ADD VALUE 'pending_verification'`). Применяется автоматически `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна (повторно no-op). Ручных действий нет.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный, в STEPS** (`phase:'patch'`): `scripts/patch-enable-shipped-flags.ts` — выставляет `true` для AdminSetting `knowledge.meetingTasksToTrackerOnly` / `feature.tables_text_to_schema` / `knowledge.curationAutotuneEnabled` ТОЛЬКО если `updatedBy IS NULL` (уважает admin-override); absent → пропуск (code-fallback покроет). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **дефолты изменены** в `seed-admin-settings.ts` (`knowledge.meetingTasksToTrackerOnly`, `feature.tables_text_to_schema` → `true`) — влияет ТОЛЬКО на чистый старт (существующий прод чинит patch Шага 6). **+ новый LLM-маршрут** `skill-trait-verify` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-skill-and-clone.ts` (уже в STEPS через `skill-and-clone`, идемпотентно).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `args:['--apply']`): `scripts/backfill-chatbox-subject-cleanup.ts` — снимает ложные `IdeaBlockEntity{role='subject'}` у блоков с chatbox-evidence (cross-attribution клиент→менеджер). `mentioned` и не-chatbox subject НЕ трогает. Применяется агрегатором с `--apply`; ручная dry-run проверка: `docker compose exec backend bun run scripts/backfill-chatbox-subject-cleanup.ts` (без `--apply`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый `SkillTraitVerifyCron`, taskType `skill-trait-verify`, post-passы table-agent, merge/decay/attribution-правки; frontend без изменений в этом батче): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Cron виден: `docker compose exec backend grep -r "skill-trait-verify" dist/ | head` ИЛИ в логах воркера `skill-trait-verify.cron: START` (≤ след. 03:30).
+  - Маршрут есть: `/admin/ai-models` содержит `skill-trait-verify` (primary deepseek-v4-flash).
+  - Миграция применена: в логах migrate-контейнера `pending_verification` без ошибок; `diag.ts logs --level ERROR` — нет `Invalid prisma.skillTrait` по статусу.
+  - Backfill отработал: в логах агрегатора `backfill-chatbox-subject-cleanup ... УДАЛЕНО N` (N≥0).
+
+---
+
 ### 🔗 2026-06-08 — Ретест №2: оверхол цепочки агентов (4 ТЗ + зонтичные 8 фаз)
 
 > Контракты: 4 точечных ТЗ ретеста `plans/tz/2026-06-07-{tables-detail-render-loop-and-route-fix, provider-smoke-test-and-alerting-fix, ui-copy-meeting-types-titles-and-anglicisms, asr-word-timestamps-duration-behavior}.md` + зонтичный `plans/tz/2026-06-07-agent-chain-overhaul.md` (8 фаз). Ветка `feature/retest2-agent-chain-overhaul`, 12 коммитов: ТЗ A `26219233`, Ф0a `b31c311f`, Ф0b `7c9d6a21`, Ф7+ТЗ D `c8cf2602`, Ф3 `4ef90bde`, ТЗ B `3a2d0ce4`, ТЗ C `f1ca83f6`, Ф1 `0c066468`, Ф2 C1 `c9339992`, Ф4.2 `5f55ee35`, Ф5 `ac3fa181`, Ф6 `c381e7c8`.

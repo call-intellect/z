@@ -328,3 +328,18 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 **Миграций БД НЕТ, новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
 
 [[../index|← index]]
+
+## Качество клона сотрудника — verify-гейт (2026-06-08)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф3 (D). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Полная карта изменений клона — [[skill-and-clone]] §«Доработки 2026-06-08»; cron — [[workers-queues]]; enum — [[../02_architecture/data-model]] §SkillTraitStatus.
+
+### Новый taskType `skill-trait-verify`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `skill-trait-verify` | grounding-проверка свежей черты профиля: сверяет формулировку trait'а с цитатами-источниками. Grounded → черта `active`, иначе → `held`. **FAIL-OPEN:** ошибка LLM → `active` (сбой не блокирует профиль). | `deepseek-v4-flash` (cheap) → fallback по DEFAULT-цепочке | `skill_trait_verify_v1` (cache-friendly: стабильный SYSTEM, цитаты в конце USER) |
+
+- Вызывается из `Specialist37Service.verifyPendingTraits()` ночным cron'ом **`SkillTraitVerifyCron` `@Cron('30 3 * * *')`** (03:30) — обрабатывает черты в статусе `SkillTraitStatus.pending_verification` (черта в этом статусе **не попадает в persona**, пока не станет `active`).
+- Маршрут засеивается в `seed-llm-task-routes-skill-and-clone.ts` (вместе с остальными skill/clone-роутами).
+
+[[../index|← index]]

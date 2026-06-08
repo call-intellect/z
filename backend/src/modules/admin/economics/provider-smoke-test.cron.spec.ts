@@ -16,6 +16,8 @@ describe('ProviderSmokeTestCron', () => {
   const sendNotification = vi.fn(async () => ({}));
   const setProviderSmokeTestSuccess = vi.fn();
   const observeProviderSmokeTestDuration = vi.fn();
+  const getLlmCacheHitRatio = vi.fn();
+  const setLlmCacheHitRatioBelowThreshold = vi.fn();
 
   const prisma = {
     llmProvider: { findMany, update },
@@ -25,6 +27,10 @@ describe('ProviderSmokeTestCron', () => {
     budget: {
       providerSmokeTestEnabled: true,
       providerSmokeTestFailThreshold: 3,
+    },
+    llm: {
+      cacheSmokeEnabled: true,
+      cacheHitRatioWarnThreshold: 0.6,
     },
   } as unknown as ConstructorParameters<typeof ProviderSmokeTestCron>[1];
   const adapters = {
@@ -39,6 +45,8 @@ describe('ProviderSmokeTestCron', () => {
   const metrics = {
     setProviderSmokeTestSuccess,
     observeProviderSmokeTestDuration,
+    getLlmCacheHitRatio,
+    setLlmCacheHitRatioBelowThreshold,
   } as unknown as ConstructorParameters<typeof ProviderSmokeTestCron>[5];
 
   beforeEach(() => {
@@ -211,5 +219,89 @@ describe('ProviderSmokeTestCron', () => {
     expect(result.successes).toBe(1);
     expect(resolveByName).toHaveBeenCalledTimes(1);
     expect(resolveByName).toHaveBeenCalledWith('configured');
+  });
+
+  // ── Ф6 Часть 3 — checkCacheHitRatio ────────────────────────────────────
+  describe('checkCacheHitRatio', () => {
+    function makeCron() {
+      return new ProviderSmokeTestCron(
+        prisma,
+        cfg,
+        adapters,
+        providerInfo,
+        conversational,
+        metrics,
+      );
+    }
+
+    it('ratio ниже порога → logger.warn + gauge=below', async () => {
+      getLlmCacheHitRatio.mockResolvedValueOnce({
+        hits: 10,
+        total: 100,
+        ratio: 0.1,
+      });
+      const cron = makeCron();
+      const warnSpy = vi
+        .spyOn(
+          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
+            .logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      await cron.checkCacheHitRatio();
+
+      expect(getLlmCacheHitRatio).toHaveBeenCalledWith('deepseek');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(setLlmCacheHitRatioBelowThreshold).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        below: true,
+      });
+    });
+
+    it('ratio выше порога → нет WARN, gauge=not-below', async () => {
+      getLlmCacheHitRatio.mockResolvedValueOnce({
+        hits: 90,
+        total: 100,
+        ratio: 0.9,
+      });
+      const cron = makeCron();
+      const warnSpy = vi
+        .spyOn(
+          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
+            .logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      await cron.checkCacheHitRatio();
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(setLlmCacheHitRatioBelowThreshold).toHaveBeenCalledWith({
+        provider: 'deepseek',
+        below: false,
+      });
+    });
+
+    it('ratio === null (мало данных) → нет WARN и не трогает gauge', async () => {
+      getLlmCacheHitRatio.mockResolvedValueOnce({
+        hits: 1,
+        total: 3,
+        ratio: null,
+      });
+      const cron = makeCron();
+      const warnSpy = vi
+        .spyOn(
+          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
+            .logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      await cron.checkCacheHitRatio();
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(setLlmCacheHitRatioBelowThreshold).not.toHaveBeenCalled();
+    });
   });
 });

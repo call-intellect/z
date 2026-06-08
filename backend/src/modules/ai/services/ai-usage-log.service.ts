@@ -161,6 +161,9 @@ export class AiUsageLogService {
       // вызовах: failed call с cachedTokens > 0 — нонсенс (cached=0 default
       // в catch-branch'е router'а).
       if (input.success) {
+        // Ф6 Часть 3 — знаменатель cache hit-ratio per provider. Инкремент на
+        // КАЖДОМ успешном вызове (с кешем и без), в той же точке, что cache_hit.
+        this.metrics.incLlmCall({ provider: input.provider });
         const cacheRead = input.cachedTokens ?? 0;
         const cacheCreation = input.cacheCreationTokens ?? 0;
         const taskTypeLabel = input.taskType ?? 'unknown';

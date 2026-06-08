@@ -123,6 +123,12 @@ const registry = new Map<string, ZodTypeAny>([
   // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
 
+  // ── LLM cache-smoke (llm.*) — Ф6 Часть 3, наблюдаемость ───────────────
+  // cacheSmokeEnabled — включает smoke-проверку доли cache-хитов в cron'е.
+  // cacheHitRatioWarnThreshold — порог [0..1]: ниже → WARN в логи.
+  ['llm.cacheSmokeEnabled', z.boolean()],
+  ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
+
   // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],

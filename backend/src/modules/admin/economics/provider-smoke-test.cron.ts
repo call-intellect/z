@@ -68,6 +68,58 @@ export class ProviderSmokeTestCron {
         'provider-smoke-test.cron: непойманная ошибка',
       );
     }
+    // Ф6 Часть 3 — отдельный best-effort шаг: доля prompt-cache хитов DeepSeek.
+    // Не бросает, не влияет на основной smoke выше.
+    await this.checkCacheHitRatio();
+  }
+
+  /**
+   * Ф6 Часть 3 — наблюдаемость: считает долю prompt-cache хитов по DeepSeek
+   * (z_llm_cache_hit_total / z_llm_calls_total) и пишет WARN, если ниже порога.
+   * Best-effort: никогда не бросает.
+   *
+   * ratio === null (мало данных) → debug, без WARN (не шуметь на низком трафике).
+   */
+  async checkCacheHitRatio(): Promise<void> {
+    try {
+      if (!this.cfg.llm.cacheSmokeEnabled) {
+        this.logger.debug('cache-hit-ratio smoke: disabled by setting');
+        return;
+      }
+      const threshold = this.cfg.llm.cacheHitRatioWarnThreshold;
+      const { hits, total, ratio } =
+        await this.metrics.getLlmCacheHitRatio('deepseek');
+
+      if (ratio === null) {
+        this.logger.debug(
+          { provider: 'deepseek', hits, total, threshold },
+          'cache-hit-ratio smoke: мало данных — пропускаем (без WARN)',
+        );
+        return;
+      }
+
+      const below = ratio < threshold;
+      this.metrics.setLlmCacheHitRatioBelowThreshold({
+        provider: 'deepseek',
+        below,
+      });
+      if (below) {
+        this.logger.warn(
+          { provider: 'deepseek', ratio, threshold, hits, total },
+          'cache-hit-ratio ниже порога — возможно taskType ушёл на некэширующий провайдер',
+        );
+      } else {
+        this.logger.debug(
+          { provider: 'deepseek', ratio, threshold, hits, total },
+          'cache-hit-ratio smoke: норма',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'cache-hit-ratio smoke: непойманная ошибка (best-effort, игнорируем)',
+      );
+    }
   }
 
   async runOnce(): Promise<{

@@ -62,6 +62,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private llmCacheHitTotal!: Counter<'provider' | 'model' | 'task_type'>;
   private llmCacheReadTokensTotal!: Counter<'provider' | 'model'>;
   private llmCacheCreationTokensTotal!: Counter<'provider' | 'model'>;
+  // Ф6 Часть 3 — знаменатель hit-ratio: общее число успешных LLM-вызовов
+  // per provider. Инкрементируется в той же точке (AiUsageLogService.record),
+  // где фиксируется cache_hit. ratio = cache_hit / calls по тем же провайдерам.
+  private llmCallsTotal!: Counter<'provider'>;
+  // Ф6 Часть 3 — gauge-флаг: smoke-cron выставляет 1, если доля cache-хитов
+  // по провайдеру ниже порога, иначе 0. Для алёртов в Grafana.
+  private llmCacheHitRatioBelowThreshold!: Gauge<'provider'>;
 
   // ── deepseek schema→tool conversion (ТЗ 2026-05-25) ─────────────────
   // DeepSeek-V4-Pro в thinking-режиме не поддерживает strict json_schema —
@@ -1109,6 +1116,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_llm_cache_creation_tokens_total',
       help: 'T7-F3 — суммарно токенов, записанных в prompt cache (cost ~1.25× input price для 5min-TTL). Релевантно только Anthropic-семейству.',
       labelNames: ['provider', 'model'] as const,
+    });
+    // Ф6 Часть 3 — общее число успешных LLM-вызовов per provider (знаменатель
+    // cache hit-ratio). z_llm_cache_hit_total / z_llm_calls_total = доля хитов.
+    this.llmCallsTotal = this.getOrCreateCounter({
+      name: 'z_llm_calls_total',
+      help: 'Ф6 — счётчик успешных LLM-вызовов per provider. Знаменатель для cache hit-ratio (z_llm_cache_hit_total / z_llm_calls_total).',
+      labelNames: ['provider'] as const,
+    });
+    this.llmCacheHitRatioBelowThreshold = this.getOrCreateGauge({
+      name: 'z_llm_cache_hit_ratio_below_threshold',
+      help: 'Ф6 — 1, если доля prompt-cache хитов по провайдеру ниже порога (smoke-cron), иначе 0. Алёрт: дрейф на некэширующий провайдер.',
+      labelNames: ['provider'] as const,
     });
 
     this.deepseekSchemaToToolConversionTotal = this.getOrCreateCounter({
@@ -3701,6 +3720,62 @@ export class BusinessMetricsService implements OnModuleInit {
       { provider: args.provider, model: args.model },
       args.tokens,
     );
+  }
+
+  /**
+   * Ф6 Часть 3 — фиксирует один УСПЕШНЫЙ LLM-вызов per provider.
+   * Вызывается из AiUsageLogService.record при `success === true`.
+   * Знаменатель для cache hit-ratio (вместе с incLlmCacheHit).
+   */
+  incLlmCall(args: { provider: string }): void {
+    this.llmCallsTotal.inc({ provider: args.provider });
+  }
+
+  /**
+   * Ф6 Часть 3 — выставляет gauge-флаг «доля cache-хитов ниже порога».
+   * 1 = ниже порога (тревога), 0 = норма. Вызывается smoke-cron'ом.
+   */
+  setLlmCacheHitRatioBelowThreshold(args: {
+    provider: string;
+    below: boolean;
+  }): void {
+    this.llmCacheHitRatioBelowThreshold.set(
+      { provider: args.provider },
+      args.below ? 1 : 0,
+    );
+  }
+
+  /**
+   * Ф6 Часть 3 — снимок доли prompt-cache хитов по провайдерам, чьё имя
+   * содержит `providerSubstring` (например 'deepseek'). Суммирует
+   * `z_llm_cache_hit_total` (по всем model/task_type) и делит на суммарный
+   * `z_llm_calls_total` тех же провайдеров.
+   *
+   * ratio === null, если total < `minTotal` (мало данных — не делаем выводов
+   * на низком трафике, иначе цифра шумная).
+   */
+  async getLlmCacheHitRatio(
+    providerSubstring: string,
+    minTotal = 20,
+  ): Promise<{ hits: number; total: number; ratio: number | null }> {
+    const needle = providerSubstring.toLowerCase();
+    const matches = (label: unknown): boolean =>
+      typeof label === 'string' && label.toLowerCase().includes(needle);
+
+    const hitSnapshot = await this.llmCacheHitTotal.get();
+    let hits = 0;
+    for (const v of hitSnapshot.values) {
+      if (matches(v.labels.provider)) hits += v.value;
+    }
+
+    const callsSnapshot = await this.llmCallsTotal.get();
+    let total = 0;
+    for (const v of callsSnapshot.values) {
+      if (matches(v.labels.provider)) total += v.value;
+    }
+
+    const ratio = total >= minTotal ? hits / total : null;
+    return { hits, total, ratio };
   }
 
   /**

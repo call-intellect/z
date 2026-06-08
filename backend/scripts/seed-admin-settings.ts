@@ -332,6 +332,16 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
   }
 
+  // ── LLM cache-smoke (llm.*) — Ф6 Часть 3 (2026-06-08). Наблюдаемость доли
+  // prompt-cache хитов по DeepSeek. Только лог/метрика, ничего не блокирует.
+  const llm: Array<[string, unknown, Severity, string]> = [
+    ['llm.cacheSmokeEnabled', envBool('LLM_CACHE_SMOKE_ENABLED', true), 'low', 'Включает smoke-проверку доли prompt-cache хитов DeepSeek в provider-smoke cron (только лог/метрика)'],
+    ['llm.cacheHitRatioWarnThreshold', envFloat('LLM_CACHE_HIT_RATIO_WARN_THRESHOLD', 0.6), 'low', 'Порог доли cache-хитов по DeepSeek (0..1): ниже — WARN в логи (возможно taskType ушёл на некэширующий провайдер)'],
+  ];
+  for (const [key, value, severity, description] of llm) {
+    out.push({ key, value, category: 'ai', section: 'features', severity, description });
+  }
+
   // ── Trekker: авто-триаж задач из встреч (tracker.*) — Ф3 agent-chain-overhaul.
   const tracker: Array<[string, unknown, Severity, string]> = [
     ['tracker.autoAcceptConfidenceThreshold', envFloat('AUTO_ACCEPT_CONFIDENCE_THRESHOLD', 0.75), 'high', 'Порог авто-создания Issue из триажа встречи (confidence LLM 0..1). Дефолт 0.75 под живую речь; жёсткие гейты source=meeting+assignee+project остаются страховкой.'],

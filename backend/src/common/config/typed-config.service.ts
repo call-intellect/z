@@ -255,6 +255,31 @@ export class TypedConfigService {
     } as const;
   }
 
+  /**
+   * Ф6 Часть 3 — наблюдаемость доли prompt-cache хитов (DeepSeek).
+   * Крутилки admin-editable (resolveSync: cacheMap → default; ENV не вводим).
+   * Только лог/метрика — безопасно (best-effort smoke, ничего не блокирует).
+   */
+  get llm() {
+    return {
+      /** Включает smoke-проверку cache hit-ratio в provider-smoke-test cron. */
+      cacheSmokeEnabled: this.resolveSync<boolean>(
+        'llm.cacheSmokeEnabled',
+        undefined,
+        true,
+      ),
+      /**
+       * Порог доли cache-хитов по DeepSeek: ниже — WARN в логи (возможно
+       * taskType ушёл на некэширующий провайдер). Доля 0..1, дефолт 0.6.
+       */
+      cacheHitRatioWarnThreshold: this.resolveSync<number>(
+        'llm.cacheHitRatioWarnThreshold',
+        undefined,
+        0.6,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── ai ─────────────────────────────────
   get ai() {
     return {

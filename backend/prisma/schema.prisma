@@ -76,6 +76,12 @@ enum MeetingStatus {
   recording_ready
   transcription_processing
   transcription_ready
+  /// ТЗ-5 Ф1 (meeting-upload-diarization): транскрипт диаризован, спикеры
+  /// извлечены (MeetingUploadSpeaker), но ещё НЕ сопоставлены с сотрудниками/
+  /// внешними. Промежуточное состояние ТОЛЬКО для встреч `source=upload`:
+  /// после ручного назначения спикеров (хост/админ) встреча уходит в
+  /// `ai_processing`. Для `source=livekit` не используется.
+  awaiting_speakers
   ai_processing
   ai_ready
   failed
@@ -84,6 +90,26 @@ enum MeetingStatus {
   /// терминального `failed`, при `ai_failed` запись встречи (Recording.status=ready,
   /// mainVideoUrl) остаётся смотрибельной — встреча не схлопывается целиком.
   ai_failed
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization): источник встречи.
+/// `livekit` — встреча проведена в комнате LiveKit (медиа-движок, дефолт).
+/// `upload` — встреча загружена файлом (аудио/видео) и диаризована вне LiveKit.
+enum MeetingSource {
+  livekit
+  upload
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization): как сопоставлен спикер диаризации
+/// с реальным участником (см. MeetingUploadSpeaker.assignment).
+/// `unassigned` — ещё не размечен; `employee` — сотрудник (personId);
+/// `external` — внешний участник (externalName/Company/Position);
+/// `excluded` — исключён из анализа (шум/нерелевантный голос).
+enum UploadSpeakerAssignment {
+  unassigned
+  employee
+  external
+  excluded
 }
 
 enum AiStepStatus {
@@ -1328,6 +1354,16 @@ model Meeting {
   /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
   closedGroupKind String? @db.VarChar(20)
 
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — источник встречи. `livekit` (дефолт)
+  /// для встреч в комнате; `upload` для встреч, загруженных файлом и диаризованных.
+  source                MeetingSource @default(livekit)
+  /// ТЗ-5 Ф1 — подсказка числа спикеров для диаризации загруженной встречи
+  /// (необязательно; пользователь может указать ожидаемое число голосов).
+  uploadNumSpeakersHint Int?
+
+  /// ТЗ-5 Ф1 — спикеры диаризации загруженной встречи (для ручной разметки).
+  uploadSpeakers MeetingUploadSpeaker[]
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
@@ -1335,6 +1371,37 @@ model Meeting {
   @@index([tenantId])
   @@index([linkedIssueId])
   @@index([linkedCycleId])
+  @@index([tenantId, source, createdAt])
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization) — спикер диаризации загруженной встречи.
+/// Один ряд = один обнаруженный голос (label вроде "SPEAKER_00"); хост/админ
+/// сопоставляет его с сотрудником (personId) или внешним участником, либо
+/// исключает. После полной разметки встреча уходит из `awaiting_speakers` в
+/// `ai_processing`.
+model MeetingUploadSpeaker {
+  id               String                  @id @default(cuid())
+  meetingId        String
+  meeting          Meeting                 @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  label            String
+  displayLabel     String
+  turnsCount       Int                     @default(0)
+  speakingSeconds  Int                     @default(0)
+  sampleText       String                  @db.Text
+  assignment       UploadSpeakerAssignment @default(unassigned)
+  personId         String?
+  person           Person?                 @relation(fields: [personId], references: [id], onDelete: SetNull)
+  externalName     String?                 @db.VarChar(200)
+  externalCompany  String?                 @db.VarChar(200)
+  externalPosition String?                 @db.VarChar(200)
+  mergedIntoLabel  String?
+  participantId    String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@unique([meetingId, label])
+  @@index([meetingId])
+  @@map("meeting_upload_speaker")
 }
 
 model Participant {
@@ -4690,6 +4757,12 @@ model Person {
   channelBindingCampaignState String? @db.VarChar(20)
   /// TZ-1 Фаза 0 — когда отправлено первое приглашение привязать канал.
   channelBindingInvitedAt     DateTime?
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — компания/работодатель Person
+  /// (для внешних контактов и обогащения карточки). NULL = неизвестно.
+  company             String?            @db.VarChar(200)
+  /// ТЗ-5 Ф1 — должность Person (для обогащения карточки при разметке
+  /// спикеров загруженной встречи). NULL = неизвестно.
+  jobTitle            String?            @db.VarChar(200)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
@@ -4750,6 +4823,9 @@ model Person {
   /// TZ-1 Фаза 4.C (daily-value-engine) — снимки знание-под-риском, где этот
   /// Person — соло-эксперт под риском ухода (KnowledgeAtRiskSnapshot.soleExpertPersonId).
   knowledgeAtRiskSnapshots    KnowledgeAtRiskSnapshot[]          @relation("KnowledgeAtRiskSoleExpert")
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикеры загруженных встреч,
+  /// сопоставленные с этим Person (assignment=employee).
+  uploadSpeakers              MeetingUploadSpeaker[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])

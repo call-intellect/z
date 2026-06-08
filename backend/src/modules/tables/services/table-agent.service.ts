@@ -11,6 +11,7 @@ import { buildTableInferSchemaPrompt } from '../../ai/services/prompts/table-inf
 import { EmbeddingFallbackService } from '../../embeddings/services/embedding-fallback.service';
 import { SYSTEM_TABLES_CATALOG } from '../templates/system-tables.catalog';
 
+import { parseNumericLoose } from './_num.util';
 import { parseEntitySync, resolveEntityTypes } from './entity-sync.util';
 
 /**
@@ -73,6 +74,19 @@ const ALL_SYNC_TYPES: readonly AvailableSyncType[] = [
   'meeting',
   'document',
 ];
+
+/** Фиксированный backoff между ретраями pass-1 DRAFT (R1). */
+const DRAFT_RETRY_BACKOFF_MS = 300;
+/** Локальный sleep для backoff (детерминируется в тестах через мок таймера/малый backoff). */
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** Палитра цветов чипов select/status (та же, что в system-tables.catalog). */
+const SELECT_OPTION_PALETTE = [
+  'info',
+  'warning',
+  'success',
+  'danger',
+  'neutral',
+] as const;
 
 // Zod-схема для парсинга «сырого» JSON от LLM. Намеренно мягкая: type — любая
 // строка (жёсткую фильтрацию по ALLOWED_PROP_TYPES делаем в коде, чтобы
@@ -173,18 +187,32 @@ export class TableAgentService {
     // Жёсткое выравнивание property↔header по порядку (см. JSDoc).
     const aligned = this.alignToHeaders(schema, args.headers);
 
+    // Детерминированные пост-пассы поверх LLM (по полному массиву sampleRows):
+    // R4 — сверка типа с данными (сначала чиним тип); R2 — полнота опций select.
+    const r4 = this.reconcileTypesWithData(aligned, args.sampleRows);
+    const r2 = this.completeSelectOptions(r4.schema, args.sampleRows);
+    const finalSchema = r2.schema;
+
+    this.logger.log(
+      {
+        tenantId: args.tenantId,
+        downgraded: r4.downgraded,
+        optionsAdded: r2.optionsAdded,
+      },
+      'table-agent: tabular post-pass',
+    );
     this.logger.log(
       {
         tenantId: args.tenantId,
         source: 'tabular',
         passes: 3,
         headers: args.headers.length,
-        columns: aligned.properties.length,
-        entitySync: aligned.entitySync?.type ?? null,
+        columns: finalSchema.properties.length,
+        entitySync: finalSchema.entitySync?.type ?? null,
       },
       'table-agent: схема сгенерирована из файла',
     );
-    return aligned;
+    return finalSchema;
   }
 
   // ─────────────────────── 3-pass pipeline (shared) ─────────────────────────
@@ -210,12 +238,22 @@ export class TableAgentService {
         icon: t.icon,
       })),
     });
-    const draftRaw = await this.callJson({
-      taskType: 'table-infer-schema',
-      tenantId: args.tenantId,
-      system: draftPrompt.system,
-      user: draftPrompt.user,
-    });
+    const draftAttempts = await this.getDraftMaxAttempts();
+    let draftRaw: RawLlmSchema | null = null;
+    for (let attempt = 1; attempt <= draftAttempts; attempt++) {
+      draftRaw = await this.callJson({
+        taskType: 'table-infer-schema',
+        tenantId: args.tenantId,
+        system: draftPrompt.system,
+        user: draftPrompt.user,
+      });
+      if (draftRaw) break;
+      this.logger.warn(
+        { tenantId: args.tenantId, attempt },
+        'table-agent: DRAFT pass retry',
+      );
+      if (attempt < draftAttempts) await sleep(DRAFT_RETRY_BACKOFF_MS);
+    }
     if (!draftRaw) {
       throw new BadRequestException({
         ok: false,
@@ -349,6 +387,135 @@ export class TableAgentService {
   }
 
   /**
+   * R4 type-guard: понижает тип колонки, если данные сэмпла его не подтверждают
+   * (< 50% значений парсятся как этот тип). number/currency/percent → text при
+   * <50% числовых; date → text при <50% дат; text → longtext при ≥50% длинных
+   * (>80 симв). Работает по ВСЕМУ массиву sampleRows. Возвращает НОВУЮ схему.
+   */
+  private reconcileTypesWithData(
+    schema: InferredTableSchema,
+    sampleRows: string[][],
+  ): { schema: InferredTableSchema; downgraded: number } {
+    let downgraded = 0;
+    const properties = schema.properties.map((p, j) => {
+      const vals = sampleRows
+        .map((r) => (r[j] ?? '').trim())
+        .filter((v) => v.length > 0);
+      if (vals.length === 0) return p;
+      let type: TablePropType = p.type;
+      if (type === 'number' || type === 'currency' || type === 'percent') {
+        const ok = vals.filter((v) => parseNumericLoose(v) !== null).length;
+        if (ok / vals.length < 0.5) {
+          type = 'text';
+          downgraded++;
+        }
+      } else if (type === 'date') {
+        const ok = vals.filter((v) => this.looksLikeDate(v)).length;
+        if (ok / vals.length < 0.5) {
+          type = 'text';
+          downgraded++;
+        }
+      }
+      if (type === 'text') {
+        const long = vals.filter((v) => v.length > 80).length;
+        if (long / vals.length >= 0.5) type = 'longtext';
+      }
+      if (type === p.type) return p;
+      return { ...p, type };
+    });
+    return { schema: { ...schema, properties }, downgraded };
+  }
+
+  /** Регэксп-проверка распространённых форматов дат (НЕ голый Date.parse). */
+  private looksLikeDate(v: string): boolean {
+    return (
+      /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2})?$/.test(v) ||
+      /^\d{1,2}[./]\d{1,2}[./]\d{2,4}$/.test(v)
+    );
+  }
+
+  /**
+   * R2 полнота опций: для колонок select/status дополняет config.options
+   * значениями из данных, которых LLM не перечислил. Потолок 30 distinct (иначе
+   * вероятно не select). Матч имён — case-insensitive + trim. Новым опциям
+   * id='opt-<next>', цвет — round-robin по палитре. Уже выданные LLM опции НЕ
+   * переименовываются и НЕ перекрашиваются. Возвращает НОВУЮ схему.
+   */
+  private completeSelectOptions(
+    schema: InferredTableSchema,
+    sampleRows: string[][],
+  ): { schema: InferredTableSchema; optionsAdded: number } {
+    let optionsAdded = 0;
+    const properties = schema.properties.map((p, j) => {
+      if (
+        p.type !== 'selectSingle' &&
+        p.type !== 'selectMulti' &&
+        p.type !== 'status'
+      ) {
+        return p;
+      }
+      // distinct непустые значения колонки (case-insensitive + trim).
+      const seenLower = new Set<string>();
+      const distinct: string[] = [];
+      for (const r of sampleRows) {
+        const v = (r[j] ?? '').trim();
+        if (!v) continue;
+        const key = v.toLowerCase();
+        if (seenLower.has(key)) continue;
+        seenLower.add(key);
+        distinct.push(v);
+      }
+      if (distinct.length === 0 || distinct.length > 30) return p; // потолок Д7
+
+      type SelectOption = { id: string; name: string; color: string };
+      const cfg =
+        p.config && typeof p.config === 'object'
+          ? { ...(p.config as Record<string, unknown>) }
+          : {};
+      const rawOptions = Array.isArray((cfg as { options?: unknown }).options)
+        ? ((cfg as { options?: unknown }).options as unknown[])
+        : [];
+      const options: SelectOption[] = rawOptions
+        .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+        .map((o) => ({
+          id: typeof o.id === 'string' ? o.id : '',
+          name: typeof o.name === 'string' ? o.name : '',
+          color: typeof o.color === 'string' ? o.color : 'neutral',
+        }));
+      const existingNames = new Set(
+        options
+          .map((o) => o.name.trim().toLowerCase())
+          .filter((s) => s.length > 0),
+      );
+      let maxIdx = 0;
+      for (const o of options) {
+        const m = /^opt-(\d+)$/.exec(o.id);
+        if (m) maxIdx = Math.max(maxIdx, Number(m[1]));
+      }
+      let paletteIdx = options.length;
+      let added = 0;
+      for (const v of distinct) {
+        if (existingNames.has(v.toLowerCase())) continue;
+        maxIdx++;
+        options.push({
+          id: `opt-${maxIdx}`,
+          name: v,
+          color:
+            SELECT_OPTION_PALETTE[paletteIdx % SELECT_OPTION_PALETTE.length] ??
+            'neutral',
+        });
+        existingNames.add(v.toLowerCase());
+        paletteIdx++;
+        added++;
+      }
+      if (added === 0) return p;
+      optionsAdded += added;
+      return { ...p, config: { ...cfg, options } };
+    });
+    return { schema: { ...schema, properties }, optionsAdded };
+  }
+
+  /**
    * Доступные entitySync-типы тенанта. Фаза 1 — возвращаем все 4.
    * TODO Фаза 2: учитывать фактические EntityType, заведённые в тенанте
    * (фильтровать список по реальным сущностям графа знаний).
@@ -374,9 +541,11 @@ export class TableAgentService {
     tenantId: string;
     schema: InferredTableSchema;
   }): Promise<Array<{ tableId: string; name: string; cosine: number }>> {
-    if (!this.embeddings) return [];
-
-    const proposedText = this.schemaToText(args.schema.name, args.schema.properties);
+    const proposedCols = args.schema.properties.map((p) => p.name);
+    const proposedText = this.schemaToText(
+      args.schema.name,
+      args.schema.properties,
+    );
 
     const tables = await this.prisma.table.findMany({
       where: { tenantId: args.tenantId, deletedAt: null, archivedAt: null },
@@ -388,36 +557,50 @@ export class TableAgentService {
     });
     if (tables.length === 0) return [];
 
-    // Один batch-вызов эмбеддингов на весь набор: [proposed, ...existing].
-    // Сопоставляем вектора по индексу. При сбое провайдеров → [] (graceful).
-    const tableTexts = tables.map((t) =>
-      this.schemaToText(
-        t.name,
-        t.properties.map((p) => ({ name: p.name })),
-      ),
-    );
-    let vectors: Array<number[] | undefined>;
-    try {
-      vectors = await this.embeddings.embed([proposedText, ...tableTexts]);
-    } catch (err) {
-      this.logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'table-agent: embedding для dedup недоступен — пропускаем',
+    // cosine — опционально (Д6): считаем, только если есть embeddings и батч удался.
+    // При недоступности провайдера остаётся Jaccard-ветка.
+    const cosineByTable = new Map<string, number>();
+    if (this.embeddings) {
+      const tableTexts = tables.map((t) =>
+        this.schemaToText(
+          t.name,
+          t.properties.map((p) => ({ name: p.name })),
+        ),
       );
-      return [];
+      try {
+        const vectors = await this.embeddings.embed([
+          proposedText,
+          ...tableTexts,
+        ]);
+        const proposedVec = vectors[0];
+        if (proposedVec) {
+          for (let i = 0; i < tables.length; i++) {
+            const t = tables[i];
+            const vec = vectors[i + 1];
+            if (!t || !vec) continue;
+            cosineByTable.set(t.id, this.cosine(proposedVec, vec));
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'table-agent: embedding для dedup недоступен — используем только Jaccard',
+        );
+      }
     }
-    const proposedVec = vectors[0];
-    if (!proposedVec) return [];
 
-    const threshold = await this.getDedupThreshold();
+    const cosineThreshold = await this.getDedupThreshold();
+    const jaccardThreshold = await this.getJaccardThreshold();
     const out: Array<{ tableId: string; name: string; cosine: number }> = [];
-    for (let i = 0; i < tables.length; i++) {
-      const t = tables[i];
-      const vec = vectors[i + 1]; // +1 — нулевой вектор у proposed
-      if (!t || !vec) continue;
-      const cosine = this.cosine(proposedVec, vec);
-      if (cosine >= threshold) {
-        out.push({ tableId: t.id, name: t.name, cosine });
+    for (const t of tables) {
+      const jac = this.colJaccard(
+        proposedCols,
+        t.properties.map((p) => p.name),
+      );
+      const cos = cosineByTable.get(t.id) ?? 0;
+      const score = Math.max(cos, jac);
+      if (cos >= cosineThreshold || jac >= jaccardThreshold) {
+        out.push({ tableId: t.id, name: t.name, cosine: score });
       }
     }
     out.sort((a, b) => b.cosine - a.cosine);
@@ -536,6 +719,49 @@ export class TableAgentService {
       );
     } catch {
       return 0.85;
+    }
+  }
+
+  /** Порог пересечения колонок (AdminSetting `table.import.dedup_col_jaccard`, def 0.6). */
+  private async getJaccardThreshold(): Promise<number> {
+    if (!this.cfg) return 0.6;
+    try {
+      const n = await this.cfg.getDynamic<number>(
+        'table.import.dedup_col_jaccard',
+        undefined,
+        0.6,
+      );
+      return Number.isFinite(n) && n > 0 && n <= 1 ? n : 0.6;
+    } catch {
+      return 0.6;
+    }
+  }
+
+  /** Jaccard по множествам нормализованных имён колонок. Пустые → 0. */
+  private colJaccard(aNames: string[], bNames: string[]): number {
+    const norm = (s: string): string =>
+      s.trim().toLowerCase().replace(/\s+/g, ' ');
+    const a = new Set(aNames.map(norm).filter((s) => s.length > 0));
+    const b = new Set(bNames.map(norm).filter((s) => s.length > 0));
+    if (a.size === 0 || b.size === 0) return 0;
+    let inter = 0;
+    for (const x of a) if (b.has(x)) inter++;
+    const union = a.size + b.size - inter;
+    return union === 0 ? 0 : inter / union;
+  }
+
+  /** Кол-во попыток pass-1 DRAFT (AdminSetting `table.agent.draft_max_attempts`, def 3). */
+  private async getDraftMaxAttempts(): Promise<number> {
+    if (!this.cfg) return 3;
+    try {
+      const n = await this.cfg.getDynamic<number>(
+        'table.agent.draft_max_attempts',
+        undefined,
+        3,
+      );
+      return Number.isFinite(n) && n >= 1 && n <= 5 ? Math.floor(n) : 3;
+    } catch {
+      return 3;
     }
   }
 

@@ -9,6 +9,7 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { parseNumericLoose } from './_num.util';
 import { parseEntitySync } from './entity-sync.util';
 import type { InferredTableSchema } from './table-agent.service';
 import { TableAgentService } from './table-agent.service';
@@ -16,28 +17,7 @@ import { TablePropertiesService } from './table-properties.service';
 import { TableRowsService } from './table-rows.service';
 import { TablesService } from './tables.service';
 
-/**
- * Устойчивый парс числа из строки файла. Срезает валюту/%/пробелы/буквы,
- * корректно определяет десятичный разделитель:
- *   - «1 234,56»  → 1234.56 (запятая — десятичный, пробел — группировка);
- *   - «1,234.56»  → 1234.56 (точка — десятичный, запятая — группировка);
- *   - «15%»       → 15;   «$1 200» → 1200;   мусор → null (caller вернёт строку).
- *
- * ВНИМАНИЕ: «1,200» (запятая последняя, без точки) фундаментально неоднозначно —
- * трактуется как десятичное 1.2, а НЕ 1200. Однозначное «1200» дают пробел или
- * точка как разделитель групп. Это компромисс парсинга без локали.
- */
-export function parseNumericLoose(v: string): number | null {
-  const s0 = v.replace(/[^\d.,-]/g, ''); // срезаем валюту/%/пробелы/буквы
-  if (!s0) return null;
-  const lastComma = s0.lastIndexOf(',');
-  const lastDot = s0.lastIndexOf('.');
-  let s: string;
-  if (lastComma > lastDot) s = s0.replace(/\./g, '').replace(',', '.'); // запятая — десятичный
-  else s = s0.replace(/,/g, ''); // точка — десятичный (или нет дробной)
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-}
+export { parseNumericLoose } from './_num.util';
 
 /**
  * Smart-tables auto-creation (2026-06-02, Фаза 4) — Document-to-Table, commit.

@@ -178,6 +178,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
   ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
 
+  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──────
+  ['notifications.daily_budget.per_person', POSITIVE_INT],
+  ['notifications.quiet_hours.start', z.number().int().min(0).max(23)],
+  ['notifications.quiet_hours.end', z.number().int().min(0).max(23)],
+  ['notifications.daily_budget.enabled', z.boolean()],
+  ['notifications.binding_campaign.enabled', z.boolean()],
+
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],

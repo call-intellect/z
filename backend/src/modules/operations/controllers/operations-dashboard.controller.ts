@@ -12,6 +12,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -53,6 +54,7 @@ export class OperationsDashboardController {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(CommitmentsService)
     private readonly commitments: CommitmentsService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Get('overview')
@@ -211,6 +213,74 @@ export class OperationsDashboardController {
       days: q.days,
       limit: q.limit,
     });
+  }
+
+  /**
+   * TZ-1 Фаза 0 (daily-value-engine) — покрытие Telegram-привязкой.
+   *
+   * Сколько сотрудников (Person.relationship='employee', userId IS NOT NULL)
+   * имеют verified telegram-binding. `gatePassed` (покрытие ≥ 70%) — индикатор
+   * готовности дневного движка к выкату (без привязок чек-ин не доходит в ТГ).
+   * Доступ — owner/admin/coo (как остальные эндпоинты дашборда).
+   */
+  @Get('binding-coverage')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — покрытие сотрудников Telegram-привязкой (gate ≥ 70%)',
+  })
+  async bindingCoverage(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<{
+    totalPersons: number;
+    boundPersons: number;
+    coveragePercent: number;
+    gatePassed: boolean;
+  }> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+
+    const employees = await this.prisma.person.findMany({
+      where: {
+        tenantId: tenantId!,
+        deletedAt: null,
+        relationship: 'employee',
+        userId: { not: null },
+      },
+      select: { userId: true },
+    });
+    const totalPersons = employees.length;
+    const userIds = employees
+      .map((e) => e.userId)
+      .filter((u): u is string => u !== null);
+
+    let boundPersons = 0;
+    if (userIds.length > 0) {
+      const bound = await this.prisma.channelBinding.findMany({
+        where: {
+          userId: { in: userIds },
+          verifiedAt: { not: null },
+          channel: {
+            kind: 'telegram_bot',
+            OR: [{ tenantId: tenantId! }, { tenantId: null }],
+          },
+        },
+        select: { userId: true },
+      });
+      boundPersons = new Set(bound.map((b) => b.userId)).size;
+    }
+
+    const coveragePercent =
+      totalPersons > 0
+        ? Math.round((boundPersons / totalPersons) * 100)
+        : 0;
+    return {
+      totalPersons,
+      boundPersons,
+      coveragePercent,
+      gatePassed: coveragePercent >= 70,
+    };
   }
 
   /**

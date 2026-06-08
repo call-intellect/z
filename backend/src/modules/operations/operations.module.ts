@@ -24,6 +24,7 @@ import { PersonalRelationService } from './services/personal-relation.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
+import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.cron';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
 import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
@@ -118,6 +119,10 @@ import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer
     // BullMQ-очередь и обрабатывает IdeaBlock'и; этот cron — отдельный agent
     // в том же файле, daily в 04:00 UTC.
     CheckInConflictDetectorCron,
+    // TZ-1 Фаза 0 (daily-value-engine) — кампания привязки Telegram-канала
+    // (приглашение + напоминание), @Cron('0 9 * * *'). Использует
+    // ConversationalService (@Global).
+    ChannelBindingCampaignCron,
   ],
   exports: [
     GoalCascadeService,

@@ -68,6 +68,7 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-chatbox.ts', hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-notification-budget.ts', hint: 'notifications.daily_budget.* + quiet_hours.* + binding_campaign.enabled (TZ-1 Ф0 daily-value)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
@@ -186,6 +187,10 @@ const STEPS: Step[] = [
   // готовые AdminSetting-флаги в true на существующем проде (seed их не
   // перезатирает). Уважает admin-override (updatedBy != null → no-op). Идемпотентен.
   { phase: 'patch', script: 'scripts/patch-enable-shipped-flags.ts', skipBootstrap: true, hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)' },
+  // 2026-06-08 TZ-1 Фаза 0 (daily-value-engine) — владелец авторизовал доставку
+  // дайджестов в Telegram. Флипает operations.daily_digest.deliver_to_telegram +
+  // goals.pulse.deliver_to_telegram → true (уважает admin-override). Идемпотентен.
+  { phase: 'patch', script: 'scripts/patch-enable-telegram-digests.ts', skipBootstrap: true, hint: 'включить доставку дайджестов COO + пульса целей в Telegram (TZ-1 Ф0)' },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси

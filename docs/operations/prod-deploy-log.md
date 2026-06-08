@@ -70,6 +70,33 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔔 2026-06-08 — TZ-1 Фаза 0: daily-value foundation (ТГ-доставка + бюджет + кампания привязки)
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 0). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`.
+>
+> **Зачем для прода:** включает доставку дневного чек-ина в Telegram (раньше `checkin.prompt` падал на in_app), вводит per-person дневной бюджет push-уведомлений (не заваливать человека) + тихие часы + opt-out, и кампанию привязки Telegram-канала (приглашение + напоминание). Владелец авторизовал доставку дайджестов в ТГ (LOCKED DECISION). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (все тумблеры — AdminSetting с code-fallback, ENV-fallback опционален).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-notification-budget.ts`, см. Шаг 7; ENV-fallback опционален):
+  - `notifications.daily_budget.per_person` (int, **default 5**) — лимит push на сотрудника в его локальный день. ENV-fallback `NOTIFICATIONS_DAILY_BUDGET_PER_PERSON`.
+  - `notifications.quiet_hours.start` / `.end` (int 0..23, **default 22 / 8**) — окно тихих часов (локальная TZ). ENV `NOTIFICATIONS_QUIET_HOURS_START/END`.
+  - `notifications.daily_budget.enabled` (bool, **default true**, kill-switch ON) — дневной бюджет. ENV `NOTIFICATIONS_DAILY_BUDGET_ENABLED`.
+  - `notifications.binding_campaign.enabled` (bool, **default true**, kill-switch ON) — кампания привязки канала. ENV `NOTIFICATIONS_BINDING_CAMPAIGN_ENABLED`.
+  - **Флипаются patch'ем (Шаг 6):** `operations.daily_digest.deliver_to_telegram` + `goals.pulse.deliver_to_telegram` → `true` (владелец авторизовал ТГ-доставку 2026-06-08).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608130000_notification_budget_and_binding`): `+ table notification_budget_ledger`, `+ persons.channelBindingCampaignState/channelBindingInvitedAt`, `+ notifications.priorityTier`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный, в STEPS** (`phase:'patch'`, `skipBootstrap`): `scripts/patch-enable-telegram-digests.ts` — выставляет `true` для `operations.daily_digest.deliver_to_telegram` и `goals.pulse.deliver_to_telegram` ТОЛЬКО если не правил человек (`updatedBy` IS NULL/`'system'`); absent → пропуск (seed покроет). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-notification-budget.ts` — 5 ключей `notifications.*` (см. Шаг 1). Защищает admin-edited. Прогон агрегатором или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-notification-budget.ts`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `NotificationBudgetService` (бюджет в `ConversationalService.sendNotification`), `ChannelBindingCampaignCron` `@Cron('0 9 * * *')`, `checkin.prompt` в policy, `GET /api/v1/dashboard/operations/binding-coverage`, `PATCH /api/v1/me/notification-preferences`, 6 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `channel-binding-campaign.cron: проход завершён` (≤ след. 09:00 локального окна), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/binding-coverage` (owner/coo) и `PATCH /api/v1/me/notification-preferences`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'notification_budget_consumed_total|notification_budget_blocked_total|notification_deferred_to_digest_total|channel_binding_coverage_ratio|channel_binding_campaign_invited_total|checkin_prompt_delivered_total'` — присутствуют.
+  - ТГ-доставка чек-ина: `diag-routes`/логи показывают, что `checkin.prompt` уходит в `telegram_bot` для сотрудников с verified-привязкой (метрика `checkin_prompt_delivered_total{channel="telegram_bot"}` растёт).
+  - Дайджесты в ТГ: `operations.daily_digest.deliver_to_telegram` и `goals.pulse.deliver_to_telegram` = `true` (через `/admin/settings` или `diag`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

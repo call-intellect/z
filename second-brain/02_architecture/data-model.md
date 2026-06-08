@@ -1514,4 +1514,22 @@ enum SkillTraitStatus {
 - `createNewTraitRaw` создаёт черту в **`pending_verification`** (а не сразу `active`); persona берёт только `active`-черты.
 - Ночной `SkillTraitVerifyCron @Cron('30 3 * * *')` → `Specialist37Service.verifyPendingTraits()` (LLM `skill-trait-verify`) переводит grounded → `active`, негрунд → `held`; FAIL-OPEN на ошибке LLM → `active`. См. [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
 
+### TZ-1 Фаза 0 — дневной бюджет уведомлений + кампания привязки канала (2026-06-08)
+
+Миграция `20260608130000_notification_budget_and_binding` (всё аддитивно). Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` Фаза 0.
+
+**Новая модель `NotificationBudgetLedger`** (`@@map("notification_budget_ledger")`) — дневной бюджет push-уведомлений на одного `Person`'а в его локальном дне:
+- `tenantId` + `personId` + `dateLocal VarChar(10)` (YYYY-MM-DD локальной TZ), `@@unique([tenantId, personId, dateLocal])`, `@@index([tenantId, dateLocal])`.
+- `sentCount Int @default(0)` — потрачено push за день; `lastSentAt DateTime?`; `byTrigger Json` — разбивка по eventType.
+- FK на `Org` и `Person` (onDelete: Cascade).
+- Учёт — атомарный `upsert + conditional increment` в транзакции (`NotificationBudgetService.tryConsume`, race-safe).
+
+**Расширения:**
+- `Notification += priorityTier Int? @default(2)` — приоритет для бюджета: `1` = критично (обходит бюджет + тихие часы), `2` = обычное.
+- `Person += channelBindingCampaignState String? @db.VarChar(20)` (NULL→`invited`→`reminded`→`bound`) + `channelBindingInvitedAt DateTime?` — состояние кампании привязки Telegram-канала.
+
+**Логика бюджета** (`NotificationBudgetService`, модуль `conversational`): после выбора каналов в `sendNotification` push-доставки (всё кроме in_app) проходят `tryConsume`; in_app доставляется всегда (видимость). Блокировки: `budget_exceeded` (sentCount ≥ лимит), `quiet_hours` (локальное окно), `opted_out` (per-trigger отписка из `ChannelBinding(in_app).preferences`). `critical`/`priorityTier===1` байпасят бюджет и тихие часы. Тумблеры — AdminSetting `notifications.daily_budget.per_person`(5)/`quiet_hours.start`(22)/`.end`(8)/`daily_budget.enabled`(ON)/`binding_campaign.enabled`(ON).
+
+**`checkin.prompt`** добавлен в `EVENT_TYPE_CHANNEL_POLICY` (`['telegram_bot','max_bot','in_app']`) — раньше падал на DEFAULT `['in_app']` и не доходил до Telegram. `ChannelBindingCampaignCron @Cron('0 9 * * *')` (модуль operations) рассылает приглашения/напоминания сотрудникам без verified-привязки. Эндпоинты: `GET /api/v1/dashboard/operations/binding-coverage`, `PATCH /api/v1/me/notification-preferences`. Метрики: `notification_budget_consumed_total{trigger}`, `notification_budget_blocked_total{reason}`, `notification_deferred_to_digest_total`, `channel_binding_coverage_ratio` (gauge), `channel_binding_campaign_invited_total`, `checkin_prompt_delivered_total{channel}`.
+
 [[../index|← index]]

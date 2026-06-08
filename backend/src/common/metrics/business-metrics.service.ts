@@ -221,6 +221,14 @@ export class BusinessMetricsService implements OnModuleInit {
   private conversationalLinkAttemptsTotal!: Counter<'kind' | 'status'>;
   private conversationalResponseTimeSeconds!: Histogram<'kind' | 'event_type'>;
 
+  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет + кампания привязки ──
+  private notificationBudgetConsumedTotal!: Counter<'trigger'>;
+  private notificationBudgetBlockedTotal!: Counter<'reason'>;
+  private notificationDeferredToDigestTotal!: Counter<string>;
+  private channelBindingCoverageRatio!: Gauge<'tenant_top'>;
+  private channelBindingCampaignInvitedTotal!: Counter<'tenant_top'>;
+  private checkinPromptDeliveredTotal!: Counter<'channel'>;
+
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
   private telegramBotWebhookReceivedTotal!: Counter<'type'>;
@@ -1530,6 +1538,38 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Время ответа пользователя на probe-нотификацию (секунды, по kind × eventType).',
       labelNames: ['kind', 'event_type'] as const,
       buckets: [10, 60, 300, 900, 1800, 3600, 14_400, 86_400, 604_800],
+    });
+
+    // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет + кампания привязки ──
+    this.notificationBudgetConsumedTotal = this.getOrCreateCounter({
+      name: 'notification_budget_consumed_total',
+      help: 'TZ-1 Ф0 — потрачено единиц дневного бюджета push-уведомлений (по trigger=eventType).',
+      labelNames: ['trigger'] as const,
+    });
+    this.notificationBudgetBlockedTotal = this.getOrCreateCounter({
+      name: 'notification_budget_blocked_total',
+      help: 'TZ-1 Ф0 — push-доставка заблокирована (reason ∈ budget_exceeded|quiet_hours|opted_out); in_app всё равно доставлен.',
+      labelNames: ['reason'] as const,
+    });
+    this.notificationDeferredToDigestTotal = this.getOrCreateCounter({
+      name: 'notification_deferred_to_digest_total',
+      help: 'TZ-1 Ф0 — сколько push-уведомлений отложено (бюджет/тихие часы/opt-out). Кандидаты в дайджест.',
+      labelNames: [] as const,
+    });
+    this.channelBindingCoverageRatio = this.getOrCreateGauge({
+      name: 'channel_binding_coverage_ratio',
+      help: 'TZ-1 Ф0 — доля сотрудников с verified Telegram-привязкой (0..1) по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.channelBindingCampaignInvitedTotal = this.getOrCreateCounter({
+      name: 'channel_binding_campaign_invited_total',
+      help: 'TZ-1 Ф0 — отправлено приглашений/напоминаний привязать канал (кампания), по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.checkinPromptDeliveredTotal = this.getOrCreateCounter({
+      name: 'checkin_prompt_delivered_total',
+      help: 'TZ-1 Ф0 — доставлен дневной чек-ин prompt по каналу (channel ∈ telegram_bot|max_bot|in_app|email_smtp).',
+      labelNames: ['channel'] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -4267,6 +4307,45 @@ export class BusinessMetricsService implements OnModuleInit {
       kind: args.kind,
       status: args.status,
     });
+  }
+
+  // ──────────────── TZ-1 Фаза 0 — дневной бюджет уведомлений ──────────
+
+  /** Counter `notification_budget_consumed_total{trigger}`. */
+  incNotificationBudgetConsumed(args: { trigger: string }): void {
+    this.notificationBudgetConsumedTotal.inc({ trigger: args.trigger });
+  }
+
+  /** Counter `notification_budget_blocked_total{reason}`. */
+  incNotificationBudgetBlocked(args: { reason: string }): void {
+    this.notificationBudgetBlockedTotal.inc({ reason: args.reason });
+  }
+
+  /** Counter `notification_deferred_to_digest_total`. */
+  incNotificationDeferredToDigest(): void {
+    this.notificationDeferredToDigestTotal.inc();
+  }
+
+  /** Gauge `channel_binding_coverage_ratio{tenant_top}` (0..1). */
+  setChannelBindingCoverageRatio(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.channelBindingCoverageRatio.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /** Counter `channel_binding_campaign_invited_total{tenant_top}`. */
+  incChannelBindingCampaignInvited(args: { tenantTop: string }): void {
+    this.channelBindingCampaignInvitedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `checkin_prompt_delivered_total{channel}`. */
+  incCheckinPromptDelivered(args: { channel: string }): void {
+    this.checkinPromptDeliveredTotal.inc({ channel: args.channel });
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */

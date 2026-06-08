@@ -91,6 +91,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `me.daily_value_widgets.enabled` | 🟢 ВКЛ | 4 виджета ежедневной ценности в `/me` (память помогла / мой план-факт / судьба идей / признания) + self-эндпоинты `GET /me/ideas`, `GET /me/recognitions`. Выкл → эндпоинты отдают пустой список (виджеты graceful-empty). (ТЗ-2 Ф5 daily-value-dashboards) |
 | `operations.portfolio_health.enabled` | 🟢 ВКЛ | Дашборд здоровья портфеля целей: cron пн 05:00 пишет недельный `PortfolioHealthSnapshot`, `GET /operations/portfolio-health` (healthScore 0–100 + светофор + распределение по статусам + MoSCoW-разрез + дельта неделя-к-неделе). Выкл → cron не пишет, endpoint отдаёт пустой скелет. (ТЗ-2 Ф6.A daily-value-dashboards) |
 | `documents.ai_attribution.enabled` | 🟢 ВКЛ | LLM-подсказка атрибуции загруженного документа: после парсинга документа БЕЗ явной атрибуции (`docType` и `attachedThemeId` оба пусты) дешёвый классификатор `document-attribution-suggest` предлагает смысловой тип + тему графа и пишет их в `Document.suggested*` (человек подтверждает в UI — авто-применения нет, Р3). Выкл → подсказка не строится, `suggested*` остаются пустыми. (ТЗ-4 Ф10 manual-document-upload) |
+| `meeting_upload.enabled` / `MEETING_UPLOAD_ENABLED` | 🟢 ВКЛ | Ручная загрузка встреч (`POST /meetings/upload` — видео/аудио ≤2 ГБ → ingest → диаризация → разметка спикеров → анализ). Выкл → создание новой загрузки отклоняется кодом `UPLOAD_DISABLED`; уже принятые загрузки доезжают. AdminSetting-ключ (ENV — fallback). (ТЗ-5 Ф6 meeting-upload-diarization) |
 
 ---
 
@@ -119,6 +120,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `documents.maxSizeMb` | 50 | Потолок размера одного загружаемого документа (МБ) | Ручная загрузка `/documents` (ТЗ-4 Ф6) |
 | `documents.maxFilesPerUpload` | 20 | Максимум файлов в одной операции загрузки | Ручная загрузка `/documents` (ТЗ-4 Ф3/Ф6) |
 | `documents.acceptedFormats` | `pdf,docx,xlsx,pptx,md,txt,html,rtf,odt,csv` | Белый список расширений, принимаемых при загрузке | Ручная загрузка `/documents` (ТЗ-4 Ф6) |
+| `billing.meetingUploadsPerMonth` | 20 | Месячный лимит ручных загрузок встреч на компанию (≥ лимита → `UPLOAD_QUOTA_EXCEEDED`); отдельно от грантов `MeetingsBalance`. ENV-fallback `BILLING_MEETING_UPLOADS_PER_MONTH` | Ручная загрузка встреч `POST /meetings/upload` (ТЗ-5 Ф6) |
 
 ---
 

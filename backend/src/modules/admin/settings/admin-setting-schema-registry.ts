@@ -232,6 +232,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['billing.baseSeatsIncluded', POSITIVE_INT],
   ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
   ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
+  // ТЗ-5 Ф6 (meeting-upload-diarization) — месячный лимит ручных загрузок
+  // встреч на Org (owner-decision крутилка; отдельно от MeetingsBalance).
+  ['billing.meetingUploadsPerMonth', POSITIVE_INT],
 
   // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──────
   ['notifications.daily_budget.per_person', POSITIVE_INT],

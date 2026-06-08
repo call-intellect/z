@@ -86,6 +86,11 @@ export class MeetingUploadsService {
    * Валидация размера (Zod max) и расширения — до создания Meeting.
    */
   async createUpload(input: CreateUploadInput): Promise<UploadCreateResultDto> {
+    // Аварийный рубильник (ТЗ-5 Ф6): если ручная загрузка выключена —
+    // отклоняем создание до любых проверок/записи (диаризация/анализ уже
+    // принятых загрузок не трогаются).
+    await this.assertUploadEnabled();
+
     // Размер: Zod-схема (`.max`) — первая линия; здесь дублируем с контрактным
     // кодом `UPLOAD_FILE_TOO_LARGE` (Zod-пайп отдал бы общий `validation_error`).
     if (input.sizeBytes > UPLOAD_MAX_SIZE_BYTES) {
@@ -802,6 +807,29 @@ export class MeetingUploadsService {
         { meetingId, err: err instanceof Error ? err.message : String(err) },
         'confirm: не удалось поставить core.meeting-report-fast (продолжаем без fast-отчёта)',
       );
+    }
+  }
+
+  /**
+   * Аварийный рубильник ручной загрузки (ТЗ-5 Ф6, Ship-On — ON по умолчанию).
+   * Читаем AdminSetting `meeting_upload.enabled` (ENV-fallback
+   * `MEETING_UPLOAD_ENABLED`, code-fallback true). При false → `UPLOAD_DISABLED`.
+   * Тот же ключ доступен sync через `cfg.recording.meetingUploadEnabled`.
+   */
+  private async assertUploadEnabled(): Promise<void> {
+    const enabled = await this.cfg.getDynamic<boolean>(
+      'meeting_upload.enabled',
+      'MEETING_UPLOAD_ENABLED',
+      true,
+    );
+    if (!enabled) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'UPLOAD_DISABLED',
+          message: 'Загрузка встреч временно недоступна. Попробуйте позже.',
+        },
+      });
     }
   }
 

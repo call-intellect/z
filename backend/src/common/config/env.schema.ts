@@ -258,6 +258,14 @@ const RecordingReliabilitySchema = z.object({
    * создаёт нагрузку на LiveKit API (защищено идемпотентностью).
    */
   RECORDING_COMPOSITE_RECONCILE_ENABLED: zBool(true),
+  /**
+   * Ручная загрузка встреч (ТЗ-5 meeting-upload-diarization, Ф6). Аварийный
+   * рубильник на `POST /meetings/upload`: при `false` создание загруженной
+   * встречи отклоняется кодом `UPLOAD_DISABLED` (диаризация/анализ уже принятых
+   * загрузок не трогаются). Дефолт ON (Ship-On). Также переопределяется
+   * AdminSetting-ключом `meeting_upload.enabled` (ENV — fallback под этот ключ).
+   */
+  MEETING_UPLOAD_ENABLED: zBool(true),
 });
 
 /** Базовые лимиты MVP. */

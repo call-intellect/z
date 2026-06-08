@@ -1763,6 +1763,18 @@ export class TypedConfigService {
         'RECORDING_COMPOSITE_RECONCILE_ENABLED',
         true,
       ),
+      /**
+       * Ручная загрузка встреч (ТЗ-5 Ф6) — аварийный рубильник `POST
+       * /meetings/upload`. AdminSetting `meeting_upload.enabled` →
+       * ENV `MEETING_UPLOAD_ENABLED` → default true (Ship-On, ON).
+       * Сервис читает тот же ключ через async `getDynamic` (см.
+       * MeetingUploadsService.assertUploadEnabled).
+       */
+      meetingUploadEnabled: this.resolveSync<boolean>(
+        'meeting_upload.enabled',
+        'MEETING_UPLOAD_ENABLED',
+        true,
+      ),
     } as const;
   }
 

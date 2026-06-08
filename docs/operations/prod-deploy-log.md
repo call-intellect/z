@@ -247,6 +247,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🎙️ 2026-06-08 — ТЗ-5: ручная загрузка встреч с диаризацией и разметкой спикеров
+
+> Контракт: `plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md` (Ф1–Ф6). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** новый канал — пользователь грузит готовое видео/аудио встречи (≤2 ГБ, любой формат) → ingest (ffmpeg-нормализация) → диаризация (Vox) → ручная разметка говорящих (сотрудник/внешний/исключить/слить) → AI-анализ как у обычной встречи. Новые BullMQ-очереди `meeting.upload-ingest` / `meeting.upload-transcribe` + воркеры. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (рубильник и квота — с code-fallback).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch** (рубильник работает на code-fallback; квота засеивается, см. Шаг 7):
+  - `MEETING_UPLOAD_ENABLED` (bool, **default true**, kill-switch ON) — аварийный рубильник `POST /meetings/upload`. При `false` создание новой загрузки → `UPLOAD_DISABLED` (уже принятые загрузки доезжают). Также переопределяется AdminSetting-ключом `meeting_upload.enabled` (ENV — fallback под него; читается sync `cfg.recording.meetingUploadEnabled` и async в `MeetingUploadsService.assertUploadEnabled`). Реестр флагов — `docs/operations/feature-flags.md`.
+  - `billing.meetingUploadsPerMonth` (AdminSetting, int, **default 20**) — месячный лимит ручных загрузок встреч на Org (≥ лимита → `UPLOAD_QUOTA_EXCEEDED`; отдельно от грантов `MeetingsBalance`). ENV-fallback `BILLING_MEETING_UPLOADS_PER_MONTH` (опц.). Зарегистрирован в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608220000_meeting_upload_diarization`): `+ enum MeetingSource (livekit|upload)`, `+ enum UploadSpeakerAssignment (unassigned|employee|external|excluded)`, `+ value 'awaiting_speakers'` в enum `MeetingStatus` (BEFORE `ai_processing`), `+ Meeting.source (default 'livekit')` / `+ Meeting.uploadNumSpeakersHint`, `+ persons.company` / `+ persons.jobTitle`, `+ table meeting_upload_speaker` (FK → `Meeting` ON DELETE CASCADE / `persons` ON DELETE SET NULL, unique (meetingId,label), индекс по meetingId), `+ индекс Meeting(tenantId, source, createdAt)`. Все изменения аддитивны (ADD VALUE / ADD COLUMN / CREATE TYPE / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-settings-billing.ts` пополнен ключом `billing.meetingUploadsPerMonth` (default 20, секция `tariff-standard`, severity medium). Защищает admin-edited (findUnique → skip). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-settings-billing.ts`). Без сидера квота работает на code-дефолте 20.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новые очереди `meeting.upload-ingest` / `meeting.upload-transcribe` + воркеры (ingest=ffmpeg-нормализация, transcribe=Vox-диаризация), `MeetingUploadsController` под `/api/v1/meetings`, эндпоинты загрузки/разметки спикеров; frontend Ф5 отдельно): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые очереди/воркеры в логах backend (без ERROR): `meeting.upload-ingest` и `meeting.upload-transcribe` — `curl -s localhost:3000/metrics | grep -E 'meeting.upload-ingest|meeting.upload-transcribe'` (или по логам старта воркеров).
+  - Новые REST: Swagger `/api/docs` → `POST /api/v1/meetings/upload`, `POST /api/v1/meetings/:id/upload/complete`, `GET /api/v1/meetings/:id/upload/playback`, `GET /api/v1/meetings/:id/speakers`, `PUT /api/v1/meetings/:id/speakers`, `POST /api/v1/meetings/:id/speakers/confirm`.
+  - Рубильник: `MEETING_UPLOAD_ENABLED`/`meeting_upload.enabled` = ON по умолчанию; квота `billing.meetingUploadsPerMonth` = 20 в `/admin/settings` (или code-fallback).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
 
 > Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.

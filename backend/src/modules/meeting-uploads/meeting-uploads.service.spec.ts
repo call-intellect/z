@@ -11,6 +11,7 @@ import { MeetingUploadsService } from './meeting-uploads.service';
 function make(setup: {
   uploadCount?: number;
   quotaLimit?: number;
+  uploadEnabled?: boolean;
 }): {
   service: MeetingUploadsService;
   prisma: any;
@@ -33,7 +34,13 @@ function make(setup: {
   } as unknown as S3Service;
 
   const cfg = {
-    getDynamic: vi.fn(async () => setup.quotaLimit ?? 20),
+    // Key-aware: kill-switch `meeting_upload.enabled` (bool) vs квота
+    // `billing.meetingUploadsPerMonth` (число). Дефолт kill-switch — ON.
+    getDynamic: vi.fn(async (key: string) =>
+      key === 'meeting_upload.enabled'
+        ? (setup.uploadEnabled ?? true)
+        : (setup.quotaLimit ?? 20),
+    ),
     s3: { bucket: 'z-records' },
     retention: { defaultDays: 30 },
   } as unknown as TypedConfigService;
@@ -141,6 +148,15 @@ describe('MeetingUploadsService.createUpload', () => {
 
     await expect(service.createUpload({ ...baseInput })).rejects.toMatchObject({
       response: { error: { code: 'UPLOAD_QUOTA_EXCEEDED' } },
+    });
+    expect((prisma as any).meeting.create).not.toHaveBeenCalled();
+  });
+
+  it('рубильник MEETING_UPLOAD_ENABLED=false → UPLOAD_DISABLED, Meeting не создаётся', async () => {
+    const { service, prisma } = make({ uploadEnabled: false });
+
+    await expect(service.createUpload({ ...baseInput })).rejects.toMatchObject({
+      response: { error: { code: 'UPLOAD_DISABLED' } },
     });
     expect((prisma as any).meeting.create).not.toHaveBeenCalled();
   });

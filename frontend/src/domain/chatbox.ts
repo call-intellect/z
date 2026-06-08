@@ -223,6 +223,7 @@ export type ChatboxMessageView = {
   senderType: ChatboxSenderTypeApi;
   senderRole: ChatboxSenderRole;
   senderName: string;
+  senderPersonId: string | null;
   contentType: ChatboxMessageApi['contentType'];
   text: string | null;
   imageUrl: string | null;
@@ -359,6 +360,7 @@ export function mapMessage(api: ChatboxMessageApi): ChatboxMessageView {
     senderType: api.senderType,
     senderRole: senderRoleOf(api.senderType),
     senderName: api.senderName ?? '',
+    senderPersonId: api.senderPersonId ?? null,
     contentType: api.contentType,
     text: api.text ?? null,
     imageUrl: api.imageUrl ?? null,

@@ -85,8 +85,9 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - **Фикс лимита сообщений:** `ChatboxMessagesQuerySchema.limit` max 200→**500** (страница чата грузит весь тред).
 - **Фикс jobId анализа:** `chatbox-analyze:${id}` → `chatbox-analyze-${id}` (BullMQ запрещает `:` в custom jobId).
 - **UX чата:** лента — скролл-контейнер фикс. высоты (не скролл страницы), пометка отправителя (Клиент/Менеджер/ИИ-бот/Контроль) + имя, повышен контраст пузырей, экспорт переписки в `.txt`. Фильтр мессенджера в списке чатов — Select (был free-text).
+- **Ссылка на профиль менеджера в сообщении:** `listMessages` резолвит `ChatboxMessage.senderExternalId` → `ChatboxMember.linkedPersonId` (батч, без N+1) и отдаёт `senderPersonId`; во фронте имя менеджера = ссылка на `/persons/[id]`. Клиент — пока без ссылки (у `ChatboxCustomer` нет страницы-профиля в Коре).
 
-**Не сделано (vNext):** кликабельная ссылка на профиль Person/Customer прямо в сообщении — нужно на бэке резолвить отправителя сообщения → `ChatboxMember.linkedPerson` / `Customer` и отдавать id (сейчас сообщение несёт только `senderType` + `senderName`).
+**Не сделано (vNext):** профиль/страница клиента (`ChatboxCustomer`) — сейчас клиент в сообщении только имя+бейдж, кликнуть некуда (нет роута карточки клиента).
 
 ## Границы MVP / что в vNext
 

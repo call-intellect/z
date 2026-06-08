@@ -105,6 +105,8 @@ export interface ChatMessageDto {
   id: string;
   senderType: string;
   senderName: string | null;
+  /** Person Коры, связанный с отправителем-менеджером (ссылка на профиль). null — нет связки/клиент. */
+  senderPersonId: string | null;
   contentType: string;
   text: string | null;
   imageUrl: string | null;

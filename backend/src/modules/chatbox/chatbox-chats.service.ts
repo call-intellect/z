@@ -254,10 +254,39 @@ export class ChatboxChatsService {
       this.prisma.chatboxMessage.count({ where }),
     ]);
 
+    // Резолв отправителей-менеджеров → Person Коры (кликабельный профиль).
+    // CLIENT не резолвим — у клиентов нет профиля-страницы. Батч, без N+1.
+    const managerExtIds = [
+      ...new Set(
+        messages
+          .filter((m) => m.senderType !== 'CLIENT' && m.senderExternalId)
+          .map((m) => m.senderExternalId as string),
+      ),
+    ];
+    const personByExtId = new Map<string, string>();
+    if (managerExtIds.length > 0) {
+      const members = await this.prisma.chatboxMember.findMany({
+        where: {
+          tenantId,
+          externalId: { in: managerExtIds },
+          linkedPersonId: { not: null },
+        },
+        select: { externalId: true, linkedPersonId: true },
+      });
+      for (const mem of members) {
+        if (mem.linkedPersonId)
+          personByExtId.set(mem.externalId, mem.linkedPersonId);
+      }
+    }
+
     const items: ChatMessageDto[] = messages.map((m) => ({
       id: m.id,
       senderType: m.senderType,
       senderName: m.senderName ?? null,
+      senderPersonId:
+        m.senderType !== 'CLIENT' && m.senderExternalId
+          ? (personByExtId.get(m.senderExternalId) ?? null)
+          : null,
       contentType: m.contentType,
       text: m.text ?? null,
       imageUrl: m.imageUrl ?? null,

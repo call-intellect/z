@@ -128,6 +128,8 @@ export type ChatboxMessageApi = {
   id: string;
   senderType: ChatboxSenderTypeApi;
   senderName: string | null;
+  /** Person Коры, связанный с отправителем-менеджером (ссылка на профиль). */
+  senderPersonId: string | null;
   contentType: ChatboxContentTypeApi;
   text: string | null;
   imageUrl: string | null;

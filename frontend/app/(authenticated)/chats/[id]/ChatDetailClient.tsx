@@ -367,9 +367,19 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
     <div className={`flex ${isManager ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass}`}>
         <div className="mb-1 flex items-center gap-1.5">
-          <span className="text-xs font-semibold">
-            {message.senderName || senderTypeLabel(message.senderType)}
-          </span>
+          {message.senderPersonId ? (
+            <Link
+              href={`/persons/${message.senderPersonId}`}
+              className="text-xs font-semibold underline-offset-2 hover:underline"
+              title="Открыть профиль сотрудника"
+            >
+              {message.senderName || senderTypeLabel(message.senderType)}
+            </Link>
+          ) : (
+            <span className="text-xs font-semibold">
+              {message.senderName || senderTypeLabel(message.senderType)}
+            </span>
+          )}
           <span
             className={`rounded-full px-1.5 py-px text-[10px] font-medium ${badgeClass}`}
           >

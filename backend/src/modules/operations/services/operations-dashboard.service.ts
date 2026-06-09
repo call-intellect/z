@@ -57,6 +57,30 @@ function makeEmptyInsightCauseAggregate(): InsightCauseCategoryAggregateDto {
   };
 }
 
+// Ф1 редизайн — недельный инфлоу для hero-графика и спарклайнов KPI.
+const WEEKLY_INFLOW_WEEKS = 12;
+const WEEKLY_INFLOW_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Раскладывает createdAt по 12 недельным bucket'ам (old→new). 0 событий в неделе → null. */
+export function bucketizeWeeklyInflow(
+  createdAts: Date[],
+  now: Date,
+  weeks: number = WEEKLY_INFLOW_WEEKS,
+): Array<number | null> {
+  const startMs = now.getTime() - weeks * WEEKLY_INFLOW_WEEK_MS;
+  const nowMs = now.getTime();
+  const counts = Array.from({ length: weeks }, () => 0);
+  for (const d of createdAts) {
+    const t = d.getTime();
+    if (t < startMs || t >= nowMs) continue;
+    const idx = Math.min(weeks - 1, Math.floor((t - startMs) / WEEKLY_INFLOW_WEEK_MS));
+    const current = counts[idx];
+    if (current === undefined) continue;
+    counts[idx] = current + 1;
+  }
+  return counts.map((c) => (c === 0 ? null : c));
+}
+
 /**
  * SBA β-8 — OperationsDashboardService.
  *
@@ -97,7 +121,8 @@ export class OperationsDashboardService {
     if (cached) return cached;
 
     // ТЗ-2 Ф2 — «зеркало закрытого» за последние 30 дней.
-    const since30 = new Date(Date.now() - 30 * 24 * 3_600_000);
+    const now = new Date();
+    const since30 = new Date(now.getTime() - 30 * 24 * 3_600_000);
 
     const [
       blockers,
@@ -110,6 +135,7 @@ export class OperationsDashboardService {
       blockersResolvedCount,
       frictionsResolvedCount,
       reworkEnabled,
+      weeklyInflow,
     ] = await Promise.all([
       this.fetchBlockers(args.tenantId, 100),
       this.fetchGoalsAgg(args.tenantId),
@@ -144,6 +170,8 @@ export class OperationsDashboardService {
         undefined,
         true,
       ),
+      // Ф1 редизайн — недельный инфлоу (12 недель) для hero-графика + спарклайнов KPI.
+      this.buildWeeklyInflow(args.tenantId, now),
     ]);
 
     const blockersBySeverity: Record<Severity, number> = {
@@ -183,6 +211,7 @@ export class OperationsDashboardService {
       teamTemperature: teamTemperatureSummary,
       insightsByCauseCategory,
       maturity,
+      weeklyInflow,
     };
 
     await this.cacheSet(cacheKey, dto);
@@ -722,6 +751,47 @@ export class OperationsDashboardService {
       stage: profile?.stage ?? null,
       weakestDomains: byAsc.slice(0, 3),
       topDomains: byDesc.slice(0, 3),
+    };
+  }
+
+  /**
+   * Ф1 редизайн — недельный инфлоу за 12 недель (old→new) для hero-графика
+   * и спарклайнов KPI. Источник РЕАЛЬНЫЙ:
+   *   - blockers — `BlockerSynthesis.createdAt`;
+   *   - frictions — `EntityLink(relationType='conflicted_with').createdAt`.
+   * Раскладка по неделям через чистую `bucketizeWeeklyInflow`; пустая
+   * неделя → null (конвенция как sparkline12w).
+   */
+  private async buildWeeklyInflow(
+    tenantId: string,
+    now: Date,
+  ): Promise<{ blockers: Array<number | null>; frictions: Array<number | null> }> {
+    const start = new Date(
+      now.getTime() - WEEKLY_INFLOW_WEEKS * WEEKLY_INFLOW_WEEK_MS,
+    );
+    const [blockerRows, frictionRows] = await Promise.all([
+      this.prisma.blockerSynthesis.findMany({
+        where: { tenantId, createdAt: { gte: start, lt: now } },
+        select: { createdAt: true },
+      }),
+      this.prisma.entityLink.findMany({
+        where: {
+          tenantId,
+          relationType: 'conflicted_with',
+          createdAt: { gte: start, lt: now },
+        },
+        select: { createdAt: true },
+      }),
+    ]);
+    return {
+      blockers: bucketizeWeeklyInflow(
+        blockerRows.map((r) => r.createdAt),
+        now,
+      ),
+      frictions: bucketizeWeeklyInflow(
+        frictionRows.map((r) => r.createdAt),
+        now,
+      ),
     };
   }
 

@@ -142,6 +142,17 @@ p, admin, *, *, chatbox, write
 p, admin, *, *, chatbox, manage
 p, manager, *, *, chatbox, read
 
+# Bitrix24-интеграция (2026-06-09) — ресурс bitrix. owner — full;
+# admin — read/write/manage; manager — read. super_admin — bypass.
+p, owner, *, *, bitrix, read
+p, owner, *, *, bitrix, write
+p, owner, *, *, bitrix, delete
+p, owner, *, *, bitrix, manage
+p, admin, *, *, bitrix, read
+p, admin, *, *, bitrix, write
+p, admin, *, *, bitrix, manage
+p, manager, *, *, bitrix, read
+
 # knowledge-core (Фаза 11) — person.erase. 152-ФЗ «право на удаление
 # личных данных»: только owner Org может инициировать. super_admin —
 # bypass через RbacService. admin / manager не получают это право.

@@ -1284,6 +1284,26 @@ export class TypedConfigService {
     return { apiBaseUrl: this.get('CHATBOX_API_BASE_URL').replace(/\/+$/, '') };
   }
 
+  // ─────────────────────────── bitrix24 (2026-06-09) ─────────────
+  /**
+   * Bitrix24 OAuth-креды тиражного приложения (единые на все порталы).
+   * `clientId`/`clientSecret` могут быть пустыми, пока app не зарегистрирован —
+   * сервис интеграции в этом случае бросает `bitrix_misconfigured`.
+   * `oauthBaseUrl` — сервер авторизации (без trailing slash), по умолчанию
+   * `https://oauth.bitrix.info`.
+   */
+  get bitrix(): {
+    clientId: string | undefined;
+    clientSecret: string | undefined;
+    oauthBaseUrl: string;
+  } {
+    return {
+      clientId: this.get('BITRIX_CLIENT_ID'),
+      clientSecret: this.get('BITRIX_CLIENT_SECRET'),
+      oauthBaseUrl: this.get('BITRIX_OAUTH_BASE_URL').replace(/\/+$/, ''),
+    };
+  }
+
   // ─────────────────────────── bot (SBA β-1 zero-button) ─────────
   /**
    * Master-flags zero-button inbound для Telegram/MAX-ботов.

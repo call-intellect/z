@@ -294,6 +294,16 @@ enum ChatboxIntegrationStatus {
   disconnected
 }
 
+/// Bitrix24-интеграция — состояние подключения.
+/// `pending` — установка из Маркета (ONAPPINSTALL) получена, но ещё не привязана
+/// к org Коры (ждёт claim из iframe-handler). Остальные — как у ChatBox.
+enum BitrixIntegrationStatus {
+  pending
+  connected
+  error
+  disconnected
+}
+
 /// Зеркало ChatBox Chat.status.
 enum ChatboxChatStatus {
   active
@@ -330,9 +340,9 @@ enum ChatboxSessionAnalysisStatus {
 
 /// Способ связи менеджера ChatBox с Person Коры.
 enum ChatboxMemberLinkMode {
-  auto   // совпал email
+  auto // совпал email
   manual // выбрано вручную
-  none   // не связан
+  none // не связан
 }
 
 /// Фаза A.1 — Prompt Registry (sub-TZ 2026-05-21-phase-A-prompt-registry-admin §4.1).
@@ -2487,8 +2497,8 @@ model Org {
   entitlement            OrgEntitlement?
 
   // ── Ф2 knowledge-access-groups (2026-06-06) ──
-  knowledgeGroups          KnowledgeGroup[]
-  groupVisibilityPolicies  GroupVisibilityPolicy[]
+  knowledgeGroups         KnowledgeGroup[]
+  groupVisibilityPolicies GroupVisibilityPolicy[]
 
   // ── Фаза 0 — каркас компании ──
   departments     Department[]
@@ -2740,6 +2750,9 @@ model Org {
   chatboxChatSessions   ChatboxChatSession[]
   chatboxMessages       ChatboxMessage[]
 
+  // ── Bitrix24-интеграция (plans/tz/2026-06-09-bitrix24-integration-install.md) ──
+  bitrixIntegrations BitrixIntegration[]
+
   @@index([ownerId])
   @@index([deletedAt])
 }
@@ -2828,17 +2841,18 @@ enum KnowledgeGroupKind {
 }
 
 model KnowledgeGroup {
-  id        String                 @id @default(cuid())
-  tenantId  String
-  kind      KnowledgeGroupKind
-  refId     String?                /// departmentId | personId | null
-  name      String                 @db.VarChar(200)
+  id         String                 @id @default(cuid())
+  tenantId   String
+  kind       KnowledgeGroupKind
+  refId      String? /// departmentId | personId | null
+  name       String                 @db.VarChar(200)
   /// Закрытая группа: видна ТОЛЬКО прямым членам, НЕ через матрицу отделов (вертикаль).
-  isClosed  Boolean                @default(false)
-  createdAt DateTime               @default(now())
-  org        Org                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  isClosed   Boolean                @default(false)
+  createdAt  DateTime               @default(now())
+  org        Org                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   members    KnowledgeGroupMember[]
   blockLinks IdeaBlockAccess[]
+
   @@unique([tenantId, kind, refId])
   @@index([tenantId, kind])
 }
@@ -2846,9 +2860,10 @@ model KnowledgeGroup {
 model KnowledgeGroupMember {
   groupId   String
   personId  String
-  source    String   @db.VarChar(10) /// 'auto' (из должности) | 'manual' (override)
-  createdAt DateTime @default(now())
+  source    String         @db.VarChar(10) /// 'auto' (из должности) | 'manual' (override)
+  createdAt DateTime       @default(now())
   group     KnowledgeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   @@id([groupId, personId])
   @@index([personId])
 }
@@ -2857,10 +2872,11 @@ model KnowledgeGroupMember {
 model IdeaBlockAccess {
   blockId   String
   groupId   String
-  via       String   @db.VarChar(12) /// 'department' (горизонталь) | 'closed' (вертикаль)
-  createdAt DateTime @default(now())
+  via       String         @db.VarChar(12) /// 'department' (горизонталь) | 'closed' (вертикаль)
+  createdAt DateTime       @default(now())
   block     IdeaBlock      @relation(fields: [blockId], references: [id], onDelete: Cascade)
   group     KnowledgeGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   @@id([blockId, groupId])
   @@index([groupId])
 }
@@ -2872,7 +2888,8 @@ model GroupVisibilityPolicy {
   subjectGroupId String
   visibleGroupId String
   createdAt      DateTime @default(now())
-  org            Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org            Org      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@unique([subjectGroupId, visibleGroupId])
   @@index([tenantId, subjectGroupId])
 }
@@ -3447,16 +3464,16 @@ model Entity {
   persons       Person[]
 
   /// SBA α-3 — обратные связи новых моделей категории A.
-  vendor     Vendor?     @relation("VendorEntity")
-  event      Event?      @relation("EventEntity")
-  goal       Goal?       @relation("GoalEntity")
-  document   Document?   @relation("DocumentEntity")
-  market     Market?     @relation("MarketEntity")
-  orgUnit    OrgUnit?    @relation("OrgUnitEntity")
+  vendor                Vendor?                @relation("VendorEntity")
+  event                 Event?                 @relation("EventEntity")
+  goal                  Goal?                  @relation("GoalEntity")
+  document              Document?              @relation("DocumentEntity")
+  market                Market?                @relation("MarketEntity")
+  orgUnit               OrgUnit?               @relation("OrgUnitEntity")
   /// SBA α-8 wave 2 — линковка с Role.
-  role       Role?       @relation("RoleEntity")
+  role                  Role?                  @relation("RoleEntity")
   /// SBA α-9 wave 2 — линковка с Department.
-  department Department? @relation("DepartmentEntity")
+  department            Department?            @relation("DepartmentEntity")
   /// TZ-1 Фаза 1 (daily-value-engine) — дневные снимки риска клиента
   /// (только для Entity{type=customer}).
   customerRiskSnapshots CustomerRiskSnapshot[] @relation("CustomerRiskSnapshotEntity")
@@ -4693,79 +4710,79 @@ model Role {
 /// `userId` NULL до accept'а приглашения. Membership создаётся атомарно с
 /// `Person.userId = currentUserId` в `POST /api/v1/orgs/:orgId/invitations/:token/accept`.
 model Person {
-  id                  String             @id @default(cuid())
-  tenantId            String
+  id                          String             @id @default(cuid())
+  tenantId                    String
   /// audit Б3 (2026-05-29) — источник записи. 'demo' для seed-данных демо-кабинета;
   /// null для боевых. Фильтр в `resetDemoWorkspace`.
-  externalSource      String?
+  externalSource              String?
   /// NULL до accept'а приглашения. После accept'а — атомарно линкуется с User.
-  userId              String?
-  name                String             @db.VarChar(200)
-  email               String             @db.VarChar(320)
+  userId                      String?
+  name                        String             @db.VarChar(200)
+  email                       String             @db.VarChar(320)
   /// Основной отдел для UI; для графовых связей `member_of` — через PersonRole.
-  primaryDepartmentId String?
+  primaryDepartmentId         String?
   /// Линковка с Entity{type=person} (см. EntityResolutionService, Фаза 0b §8.3).
-  entityId            String?
+  entityId                    String?
   /// SBA α-3 (2026-05-21) §4.3 — отношение Person ↔ Org. По умолчанию
   /// `external` (создан как контакт); patch-script проставит `employee`
   /// тем, у кого есть активный Membership.
-  relationship        PersonRelationship @default(external)
+  relationship                PersonRelationship @default(external)
   /// SBA β-2 (2026-05-21) — Knowledge Clone (Specialist 3.2). Структурированный
   /// кеш «что человек знает / опыт / типовые ответы по областям».
   /// Заполняется воркером `knowledge-clone-rebuild`. См. sub-TZ §4.
-  knowledgeProfile    Json?
+  knowledgeProfile            Json?
   /// SBA β-2 — момент последней успешной пересборки `knowledgeProfile`.
-  lastProfileBuildAt  DateTime?
+  lastProfileBuildAt          DateTime?
   /// SBA β-2 — версия профиля (инкремент при каждой успешной пересборке).
-  profileBuildVersion Int                @default(0)
+  profileBuildVersion         Int                @default(0)
   /// SBA β-8 (2026-05-23) — таймзона пользователя в формате IANA
   /// (например, "Europe/Moscow", "Asia/Yekaterinburg"). Используется
   /// `DailyCheckInPromptCron` для определения локального утра/вечера.
   /// Default `Europe/Moscow` — для NULL-ов проставляется
   /// `patch-person-timezone-default.ts`. Person может править через
   /// `/me/settings` (когда появится UI).
-  timezone            String?            @default("Europe/Moscow") @db.VarChar(64)
+  timezone                    String?            @default("Europe/Moscow") @db.VarChar(64)
   /// Pulse Wave 3 §3.3 — сводный engagement score от Engagement-Scorer cron.
   /// Decimal(4,3): 0..1, нормированный к личному baseline.
   /// NULL до первого прогона cron'а.
-  engagementScore     Decimal?           @db.Decimal(4, 3)
+  engagementScore             Decimal?           @db.Decimal(4, 3)
   /// Pulse Wave 3 §3.3 — когда последний раз пересчитывали engagement.
-  engagementScoreAt   DateTime?
+  engagementScoreAt           DateTime?
   /// Pulse Wave 3 §3.7 — рекомендации HR-Recommender (5 типов).
   /// Структура: { recommendations: Array<{type:
   /// 'praise'|'compensation_review'|'workload_check'|'development'|'urgent_talk',
   /// text: string, signals: string[], confidence: number}>, generatedAt: ISO }.
   /// NULL до первого weekly-прогона cron'а.
-  hrSuggestionsJson   Json?
+  hrSuggestionsJson           Json?
   /// Pulse Wave 4 §4.5 — активные risk-флаги (Burnout-Risk-Detector cron).
   /// Структура: { flags: Array<{type: string, severity: 'low'|'medium'|'high',
   /// baseline: number, current: number, explanation: string}>, generatedAt: ISO }.
   /// НЕ агрегируется в одну цифру — только список активных сигналов. NULL до
   /// первого прогона cron'а.
-  riskFlagsJson       Json?
+  riskFlagsJson               Json?
   /// Pulse Wave 4 §4.1 — opt-in 152-ФЗ на расширенную аналитику (sentiment, risk-signals).
   /// Без opt-in карточка показывает только базовые данные, без AI-выводов.
   /// Источник правды — последние записи `ConsentLog`; это поле — денормализация
   /// для быстрых guard'ов и фильтров (ставится `ConsentService.recordConsent`).
-  analyticsOptIn      Boolean            @default(false)
+  analyticsOptIn              Boolean            @default(false)
   /// Pulse Wave 4 §4.1 — когда дано последнее «полное» согласие.
-  analyticsOptInAt    DateTime?
+  analyticsOptInAt            DateTime?
   /// TZ-1 Фаза 0 (daily-value-engine) — состояние кампании привязки канала
   /// (Telegram-бот). NULL = ещё не приглашали, 'invited' = отправлено первое
   /// приглашение, 'reminded' = отправлено напоминание, 'bound' = есть verified
   /// telegram-binding. Управляется `ChannelBindingCampaignCron`.
-  channelBindingCampaignState String? @db.VarChar(20)
+  channelBindingCampaignState String?            @db.VarChar(20)
   /// TZ-1 Фаза 0 — когда отправлено первое приглашение привязать канал.
   channelBindingInvitedAt     DateTime?
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — компания/работодатель Person
   /// (для внешних контактов и обогащения карточки). NULL = неизвестно.
-  company             String?            @db.VarChar(200)
+  company                     String?            @db.VarChar(200)
   /// ТЗ-5 Ф1 — должность Person (для обогащения карточки при разметке
   /// спикеров загруженной встречи). NULL = неизвестно.
-  jobTitle            String?            @db.VarChar(200)
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  deletedAt           DateTime?
+  jobTitle                    String?            @db.VarChar(200)
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+  deletedAt                   DateTime?
 
   org                         Org                                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user                        User?                              @relation("UserPersons", fields: [userId], references: [id], onDelete: SetNull)
@@ -5016,9 +5033,9 @@ model Document {
   /// ТЗ-4 Ф1 — id batch-импорта (массовая загрузка); группирует документы одной операции.
   importBatchId     String?
 
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  deletedAt      DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   /// SBA α-3 — линковка с Entity{type=document} для графа знаний. Заполняется
   /// patch-backfill-entity-id-document.ts.
@@ -5079,11 +5096,11 @@ model DocumentImport {
   docType           DocumentType?
 
   /// S3-ключ архива; null если использован `zipInline`.
-  zipS3Key   String? @db.VarChar(500)
+  zipS3Key  String? @db.VarChar(500)
   /// Inline-байты архива; null если использован S3.
-  zipInline  Bytes?
+  zipInline Bytes?
   /// Размер архива в байтах (для логов/лимитов).
-  zipSize    Int     @default(0)
+  zipSize   Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -6061,23 +6078,23 @@ model Decision {
   /// TZ-1 Фаза 3.B (daily-value-engine) — денормализованный счётчик связанных
   /// задач (строк DecisionTaskLink). Обновляется backfill'ом и воркером.
   /// 0 + actualOutcomes IS NULL + старше N дней → контролёр помечает 'stalled'.
-  linkedTaskCount      Int       @default(0)
+  linkedTaskCount         Int       @default(0)
   /// TZ-1 Фаза 3.B — статус внедрения: 'not_started'|'in_progress'|'done'|
   /// 'stalled'. NULL до первого прогона контролёра.
-  implementationStatus String?   @db.VarChar(24)
+  implementationStatus    String?   @db.VarChar(24)
   /// TZ-1 Фаза 3.B — когда контролёр (`DecisionImplementationCron`) последний
   /// раз проверял внедрение решения.
   implementationCheckedAt DateTime?
 
-  org             Org             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  decidedBy       Person?         @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
-  sourceMeeting   Meeting?        @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
-  sourceIdeaBlock IdeaBlock?      @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
+  org             Org                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  decidedBy       Person?            @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
+  sourceMeeting   Meeting?           @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
+  sourceIdeaBlock IdeaBlock?         @relation(fields: [sourceIdeaBlockId], references: [id], onDelete: SetNull)
   // SBA β-3: self-relation supersede + CardVersion-current.
-  supersedes      Decision?       @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
-  supersededBy    Decision[]      @relation("DecisionSupersedes")
-  currentVersion  CardVersion?    @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
-  appliedPolicy   DecisionPolicy? @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
+  supersedes      Decision?          @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy    Decision[]         @relation("DecisionSupersedes")
+  currentVersion  CardVersion?       @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  appliedPolicy   DecisionPolicy?    @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
   /// TZ-1 Фаза 3.B — связи решение↔задача (join DecisionTaskLink).
   taskLinks       DecisionTaskLink[] @relation("DecisionTaskLinkDecision")
 
@@ -6920,18 +6937,18 @@ model DailyCheckIn {
 /// in_app они всё равно видны). Учёт — атомарный upsert по
 /// `(tenantId, personId, dateLocal)`.
 model NotificationBudgetLedger {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   tenantId   String
   personId   String
   /// YYYY-MM-DD по локальной TZ Person'а.
-  dateLocal  String   @db.VarChar(10)
+  dateLocal  String    @db.VarChar(10)
   /// Сколько push-уведомлений уже потрачено за этот локальный день.
-  sentCount  Int      @default(0)
+  sentCount  Int       @default(0)
   lastSentAt DateTime?
   /// Разбивка потраченного по eventType: { "checkin.prompt": 2, ... }.
-  byTrigger  Json     @default("{}")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  byTrigger  Json      @default("{}")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   tenant Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
@@ -6951,33 +6968,33 @@ model NotificationBudgetLedger {
 /// Идемпотентность — `@@unique([tenantId, customerEntityId, dateLocal])`:
 /// повторный прогон за тот же день перезаписывает снимок (upsert).
 model CustomerRiskSnapshot {
-  id               String @id @default(cuid())
-  tenantId         String
+  id                  String    @id @default(cuid())
+  tenantId            String
   /// Entity{type=customer}.id — клиент, по которому считается риск.
-  customerEntityId String
+  customerEntityId    String
   /// YYYY-MM-DD (МСК) — день снимка.
-  dateLocal        String @db.VarChar(10)
+  dateLocal           String    @db.VarChar(10)
   /// { churn_risk, objection, pain, feature_request } — счётчики за окно.
-  signalCounts     Json
+  signalCounts        Json
   /// Размер окна накопления в днях (на момент снимка; из AdminSetting).
-  windowDays       Int    @default(14)
+  windowDays          Int       @default(14)
   /// Взвешенная сумма сигналов: churn_risk*w1 + objection*w2 + pain*w3 +
   /// feature_request*w4. Веса — AdminSetting.
-  riskScore        Decimal @db.Decimal(8, 4)
+  riskScore           Decimal   @db.Decimal(8, 4)
   /// 'critical' | 'warning' | 'ok' — по порогам critical/warning (AdminSetting).
-  riskLevel        String  @db.VarChar(16)
+  riskLevel           String    @db.VarChar(16)
   /// До 20 IdeaBlock.id-источников (для drill-down).
-  topBlockIdsJson  Json
+  topBlockIdsJson     Json
   /// Ответственный менеджер (Person той же Org). NULL если не резолвится по
   /// сделке/Project.customerCardId→owner. НЕ выдумываем.
   responsiblePersonId String?
   /// Когда отправлен push ответственному менеджеру (NULL — не отправляли).
   deliveredManagerAt  DateTime?
-  snapshotAt          DateTime @default(now())
+  snapshotAt          DateTime  @default(now())
 
-  org             Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customerEntity  Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId], references: [id], onDelete: Cascade)
-  responsible     Person? @relation("CustomerRiskSnapshotResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+  org            Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerEntity Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId], references: [id], onDelete: Cascade)
+  responsible    Person? @relation("CustomerRiskSnapshotResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, customerEntityId, dateLocal])
   @@index([tenantId, riskLevel, snapshotAt(sort: Desc)])
@@ -7069,24 +7086,24 @@ model ValueRecapSnapshot {
 /// Идемпотентность — `@@unique([tenantId, clusterKey])`: повторный прогон за
 /// тот же день апдейтит существующий кластер (upsert), не плодит дубли.
 model BlockerSynthesis {
-  id                  String  @id @default(cuid())
+  id                  String   @id @default(cuid())
   tenantId            String
   /// Стабильный ключ кластера блокеров (детерминированный по нормализованному
   /// тексту/embedding-кластеру) — якорь идемпотентности между днями.
   clusterKey          String
   /// Репрезентативный текст кластера (самый свежий/частый блокер).
-  representativeText  String  @db.Text
+  representativeText  String   @db.Text
   /// 'new' | 'recurring' | 'resolved'.
-  status              String  @db.VarChar(20)
+  status              String   @db.VarChar(20)
   /// YYYY-MM-DD (МСК) — когда кластер впервые замечен.
-  firstSeenDateLocal  String  @db.VarChar(10)
+  firstSeenDateLocal  String   @db.VarChar(10)
   /// YYYY-MM-DD (МСК) — когда кластер последний раз замечен.
-  lastSeenDateLocal   String  @db.VarChar(10)
+  lastSeenDateLocal   String   @db.VarChar(10)
   /// Сколько дней кластер открыт (по календарю между first/last seen).
-  daysOpen            Int     @default(0)
+  daysOpen            Int      @default(0)
   /// Взвешенный бизнес-удар: выше, если блокер задевает customer/deadline/
   /// commitment. Веса — AdminSetting.
-  businessImpactScore Decimal @db.Decimal(8, 4)
+  businessImpactScore Decimal  @db.Decimal(8, 4)
   /// IdeaBlock.id-источники кластера (для drill-down).
   relatedBlockIdsJson Json
   /// Связанный Insight (создан/привязан мостом при recurring). NULL — не мостили.
@@ -7113,19 +7130,19 @@ model BlockerSynthesis {
 /// подсветка РУКОВОДИТЕЛЮ: «зона X на одном человеке, и он под риском ухода —
 /// продублируй / поговори». Носителю НИЧЕГО не уходит (этика).
 model KnowledgeAtRiskSnapshot {
-  id                 String  @id @default(cuid())
+  id                 String   @id @default(cuid())
   tenantId           String
   /// Категория знаний (= KnowledgeRiskSnapshot.categoryName).
   categoryName       String
   /// Соло-эксперт (Person той же Org), если резолвится. NULL — не определился.
   soleExpertPersonId String?
   /// Уровень bus-factor категории: 'critical' (0-1 эксперт) | 'warning' | 'ok'.
-  busFactorLevel     String  @db.VarChar(16)
+  busFactorLevel     String   @db.VarChar(16)
   /// Уровень риска ухода носителя из riskFlags/engagementScore:
   /// 'high' | 'medium' | 'low'. NULL — нет данных по носителю.
-  personRiskLevel    String? @db.VarChar(16)
+  personRiskLevel    String?  @db.VarChar(16)
   /// Совмещённая серьёзность (computeCombinedSeverity): 'critical' | 'warning' | 'ok'.
-  combinedSeverity   String  @db.VarChar(16)
+  combinedSeverity   String   @db.VarChar(16)
   snapshotAt         DateTime @default(now())
 
   org        Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -8554,24 +8571,24 @@ model Project {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  members         ProjectMember[]
-  issues          Issue[]
-  cycles          Cycle[]
-  states          IssueState[]
-  labels          Label[]
-  mailInboundLogs MailInboundLog[]
+  members           ProjectMember[]
+  issues            Issue[]
+  cycles            Cycle[]
+  states            IssueState[]
+  labels            Label[]
+  mailInboundLogs   MailInboundLog[]
   /// Tracker Boards (2026-05-27) — несколько досок per project (Weeek/Kaiten-паритет).
   /// При создании проекта одна доска isDefault=true создаётся автоматически
   /// (см. `BoardsService.ensureDefaultBoard` + `backfill-default-board.ts`).
-  boards          Board[]
+  boards            Board[]
   /// Tracker Project Documents (2026-05-27) — простые rich-text документы,
   /// привязанные к проекту (бриф, ТЗ, протокол, инструкция). См. модель
   /// `ProjectDocument` ниже и plans/tz/2026-05-27-tracker-project-documents.md.
-  documents       ProjectDocument[]
+  documents         ProjectDocument[]
   /// ТЗ-4 Ф1 — документы (Document), привязанные к этому проекту
   /// (Document.attachedProjectId). Имя поля `attachedDocuments`, т.к. `documents`
   /// уже занято под `ProjectDocument[]` (rich-text доки трекера).
-  attachedDocuments Document[]      @relation("DocumentProject")
+  attachedDocuments Document[]        @relation("DocumentProject")
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
@@ -9785,18 +9802,18 @@ model EmailTemplate {
 /// reportPromptKey — FK на PromptTemplate.key (без явной relation, чтобы
 /// можно было soft-rename промпта без миграции).
 model MeetingTypeConfig {
-  id              String   @id
-  displayName     String
-  description     String?
-  icon            String?
-  reportPromptKey String?
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
+  id                     String   @id
+  displayName            String
+  description            String?
+  icon                   String?
+  reportPromptKey        String?
+  isActive               Boolean  @default(true)
+  sortOrder              Int      @default(0)
   /// Ф2 knowledge-access — admin-editable дефолт закрытости для этого типа встречи.
   /// null = открыто; 'leadership' | 'council' | 'personal'. interview→'personal' (сид).
-  defaultClosedGroupKind String? @db.VarChar(20)
-  updatedBy       String?
-  updatedAt       DateTime @updatedAt
+  defaultClosedGroupKind String?  @db.VarChar(20)
+  updatedBy              String?
+  updatedAt              DateTime @updatedAt
 }
 
 /// SystemMessage — баннеры пользователю / maintenance-режим / алерты.
@@ -10997,24 +11014,24 @@ model PlatformSetting {
 
 /// ChatBox: конфиг интеграции org с app.agent-lia.ru. Один на org.
 model ChatboxIntegration {
-  id                String                   @id @default(cuid())
-  tenantId          String                   @unique
+  id                    String                   @id @default(cuid())
+  tenantId              String                   @unique
   /// AES-256-GCM (CryptoService). Никогда не возвращается plain в API.
-  tokenEnc          String                   @db.Text
-  workspaceId       String
-  workspaceName     String?
-  syncMode          ChatboxSyncMode          @default(daily)
+  tokenEnc              String                   @db.Text
+  workspaceId           String
+  workspaceName         String?
+  syncMode              ChatboxSyncMode          @default(daily)
   /// Включён ли AI-анализ переписок (LLM-summary сессий + мост в knowledge-core).
   /// По умолчанию ВЫКЛ — синк зеркалит чаты, но LLM не дёргаем, пока не включат.
-  analysisEnabled   Boolean                  @default(false)
-  status            ChatboxIntegrationStatus @default(connected)
-  lastError         String?                  @db.Text
-  webhookExternalId String?
-  webhookSecret     String?
+  analysisEnabled       Boolean                  @default(false)
+  status                ChatboxIntegrationStatus @default(connected)
+  lastError             String?                  @db.Text
+  webhookExternalId     String?
+  webhookSecret         String?
   lastFullSyncAt        DateTime?
   lastIncrementalSyncAt DateTime?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
@@ -11189,4 +11206,51 @@ model ChatboxMessage {
   @@unique([tenantId, externalId])
   @@index([tenantId, chatId, externalCreatedAt])
   @@index([tenantId, sessionId])
+}
+
+/// Bitrix24: конфиг подключения портала к org Коры.
+/// plans/tz/2026-06-09-bitrix24-integration-install.md.
+///
+/// Натуральный ключ — `memberId` (один портал Bitrix24 = одна запись). `tenantId`
+/// nullable: при установке из Маркета (ONAPPINSTALL) запись создаётся в статусе
+/// `pending` ДО привязки к org — её делает claim из iframe-handler. При OAuth-
+/// коннекте из Коры `tenantId` известен сразу (из подписанного state).
+///
+/// Инвариант приватности: токены (`*Enc`, AES-256-GCM через CryptoService)
+/// НИКОГДА не возвращаются plain в API — наружу только `hasTokens`.
+/// Уникальность «одна connected на org» обеспечивается на уровне сервиса.
+model BitrixIntegration {
+  id                  String                  @id @default(cuid())
+  /// member_id портала Bitrix24 (стабильный, не зависит от домена).
+  memberId            String                  @unique
+  /// Привязанная org Коры. null пока статус `pending` (установка из Маркета).
+  tenantId            String?
+  /// Домен портала, напр. `acme.bitrix24.ru`.
+  portalDomain        String
+  /// REST-эндпоинт портала из OAuth-ответа (для вызовов API), напр.
+  /// `https://acme.bitrix24.ru/rest/`.
+  clientEndpoint      String?
+  /// REST-эндпоинт сервера авторизации (`https://oauth.bitrix.info/rest/`).
+  serverEndpoint      String?
+  /// Выданные scope (comma-separated), как вернул OAuth.
+  scope               String?
+  /// AES-256-GCM. Никогда не возвращается plain в API.
+  accessTokenEnc      String                  @db.Text
+  /// AES-256-GCM. Живёт 180 дней; обновляется при refresh.
+  refreshTokenEnc     String                  @db.Text
+  /// application_token из ONAPPINSTALL — для проверки подлинности входящих
+  /// событий (особенно ONAPPUNINSTALL, где авторизации уже нет). AES-256-GCM.
+  applicationTokenEnc String?                 @db.Text
+  /// Момент протухания access_token (now + expires_in). null → считать протухшим.
+  accessExpiresAt     DateTime?
+  status              BitrixIntegrationStatus @default(pending)
+  lastError           String?                 @db.Text
+  lastConnectedAt     DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  org Org? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
 }

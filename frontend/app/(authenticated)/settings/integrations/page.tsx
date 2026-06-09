@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { BitrixIntegrationClient } from './BitrixIntegrationClient';
 import { DestinationsClient } from './DestinationsClient';
 
 export const metadata: Metadata = {
@@ -17,8 +18,11 @@ export const metadata: Metadata = {
  */
 export default function SettingsIntegrationsPage() {
   return (
-    <div className="w-full">
+    <div className="w-full space-y-6">
       <DestinationsClient />
+      <div className="mx-auto w-full max-w-3xl px-4">
+        <BitrixIntegrationClient />
+      </div>
     </div>
   );
 }

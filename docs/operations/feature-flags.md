@@ -65,6 +65,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `RECORDING_FASTSTART_ENABLED` | 🟢 ВКЛ | Видео встреч стартует в плеере сразу (без долгой «крутилки»). |
 | `graph.ageEnabled` / `GRAPH_AGE_ENABLED` | 🟢 ВКЛ | Граф знаний пишется в графовую базу. Выкл → только обычная база. |
 | `chatbox.enabled` | 🟢 ВКЛ | Синхронизация переписок ChatBox в память. Выкл → синк замирает. |
+| `bitrix.enabled` | 🟢 ВКЛ | Приём событий установки Bitrix24 (`ONAPPINSTALL`/`ONAPPUNINSTALL`). Выкл → install-handler отвечает 200 no-op (установки из Маркета не сохраняются). Не влияет на OAuth-коннект из Коры. |
 | `RECORDING_TRACK_RECONCILE_ENABLED` | 🟢 ВКЛ | Надёжная сверка аудиодорожек записи. |
 | `knowledge.subjectAttributionEnabled` | 🟢 ВКЛ | Привязка авторства знаний (оживление клонов). |
 | `knowledge.commitmentAuthorAttributionEnabled` | 🟢 ВКЛ | Привязка автора обещаний (план-факт). |

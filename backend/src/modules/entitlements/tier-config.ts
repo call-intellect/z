@@ -70,7 +70,13 @@ export type FeatureKey =
    * (app.agent-lia.ru): зеркало клиентских чатов → knowledge-core.
    * Core-фича памяти компании, включена на всех тарифах.
    */
-  | 'feature.chatbox';
+  | 'feature.chatbox'
+  /**
+   * ТЗ 2026-06-09-bitrix24-integration-install — интеграция с Bitrix24:
+   * установка портала + жизненный цикл OAuth-токена. Core-фича памяти
+   * компании, включена на всех тарифах.
+   */
+  | 'feature.bitrix';
 
 /** Все quota-ключи.
  *
@@ -124,6 +130,7 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.memory_regulations_for_members',
   'feature.memory_entities_for_members',
   'feature.chatbox',
+  'feature.bitrix',
 ] as const;
 
 /** Полный список квот. */
@@ -207,6 +214,9 @@ const BASIC_FEATURES: Record<FeatureKey, boolean> = {
   // ChatBox-интеграция — core-фича памяти компании, включена на всех тарифах
   // (PRO/ENTERPRISE/STANDARD наследуют через spread BASIC_FEATURES).
   'feature.chatbox': true,
+  // Bitrix24-интеграция — core-фича памяти компании, включена на всех тарифах
+  // (PRO/ENTERPRISE/STANDARD наследуют через spread BASIC_FEATURES).
+  'feature.bitrix': true,
   // ── всё остальное на basic — выключено ──
   'feature.theme': false,
   'feature.graph': false,

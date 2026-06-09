@@ -165,6 +165,9 @@ export const RESOURCE_TYPES = [
   // ChatBox-интеграция (2026-06-05) — конфиг интеграции org с app.agent-lia.ru,
   // зеркало клиентских чатов. ТЗ: plans/tz/2026-06-05-chatbox-integration.md.
   'chatbox',
+  // Bitrix24-интеграция (2026-06-09) — установка + жизненный цикл токена.
+  // ТЗ: plans/tz/2026-06-09-bitrix24-integration-install.md.
+  'bitrix',
 ] as const;
 
 export type ResourceType = (typeof RESOURCE_TYPES)[number];

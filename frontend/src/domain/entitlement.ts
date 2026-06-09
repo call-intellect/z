@@ -39,7 +39,9 @@ export type FeatureKey =
   | 'feature.memory_regulations_for_members'
   | 'feature.memory_entities_for_members'
   // ТЗ 2026-06-05 chatbox-integration — раздел «Чаты» и интеграция Чат бокса.
-  | 'feature.chatbox';
+  | 'feature.chatbox'
+  // ТЗ 2026-06-09 bitrix24-integration — подключение портала Bitrix24.
+  | 'feature.bitrix';
 
 export type QuotaKey =
   | 'meetings_per_month'
@@ -73,6 +75,7 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.memory_regulations_for_members',
   'feature.memory_entities_for_members',
   'feature.chatbox',
+  'feature.bitrix',
 ] as const;
 
 export const ALL_QUOTAS: readonly QuotaKey[] = [
@@ -125,6 +128,8 @@ export const FEATURE_MIN_TIER: Record<FeatureKey, TierKey> = {
   'feature.memory_entities_for_members': 'tier_basic',
   // ТЗ 2026-06-05 chatbox-integration — доступно на базовом тарифе.
   'feature.chatbox': 'tier_basic',
+  // ТЗ 2026-06-09 bitrix24-integration — доступно на базовом тарифе.
+  'feature.bitrix': 'tier_basic',
 };
 
 export const FEATURE_LABELS: Record<FeatureKey, string> = {
@@ -148,6 +153,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   'feature.memory_regulations_for_members': 'Правила/стандарты — для всех сотрудников',
   'feature.memory_entities_for_members': 'Сущности — для всех сотрудников',
   'feature.chatbox': 'Интеграция с Чат боксом',
+  'feature.bitrix': 'Интеграция с Bitrix24',
 };
 
 export const QUOTA_LABELS: Record<QuotaKey, string> = {

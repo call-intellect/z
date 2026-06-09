@@ -28,8 +28,11 @@ export type ChatboxChatsListQueryDto = z.infer<
 
 /** Query `GET /chatbox/chats/:id/messages` — пагинация. */
 export const ChatboxMessagesQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  // Порядок выдачи. 'desc' — для Telegram-style: грузим последние N, затем older
+  // по offset вверх. Default 'asc' (старые→новые) — обратная совместимость.
+  order: z.enum(['asc', 'desc']).optional(),
 });
 export type ChatboxMessagesQueryDto = z.infer<
   typeof ChatboxMessagesQuerySchema
@@ -104,6 +107,8 @@ export interface ChatMessageDto {
   id: string;
   senderType: string;
   senderName: string | null;
+  /** Person Коры, связанный с отправителем-менеджером (ссылка на профиль). null — нет связки/клиент. */
+  senderPersonId: string | null;
   contentType: string;
   text: string | null;
   imageUrl: string | null;

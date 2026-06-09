@@ -42,8 +42,25 @@ export class ChatboxAnalyzeCron {
         return;
       }
 
+      // Гейт по per-integration тумблеру: анализируем ТОЛЬКО орги, где
+      // analysisEnabled=true. Пока выключено — синк зеркалит чаты, но LLM
+      // (summary + мост в knowledge-core) не дёргаем.
+      const enabledIntegrations = await this.prisma.chatboxIntegration.findMany({
+        where: { analysisEnabled: true },
+        select: { tenantId: true },
+      });
+      const enabledTenantIds = enabledIntegrations.map((i) => i.tenantId);
+      if (enabledTenantIds.length === 0) {
+        this.logger.debug('analyze-sweep: нет интеграций с включённым анализом — пропуск');
+        return;
+      }
+
       const sessions = await this.prisma.chatboxChatSession.findMany({
-        where: { analysisStatus: 'pending', endedAt: { not: null } },
+        where: {
+          analysisStatus: 'pending',
+          endedAt: { not: null },
+          tenantId: { in: enabledTenantIds },
+        },
         select: { id: true, tenantId: true },
         take: SWEEP_BATCH,
         orderBy: { endedAt: 'asc' },

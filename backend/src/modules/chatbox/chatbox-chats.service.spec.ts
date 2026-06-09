@@ -5,6 +5,7 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxChatsService } from './chatbox-chats.service';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
+import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
 /**
  * Детерминированные unit-тесты ChatboxChatsService: Prisma / ChatboxApiClient /
@@ -53,10 +54,14 @@ function makeService(
   };
   const client = { sendMessage: vi.fn(), ...over.client };
   const integration = { getConfigForSync: vi.fn(), ...over.integration };
+  const analyzeQueue = {
+    enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }),
+  };
   const service = new ChatboxChatsService(
     prisma as unknown as PrismaService,
     client as unknown as ChatboxApiClient,
     integration as unknown as ChatboxIntegrationService,
+    analyzeQueue as unknown as ChatboxAnalyzeQueueService,
   );
   return { service, prisma, client, integration };
 }

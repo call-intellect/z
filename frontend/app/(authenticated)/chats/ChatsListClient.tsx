@@ -17,7 +17,6 @@ import {
 } from '@/domain/chatbox';
 import { TierGate } from '@/ui/components/TierGate';
 import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import {
   Select,
@@ -28,6 +27,8 @@ import {
 } from '@/ui/shadcn/select';
 
 const PAGE_SIZE = 30;
+// Radix Select не принимает пустую строку как value — сентинел для «все мессенджеры».
+const ALL_CHANNELS = '__all__';
 
 type StatusFilter = 'all' | ChatboxChatStatusApi;
 
@@ -74,6 +75,16 @@ function ChatsListContent() {
   const total = data?.total ?? 0;
   const hasMore = items.length < total;
 
+  // Опции мессенджеров — из реально встреченных типов в загруженных чатах
+  // (+ текущий выбор, чтобы не пропадал при фильтрации). Типы динамические
+  // (ChatBox добавляет новые), поэтому строим из данных, а не из фикс-списка.
+  const channelTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of items) if (c.channelType) set.add(c.channelType);
+    if (channelType) set.add(channelType);
+    return [...set].sort();
+  }, [items, channelType]);
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -110,12 +121,22 @@ function ChatsListContent() {
             <SelectItem value="closed">Закрытые</SelectItem>
           </SelectContent>
         </Select>
-        <Input
-          value={channelType}
-          onChange={(e) => setChannelType(e.target.value)}
-          placeholder="Тип мессенджера (напр. TELEGRAM)"
-          className="w-64"
-        />
+        <Select
+          value={channelType || ALL_CHANNELS}
+          onValueChange={(v) => setChannelType(v === ALL_CHANNELS ? '' : v)}
+        >
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Все мессенджеры" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_CHANNELS}>Все мессенджеры</SelectItem>
+            {channelTypeOptions.map((t) => (
+              <SelectItem key={t} value={t}>
+                {chatboxChannelTypeLabel(t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading && !data && (

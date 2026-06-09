@@ -120,6 +120,22 @@ export class ChatboxChatsController {
     return { ok: true, id: messageId };
   }
 
+  @Post(':id/analyze')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Ручной запуск AI-анализа по чату (закрытые pending-сессии)',
+  })
+  async analyze(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; enqueued: number }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    const { enqueued } = await this.service.analyzeChat(t, id);
+    return { ok: true, enqueued };
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {

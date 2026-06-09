@@ -37,6 +37,49 @@ import type {
 export class ChatboxIntegrationService {
   private readonly logger = new Logger(ChatboxIntegrationService.name);
 
+  /**
+   * Роли воркспейса, которыми владелец токена реально УПРАВЛЯЕТ. Реселлерский
+   * токен видит сотни чужих воркспейсов с ролью `USER` (просто видимость) —
+   * их в выбор не отдаём, иначе нельзя найти/подключить свой. Оставляем только
+   * `OWNER`/`ADMIN`.
+   */
+  private static readonly OWNED_ROLES = new Set(['OWNER', 'ADMIN']);
+
+  /** Размер страницы при переборе воркспейсов ChatBox. */
+  private static readonly WORKSPACES_PAGE = 100;
+
+  /**
+   * Перебрать ВСЕ страницы воркспейсов токена (ChatBox отдаёт `{workspaces,total}`
+   * с `limit`/`offset`) и вернуть только те, где владелец токена — OWNER/ADMIN.
+   * Бросает `ChatboxApiError` наружу — вызывающий маппит через `mapClientError`.
+   */
+  private async fetchOwnedWorkspaces(
+    token: string,
+  ): Promise<ChatboxWorkspace[]> {
+    const page = ChatboxIntegrationService.WORKSPACES_PAGE;
+    const all: ChatboxWorkspace[] = [];
+    let offset = 0;
+    let total = Number.POSITIVE_INFINITY;
+
+    // Жёсткий потолок итераций — страховка от кривого `total` у апстрима.
+    for (let i = 0; i < 1000 && offset < total; i++) {
+      const res = await this.client.listWorkspaces(token, { limit: page, offset });
+      const batch = res.workspaces ?? [];
+      all.push(...batch);
+      total = typeof res.total === 'number' ? res.total : all.length;
+      if (batch.length === 0) break;
+      offset += batch.length;
+    }
+
+    const owned = all.filter((w) =>
+      ChatboxIntegrationService.OWNED_ROLES.has((w.role ?? '').toUpperCase()),
+    );
+    this.logger.debug(
+      `fetchOwnedWorkspaces: всего=${all.length}, своих(OWNER/ADMIN)=${owned.length}`,
+    );
+    return owned;
+  }
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(CryptoService) private readonly crypto: CryptoService,
@@ -61,8 +104,7 @@ export class ChatboxIntegrationService {
   async listWorkspaces(token: string): Promise<ChatboxWorkspaceDto[]> {
     let workspaces: ChatboxWorkspace[];
     try {
-      const res = await this.client.listWorkspaces(token, { limit: 200 });
-      workspaces = res.workspaces ?? [];
+      workspaces = await this.fetchOwnedWorkspaces(token);
     } catch (err) {
       throw this.mapClientError(err);
     }
@@ -98,11 +140,10 @@ export class ChatboxIntegrationService {
       throw this.tokenInvalid('Токен ChatBox не передан');
     }
 
-    // Валидация токена + проверка доступности выбранного воркспейса.
+    // Валидация токена + проверка, что выбранный воркспейс — СВОЙ (OWNER/ADMIN).
     let workspaces: ChatboxWorkspace[];
     try {
-      const res = await this.client.listWorkspaces(plainToken, { limit: 200 });
-      workspaces = res.workspaces ?? [];
+      workspaces = await this.fetchOwnedWorkspaces(plainToken);
     } catch (err) {
       throw this.mapClientError(err);
     }
@@ -112,7 +153,8 @@ export class ChatboxIntegrationService {
         ok: false,
         error: {
           code: 'chatbox_workspace_not_found',
-          message: 'Выбранный воркспейс недоступен для этого токена',
+          message:
+            'Выбранный воркспейс недоступен для этого токена (нужна роль OWNER/ADMIN)',
         },
       });
     }
@@ -130,6 +172,7 @@ export class ChatboxIntegrationService {
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
         syncMode: dto.syncMode,
+        analysisEnabled: dto.analysisEnabled ?? false,
         status: 'connected',
         lastError: null,
       },
@@ -138,6 +181,10 @@ export class ChatboxIntegrationService {
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
         syncMode: dto.syncMode,
+        // Меняем только если явно передали — иначе сохранение syncMode не сбросит флаг.
+        ...(dto.analysisEnabled !== undefined
+          ? { analysisEnabled: dto.analysisEnabled }
+          : {}),
         status: 'connected',
         lastError: null,
       },
@@ -315,6 +362,7 @@ export class ChatboxIntegrationService {
       workspaceId: row.workspaceId,
       workspaceName: row.workspaceName ?? null,
       syncMode: row.syncMode,
+      analysisEnabled: row.analysisEnabled,
       status: row.status,
       lastError: row.lastError ?? null,
       lastFullSyncAt: row.lastFullSyncAt?.toISOString() ?? null,

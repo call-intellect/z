@@ -27,6 +27,8 @@ export const ChatboxIntegrationUpsertSchema = z.object({
   token: z.string().trim().min(10).optional(),
   workspaceId: z.string().trim().min(1),
   syncMode: SyncModeSchema,
+  /** Включить AI-анализ переписок (LLM-summary + knowledge-core). Default false. */
+  analysisEnabled: z.boolean().optional(),
 });
 export type ChatboxIntegrationUpsertDto = z.infer<
   typeof ChatboxIntegrationUpsertSchema
@@ -58,6 +60,7 @@ export interface ChatboxIntegrationResponseDto {
   workspaceId: string;
   workspaceName: string | null;
   syncMode: ChatboxSyncMode;
+  analysisEnabled: boolean;
   status: string;
   lastError: string | null;
   lastFullSyncAt: string | null;

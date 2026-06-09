@@ -75,9 +75,23 @@ knowledge-core (block-ingest подхватывает RawEvent сам, без и
 - Kill-switch `AdminSetting chatbox.enabled` (дефолт true; false → синк-кроны и webhook молча no-op).
 - Feature-flag тарифа `feature.chatbox` (дефолт OFF) гейтит и API, и пункт меню.
 
+## Обновления (2026-06-08, ветка `chatboxFix`)
+
+Доработки по факту использования (dev-прогон владельцем):
+
+- **Тумблер AI-анализа per-integration.** Новое поле `ChatboxIntegration.analysisEnabled` (Boolean, **default false**, миграция `20260608200000_chatbox_analysis_enabled`). Крон анализа ([chatbox-analyze.cron.ts](../../backend/src/modules/chatbox/chatbox-analyze.cron.ts)) метёт сессии **только** для оргов с `analysisEnabled=true`. Смысл: синк зеркалит чаты всегда, но LLM (summary + мост в knowledge-core) не дёргается, пока владелец не включит анализ в UI. Тумблер в карточке «AI-анализ переписок» на странице интеграции.
+- **Создание сотрудника из менеджера.** `POST /chatbox/members/:id/create-person` — создаёт `Person` из ChatBox-менеджера через `PersonsService.create` и привязывает (`linkMode='manual'`). Дедуп по email: если Person с таким email уже есть — связывает существующего, дубль не плодит. **Это ослабляет прежний инвариант «в Person ничего не пишем»** — теперь пишем, но только по явному действию владельца. UI — кнопка «Создать сотрудника» у несвязанных менеджеров.
+- **Фикс контракта воркспейсов:** бэк отдаёт голый массив (фронт ждал `{workspaces}`); `listWorkspaces`/`upsert` теперь перебирают **все страницы** и оставляют только **OWNER/ADMIN** (реселлерский токен видит сотни чужих `USER`-воркспейсов).
+- **Фикс лимита сообщений:** `ChatboxMessagesQuerySchema.limit` max 200→**500** (страница чата грузит весь тред).
+- **Фикс jobId анализа:** `chatbox-analyze:${id}` → `chatbox-analyze-${id}` (BullMQ запрещает `:` в custom jobId).
+- **UX чата:** лента — скролл-контейнер фикс. высоты (не скролл страницы), пометка отправителя (Клиент/Менеджер/ИИ-бот/Контроль) + имя, повышен контраст пузырей, экспорт переписки в `.txt`. Фильтр мессенджера в списке чатов — Select (был free-text).
+- **Ссылка на профиль менеджера в сообщении:** `listMessages` резолвит `ChatboxMessage.senderExternalId` → `ChatboxMember.linkedPersonId` (батч, без N+1) и отдаёт `senderPersonId`; во фронте имя менеджера = ссылка на `/persons/[id]`. Клиент — пока без ссылки (у `ChatboxCustomer` нет страницы-профиля в Коре).
+
+**Не сделано (vNext):** профиль/страница клиента (`ChatboxCustomer`) — сейчас клиент в сообщении только имя+бейдж, кликнуть некуда (нет роута карточки клиента).
+
 ## Границы MVP / что в vNext
 
-**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, cron + inbound webhook, мост в knowledge-core + LLM-summary, исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров.
+**Входит:** API-клиент, CRUD интеграции, движок синка + сессии, cron + inbound webhook, мост в knowledge-core + LLM-summary (гейт `analysisEnabled`), исходящая отправка текста, веб-просмотр чатов с бейджами, автосвязка/маппинг менеджеров + создание Person из менеджера.
 
 **Не входит (vNext, см. ТЗ §«Не входит» и реестр [[../04_не-сделано/README|не-сделано]]):**
 - Создание чата с нуля из Коры (`POST /chats` ChatBox) — только отправка в существующий.

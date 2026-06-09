@@ -18,6 +18,7 @@ export type ChatboxIntegrationApi = {
   workspaceId: string;
   workspaceName: string;
   syncMode: ChatboxSyncMode;
+  analysisEnabled: boolean;
   status: ChatboxStatus;
   lastError: string | null;
   lastFullSyncAt: string | null;
@@ -59,6 +60,7 @@ export type SaveChatboxIntegrationRequest = {
   token?: string;
   workspaceId: string;
   syncMode: ChatboxSyncMode;
+  analysisEnabled?: boolean;
 };
 
 // --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
@@ -126,6 +128,8 @@ export type ChatboxMessageApi = {
   id: string;
   senderType: ChatboxSenderTypeApi;
   senderName: string | null;
+  /** Person Коры, связанный с отправителем-менеджером (ссылка на профиль). */
+  senderPersonId: string | null;
   contentType: ChatboxContentTypeApi;
   text: string | null;
   imageUrl: string | null;
@@ -162,6 +166,7 @@ export type ListChatsQuery = {
 export type ListMessagesQuery = {
   limit?: number;
   offset?: number;
+  order?: 'asc' | 'desc';
 };
 
 function buildQuery(q?: Record<string, string | number | undefined>): string {
@@ -179,8 +184,9 @@ export const chatboxApi = {
   getIntegration: () =>
     apiClient.get<ChatboxIntegrationApi | null>('/api/v1/chatbox/integration'),
 
+  // Бэк отдаёт голый массив воркспейсов (уже отфильтрованных по OWNER/ADMIN).
   listWorkspaces: (token: string) =>
-    apiClient.post<{ workspaces: ChatboxWorkspaceApi[]; total: number }>(
+    apiClient.post<ChatboxWorkspaceApi[]>(
       '/api/v1/chatbox/integration/workspaces',
       { token },
     ),
@@ -223,6 +229,13 @@ export const chatboxApi = {
       { text },
     ),
 
+  // Ручной запуск AI-анализа по чату (закрытые pending-сессии).
+  analyzeChat: (id: string) =>
+    apiClient.post<{ ok: true; enqueued: number }>(
+      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/analyze',
+      {},
+    ),
+
   // --- Менеджеры → сотрудники (Фаза 9) ---
 
   listMembers: () =>
@@ -232,5 +245,12 @@ export const chatboxApi = {
     apiClient.put<{ ok: true; member: ChatboxMemberApi }>(
       '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/link',
       { personId },
+    ),
+
+  // Создать сотрудника Коры из менеджера ChatBox и сразу привязать.
+  createMemberPerson: (id: string) =>
+    apiClient.post<{ ok: true; member: ChatboxMemberApi }>(
+      '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/create-person',
+      {},
     ),
 };

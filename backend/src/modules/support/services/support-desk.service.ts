@@ -15,6 +15,25 @@ import { SupportAccessService } from './support-access.service';
 /** Максимум тикетов в одной странице очереди (Ф1 — без keyset-cursor). */
 const DESK_PAGE_SIZE = 50;
 
+/** Идентификатор Support-проекта (systemGenerated) в вендор-Org. */
+const SUPPORT_PROJECT_IDENTIFIER = 'SUP';
+
+export interface DeskMetaState {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface DeskMetaAgent {
+  userId: string;
+  name: string;
+}
+
+export interface DeskMeta {
+  states: DeskMetaState[];
+  agents: DeskMetaAgent[];
+}
+
 export interface DeskTicketListItem {
   ticketId: string;
   ticketNumber: string;
@@ -325,6 +344,61 @@ export class SupportDeskService {
       });
     });
     return { ok: true };
+  }
+
+  /**
+   * Справочники деска для UI: статусы Support-проекта (для смены статуса) и
+   * сотрудники контура поддержки (для назначения). Всё в scope вендор-Org.
+   */
+  async getMeta(): Promise<DeskMeta> {
+    const vendorOrgId = await this.requireVendorOrg();
+
+    // Статусы Support-проекта, по порядку (sequence).
+    const project = await this.prisma.project.findFirst({
+      where: {
+        tenantId: vendorOrgId,
+        systemGenerated: true,
+        identifier: SUPPORT_PROJECT_IDENTIFIER,
+      },
+      select: { id: true },
+    });
+    const states: DeskMetaState[] = project
+      ? (
+          await this.prisma.issueState.findMany({
+            where: { projectId: project.id },
+            orderBy: { sequence: 'asc' },
+            select: { id: true, name: true, category: true },
+          })
+        ).map((s) => ({ id: s.id, name: s.name, category: s.category }))
+      : [];
+
+    // Сотрудники контура поддержки → {userId,name} (только с привязанным User).
+    const agents: DeskMetaAgent[] = [];
+    const groupId = await this.access.getSupportGroupId(vendorOrgId);
+    if (groupId) {
+      const members = await this.prisma.knowledgeGroupMember.findMany({
+        where: { groupId },
+        select: { personId: true },
+      });
+      if (members.length > 0) {
+        const persons = await this.prisma.person.findMany({
+          where: {
+            id: { in: members.map((m) => m.personId) },
+            userId: { not: null },
+            deletedAt: null,
+          },
+          select: { userId: true, name: true },
+        });
+        const seen = new Set<string>();
+        for (const p of persons) {
+          if (!p.userId || seen.has(p.userId)) continue;
+          seen.add(p.userId);
+          agents.push({ userId: p.userId, name: p.name });
+        }
+      }
+    }
+
+    return { states, agents };
   }
 
   // ─────────────────────────── internal ───────────────────────────

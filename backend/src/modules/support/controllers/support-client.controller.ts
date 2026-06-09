@@ -26,6 +26,7 @@ import {
   type CreateTicketDto,
 } from '../dto/create-ticket.dto';
 import { RateTicketSchema, type RateTicketDto } from '../dto/rate-ticket.dto';
+import { SupportAccessService } from '../services/support-access.service';
 import { SupportIntakeService } from '../services/support-intake.service';
 
 /**
@@ -46,7 +47,17 @@ export class SupportClientController {
   constructor(
     @Inject(SupportIntakeService)
     private readonly intake: SupportIntakeService,
+    @Inject(SupportAccessService)
+    private readonly access: SupportAccessService,
   ) {}
+
+  @Get('me')
+  @ApiOperation({ summary: 'Статус поддержки для текущего пользователя' })
+  async me(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ deskEnabled: boolean; isAgent: boolean }> {
+    return this.access.getStatus(user.id);
+  }
 
   @Post('tickets')
   @HttpCode(201)

@@ -9,6 +9,7 @@ import {
   CommandPaletteProvider,
 } from '@/ui/components/command-palette';
 import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton';
+import { SupportWidgetMount } from '@/ui/support/SupportWidgetMount';
 import { PaywallBanner } from '@/ui/components/PaywallBanner';
 import { PaywallModal } from '@/ui/components/PaywallModal';
 import { ReferralPromoStrip } from '@/ui/components/app-shell/ReferralPromoStrip';
@@ -73,6 +74,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             Таблицах. Единственная плавающая кнопка — «Помощник компании»
             (AssistantSidebar в AuthenticatedShell). */}
         <ConciergeFloatingButton />
+
+        {/* Служба поддержки (ТЗ 2026-06-09 support-desk Ф1) — плавающий виджет
+            создания обращения. Показывается только когда деск настроен
+            (useSupportStatus().deskEnabled); FAB поднят над «Помощником». */}
+        <SupportWidgetMount />
       </div>
     </CommandPaletteProvider>
   );

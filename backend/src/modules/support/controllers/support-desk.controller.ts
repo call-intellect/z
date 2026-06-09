@@ -47,6 +47,15 @@ export class SupportDeskController {
     @Inject(SupportDeskService) private readonly desk: SupportDeskService,
   ) {}
 
+  @Get('meta')
+  @ApiOperation({ summary: 'Справочники деска (статусы + сотрудники)' })
+  async meta(): Promise<{
+    states: { id: string; name: string; category: string }[];
+    agents: { userId: string; name: string }[];
+  }> {
+    return this.desk.getMeta();
+  }
+
   @Get('tickets')
   @ApiOperation({ summary: 'Очередь тикетов деска (по view)' })
   async list(

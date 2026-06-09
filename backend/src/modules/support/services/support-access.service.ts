@@ -48,6 +48,20 @@ export class SupportAccessService {
     }
   }
 
+  /**
+   * Статус поддержки для текущего пользователя — для фронта (виджет/сайдбар).
+   * `deskEnabled` = флаг включён И вендор-Org задан (иначе виджет не показываем).
+   * `isAgent` = член контура поддержки (сотрудник деска).
+   */
+  async getStatus(
+    userId: string,
+  ): Promise<{ deskEnabled: boolean; isAgent: boolean }> {
+    const vendorOrgId = await this.getVendorOrgId();
+    const deskEnabled = this.cfg.supportDesk.enabled && !!vendorOrgId;
+    const isAgent = await this.isAgent(userId);
+    return { deskEnabled, isAgent };
+  }
+
   /** ID синглтон-группы контура поддержки в вендор-Org. null если нет. */
   async getSupportGroupId(vendorOrgId: string): Promise<string | null> {
     try {

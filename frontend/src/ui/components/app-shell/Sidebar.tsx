@@ -27,6 +27,7 @@ import {
   IdCard,
   Inbox,
   Lightbulb,
+  LifeBuoy,
   ListChecks,
   Lock,
   LogOut,
@@ -82,6 +83,9 @@ import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
 // Action Center B1 — живой бейдж pending-подтверждений у пункта «Подтверждения».
 import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
 import { useMemoryAccess } from '@/hooks/useMemoryAccess';
+// ТЗ 2026-06-09 support-desk — пункт «Поддержка» (только сотрудники деска) и
+// «Мои обращения» (всем, когда деск настроен).
+import { useSupportStatus } from '@/hooks/useSupportStatus';
 // ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
 import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
 import {
@@ -430,6 +434,30 @@ const INTAKE_NAV_ITEM: NavItem = {
   overviewTarget: 'overview.intake',
 };
 
+/**
+ * ТЗ 2026-06-09 support-desk — «Поддержка» (очередь деска) виден ТОЛЬКО
+ * сотрудникам поддержки (useSupportStatus().isAgent). Инжектится отдельной
+ * группой в Sidebar.
+ */
+const SUPPORT_DESK_NAV_ITEM: NavItem = {
+  href: '/support/desk',
+  label: 'Поддержка',
+  icon: LifeBuoy,
+  matchPrefix: '/support/desk',
+};
+
+/**
+ * «Мои обращения» — личный вход в свои тикеты поддержки. Добавляется в
+ * «Моё пространство», когда деск настроен (useSupportStatus().deskEnabled).
+ * Основной вход всё равно — плавающий виджет.
+ */
+const MY_TICKETS_NAV_ITEM: NavItem = {
+  href: '/support/my-tickets',
+  label: 'Мои обращения',
+  icon: LifeBuoy,
+  matchPrefix: '/support/my-tickets',
+};
+
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
   // /settings/integrations теперь = outbound-направления доставки (DestinationsClient).
@@ -465,6 +493,10 @@ export function Sidebar({
   // который пользователь ещё не видел (сравнение по количеству grants
   // в localStorage). Тушится при заходе на /clones.
   const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
+
+  // ТЗ 2026-06-09 support-desk — статус поддержки: deskEnabled → показываем
+  // «Мои обращения» всем; isAgent → отдельная группа «Поддержка» (очередь).
+  const support = useSupportStatus();
 
   // Динамические admin-пункты (Фаза 7) — отдельная подгруппа в «Настройках».
   const adminItems: NavItem[] = [];
@@ -523,13 +555,18 @@ export function Sidebar({
   })();
 
   // Action Center B1 — инжектим живой badgeCount в пункт «Подтверждения».
+  // ТЗ 2026-06-09 support-desk — если деск настроен, добавляем «Мои обращения»
+  // (личный вход в свои тикеты). Основной вход — плавающий виджет.
   const meGroup: NavGroup = {
     ...ME_GROUP,
-    items: ME_GROUP.items.map((it) =>
-      it.href === '/actions'
-        ? { ...it, badgeCount: pendingActionsTotal }
-        : it,
-    ),
+    items: [
+      ...ME_GROUP.items.map((it) =>
+        it.href === '/actions'
+          ? { ...it, badgeCount: pendingActionsTotal }
+          : it,
+      ),
+      ...(support.deskEnabled ? [MY_TICKETS_NAV_ITEM] : []),
+    ],
   };
 
   // ТЗ 2026-05-26 §6 — фильтруем пункты «Памяти компании» в зависимости от
@@ -563,6 +600,13 @@ export function Sidebar({
     };
   })();
 
+  // ТЗ 2026-06-09 support-desk — отдельная группа «Поддержка» (очередь деска)
+  // только для сотрудников поддержки.
+  const supportGroup: NavGroup = {
+    label: 'Поддержка',
+    items: [SUPPORT_DESK_NAV_ITEM],
+  };
+
   const groups: NavGroup[] = [
     DAILY_GROUP,
     tasksGroup,
@@ -570,6 +614,7 @@ export function Sidebar({
     CHATS_GROUP,
     memoryGroup,
     ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
+    ...(support.isAgent ? [supportGroup] : []),
     referenceGroup,
     settingsGroup,
   ];

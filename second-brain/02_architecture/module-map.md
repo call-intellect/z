@@ -2170,6 +2170,19 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 [[../index|← index]]
 
+## Bitrix24-интеграция (2026-06-09)
+
+**Источник:** [`plans/tz/2026-06-09-bitrix24-integration-install.md`](../../plans/tz/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Roadmap дальше — [`plans/analysis/2026-06-09-bitrix24-next-steps.md`](../../plans/analysis/2026-06-09-bitrix24-next-steps.md). Схема — [[data-model]] §«Bitrix24», REST — [[../01_projects/api-layer]].
+
+Новый backend-домен **`backend/src/modules/bitrix/`** — установка портала Bitrix24 на уровне org + жизненный цикл OAuth-токена (синк данных — отдельный этап). Образец — `chatbox` (per-org config + AES-GCM) и `billing/tochka` (OAuth-редирект). Воркеров нет (refresh по требованию).
+
+- `bitrix-api.client.ts` — OAuth (`exchangeCode`/`refresh` на `oauth.bitrix.info`) + REST (`callMethod`/`getAppInfo` на `client_endpoint` портала); `BitrixApiError{status,code,transient,isTokenExpired}`.
+- `bitrix-integration.service.ts` — `buildAuthorizeUrl` (подпись state через `JwtService`), `handleOAuthCallback`, `onAppInstall`/`onAppUninstall` (проверка `application_token`), `claim`, `getValidAccessToken` (refresh-on-expired), `testConnection`, `getIntegration` (sanitize, без токенов), `remove`. Токены — AES-256-GCM.
+- `bitrix-integration.controller.ts` — `GET/DELETE /bitrix/integration`, `GET .../authorize-url`, `POST .../test`, `POST .../claim` (RBAC `bitrix`, `CookieAuthGuard+TenantGuard`, gate `feature.bitrix`).
+- `bitrix-oauth.controller.ts` — `@ApiExcludeController`, `GET /bitrix/oauth/callback` (public, обмен code→токены, redirect на фронт `?bitrix=connected|error`).
+- `bitrix-install.controller.ts` — `@ApiExcludeController`, `POST /bitrix/install/event` (public, `ONAPPINSTALL`/`ONAPPUNINSTALL`, kill-switch `bitrix.enabled`, всегда 200).
+- Фронт: `frontend/app/(authenticated)/settings/integrations/BitrixIntegrationClient.tsx` (секция) + `app/(public)/bitrix/install/page.tsx` (iframe-handler с `BX24.installFinish()`).
+
 ## ChatBox-интеграция (2026-06-05)
 
 **Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md) (10 фаз). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]]. Схема — [[data-model]] §«ChatBox», AI/очереди — [[../01_projects/ai-jobs]] / [[../01_projects/workers-queues]], REST — [[../01_projects/api-layer]], фронт — [[../01_projects/frontend-pages]].

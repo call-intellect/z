@@ -70,6 +70,42 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔌 2026-06-09 — Bitrix24: установка интеграции + жизненный цикл токена
+
+> Контракт: `plans/tz/2026-06-09-bitrix24-integration-install.md`. Ветка `bitrix`.
+>
+> **Зачем для прода:** подключение портала Bitrix24 к компании (оба способа —
+> OAuth-коннект из Коры + установка из Маркета `ONAPPINSTALL`), шифрованное
+> хранение `access+refresh` per-org, refresh по требованию, проверка соединения,
+> отключение. Синк данных — отдельный следующий этап. **Миграция БД ЕСТЬ**
+> (аддитивная, авто). **Новые ENV — опциональны** (без них стартует; подключение
+> даёт `bitrix_misconfigured`).
+
+- **Шаг 1 — ENV / kill-switch** (опциональны):
+  - `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` — OAuth-креды тиражного приложения
+    (из партнёрского кабинета Bitrix24). Без них фича не подключается, но backend
+    стартует. `redirect_uri` НЕ в ENV — `{PUBLIC_HOST_URL}/api/v1/bitrix/oauth/callback`.
+  - `BITRIX_OAUTH_BASE_URL` (default `https://oauth.bitrix.info`) — сервер авторизации.
+  - `bitrix.enabled` (AdminSetting, **default true**, kill-switch ON) — приём событий
+    установки. Выкл → install-handler 200 no-op. Code-fallback `true`, seed не нужен.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260609112355_bitrix_integration`):
+  `+ table BitrixIntegration` (FK → `Org`, 2 индекса, unique по `memberId`) +
+  `+ enum BitrixIntegrationStatus`. Аддитивна (CREATE TABLE/TYPE), без потери данных.
+  Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: модуль `bitrix` — 3 контроллера,
+  API-клиент, сервис, RBAC-ресурс `bitrix`, фича `feature.bitrix`; frontend: секция
+  Bitrix24 на `/settings/integrations` + страница `/bitrix/install`):
+  `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - `curl -s localhost:3000/api/docs-json | grep -c bitrix` → теги `bitrix` присутствуют.
+  - В UI `/settings/integrations` видна секция «Bitrix24» (если задан `BITRIX_CLIENT_ID`).
+  - **Вне кода:** зарегистрировать тиражное приложение в партнёрском кабинете
+    (client_id/secret → ENV; handler URL = `/bitrix/install`; install event →
+    `/api/v1/bitrix/install/event`; redirect_uri → `/api/v1/bitrix/oauth/callback`),
+    финализировать `scope` (минимум `crm,user,profile`).
+
+---
+
 ### 🔔 2026-06-08 — TZ-1 Фаза 0: daily-value foundation (ТГ-доставка + бюджет + кампания привязки)
 
 > Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 0). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`.

@@ -1446,6 +1446,13 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 
 Влияние на FSM-блок выше (§«Статусы встречи»): ветка `ai_processing` теперь ветвится на `ai_ready | ai_failed`, общий `failed` — только для отсутствия записи/аудио.
 
+## Bitrix24-интеграция (2026-06-09)
+
+**Источник:** [`plans/tz/2026-06-09-bitrix24-integration-install.md`](../../plans/tz/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Модули — [[module-map]] §«Bitrix24-интеграция». Миграция `20260609112355_bitrix_integration` (1 таблица + 1 enum), применяется авто через `migrate deploy`.
+
+- **`BitrixIntegration`** — конфиг портала Bitrix24 ↔ org. Натуральный ключ `memberId @unique` (портал); `tenantId String?` (null пока `pending` — установка из Маркета до claim), `@@index([tenantId])`, `@@index([status])`. Поля: `portalDomain`, `clientEndpoint`/`serverEndpoint`, `scope`, `accessTokenEnc`/`refreshTokenEnc`/`applicationTokenEnc` (AES-256-GCM, никогда не plain), `accessExpiresAt`, `status` (enum), `lastError`, `lastConnectedAt`. Relation `org → Org?` (Cascade). Уникальность «одна connected на org» — на уровне сервиса.
+- **`enum BitrixIntegrationStatus`** — `pending | connected | error | disconnected`.
+
 ## ChatBox-интеграция (2026-06-05)
 
 **Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]], модули — [[module-map]] §«ChatBox-интеграция». Миграция `20260605120000_chatbox_integration` (8 таблиц + 7 enum + `SourceType.chatbox`), применяется авто через `migrate deploy`.

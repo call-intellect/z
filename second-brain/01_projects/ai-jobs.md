@@ -374,4 +374,21 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - Маршрут засеивается `backend/scripts/seed-llm-task-routes-dialog-extract-plan.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентно).
 - Флаг `QUERY_PLAN_EXTRACTION_ENABLED` (kill-switch, ON). **Без новой очереди** — извлечение синхронно в пути чат-запроса, не отдельный BullMQ-job.
 
+## Служба поддержки — клон техподдержки (4 taskType, 2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
+
+| taskType | Модель | Роль |
+|---|---|---|
+| `support-clone-draft` | DeepSeek V4 Pro (capable) | Генерация черновика ответа клиенту: RAG **из закрытого контура поддержки** (R-INV-1) + few-shot топ-N принятых пар из `SupportDraftOutcome`. Цитаты `[BLOCK:id]` обязательны. Стабильный cache-friendly SYSTEM, переменное (вопрос + контур-блоки + few-shot) — в конце USER. |
+| `support-answer-critic` | `deepseek-v4-flash` (cheap judge, Б9) | Groundedness-проверка черновика: извлекает claims → сверяет с контур-блоками → `groundedness=truthful/total`. Ниже `support_critic_min_groundedness` (0.6) → исход `clarify`/`escalate`, не «ответить» (R-INV-5). |
+| `support-edit-classify` | `deepseek-v4-flash` (cheap judge) | Классификация ТИПА правки черновика человеком: `factual` / `tone` / `policy` / `empty` — ДО записи обучающего сигнала (R-INV-2; голый diff хакаем). |
+| `support-contour-curate` | DeepSeek V4 Pro (capable) | Ночной куратор контура: по дневным `SupportDraftOutcome` + сигналам (реоткрытия/CSAT) решает на блок `keep`/`promote`/`fix(supersede)`/`merge`/`archive` + обоснование. Destructive — только soft-archive за debate-гейтом (R-INV-6). |
+
+- Все 4 маршрута засеиваются `backend/scripts/seed-llm-task-routes-support.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'support'`, phase `seed-llm-routes`, идемпотентно). Fallback — `DEFAULT_FALLBACK_CHAIN`.
+- `support-clone-draft` вызывается по кнопке «черновик» (`POST /support/desk/tickets/:id/draft`); `support-answer-critic` — сразу после генерации (гейт показа сотруднику); `support-edit-classify` — при правке/отправке; `support-contour-curate` — из `SupportCuratorCron` (`@Cron('0 3 * * *')`).
+- **Без новой BullMQ-очереди** — draft/critic/classify считаются синхронно в пути деска; куратор — внутри cron-прохода.
+
+[[../index|← index]]
+
 [[../index|← index]]

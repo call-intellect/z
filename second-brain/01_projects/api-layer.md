@@ -563,6 +563,43 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | PUT | `/api/v1/meetings/:id/speakers` | разметка говорящих (сотрудник/внешний/исключить/слить) | write |
 | POST | `/api/v1/meetings/:id/speakers/confirm` | подтвердить разметку → снять гейт `awaiting_speakers` → enqueue анализа | write |
 
+## Служба поддержки `/support/*` (2026-06-09)
+
+ТЗ — [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md). Модуль `support`, 3 контроллера. Профильная заметка — [[support-desk]]; модели — [[../02_architecture/data-model]] §«Служба поддержки». Коды ошибок machine-readable: `SUPPORT_DESK_DISABLED` (503), `SUPPORT_RATE_LIMIT` (429), `SUPPORT_NOT_AGENT` (403). Swagger-тег `support`.
+
+**Клиент (любой авторизованный, любая Org → приём в вендор-деск):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/support/tickets` | создать обращение (`Issue` в вендор-Org). Тело `{ subject, message, category? }` → `{ ticketId, ticketNumber }` | любой авторизованный, рубильник `SUPPORT_DESK_ENABLED` |
+| GET | `/api/v1/support/my-tickets` | мои обращения (список) | self |
+| GET | `/api/v1/support/my-tickets/:id` | моё обращение + лента (ТОЛЬКО `access='external'`, R-INV-3) | self |
+| POST | `/api/v1/support/my-tickets/:id/messages` | дописать сообщение в свой тикет | self |
+| POST | `/api/v1/support/my-tickets/:id/rate` | оценить (CSAT). Тело `{ score:1..5, comment? }` → `IssueRating` | self |
+| GET | `/api/v1/support/me` | мой support-контекст (является ли сотрудником поддержки) | self |
+
+**Сотрудник поддержки (guard `SupportAccessGuard` — член группы-контура):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/support/desk/tickets` | очередь (`?view=unassigned\|mine\|all\|closed\|spam&cursor=`) | агент поддержки |
+| GET | `/api/v1/support/desk/tickets/:id` | тикет + вся лента (internal+external) + черновик клона | агент |
+| POST | `/api/v1/support/desk/tickets/:id/reply` | ответ клиенту (`access='external'`, `authorType='human'`; `fromDraftCommentId?` → outcome=edited+DIFF) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/note` | внутренняя заметка (`access='internal'`) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/assign` | назначить ответственного (reuse `IssueAssignee` M:M) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/transition` | сменить статус тикета | агент |
+| POST | `/api/v1/support/desk/tickets/:id/draft` | попросить клона черновик (`support-clone-draft` + critic + цитаты) | агент |
+| POST | `/api/v1/support/desk/drafts/:id/accept` | принять черновик как есть (outcome=accepted) | агент |
+| POST | `/api/v1/support/desk/drafts/:id/reject` | отклонить черновик (outcome=rejected) | агент |
+| GET | `/api/v1/support/desk/meta` | мета деска (статусы/виды/счётчики) | агент |
+
+**Админ (guard `SupportAdminGuard` — owner вендор-Org / super_admin):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST/GET/DELETE | `/api/v1/support/admin/agents` | галочка «сотрудник поддержки» = членство `KnowledgeGroupMember(support, source='manual')` (Р-7) | owner/super_admin |
+| POST | `/api/v1/support/admin/contour/seed` | ручной засев контура. Тело `{ items:[{ question, answer }] }` → IdeaBlock + `IdeaBlockAccess(support)`; идемпотентно (Р-4) | owner/super_admin |
+
 ## История изменений
 
 - **2026-05-25:** создан как часть финального handoff Wave 1-3. Документированы T1/T2/T4/T5/T6a/T8.

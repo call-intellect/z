@@ -1612,3 +1612,26 @@ enum SkillTraitStatus {
   - `@@unique([meetingId, label])`, `@@index([meetingId])`.
 
 [[../index|← index]]
+
+## Служба поддержки — деск + закрытый контур + клон (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
+
+### Расширение существующих сущностей (миграция `_phase1`)
+
+- **`enum KnowledgeGroupKind += support`** — закрытый контур техподдержки (синглтон per вендор-Org, `refId=null`). Было 4 вида (department/leadership/council/personal). ⚠ `ALTER TYPE ... ADD VALUE` не-транзакционна (нормально).
+- **`Issue` += support-поля** (все nullable, заполняются ТОЛЬКО для тикетов поддержки — cross-tenant: клиент из другой Org):
+  - `supportCustomerOrgId String?` (Org клиента), `supportCustomerUserId String?` (глобальный `User.id`), `supportCustomerContact VarChar(320)?` (email/имя для деска).
+  - SLA-поля: `firstResponseDueAt`/`resolutionDueAt`/`firstRespondedAt`/`slaBreachedAt DateTime?`.
+  - Индексы `@@index([tenantId, supportCustomerUserId])`, `@@index([tenantId, firstResponseDueAt])`.
+- **`IssueComment` += провенанс/черновик клона** (поле `access` `"internal"|"external"` уже было — переиспользуется как видимость клиенту, R-INV-3):
+  - `authorType String @default("human")` (human|clone|system), `draftState String?` (null|pending|accepted|edited|rejected — только для clone), `cloneConfidence Decimal(4,3)?` (калиброванная уверенность), `groundednessScore Decimal(4,3)?` (результат critic).
+
+### Новые модели
+
+- **`SupportSlaPolicy`** (миграция `_phase1`) — синглтон SLA-политики per вендор-Org: `tenantId @unique`, `firstResponseMins Int @default(60)`, `resolutionMins Int @default(480)`, `businessHoursOnly Boolean @default(false)`.
+- **`IssueRating`** (миграция `_phase1`) — CSAT/оценка клиента (чистый сигнал для петли обучения): `issueId @unique`, `score Int` (1..5), `comment Text?`, `ratedByUserId String?`, `@@index([tenantId, createdAt])`.
+- **`SupportDraftOutcome`** (миграция `_draft_outcome`) — обучающий сигнал (R-INV-2), пара черновик→финал + тип правки: `issueId`, `draftCommentId String?`, `taskType @default("support-clone-draft")`, `draftText`/`finalText Text` (finalText null если отклонён), `outcome` (accepted|edited|rejected), `editType String?` (factual|tone|policy|empty), `cloneConfidence`/`groundednessScore Decimal(4,3)?`, `promotedToContour Boolean @default(false)` (прошёл ли гейт качества → в контур), `@@index([tenantId, taskType, createdAt])`, `@@index([tenantId, issueId])`.
+- **`SupportCuratorAction`** (миграция `_curator_action`) — аудит решений ночного куратора контура (что/почему/verdict debate; soft-archive only).
+
+[[../index|← index]]

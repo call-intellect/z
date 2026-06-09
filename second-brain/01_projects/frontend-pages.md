@@ -383,6 +383,19 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - Визуал: `/goals`,`/actions`,`/maturity` на modern; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css.
 - ⚠ Светлая тема дашбордов (ТЗ-3) — задизайнит владелец отдельно (в «не сделано»).
 
+## Служба поддержки — виджет + кабинет клиента + деск (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). API/модель — [[api-layer]] §«Служба поддержки», профильная заметка — [[support-desk]].
+
+**Клиентский виджет (отдельный bounded context, R-INV-4 — без tool'ов Concierge и без графа компании):**
+- `frontend/src/ui/support/SupportWidget.tsx` + `SupportForm.tsx` + `SupportWidgetMount.tsx` — плавающая кнопка + форма создания обращения (тема + сообщение), монтируется глобально.
+
+**Новые страницы:**
+- `/support/my-tickets` — список обращений клиента + детальный экран (лента только `access='external'`) + оценка CSAT.
+- `/support/desk` — рабочий деск сотрудника поддержки: очередь (`unassigned/mine/all/closed/spam`) + детальный тикет с ответом клиенту / внутренней заметкой / назначением / сменой статуса (доступ по членству в группе-контуре).
+
+**Меню:** пункты сайдбара «Поддержка» (клиентский «Мои обращения» + деск для сотрудников поддержки).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.

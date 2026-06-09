@@ -70,6 +70,40 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🛟 2026-06-09 — Встроенная служба поддержки + закрытый контур + самообучающийся клон (Ф1–Ф4)
+
+> Контракт: `plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.
+>
+> **Зачем для прода:** клиент Коры из своего кабинета задаёт вопрос → обращение приходит в единый вендор-деск → сотрудник отвечает → ответы копятся в закрытый контур памяти → из него собирается клон техподдержки (черновики человеку, обучение на правках, ночной куратор контура). Ф5 (авто-отправка клиенту) и Ф6 (тон-адаптер) — **отложены**. **Миграции БД ЕСТЬ** (3 шт., аддитивные, авто). **Новые ENV ЕСТЬ** (2 kill-switch, default ON). **Деск НЕ заработает, пока владелец не задаст AdminSetting `support.vendor_org_id` + entitlement `feature.support_desk` для вендор-Org** (см. Шаг 1).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch / entitlement:**
+  - **ENV (2 kill-switch, default ON):** `SUPPORT_DESK_ENABLED` (приём обращений + деск; `false` → `POST /support/tickets` 503 `SUPPORT_DESK_DISABLED`), `SUPPORT_CURATOR_ENABLED` (ночной куратор контура; `false` → curator-cron no-op). Реестр — `docs/operations/feature-flags.md`.
+  - **Параметр владельца (обязателен для работы):** AdminSetting `support.vendor_org_id` = id вендор-Org. Пока пусто — все support-seed'ы no-op, приём 503. Засеивается code-fallback'ом нет — задаётся владельцем через админку.
+  - **Решение владельца (вендор-эксклюзив):** entitlement `feature.support_desk` включить ТОЛЬКО для вендор-Org через `OrgEntitlement.featureOverrides` (не продаётся, Р-3).
+  - **Крутилки (AdminSetting, засеиваются `seed-admin-setting-support.ts`, см. Шаг 7):** `support_critic_min_groundedness` (default 0.6, R-INV-5), `support_promote_min_csat` (default 4, гейт промоута R-INV-2).
+- **Шаг 4 — Prisma** — **обязательно, авто** (3 миграции, аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260609120000_support_desk_phase1`: `Issue +` support-поля (`supportCustomerOrgId`/`supportCustomerUserId`/`supportCustomerContact` + `firstResponseDueAt`/`resolutionDueAt`/`firstRespondedAt`/`slaBreachedAt` + 2 индекса), `IssueComment +` `authorType`/`draftState`/`cloneConfidence`/`groundednessScore`, `+ table SupportSlaPolicy`, `+ table IssueRating`, `ALTER TYPE "KnowledgeGroupKind" ADD VALUE 'support'`.
+  - `20260609130000_support_draft_outcome`: `+ table SupportDraftOutcome` (пара черновик→финал + тип правки, обучающий сигнал).
+  - `20260609140000_support_curator_action`: `+ table SupportCuratorAction` (аудит решений ночного куратора).
+  - ⚠ `ALTER TYPE ... ADD VALUE 'support'` **не-транзакционна** (нормально для enum-добавления; `migrate deploy` исполняет её отдельным statement'ом, повторно — no-op). Прочее — ADD COLUMN / CREATE TABLE. Идемпотентно.
+- **Шаг 7 — Seed** — **4 новых, идемпотентных, ВСЕ в `apply-prod-deploy.ts` STEPS** (прогон агрегатора их подхватит). Все **no-op без AdminSetting `support.vendor_org_id`** где применимо:
+  - `scripts/seed-support-project.ts` (`phase:'seed-base'`) — Support-проект `SUP` (`systemGenerated`, скрыт из обычного списка) + 6 states (Новое/В работе/Ждёт клиента/Решено/Закрыто/Спам) + `SupportSlaPolicy`. No-op без `support.vendor_org_id`.
+  - `scripts/seed-support-contour-group.ts` (`phase:'seed-base'`) — синглтон `KnowledgeGroup(kind='support', isClosed)` per вендор-Org. No-op без `support.vendor_org_id`.
+  - `scripts/seed-admin-setting-support.ts` (`phase:'seed-base'`) — `support_critic_min_groundedness=0.6` + `support_promote_min_csat=4` (защищает admin-edited).
+  - `scripts/seed-llm-task-routes-support.ts` (`phase:'seed-llm-routes'`, alias `'support'`) — 4 новых taskType: `support-clone-draft` + `support-contour-curate` → DeepSeek V4 Pro; `support-answer-critic` + `support-edit-classify` → `deepseek-v4-flash` (Б9). Fallback — `DEFAULT_FALLBACK_CHAIN`.
+  - Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый модуль `support` (intake/desk/access/sla/contour/clone/critic/edit-classify/learning/curator-сервисы, 3 контроллера, `SupportAccessGuard`/`SupportAdminGuard`, `SupportSlaCron` `@Cron('*/5 * * * *')` + `SupportCuratorCron` `@Cron('0 3 * * *')`), безусловный pre-filter контура `contourGroupId` в `ChatV2RetrievalService.collectPool`, 4 новых taskType, 2 новых ENV; frontend: `SupportWidget` (плавающая кнопка+форма) + `/support/my-tickets` + `/support/desk` + пункты сайдбара): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - **СНАЧАЛА владелец задаёт `support.vendor_org_id` + entitlement `feature.support_desk` для вендор-Org**, затем повторный прогон seed-агрегатора (`--mode update`) — без этого деск 503.
+  - Новые cron: в логах backend `support-sla.cron`/`support-curator.cron` проходят без ERROR (SLA — каждые 5 мин ставит `slaBreachedAt` просроченным; curator — в 03:00 за debate-гейтом, только soft-archive).
+  - Новые taskType: `/admin/ai-models` → `support-clone-draft` (deepseek-v4-pro), `support-answer-critic`/`support-edit-classify` (deepseek-v4-flash), `support-contour-curate` (deepseek-v4-pro).
+  - Новые REST: Swagger `/api/docs` → раздел `/api/v1/support/*` (`/tickets`, `/my-tickets`, `/me`, `/desk/*`, `/admin/agents`, `/admin/contour/seed`).
+  - Изоляция контура: `POST /support/tickets` от пользователя другой Org создаёт `Issue` в вендор-Org (`supportCustomerOrgId` = его tenant); черновик клона цитирует ТОЛЬКО блоки support-контура.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔔 2026-06-08 — TZ-1 Фаза 0: daily-value foundation (ТГ-доставка + бюджет + кампания привязки)
 
 > Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 0). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`.

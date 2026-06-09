@@ -9102,6 +9102,27 @@ model IssueRating {
   @@index([tenantId, createdAt])
 }
 
+/// Обучающий сигнал клона поддержки (R-INV-2): пара черновик→финал + тип правки.
+/// TZ support-desk Ф3.
+model SupportDraftOutcome {
+  id                String   @id @default(cuid())
+  tenantId          String   /// вендор-Org
+  issueId           String
+  draftCommentId    String?
+  taskType          String   @default("support-clone-draft")
+  draftText         String   @db.Text
+  finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
+  outcome           String   /// accepted | edited | rejected
+  editType          String?  /// factual | tone | policy | empty | null
+  cloneConfidence   Decimal? @db.Decimal(4, 3)
+  groundednessScore Decimal? @db.Decimal(4, 3)
+  promotedToContour Boolean  @default(false) /// прошёл гейт качества и попал в контур
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, taskType, createdAt])
+  @@index([tenantId, issueId])
+}
+
 /// Вложение к задаче или комментарию.
 model IssueAttachment {
   id           String   @id @default(cuid())

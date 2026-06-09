@@ -88,6 +88,7 @@ const STEPS: Step[] = [
   // (параметр владельца). Идемпотентны.
   { phase: 'seed-base', script: 'scripts/seed-support-project.ts', hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id' },
   { phase: 'seed-base', script: 'scripts/seed-support-contour-group.ts', hint: 'закрытый контур поддержки KnowledgeGroup(kind=support) (TZ support-desk); no-op без support.vendor_org_id' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-support.ts', hint: 'support_critic_min_groundedness=0.6 (TZ support-desk Ф3 critic-порог R-INV-5)' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[
@@ -129,6 +130,10 @@ const STEPS: Step[] = [
     // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
     // поедет по аварийному DEFAULT_FALLBACK_CHAIN.
     'goal-task-link',
+    // Support desk Ф3 (TZ 2026-06-09 support-desk-clone) — клон техподдержки:
+    // support-clone-draft (Pro capable) + support-answer-critic /
+    // support-edit-classify (flash cheap judge, Б9).
+    'support',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

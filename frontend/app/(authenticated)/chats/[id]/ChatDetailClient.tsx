@@ -30,7 +30,7 @@ import { Button } from '@/ui/shadcn/button';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Textarea } from '@/ui/shadcn/textarea';
 
-const MESSAGES_LIMIT = 500;
+const MESSAGES_PAGE = 20;
 
 function formatTime(d: Date | null): string {
   if (!d) return '';
@@ -88,20 +88,84 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     return mapChatDetail(api);
   });
 
-  const messagesSwr = useSWR(['chatbox-messages', chatId], async () => {
-    const res = await chatboxApi.listMessages(chatId, { limit: MESSAGES_LIMIT });
-    return res.items.map(mapMessage);
-  });
-
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const messageCount = messagesSwr.data?.length ?? 0;
+  const [messages, setMessages] = useState<ChatboxMessageView[]>([]);
+  const [msgLoading, setMsgLoading] = useState(true);
+  const [msgError, setMsgError] = useState<unknown>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
 
-  // Автоскролл к последнему сообщению при загрузке/обновлении ленты.
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }, []);
+
+  // Первая загрузка: последние MESSAGES_PAGE сообщений (desc → reverse), скролл вниз.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messageCount]);
+    let cancelled = false;
+    setMsgLoading(true);
+    setMsgError(null);
+    void (async () => {
+      try {
+        const res = await chatboxApi.listMessages(chatId, {
+          limit: MESSAGES_PAGE,
+          offset: 0,
+          order: 'desc',
+        });
+        if (cancelled) return;
+        const items = res.items.map(mapMessage).reverse();
+        setMessages(items);
+        setHasMore(res.total > items.length);
+        scrollToBottom();
+      } catch (e) {
+        if (!cancelled) setMsgError(e);
+      } finally {
+        if (!cancelled) setMsgLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, scrollToBottom]);
+
+  // Подгрузка older при скролле вверх (lazy-load, как в Telegram).
+  const loadOlder = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const el = scrollRef.current;
+    const prevHeight = el?.scrollHeight ?? 0;
+    try {
+      const res = await chatboxApi.listMessages(chatId, {
+        limit: MESSAGES_PAGE,
+        offset: messages.length,
+        order: 'desc',
+      });
+      const older = res.items.map(mapMessage).reverse();
+      setMessages((cur) => [...older, ...cur]);
+      setHasMore(res.total > messages.length + older.length);
+      // Сохранить позицию скролла после prepend (контент «не прыгает»).
+      requestAnimationFrame(() => {
+        const cur = scrollRef.current;
+        if (cur) cur.scrollTop = cur.scrollHeight - prevHeight;
+      });
+    } catch {
+      /* older-страница не критична — тихо */
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [chatId, hasMore, messages.length]);
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 80) void loadOlder();
+  }, [loadOlder]);
 
   const send = useCallback(async () => {
     const text = draft.trim();
@@ -111,7 +175,15 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       await chatboxApi.sendMessage(chatId, text);
       toast.success('Отправлено');
       setDraft('');
-      await messagesSwr.mutate();
+      // Перезагрузить последнюю страницу + скролл вниз.
+      const res = await chatboxApi.listMessages(chatId, {
+        limit: MESSAGES_PAGE,
+        offset: 0,
+        order: 'desc',
+      });
+      setMessages(res.items.map(mapMessage).reverse());
+      setHasMore(res.total > res.items.length);
+      scrollToBottom();
     } catch (e) {
       const msg =
         e instanceof ApiError && e.code === 'chatbox_send_failed'
@@ -123,7 +195,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [draft, submitting, chatId, messagesSwr]);
+  }, [draft, submitting, chatId, scrollToBottom]);
 
   // --- Состояния загрузки/ошибок детали ---
   if (chatSwr.isLoading && !chatSwr.data && !chatSwr.error) {
@@ -165,8 +237,6 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       </div>
     );
   }
-
-  const messages = messagesSwr.data ?? [];
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
@@ -226,9 +296,26 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         )}
       </header>
 
-      {/* Лента сообщений — скроллится сама, страница не растёт */}
-      <div className="mb-4 h-[60vh] min-h-[280px] space-y-3 overflow-y-auto rounded-lg border border-border-subtle bg-bg-card p-4">
-        {messagesSwr.isLoading && !messagesSwr.data && (
+      {/* Лента сообщений — свой скролл; вверх подгружаем older (Telegram-style) */}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="mb-4 flex h-[60vh] min-h-[280px] flex-col space-y-3 overflow-y-auto rounded-lg border border-border-subtle bg-bg-card p-4"
+      >
+        {/* Индикатор подгрузки старых сообщений сверху */}
+        {hasMore && (
+          <div className="flex justify-center py-1 text-xs text-fg-tertiary">
+            {loadingMore ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" /> Загружаем…
+              </span>
+            ) : (
+              <span>Прокрутите вверх для старых сообщений</span>
+            )}
+          </div>
+        )}
+
+        {msgLoading && messages.length === 0 && (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-2/3 rounded-lg" />
@@ -236,21 +323,19 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
           </div>
         )}
 
-        {messagesSwr.error && (
+        {!!msgError && (
           <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-            {messagesSwr.error instanceof ApiError
-              ? messagesSwr.error.message
+            {msgError instanceof ApiError
+              ? msgError.message
               : 'Не удалось загрузить сообщения'}
           </div>
         )}
 
-        {!messagesSwr.isLoading &&
-          !messagesSwr.error &&
-          messages.length === 0 && (
-            <div className="py-10 text-center text-sm text-fg-tertiary">
-              В этом чате пока нет сообщений.
-            </div>
-          )}
+        {!msgLoading && !msgError && messages.length === 0 && (
+          <div className="py-10 text-center text-sm text-fg-tertiary">
+            В этом чате пока нет сообщений.
+          </div>
+        )}
 
         {messages.map((m, idx) => {
           const prev = messages[idx - 1];
@@ -263,7 +348,6 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
             </Fragment>
           );
         })}
-        <div ref={bottomRef} />
       </div>
 
       {/* Ответ менеджера */}
@@ -356,11 +440,11 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
   const attachment = attachmentOf(message);
 
   const bubbleClass = isManager
-    ? 'bg-accent text-white'
+    ? 'bg-accent text-accent-fg'
     : 'border border-border-subtle bg-bg-overlay text-fg-primary';
-  const metaClass = isManager ? 'text-white/70' : 'text-fg-tertiary';
+  const metaClass = isManager ? 'text-accent-fg/70' : 'text-fg-tertiary';
   const badgeClass = isManager
-    ? 'bg-white/20 text-white'
+    ? 'bg-accent-fg/15 text-accent-fg'
     : 'bg-bg-card text-fg-secondary';
 
   return (

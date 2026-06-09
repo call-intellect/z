@@ -247,7 +247,7 @@ export class ChatboxChatsService {
     const [messages, total] = await Promise.all([
       this.prisma.chatboxMessage.findMany({
         where,
-        orderBy: { externalCreatedAt: 'asc' },
+        orderBy: { externalCreatedAt: q.order === 'desc' ? 'desc' : 'asc' },
         take,
         skip,
       }),

@@ -28,9 +28,11 @@ export type ChatboxChatsListQueryDto = z.infer<
 
 /** Query `GET /chatbox/chats/:id/messages` — пагинация. */
 export const ChatboxMessagesQuerySchema = z.object({
-  // Лимит до 500: страница чата грузит весь тред разом (MESSAGES_LIMIT=500 на фронте).
   limit: z.coerce.number().int().min(1).max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  // Порядок выдачи. 'desc' — для Telegram-style: грузим последние N, затем older
+  // по offset вверх. Default 'asc' (старые→новые) — обратная совместимость.
+  order: z.enum(['asc', 'desc']).optional(),
 });
 export type ChatboxMessagesQueryDto = z.infer<
   typeof ChatboxMessagesQuerySchema

@@ -166,6 +166,7 @@ export type ListChatsQuery = {
 export type ListMessagesQuery = {
   limit?: number;
   offset?: number;
+  order?: 'asc' | 'desc';
 };
 
 function buildQuery(q?: Record<string, string | number | undefined>): string {

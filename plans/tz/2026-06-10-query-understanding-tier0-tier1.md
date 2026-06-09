@@ -251,7 +251,7 @@ Acceptance:
 - Unit: `DialogService.process` при флаге OFF → `queryPlan` undefined (no-op); при ON+мок-extract → проброшен.
 Закрывает: R6.
 
-### Фаза 3 — Tier 1: фильтрованный recall-safe ретрив `[ ]`
+### Фаза 3 — Tier 1: фильтрованный recall-safe ретрив `[x]`
 Картография: `chat-v2-retrieval.service.ts:125-198` (fetchCandidates/collectPool/filterByValidAt), `:398-454` (rankByCosineOrRecency — текущий HNSW), донор `search.service.ts:166-281`. Схема: `schema.prisma:373-440` (SignalType), `:793-806` (ThemeBranch), `:4147-4158` (ThemeIdeaBlock), `:3358-3379` (axisLabel — опц.).
 Входит: ветка ранжирования по К-5 (полный скан combined-score с предикатами date/signalType/entity/themeBranch/bitemporal), активируется при `hasAnyFilter`. Без фильтров — текущая ветка без изменений.
 НЕ входит: «в памяти нет» (Ф4); агрегации.

@@ -61,6 +61,105 @@ export interface RankedBlockId {
 }
 
 /**
+ * Query Understanding Волна 1 (Ф3) — аргументы для построения структурных
+ * предикатов recall-safe фильтра. Все значения регистрируются через
+ * `pushParam` (никогда не интерполируем напрямую).
+ */
+export interface StructuralFilterArgs {
+  /** `$N`-ссылка уже зарегистрированного параметра tenantId — для подзапроса
+   *  themeBranch (Theme.tenantId). */
+  tenantParamRef: string;
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+  signalTypes?: string[];
+  entityIds?: string[];
+  themeBranches?: string[];
+  bitemporalActiveOnly?: boolean;
+}
+
+/**
+ * Строит массив SQL-предикатов структурного фильтра (recall-safe).
+ *
+ * Каждый параметр регистрируется через `pushParam` (возвращает `$N`).
+ * Предикаты добавляются в фиксированном порядке: bitemporalActiveOnly →
+ * signalTypes → entityIds → date → themeBranches. Пустые/отсутствующие оси
+ * не дают предиката. Возвращаемый массив склеивается в общий WHERE через
+ * `join(' AND ')`.
+ *
+ * Донор предикатов — `search.service.ts` `runHybridQuery` (:203-240), плюс
+ * новый themeBranch через `ThemeIdeaBlock` + `Theme.branch`. Алиас блока — `b`.
+ */
+export function buildStructuralPredicates(
+  args: StructuralFilterArgs,
+  pushParam: (v: unknown) => string,
+): string[] {
+  const predicates: string[] = [];
+
+  // bi-temporal «активные сейчас» — учитывает legacy-блоки (validUntil NULL =
+  // действующий факт). Параметра не требует.
+  if (args.bitemporalActiveOnly) {
+    predicates.push('b."validUntil" IS NULL');
+  }
+
+  // тип сигнала — по одному pushParam на значение.
+  if (args.signalTypes && args.signalTypes.length > 0) {
+    const placeholders = args.signalTypes.map((s) => pushParam(s)).join(',');
+    predicates.push(`b."signalType"::text IN (${placeholders})`);
+  }
+
+  // сущности — EXISTS по IdeaBlockEntity.
+  if (args.entityIds && args.entityIds.length > 0) {
+    const placeholders = args.entityIds.map((e) => pushParam(e)).join(',');
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "IdeaBlockEntity" be WHERE be."blockId" = b.id AND be."entityId" IN (${placeholders}))`,
+    );
+  }
+
+  // дата (Р5) — по IdeaBlockEvidence.sourceTimestamp; хотя бы одна граница
+  // присутствует, когда этот предикат строится.
+  if (args.dateFrom || args.dateTo) {
+    const parts: string[] = [];
+    if (args.dateFrom) {
+      parts.push(`ev."sourceTimestamp" >= ${pushParam(args.dateFrom)}`);
+    }
+    if (args.dateTo) {
+      parts.push(`ev."sourceTimestamp" <= ${pushParam(args.dateTo)}`);
+    }
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "IdeaBlockEvidence" ev WHERE ev."blockId" = b.id AND ${parts.join(' AND ')})`,
+    );
+  }
+
+  // тема/отдел (НОВОЕ) — через ThemeIdeaBlock + Theme.branch, в рамках tenant.
+  if (args.themeBranches && args.themeBranches.length > 0) {
+    const placeholders = args.themeBranches.map((t) => pushParam(t)).join(',');
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "ThemeIdeaBlock" tib JOIN "Theme" t ON t.id = tib."themeId" ` +
+        `WHERE tib."blockId" = b.id AND t."tenantId" = ${args.tenantParamRef} ` +
+        `AND t."branch"::text IN (${placeholders}))`,
+    );
+  }
+
+  return predicates;
+}
+
+/**
+ * Query Understanding Волна 1 (Ф3) — есть ли хотя бы один структурный фильтр.
+ * true → ветка `rankByStructuralFilter` (recall-safe полный скан);
+ * false → текущий `rankByCosineOrRecency` без регрессии (R9).
+ */
+export function hasStructuralFilter(input: RetrievalInput): boolean {
+  return (
+    !!input.dateFrom ||
+    !!input.dateTo ||
+    (input.signalTypes?.length ?? 0) > 0 ||
+    (input.entityIds?.length ?? 0) > 0 ||
+    (input.themeBranches?.length ?? 0) > 0 ||
+    !!input.bitemporalActiveOnly
+  );
+}
+
+/**
  * Сырая запись cosine-ранжирования.
  */
 interface RankedRow {
@@ -156,19 +255,45 @@ export class ChatV2RetrievalService {
       if (poolBlockIds.length === 0) return [];
     }
 
-    // 2) Ранжируем по cosine (если есть qvec) или возвращаем top по recency.
-    const ranked = await this.rankByCosineOrRecency({
-      tenantId: input.tenantId,
-      blockIds: poolBlockIds,
-      qvec,
-      query: input.query,
-      limit: input.limit,
-    });
+    // 2) Ранжируем.
+    const structural = hasStructuralFilter(input);
+    let ranked: RankedBlockId[];
+    if (structural) {
+      // Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив:
+      // точный полный скан по WHERE-фильтрованному множеству, combined-score
+      // ORDER BY (НЕ HNSW `ORDER BY embedding <=> qvec LIMIT`). Жёсткий
+      // pre-filter на HNSW роняет recall — полный скан нет.
+      ranked = await this.rankByStructuralFilter({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        filters: {
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          signalTypes: input.signalTypes,
+          entityIds: input.entityIds,
+          themeBranches: input.themeBranches,
+          bitemporalActiveOnly: input.bitemporalActiveOnly,
+        },
+        limit: input.limit,
+      });
+    } else {
+      ranked = await this.rankByCosineOrRecency({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        query: input.query,
+        limit: input.limit,
+      });
+    }
     if (ranked.length === 0) return [];
 
     // 3) 1-hop graph expansion (по IdeaBlockLink, status='active').
+    // При структурном фильтре граф ПРОПУСКАЕМ: фильтр задаёт точное множество
+    // ответа, а 1-hop-соседи вне фильтра вернули бы тихие типовые/временные
+    // ошибки (совпавшие соседи и так уже в pool).
     const graphAdded =
-      input.graphHops > 0
+      !structural && input.graphHops > 0
         ? await this.expandViaGraph({
             tenantId: input.tenantId,
             seedBlockIds: ranked.map((r) => r.blockId),
@@ -457,6 +582,96 @@ export class ChatV2RetrievalService {
     return rows.map((r) => ({
       blockId: r.id,
       score: 0,
+      fromGraph: false,
+    }));
+  }
+
+  /**
+   * Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив.
+   *
+   * Ранжирует WHERE-фильтрованное множество полным сканом с combined-score в
+   * `ORDER BY` (вычисляемый алиас, НЕ `ORDER BY embedding <=> qvec LIMIT`).
+   * Вычисляемое выражение в ORDER BY не использует HNSW-индекс → точный
+   * полный скан по уже узкому pool (capped 5000) → фильтр не роняет recall.
+   *
+   * Предикаты строятся `buildStructuralPredicates` (донор — `runHybridQuery`).
+   * tenantId есть во всех ветках (pTenant). Без qvec — recency-fallback с теми
+   * же структурными предикатами.
+   */
+  private async rankByStructuralFilter(args: {
+    tenantId: string;
+    blockIds: string[];
+    qvec: number[] | null;
+    filters: Omit<StructuralFilterArgs, 'tenantParamRef'>;
+    limit: number;
+  }): Promise<RankedBlockId[]> {
+    const { tenantId, blockIds, qvec, filters, limit } = args;
+    if (blockIds.length === 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+
+    // tenant ПЕРВЫМ — его `$N` переиспользуется предикатом themeBranch.
+    const pTenant = pushParam(tenantId);
+    const pIds = pushParam(blockIds);
+
+    if (qvec) {
+      const pVec = pushParam(toVectorLiteral(qvec));
+      const predicates = buildStructuralPredicates(
+        { ...filters, tenantParamRef: pTenant },
+        pushParam,
+      );
+      const pLimit = pushParam(limit);
+      const whereExtra =
+        predicates.length > 0 ? `\n          AND ${predicates.join('\n          AND ')}` : '';
+      // ORDER BY score DESC (вычисляемый алиас) — recall-safe, НЕ HNSW LIMIT.
+      const sql = `
+        SELECT b.id,
+               (1 - (b.embedding <=> ${pVec}::vector(1536))) AS score
+        FROM "IdeaBlock" b
+        WHERE b."tenantId" = ${pTenant}
+          AND b.status = 'canonical'
+          AND b.id = ANY(${pIds}::text[])
+          AND b.embedding IS NOT NULL${whereExtra}
+        ORDER BY score DESC
+        LIMIT ${pLimit}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(
+        sql,
+        ...params,
+      );
+      return rows.map((r) => ({
+        blockId: r.id,
+        score: toFiniteNumber(r.score) ?? 0,
+        fromGraph: false,
+      }));
+    }
+
+    // qvec нет (embedding упал) — recency-fallback с теми же структурными
+    // предикатами; score=0.
+    const predicates = buildStructuralPredicates(
+      { ...filters, tenantParamRef: pTenant },
+      pushParam,
+    );
+    const pLimit = pushParam(limit);
+    const whereExtra =
+      predicates.length > 0 ? `\n          AND ${predicates.join('\n          AND ')}` : '';
+    const sql = `
+      SELECT b.id
+      FROM "IdeaBlock" b
+      WHERE b."tenantId" = ${pTenant}
+        AND b.status = 'canonical'
+        AND b.id = ANY(${pIds}::text[])${whereExtra}
+      ORDER BY b."updatedAt" DESC
+      LIMIT ${pLimit}
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);
+    return rows.map((r) => ({
+      blockId: r.id,
+      score: toFiniteNumber(r.score) ?? 0,
       fromGraph: false,
     }));
   }

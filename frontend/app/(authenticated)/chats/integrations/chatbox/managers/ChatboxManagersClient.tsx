@@ -66,7 +66,15 @@ function ChatboxManagersContent() {
     () => personsApi.list(currentOrgId!, { limit: 200 }),
   );
 
-  const personOptions = persons?.items ?? [];
+  // Эндпоинт /persons отдаёт person-card (`name`), а типизирован как entity
+  // (`canonicalName`) — берём реальный `name` с фолбэком, чтобы опции не были
+  // пустыми (иначе менеджера не с кем связать).
+  const personOptions: { id: string; name: string }[] = (
+    persons?.items ?? []
+  ).map((p) => {
+    const raw = p as unknown as { name?: string; canonicalName?: string };
+    return { id: p.id, name: raw.name ?? raw.canonicalName ?? '(без имени)' };
+  });
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">
@@ -147,7 +155,7 @@ function MemberRow({
   onLinked,
 }: {
   member: ChatboxMemberView;
-  personOptions: { id: string; canonicalName: string }[];
+  personOptions: { id: string; name: string }[];
   onLinked: () => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -229,7 +237,7 @@ function MemberRow({
               <SelectItem value={NONE_VALUE}>— Не связан —</SelectItem>
               {personOptions.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
-                  {p.canonicalName}
+                  {p.name}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -24,6 +24,7 @@ import type {
  */
 @Injectable()
 export class ChatboxChatsService {
+  private readonly logger = new Logger(ChatboxChatsService.name);
   private static readonly LIST_LIMIT_DEFAULT = 30;
   private static readonly LIST_LIMIT_MAX = 100;
   private static readonly MSG_LIMIT_DEFAULT = 50;
@@ -343,27 +344,58 @@ export class ChatboxChatsService {
       });
     }
 
-    const createdAt = new Date(apiMsg.createdAt);
+    // ChatBox может вернуть сообщение как есть либо в обёртке {message|data}.
+    // Нормализуем. Если id нет — синтетический ключ, чтобы не падать 500 и
+    // показать отправленное сразу (реальное доедет синком). Лог формы — чтобы
+    // зафиксировать реальную форму ответа POST.
+    const raw = (apiMsg ?? {}) as unknown as Record<string, unknown>;
+    const m = (
+      raw.id
+        ? raw
+        : ((raw.message as Record<string, unknown>) ??
+          (raw.data as Record<string, unknown>) ??
+          raw)
+    ) as {
+      id?: string;
+      createdAt?: string;
+      sender?: { id?: string | null; name?: string | null } | null;
+    };
+
+    if (!m.id) {
+      this.logger.warn(
+        {
+          keys:
+            apiMsg && typeof apiMsg === 'object'
+              ? Object.keys(apiMsg as object)
+              : typeof apiMsg,
+        },
+        'chatbox sendMessage: ответ ChatBox без message id — сохраняю по синтетическому ключу',
+      );
+    }
+    const createdAt = m.createdAt ? new Date(m.createdAt) : new Date();
+    const externalId =
+      m.id ??
+      `kora-out-${createdAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // messageCount инкрементим только если сообщение реально новое — иначе при
     // гонке с синком/вебхуком (upsert пошёл по update) счётчик завышается.
     const existing = await this.prisma.chatboxMessage.findUnique({
-      where: { tenantId_externalId: { tenantId, externalId: apiMsg.id } },
+      where: { tenantId_externalId: { tenantId, externalId } },
       select: { id: true },
     });
     const isNewMessage = existing === null;
 
     await this.prisma.chatboxMessage.upsert({
       where: {
-        tenantId_externalId: { tenantId, externalId: apiMsg.id },
+        tenantId_externalId: { tenantId, externalId },
       },
       create: {
         tenantId,
         chatId: chatDbId,
-        externalId: apiMsg.id,
+        externalId,
         senderType: 'USER',
-        senderName: apiMsg.sender?.name ?? null,
-        senderExternalId: apiMsg.sender?.id ?? null,
+        senderName: m.sender?.name ?? null,
+        senderExternalId: m.sender?.id ?? null,
         contentType: 'TEXT',
         text,
         externalCreatedAt: createdAt,
@@ -372,8 +404,8 @@ export class ChatboxChatsService {
       update: {
         chatId: chatDbId,
         senderType: 'USER',
-        senderName: apiMsg.sender?.name ?? null,
-        senderExternalId: apiMsg.sender?.id ?? null,
+        senderName: m.sender?.name ?? null,
+        senderExternalId: m.sender?.id ?? null,
         contentType: 'TEXT',
         text,
         externalCreatedAt: createdAt,
@@ -394,7 +426,7 @@ export class ChatboxChatsService {
       },
     });
 
-    return { id: apiMsg.id };
+    return { id: externalId };
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

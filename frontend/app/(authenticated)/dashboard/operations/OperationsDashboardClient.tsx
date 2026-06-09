@@ -1,5 +1,6 @@
 'use client';
 
+import { AlertTriangle, Handshake, Target, Thermometer, UserX, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
@@ -19,11 +20,25 @@ import {
 } from '@/domain/operations-dashboard';
 import { useAuth } from '@/contexts/auth-context';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
-import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
+import {
+  AreaTrend,
+  Avatar,
+  CardTitle,
+  CHART,
+  DonutCard,
+  GlassCard,
+  GRAD,
+  kpiTone,
+  MODERN_PAGE_BG,
+  ModernPageShell,
+  ModernTable,
+  StatCard,
+  StatusPill,
+  type ModernTableColumn,
+} from '@/ui/components/dashboard/modern';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
 import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
-import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { InsightsTopWidget } from '../widgets/InsightsTopWidget';
 import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { ChronicBlockersWidget } from './widgets/ChronicBlockersWidget';
@@ -101,7 +116,7 @@ export function OperationsDashboardClient() {
     return (
       <div className="p-6">
         <h1 className="mb-2 text-2xl font-semibold">Операции</h1>
-        <p className="rounded border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
+        <p className="rounded-lg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
           {error}
         </p>
       </div>
@@ -123,19 +138,25 @@ export function OperationsDashboardClient() {
     ),
   ).size;
 
-  return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-      <div className="p-6">
-      {/* §5.2 — Sticky-header c backdrop-blur и тонким border. */}
-      <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-          Операции — пульс компании
-        </h1>
-        <p className="mt-1 text-sm text-fg-secondary">
-          Обновлено {data.generatedAt.toLocaleString('ru-RU')}
-        </p>
-      </header>
+  // Ф2 редизайн — данные hero-графика «Операционная нагрузка» по weeklyInflow.
+  // 12 недель old→new; подпись «12н … 1н». Если все значения пусты/null —
+  // график не рендерим (пустой area-trend не несёт смысла).
+  const inflowBlockers = data.weeklyInflow.blockers;
+  const inflowFrictions = data.weeklyInflow.frictions;
+  const inflowData = inflowBlockers.map((v, i) => ({
+    w: `${12 - i}н`,
+    blockers: v ?? 0,
+    frictions: inflowFrictions[i] ?? 0,
+  }));
+  const hasInflow =
+    inflowBlockers.some((v) => v != null) ||
+    inflowFrictions.some((v) => v != null);
 
+  return (
+    <ModernPageShell
+      title="Операции — пульс компании"
+      subtitle={`Обновлено ${data.generatedAt.toLocaleString('ru-RU')}`}
+    >
       {/* §5.1 — Общая навигация по операционному разделу. */}
       <OperationsTabs />
 
@@ -144,73 +165,106 @@ export function OperationsDashboardClient() {
         <RequiresActionBanner orgId={currentOrgId} />
       </div>
 
-      {/* §5.3/§5.4 — KPI разбиты на смысловые зоны (R1). Карточки — KpiHero
-          c threshold-тоном вместо локального Card. Временных рядов в
-          overview-API нет — sparkline не выдумываем. */}
-      <div className="mt-6 grid grid-cols-1 gap-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards lg:grid-cols-3">
-        {/* Зона «Люди» — кто в команде под нагрузкой/в конфликте. */}
-        <section className="lg:col-span-1">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-            Люди
-          </h2>
-          <KpiHero
+      {/* §5.3/§5.4 — KPI-ряд из StatCard (новый стеклянный язык). Spark — только
+          там, где у KPI есть свой недельный ряд (weeklyInflow); для целей и
+          обещаний рядов нет — sparkline не выдумываем. */}
+      <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <StatCard
+            icon={<Users size={20} />}
+            grad={GRAD.pink}
             label="Конфликты в команде"
-            value={data.teamFrictionCount}
-            numericValue={data.teamFrictionCount}
-            threshold={{ green: 0, yellow: 3, inverted: true }}
+            value={String(data.teamFrictionCount)}
+            tone={kpiTone(data.teamFrictionCount, {
+              green: 0,
+              yellow: 3,
+              inverted: true,
+            })}
+            spark={data.weeklyInflow.frictions.map((v, i) => ({ i, v: v ?? 0 }))}
           />
           {reworkEnabled ? (
-            <p className="mt-1.5 text-xs text-fg-tertiary">
+            <p className="mt-1.5 text-xs" style={{ color: CHART.faint }}>
               закрыто: {data.frictionsResolvedCount}
             </p>
           ) : null}
-        </section>
+        </div>
 
-        {/* Зона «Исполнение» — блокеры, цели, загрузка. */}
-        <section className="lg:col-span-2">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-            Исполнение
-          </h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <KpiHero
-                label="Активные блокеры"
-                value={data.blockersCount}
-                numericValue={data.blockersCount}
-                threshold={{ green: 0, yellow: 5, inverted: true }}
-                href="/dashboard/operations/weekly"
-              />
-              {reworkEnabled ? (
-                <p className="mt-1.5 text-xs text-fg-tertiary">
-                  закрыто за 30 дней: {data.blockersResolvedCount}
-                </p>
-              ) : null}
-            </div>
-            <KpiHero
-              label="Провалившиеся цели"
-              value={data.missedGoalsCount}
-              numericValue={data.missedGoalsCount}
-              threshold={{ green: 0, yellow: 2, inverted: true }}
-            />
-            {commitments === null ? (
-              // Запрос упал — нейтральный KPI без threshold-тона, экран не падает.
-              <KpiHero
-                label="Открытые обещания"
-                value={0}
-                numericValue={0}
-              />
-            ) : (
-              <KpiHero
-                label="Открытые обещания"
-                value={commitments.total}
-                numericValue={commitments.total}
-                threshold={{ green: 5, yellow: 15, inverted: true }}
-                href="/dashboard/operations/weekly"
-              />
-            )}
-          </div>
-        </section>
+        <div>
+          <StatCard
+            icon={<AlertTriangle size={20} />}
+            grad={GRAD.amber}
+            label="Активные блокеры"
+            value={String(data.blockersCount)}
+            tone={kpiTone(data.blockersCount, {
+              green: 0,
+              yellow: 5,
+              inverted: true,
+            })}
+            href="/dashboard/operations/weekly"
+            spark={data.weeklyInflow.blockers.map((v, i) => ({ i, v: v ?? 0 }))}
+          />
+          {reworkEnabled ? (
+            <p className="mt-1.5 text-xs" style={{ color: CHART.faint }}>
+              закрыто за 30 дней: {data.blockersResolvedCount}
+            </p>
+          ) : null}
+        </div>
+
+        <StatCard
+          icon={<Target size={20} />}
+          grad={GRAD.violet}
+          label="Провалившиеся цели"
+          value={String(data.missedGoalsCount)}
+          tone={kpiTone(data.missedGoalsCount, {
+            green: 0,
+            yellow: 2,
+            inverted: true,
+          })}
+        />
+
+        {commitments === null ? (
+          // Запрос упал — нейтральный KPI без threshold-тона, экран не падает.
+          <StatCard
+            icon={<Handshake size={20} />}
+            grad={GRAD.teal}
+            label="Открытые обещания"
+            value="0"
+            tone={kpiTone(0)}
+          />
+        ) : (
+          <StatCard
+            icon={<Handshake size={20} />}
+            grad={GRAD.teal}
+            label="Открытые обещания"
+            value={String(commitments.total)}
+            tone={kpiTone(commitments.total, {
+              green: 5,
+              yellow: 15,
+              inverted: true,
+            })}
+            href="/dashboard/operations/weekly"
+          />
+        )}
       </div>
+
+      {/* Ф2 редизайн — hero-график «Операционная нагрузка» по недельному
+          инфлоу. Скрыт, пока в обоих рядах нет ни одного значения. */}
+      {hasInflow ? (
+        <div className="mt-6">
+          <AreaTrend
+            title="Операционная нагрузка"
+            titleIcon={<AlertTriangle size={16} />}
+            titleGrad={GRAD.amber}
+            data={inflowData}
+            xKey="w"
+            series={[
+              { key: 'blockers', color: CHART.amber, label: 'Блокеры' },
+              { key: 'frictions', color: CHART.pink, label: 'Конфликты' },
+            ]}
+            height={240}
+          />
+        </div>
+      ) : null}
 
       <TeamTemperatureSection
         summary={data.teamTemperature}
@@ -265,14 +319,20 @@ export function OperationsDashboardClient() {
       {/* Зона «Сигналы» — зрелость данных + карта первопричин (R1). */}
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+          <h2
+            className="text-xs font-medium uppercase tracking-wide"
+            style={{ color: CHART.faint }}
+          >
             Сигналы
           </h2>
           {/* ТЗ-2 Ф2 — «оценка» + знаменатель «(доменов посчитано N)».
               Явного поля count в снапшоте нет → N = distinct-домены по slug
               среди сильных+слабых. */}
           {data.maturity.score !== null ? (
-            <span className="rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] font-medium text-fg-secondary">
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+            >
               оценка
               {maturityDomainCount > 0
                 ? ` (доменов посчитано ${maturityDomainCount})`
@@ -323,32 +383,43 @@ export function OperationsDashboardClient() {
         </section>
       )}
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold">Свежие конфликты</h2>
-        {data.topRecentTeamFrictions.length === 0 ? (
-          <p className="text-sm text-fg-secondary">
-            На текущий момент конфликтов в команде не зафиксировано.
-          </p>
-        ) : (
-          <ul className="divide-y rounded border bg-bg-card">
-            {data.topRecentTeamFrictions.map((f) => (
-              <li key={f.id} className="p-3 text-sm">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <strong>{f.fromPersonName ?? 'неизвестный'}</strong>
-                  <span className="text-fg-tertiary">↔</span>
-                  <strong>{f.toPersonName ?? 'неизвестный'}</strong>
-                  <span className="text-xs text-fg-secondary">
-                    ({Math.round(f.confidence * 100)}% уверенности)
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-fg-secondary">{f.explanation}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className="mt-8">
+        <GlassCard>
+          <CardTitle icon={<Users size={16} />} grad={GRAD.pink}>
+            Свежие конфликты
+          </CardTitle>
+          <div className="mt-4">
+            {data.topRecentTeamFrictions.length === 0 ? (
+              <p className="text-sm" style={{ color: CHART.dim }}>
+                На текущий момент конфликтов в команде не зафиксировано.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {data.topRecentTeamFrictions.map((f) => (
+                  <li
+                    key={f.id}
+                    className="rounded-xl p-3"
+                    style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                  >
+                    <div className="flex flex-wrap items-baseline gap-2 text-sm">
+                      <strong>{f.fromPersonName ?? 'неизвестный'}</strong>
+                      <span style={{ color: CHART.faint }}>↔</span>
+                      <strong>{f.toPersonName ?? 'неизвестный'}</strong>
+                      <span className="text-xs" style={{ color: CHART.dim }}>
+                        ({Math.round(f.confidence * 100)}% уверенности)
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs" style={{ color: CHART.dim }}>
+                      {f.explanation}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </GlassCard>
       </div>
-    </div>
+    </ModernPageShell>
   );
 }
 
@@ -367,48 +438,62 @@ function TeamTemperatureSection(props: {
 }) {
   const [mode, setMode] = useState<'overall' | 'byPerson'>('overall');
   return (
-    <section className="mt-8 rounded border bg-bg-card p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-fg-primary">
-          Температура команды
-        </h2>
-        <div className="inline-flex gap-1 rounded-lg bg-bg-subtle p-1">
-          <button
-            type="button"
-            onClick={() => setMode('overall')}
-            aria-pressed={mode === 'overall'}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              mode === 'overall'
-                ? 'bg-accent/15 text-accent-fg'
-                : 'text-fg-secondary hover:bg-bg-subtle'
-            }`}
+    <div className="mt-8">
+      <GlassCard>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle icon={<Thermometer size={16} />} grad={GRAD.teal}>
+            Температура команды
+          </CardTitle>
+          <div
+            className="inline-flex gap-1 rounded-xl p-1"
+            style={{ background: 'oklch(1 0 0 / 0.06)' }}
           >
-            Общая
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('byPerson')}
-            aria-pressed={mode === 'byPerson'}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              mode === 'byPerson'
-                ? 'bg-accent/15 text-accent-fg'
-                : 'text-fg-secondary hover:bg-bg-subtle'
-            }`}
-          >
-            По людям
-          </button>
+            <TemperatureModePill
+              active={mode === 'overall'}
+              onClick={() => setMode('overall')}
+              label="Общая"
+            />
+            <TemperatureModePill
+              active={mode === 'byPerson'}
+              onClick={() => setMode('byPerson')}
+              label="По людям"
+            />
+          </div>
         </div>
-      </div>
-      {mode === 'overall' ? (
-        <TeamTemperatureOverallBody summary={props.summary} />
-      ) : (
-        <TeamTemperatureByPersonBody
-          loading={props.heatmapLoading}
-          error={props.heatmapError}
-          temperature={props.heatmap}
-        />
-      )}
-    </section>
+        {mode === 'overall' ? (
+          <TeamTemperatureOverallBody summary={props.summary} />
+        ) : (
+          <TeamTemperatureByPersonBody
+            loading={props.heatmapLoading}
+            error={props.heatmapError}
+            temperature={props.heatmap}
+          />
+        )}
+      </GlassCard>
+    </div>
+  );
+}
+
+/** Стеклянная пилюля-переключатель режима температуры. */
+function TemperatureModePill(props: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      aria-pressed={props.active}
+      className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
+      style={
+        props.active
+          ? { background: 'oklch(1 0 0 / 0.1)', color: CHART.text }
+          : { color: CHART.dim }
+      }
+    >
+      {props.label}
+    </button>
   );
 }
 
@@ -422,9 +507,6 @@ function TeamTemperatureOverallBody(props: {
 }) {
   const s = props.summary;
   const pct = (v: number) => `${Math.round(v * 100)}%`;
-  const greenW = Math.round(s.greenShare * 100);
-  const yellowW = Math.round(s.yellowShare * 100);
-  const redW = Math.round(s.redShare * 100);
 
   const deltaLabel = (() => {
     if (s.redShareDelta == null) return null;
@@ -436,7 +518,7 @@ function TeamTemperatureOverallBody(props: {
 
   if (s.totalCheckIns === 0) {
     return (
-      <p className="text-sm text-fg-secondary">
+      <p className="text-sm" style={{ color: CHART.dim }}>
         За последние {s.days} дней нет чек-инов с проанализированным
         настроением. Когда сотрудники начнут отвечать на вечерние чек-ины —
         здесь появится распределение зелёный / жёлтый / красный.
@@ -444,58 +526,38 @@ function TeamTemperatureOverallBody(props: {
     );
   }
 
+  // Сегменты пончика. Доли нормируем в проценты (целые) для подписи; имена
+  // несут русскую долю, чтобы легенда пончика была информативной.
+  const donutData = [
+    { name: `зелёных ${pct(s.greenShare)}`, value: Math.round(s.greenShare * 100), c: CHART.mint },
+    { name: `жёлтых ${pct(s.yellowShare)}`, value: Math.round(s.yellowShare * 100), c: CHART.amber },
+    { name: `красных ${pct(s.redShare)}`, value: Math.round(s.redShare * 100), c: CHART.red },
+  ].filter((d) => d.value > 0);
+
   return (
-    <>
-      <p className="text-sm text-fg-secondary">
+    <div className="mt-3 space-y-3">
+      <p className="text-sm" style={{ color: CHART.dim }}>
         Последние {s.days} дн. · всего чек-инов: {s.totalCheckIns}
         {deltaLabel ? `; ${deltaLabel}.` : '.'}
       </p>
-      <div className="mt-3 flex h-6 overflow-hidden rounded border">
-        {greenW > 0 ? (
-          <div
-            className="bg-success"
-            style={{ width: `${greenW}%` }}
-            title={`зелёных ${pct(s.greenShare)}`}
-          />
-        ) : null}
-        {yellowW > 0 ? (
-          <div
-            className="bg-warning"
-            style={{ width: `${yellowW}%` }}
-            title={`жёлтых ${pct(s.yellowShare)}`}
-          />
-        ) : null}
-        {redW > 0 ? (
-          <div
-            className="bg-danger"
-            style={{ width: `${redW}%` }}
-            title={`красных ${pct(s.redShare)}`}
-          />
-        ) : null}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-3 text-xs text-fg-secondary">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded bg-success" />
-            зелёных {pct(s.greenShare)}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded bg-warning" />
-            жёлтых {pct(s.yellowShare)}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded bg-danger" />
-            красных {pct(s.redShare)}
-          </span>
-        </div>
+      <DonutCard
+        title="Распределение настроений"
+        icon={<Thermometer size={16} />}
+        grad={GRAD.teal}
+        data={donutData}
+        centerValue={String(s.totalCheckIns)}
+        centerLabel="чек-инов"
+      />
+      <div className="flex justify-end">
         <Link
           href="/dashboard/operations/weekly"
-          className="text-xs text-info hover:underline"
+          className="text-xs hover:underline"
+          style={{ color: CHART.cyan }}
         >
           Открыть недельную сводку →
         </Link>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -513,58 +575,75 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
     (a, b) => b[1].length - a[1].length,
   );
   return (
-    <section className="mt-8 rounded border bg-bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold">
-          Открытые обещания за 14 дней
-        </h2>
-        <span className="text-sm text-fg-secondary">всего: {total}</span>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-fg-secondary">
-          Висящих обещаний нет — все закрыты или сроки ещё не наступили.
-        </p>
-      ) : (
-        <ul className="divide-y">
-          {groupList.map(([author, list]) => (
-            <li key={author} className="py-2">
-              <div className="text-sm font-medium">
-                {author}
-                <span className="ml-2 text-xs text-fg-secondary">
-                  ({list.length})
-                </span>
-              </div>
-              <ul className="mt-1 ml-3 list-disc text-xs text-fg-secondary">
-                {list.slice(0, 5).map((c) => (
-                  <li key={c.id} className="py-0.5">
-                    {c.text}
-                    {c.dueDate ? (
-                      <span className="ml-1 text-fg-tertiary">
-                        (срок {new Date(c.dueDate).toLocaleDateString('ru-RU')})
-                      </span>
+    <div className="mt-8">
+      <GlassCard>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle icon={<Handshake size={16} />} grad={GRAD.teal}>
+            Открытые обещания за 14 дней
+          </CardTitle>
+          <span className="text-sm" style={{ color: CHART.dim }}>
+            всего: {total}
+          </span>
+        </div>
+        <div className="mt-4">
+          {items.length === 0 ? (
+            <p className="text-sm" style={{ color: CHART.dim }}>
+              Висящих обещаний нет — все закрыты или сроки ещё не наступили.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {groupList.map(([author, list]) => (
+                <li
+                  key={author}
+                  className="rounded-xl p-3"
+                  style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                >
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Avatar name={author} />
+                    {author}
+                    <span className="text-xs" style={{ color: CHART.dim }}>
+                      ({list.length})
+                    </span>
+                  </div>
+                  <ul className="mt-2 ml-1 space-y-1 text-xs" style={{ color: CHART.dim }}>
+                    {list.slice(0, 5).map((c) => (
+                      <li key={c.id} className="flex flex-wrap items-center gap-1.5 py-0.5">
+                        <span>{c.text}</span>
+                        {c.dueDate ? (
+                          <span style={{ color: CHART.faint }}>
+                            (срок {new Date(c.dueDate).toLocaleDateString('ru-RU')})
+                          </span>
+                        ) : null}
+                        {c.escalatedAt ? (
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-[10px]"
+                            style={{ color: CHART.red, background: 'oklch(0.66 0.22 25 / 0.16)' }}
+                          >
+                            давно молчит
+                          </span>
+                        ) : c.askedAt ? (
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-[10px]"
+                            style={{ color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }}
+                          >
+                            спросили
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                    {list.length > 5 ? (
+                      <li className="py-0.5" style={{ color: CHART.faint }}>
+                        …и ещё {list.length - 5}
+                      </li>
                     ) : null}
-                    {c.escalatedAt ? (
-                      <span className="ml-1 rounded bg-chip-danger-bg px-1.5 py-0.5 text-[10px] text-chip-danger-fg">
-                        давно молчит
-                      </span>
-                    ) : c.askedAt ? (
-                      <span className="ml-1 rounded bg-chip-warning-bg px-1.5 py-0.5 text-[10px] text-chip-warning-fg">
-                        спросили
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-                {list.length > 5 ? (
-                  <li className="py-0.5 text-fg-tertiary">
-                    …и ещё {list.length - 5}
-                  </li>
-                ) : null}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </GlassCard>
+    </div>
   );
 }
 
@@ -606,19 +685,31 @@ function TeamTemperatureByPersonBody(props: {
   temperature: OperationsTeamTemperatureApi | null;
 }) {
   if (props.loading) {
-    return <p className="text-sm text-fg-secondary">Загрузка…</p>;
+    return (
+      <p className="text-sm" style={{ color: CHART.dim }}>
+        Загрузка…
+      </p>
+    );
   }
   if (props.error) {
-    return <p className="text-sm text-chip-danger-fg">{props.error}</p>;
+    return (
+      <p className="text-sm" style={{ color: CHART.red }}>
+        {props.error}
+      </p>
+    );
   }
   if (!props.temperature || props.temperature.byPerson.length === 0) {
     return (
-      <p className="text-sm text-fg-tertiary">
+      <p className="text-sm" style={{ color: CHART.dim }}>
         Чек-инов с проанализированным настроением пока нет.
       </p>
     );
   }
-  return <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />;
+  return (
+    <div className="mt-3">
+      <TeamTemperatureHeatmap byPerson={props.temperature.byPerson} />
+    </div>
+  );
 }
 
 /**
@@ -633,45 +724,54 @@ function MissingCheckInsCard(props: {
   data: OperationsMissingCheckInsApi | null;
 }) {
   return (
-    <section className="rounded border bg-bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">Не отчитались сегодня</h2>
+    <GlassCard>
+      <div className="flex items-center justify-between gap-2">
+        <CardTitle icon={<UserX size={16} />} grad={GRAD.amber}>
+          Не отчитались сегодня
+        </CardTitle>
         {props.data ? (
-          <span className="text-xs text-fg-secondary">
+          <span className="text-xs" style={{ color: CHART.dim }}>
             {props.data.missing.length} из {props.data.totalEmployees}
           </span>
         ) : null}
       </div>
-      {props.loading ? (
-        <p className="text-sm text-fg-secondary">Загрузка…</p>
-      ) : props.error ? (
-        <p className="text-sm text-chip-danger-fg">{props.error}</p>
-      ) : !props.data || props.data.totalEmployees === 0 ? (
-        <p className="text-sm text-fg-tertiary">
-          В организации пока нет сотрудников.
-        </p>
-      ) : props.data.missing.length === 0 ? (
-        <p className="text-sm text-chip-success-fg">
-          Все сотрудники отчитались за {props.data.date}.
-        </p>
-      ) : (
-        <ul className="space-y-1 text-sm">
-          {props.data.missing.slice(0, 30).map((m) => (
-            <li
-              key={m.personId}
-              className="rounded px-2 py-1 text-fg-primary hover:bg-bg-overlay/40"
-            >
-              {m.personName ?? 'Без имени'}
-            </li>
-          ))}
-          {props.data.missing.length > 30 ? (
-            <li className="px-2 py-1 text-xs text-fg-tertiary">
-              …и ещё {props.data.missing.length - 30}
-            </li>
-          ) : null}
-        </ul>
-      )}
-    </section>
+      <div className="mt-4">
+        {props.loading ? (
+          <p className="text-sm" style={{ color: CHART.dim }}>
+            Загрузка…
+          </p>
+        ) : props.error ? (
+          <p className="text-sm" style={{ color: CHART.red }}>
+            {props.error}
+          </p>
+        ) : !props.data || props.data.totalEmployees === 0 ? (
+          <p className="text-sm" style={{ color: CHART.dim }}>
+            В организации пока нет сотрудников.
+          </p>
+        ) : props.data.missing.length === 0 ? (
+          <p className="text-sm" style={{ color: CHART.mint }}>
+            Все сотрудники отчитались за {props.data.date}.
+          </p>
+        ) : (
+          <ul className="space-y-1.5 text-sm">
+            {props.data.missing.slice(0, 30).map((m) => (
+              <li
+                key={m.personId}
+                className="rounded-lg px-3 py-1.5"
+                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              >
+                {m.personName ?? 'Без имени'}
+              </li>
+            ))}
+            {props.data.missing.length > 30 ? (
+              <li className="px-3 py-1 text-xs" style={{ color: CHART.faint }}>
+                …и ещё {props.data.missing.length - 30}
+              </li>
+            ) : null}
+          </ul>
+        )}
+      </div>
+    </GlassCard>
   );
 }
 
@@ -687,52 +787,87 @@ function StaleIssuesCard(props: {
   error: string | null;
   data: OperationsStaleIssuesApi | null;
 }) {
-  return (
-    <section className="rounded border bg-bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold">Зависли задачи</h2>
-        {props.data ? (
-          <span className="text-xs text-fg-secondary">
-            всего: {props.data.items.length}
+  // Статус строки: просрочка → риск, иначе зависание без просрочки → внимание.
+  type StaleRow = OperationsStaleIssuesApi['items'][number];
+  const overdue = (it: StaleRow) =>
+    it.daysOverdue !== null && it.daysOverdue > 0;
+  const columns: ModernTableColumn<StaleRow>[] = [
+    {
+      header: 'Задача',
+      cell: (it) => (
+        <Link
+          href={`/issues/${it.issueId}`}
+          className="hover:underline"
+          style={{ color: CHART.text }}
+        >
+          <span className="mr-2 text-xs" style={{ color: CHART.faint }}>
+            {it.identifier}
           </span>
-        ) : null}
-      </div>
-      {props.loading ? (
-        <p className="text-sm text-fg-secondary">Загрузка…</p>
-      ) : props.error ? (
-        <p className="text-sm text-chip-danger-fg">{props.error}</p>
-      ) : !props.data || props.data.items.length === 0 ? (
-        <p className="text-sm text-chip-success-fg">
+          {it.title}
+        </Link>
+      ),
+    },
+    {
+      header: 'Статус',
+      cell: (it) => <StatusPill status={overdue(it) ? 'risk' : 'warning'} />,
+    },
+    {
+      header: 'Просрочка',
+      align: 'right',
+      cell: (it) => (
+        <span className="text-xs" style={{ color: CHART.dim }}>
+          {overdue(it)
+            ? `просрочено ${it.daysOverdue} дн.`
+            : `без активности ${it.daysSinceActivity} дн.`}
+        </span>
+      ),
+    },
+  ];
+
+  if (props.loading) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.violet}>
+          Зависли задачи
+        </CardTitle>
+        <p className="mt-4 text-sm" style={{ color: CHART.dim }}>
+          Загрузка…
+        </p>
+      </GlassCard>
+    );
+  }
+  if (props.error) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.violet}>
+          Зависли задачи
+        </CardTitle>
+        <p className="mt-4 text-sm" style={{ color: CHART.red }}>
+          {props.error}
+        </p>
+      </GlassCard>
+    );
+  }
+  if (!props.data || props.data.items.length === 0) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.violet}>
+          Зависли задачи
+        </CardTitle>
+        <p className="mt-4 text-sm" style={{ color: CHART.mint }}>
           Зависших задач нет — все либо в работе, либо закрыты.
         </p>
-      ) : (
-        <ul className="divide-y">
-          {props.data.items.slice(0, 20).map((it) => (
-            <li key={it.issueId} className="py-2 text-sm">
-              <div className="flex items-start justify-between gap-2">
-                <Link
-                  href={`/issues/${it.issueId}`}
-                  className="flex-1 text-fg-primary hover:text-accent"
-                >
-                  <span className="mr-2 text-xs text-fg-tertiary">
-                    {it.identifier}
-                  </span>
-                  {it.title}
-                </Link>
-                {it.daysOverdue !== null && it.daysOverdue > 0 ? (
-                  <span className="shrink-0 rounded bg-chip-danger-bg px-1.5 py-0.5 text-[10px] text-chip-danger-fg">
-                    просрочено {it.daysOverdue} дн.
-                  </span>
-                ) : (
-                  <span className="shrink-0 rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] text-fg-secondary">
-                    без активности {it.daysSinceActivity} дн.
-                  </span>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      </GlassCard>
+    );
+  }
+  return (
+    <ModernTable
+      title="Зависли задачи"
+      titleIcon={<AlertTriangle size={16} />}
+      titleGrad={GRAD.violet}
+      columns={columns}
+      rows={props.data.items.slice(0, 20)}
+      getKey={(it) => it.issueId}
+    />
   );
 }

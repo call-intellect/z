@@ -29,6 +29,7 @@ import {
   type DeskTransitionDto,
 } from '../dto/desk-transition.dto';
 import { SupportAccessGuard } from '../guards/support-access.guard';
+import { SupportCloneService } from '../services/support-clone.service';
 import { SupportDeskService } from '../services/support-desk.service';
 
 /**
@@ -45,6 +46,7 @@ import { SupportDeskService } from '../services/support-desk.service';
 export class SupportDeskController {
   constructor(
     @Inject(SupportDeskService) private readonly desk: SupportDeskService,
+    @Inject(SupportCloneService) private readonly clone: SupportCloneService,
   ) {}
 
   @Get('meta')
@@ -80,6 +82,18 @@ export class SupportDeskController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true; commentId: string }> {
     return this.desk.reply(id, user.id, body.message, body.fromDraftCommentId);
+  }
+
+  @Post('tickets/:id/draft')
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Сгенерировать черновик ответа клоном поддержки (Ф3)',
+  })
+  async draft(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ draftCommentId: string }> {
+    return this.clone.generateDraft(id, user.id);
   }
 
   @Post('tickets/:id/note')

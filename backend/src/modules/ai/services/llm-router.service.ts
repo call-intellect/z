@@ -204,6 +204,9 @@ export type LlmTaskType =
   | 'support-clone-draft'
   | 'support-answer-critic'
   | 'support-edit-classify'
+  // Support desk Ф4 (support-desk-clone) — ночной куратор контура: решение
+  // keep|promote|fix|merge|archive по блокам базы (capable, Б9).
+  | 'support-contour-curate'
   // ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — multi-query
   // расширение для клонов: на входе вопрос к клону, на выходе 3 формулировки
   // (точная / ситуационный аналог / общий принцип) для retrieval по
@@ -665,6 +668,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'support-clone-draft',
   'support-answer-critic',
   'support-edit-classify',
+  // Support desk Ф4 (support-desk-clone) — ночной куратор контура
+  'support-contour-curate',
   // SBA α-7 wave 2
   'process-template-extract',
   // SBA α-3 wave 3

@@ -11,6 +11,9 @@
  *   - support-edit-classify — классификация типа правки человека
  *     (factual|tone|policy|empty). Дешёвый классификатор → deepseek-v4-flash
  *     primary (Б9).
+ *   - support-contour-curate — ночной куратор контура (Ф4): решение
+ *     keep|promote|fix|merge|archive по блокам базы. CAPABLE-задача → DeepSeek
+ *     V4 Pro primary (Б9).
  *
  * Цепочки (second-brain/01_projects/llm-providers-verified.md):
  *   - deepseek `deepseek-v4-pro` (capable), `deepseek-v4-flash` (cheap).
@@ -102,6 +105,8 @@ const TASK_ROUTES: Array<{ taskType: string; routes: RouteSeed[] }> = [
   { taskType: 'support-clone-draft', routes: DRAFT_ROUTES },
   { taskType: 'support-answer-critic', routes: JUDGE_ROUTES },
   { taskType: 'support-edit-classify', routes: JUDGE_ROUTES },
+  // Ф4 — ночной куратор контура: capable-задача (DeepSeek V4 Pro primary, Б9).
+  { taskType: 'support-contour-curate', routes: DRAFT_ROUTES },
 ];
 
 async function main(): Promise<void> {

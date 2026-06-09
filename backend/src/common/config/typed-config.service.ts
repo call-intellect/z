@@ -905,6 +905,12 @@ export class TypedConfigService {
         'SUPPORT_DESK_ENABLED',
         true,
       ),
+      // Ф4 kill-switch ночного куратора контура (no-op при false).
+      curatorEnabled: this.resolveSync<boolean>(
+        'support_desk.curator_enabled',
+        'SUPPORT_CURATOR_ENABLED',
+        true,
+      ),
     } as const;
   }
 

@@ -1676,6 +1676,11 @@ const TrackerSchema = z.object({
   // цепочку EnvSchema (TS2589). Читается через `cfg.supportDesk.enabled`
   // (resolveSync: AdminSetting `support_desk.enabled` → ENV → default).
   SUPPORT_DESK_ENABLED: zBool(true),
+  // Аварийный kill-switch ночного куратора контура поддержки (TZ Ф4). Дефолт ON
+  // (Ship-On): при false `SupportCuratorCron` — no-op. Читается через
+  // `cfg.supportDesk.curatorEnabled` (resolveSync: AdminSetting
+  // `support_desk.curator_enabled` → ENV → default).
+  SUPPORT_CURATOR_ENABLED: zBool(true),
   IDEMPOTENCY_KEY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   TRACKER_WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
   TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS: z.coerce

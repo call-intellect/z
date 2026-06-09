@@ -9123,6 +9123,24 @@ model SupportDraftOutcome {
   @@index([tenantId, issueId])
 }
 
+/// Аудит действий ночного куратора контура поддержки (TZ Ф4, R-INV-6/R24).
+/// Каждая операция (в т.ч. отклонённая дебатом) фиксируется — что/почему/verdict.
+model SupportCuratorAction {
+  id             String   @id @default(cuid())
+  tenantId       String   /// вендор-Org
+  runDate        String   /// YYYY-MM-DD прогон (идемпотентность в пределах дня)
+  blockId        String
+  action         String   /// keep | promote | fix | merge | archive
+  reason         String   @db.Text
+  targetBlockId  String?  /// для merge — куда слили
+  debateDecision String?  /// итог MultiAgentDebateService (для destructive)
+  applied        Boolean  @default(false) /// применена ли (false = дебат отклонил / keep)
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, runDate])
+  @@index([tenantId, blockId])
+}
+
 /// Вложение к задаче или комментарию.
 model IssueAttachment {
   id           String   @id @default(cuid())

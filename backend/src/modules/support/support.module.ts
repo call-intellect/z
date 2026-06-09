@@ -5,6 +5,7 @@ import { TrackerModule } from '../tracker/tracker.module';
 import { SupportAdminController } from './controllers/support-admin.controller';
 import { SupportClientController } from './controllers/support-client.controller';
 import { SupportDeskController } from './controllers/support-desk.controller';
+import { SupportCuratorCron } from './crons/support-curator.cron';
 import { SupportSlaCron } from './crons/support-sla.cron';
 import { SupportAccessGuard } from './guards/support-access.guard';
 import { SupportAdminGuard } from './guards/support-admin.guard';
@@ -12,6 +13,7 @@ import { SupportAccessService } from './services/support-access.service';
 import { SupportAnswerCriticService } from './services/support-answer-critic.service';
 import { SupportCloneService } from './services/support-clone.service';
 import { SupportContourService } from './services/support-contour.service';
+import { SupportCuratorService } from './services/support-curator.service';
 import { SupportDeskService } from './services/support-desk.service';
 import { SupportEditClassifyService } from './services/support-edit-classify.service';
 import { SupportIntakeService } from './services/support-intake.service';
@@ -31,10 +33,11 @@ import { SupportSlaService } from './services/support-sla.service';
  *     (CookieAuthGuard), RbacModule (RbacService + KnowledgeAccessResolver),
  *     KnowledgeCoreModule (KnowledgeEmbeddingService — засев контура Ф2;
  *     ChatV2RetrievalService + ConfidenceCalibrationService — клон Ф3),
- *     AiModule (LlmRouterService — клон/critic Ф3).
+ *     AiModule (LlmRouterService — клон/critic Ф3; MultiAgentDebateService —
+ *     дебат-гейт ночного куратора Ф4).
  *
- * SLA-cron поднимается IN-PROCESS как провайдер (отдельного worker-процесса
- * в Z нет).
+ * SLA-cron и curator-cron поднимаются IN-PROCESS как провайдеры (отдельного
+ * worker-процесса в Z нет).
  */
 @Module({
   imports: [TrackerModule],
@@ -61,6 +64,12 @@ import { SupportSlaService } from './services/support-sla.service';
     // → SupportDraftOutcome + LlmPreferenceSample + CSAT-гейт промоута в контур.
     SupportEditClassifyService,
     SupportLearningService,
+    // Ф4 — ночной куратор контура: рефлексирующий агент наводит порядок в базе
+    // (keep|promote|fix|merge|archive), destructive только за дебат-гейтом и
+    // только мягко (soft-archive/merge). Инжектит @Global MultiAgentDebateService
+    // (AiModule). Cron — in-process провайдер (отдельного worker-процесса нет).
+    SupportCuratorService,
+    SupportCuratorCron,
   ],
   exports: [SupportAccessService],
 })

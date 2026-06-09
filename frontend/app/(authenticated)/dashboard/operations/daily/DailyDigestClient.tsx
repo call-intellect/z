@@ -11,6 +11,7 @@ import { ApiError } from '@/api/api-error';
 import {
   operationsDailyDigestApi,
   type DailyDigestApi,
+  type DailyDigestTrendPointApi,
 } from '@/api/operations-daily-digest.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -23,10 +24,30 @@ import {
   type DailyDigestPersonStruggledDomain,
   type DailyDigestUrgentItemDomain,
 } from '@/domain/operations-daily-digest';
-import { CountUp } from '@/ui/components/dashboard/charts';
 import {
+  AlarmClock,
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  FileText,
+  Flag,
+  Gauge,
+  Sparkles,
+  Star,
+  ThermometerSun,
+  TrendingUp,
+} from 'lucide-react';
+
+import {
+  AreaTrend,
+  CardTitle,
+  CHART,
+  DonutCard,
   GlassCard,
-  MODERN_PAGE_BG,
+  glass,
+  GRAD,
+  ModernPageShell,
+  StatCard,
 } from '@/ui/components/dashboard/modern';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
@@ -125,46 +146,46 @@ export function DailyDigestClient() {
   const errorMessage = swrErrorMessage(swr.error);
 
   return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-      <div className="p-6">
-      {/* §5.2 — Sticky-header. */}
-      <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-          Ежедневный отчёт
-        </h1>
-        <p className="mt-1 text-sm text-fg-secondary">
-          Сводка за сутки в МСК: температура команды, новые блокеры,
-          просроченные обещания, цели, сигналы. Генерируется автоматически
-          каждый день в 01:00 МСК.
-        </p>
-      </header>
-
+    <ModernPageShell
+      title="Ежедневный отчёт"
+      subtitle="Сводка за сутки в МСК: температура команды, новые блокеры, просроченные обещания, цели, сигналы. Генерируется автоматически каждый день в 01:00 МСК."
+    >
       {/* §5.1 — Общая навигация по операционному разделу. */}
       <OperationsTabs />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded border border-border-subtle bg-bg-surface p-3">
+      {/* Стеклянная панель навигации по датам + кнопка перегенерации. */}
+      <div
+        style={glass({ borderRadius: 18 })}
+        className="mb-6 flex flex-wrap items-center gap-3 p-3"
+      >
         <button
           type="button"
           onClick={() => goToDate(prevDate)}
-          className="rounded border border-border-subtle px-3 py-1 text-sm text-fg-primary hover:bg-bg-overlay"
+          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-white/5"
+          style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
         >
           ← Предыдущий день
         </button>
-        <label className="flex items-center gap-2 text-sm text-fg-secondary">
+        <label
+          className="flex items-center gap-2 text-sm"
+          style={{ color: CHART.dim }}
+        >
           <span>Дата:</span>
           <input
             type="date"
             value={date}
             max={today}
             onChange={(e) => goToDate(e.target.value)}
-            className="rounded border border-border-subtle bg-bg-base px-2 py-1 text-sm text-fg-primary"
+            className="rounded-xl bg-transparent px-2 py-1 text-sm"
+            style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
           />
         </label>
         <button
           type="button"
           onClick={() => goToDate(nextDate)}
           disabled={nextDisabled}
-          className="rounded border border-border-subtle px-3 py-1 text-sm text-fg-primary hover:bg-bg-overlay disabled:opacity-50"
+          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-white/5 disabled:opacity-50"
+          style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
         >
           Следующий день →
         </button>
@@ -173,7 +194,8 @@ export function DailyDigestClient() {
             type="button"
             onClick={handleRegenerate}
             disabled={generating}
-            className="ml-auto rounded bg-accent px-3 py-1 text-sm font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
+            className="ml-auto rounded-xl px-3 py-1.5 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: GRAD.violet, color: CHART.text }}
             title="Принудительно пересобрать отчёт (admin / super_admin)"
           >
             {generating ? 'Пересобираем…' : 'Перегенерировать'}
@@ -182,40 +204,46 @@ export function DailyDigestClient() {
       </div>
 
       {generateError ? (
-        <p className="mb-4 rounded border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
-          {generateError}
-        </p>
+        <div
+          style={glass({ borderRadius: 18 })}
+          className="mb-6 p-3 text-sm"
+        >
+          <span style={{ color: CHART.red }}>{generateError}</span>
+        </div>
       ) : null}
 
       {swr.isLoading ? (
-        <p className="rounded border border-border-subtle bg-bg-surface p-4 text-sm text-fg-secondary">
-          Загрузка отчёта…
-        </p>
+        <GlassCard>
+          <p className="text-sm" style={{ color: CHART.dim }}>
+            Загрузка отчёта…
+          </p>
+        </GlassCard>
       ) : errorMessage ? (
-        <p className="rounded border border-chip-warning-bg bg-chip-warning-bg p-4 text-sm text-chip-warning-fg">
-          {errorMessage}
-        </p>
+        <GlassCard>
+          <p className="text-sm" style={{ color: CHART.amber }}>
+            {errorMessage}
+          </p>
+        </GlassCard>
       ) : domain ? (
         <DigestView data={domain} rawApi={swr.data!} />
       ) : (
         <EmptyState date={date} />
       )}
-      </div>
-    </div>
+    </ModernPageShell>
   );
 }
 
 function EmptyState({ date }: { date: string }) {
   return (
-    <div className="rounded border border-border-subtle bg-bg-surface p-6 text-center">
-      <p className="text-sm text-fg-secondary">
+    <GlassCard className="text-center">
+      <p className="text-sm" style={{ color: CHART.dim }}>
         Отчёт за {formatRu(date)} ещё не сгенерирован.
       </p>
-      <p className="mt-1 text-xs text-fg-tertiary">
+      <p className="mt-1 text-xs" style={{ color: CHART.faint }}>
         Автоматическая генерация — каждый день в 01:00 МСК. Если день уже
         прошёл, можно «Перегенерировать» вручную (admin / super_admin).
       </p>
-    </div>
+    </GlassCard>
   );
 }
 
@@ -237,20 +265,34 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
   return (
     <div className="space-y-6">
       {data.shortSummary ? (
-        <section className="rounded border border-accent/30 bg-accent/5 p-4">
+        <GlassCard>
           <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-xs uppercase tracking-wide text-fg-tertiary">
+            <h2
+              className="text-xs uppercase tracking-wide"
+              style={{ color: CHART.faint }}
+            >
               Короткая выжимка
             </h2>
             {undelivered ? (
-              <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-[10px] text-chip-warning-fg">
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  color: CHART.amber,
+                  background: 'oklch(0.84 0.16 80 / 0.14)',
+                }}
+              >
                 Не доставлено в Telegram
               </span>
             ) : null}
           </div>
-          <p className="text-sm text-fg-primary">{data.shortSummary}</p>
-        </section>
+          <p className="text-sm" style={{ color: CHART.text }}>
+            {data.shortSummary}
+          </p>
+        </GlassCard>
       ) : null}
+
+      {/* Ф5 — hero-тренд из digest.trend (Ф1b): настроение и нагрузка по дням. */}
+      <HeroTrend trend={data.trend} />
 
       {/* Pulse Wave 2 §2.1 — приоритет вверху: срочное → события → люди. */}
       <UrgentItemsSection items={data.urgentItems} />
@@ -260,124 +302,177 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       <ChronicBlockersSection items={data.chronicBlockers} />
 
       {allRuntimeEmpty ? (
-        <section className="rounded border border-border-subtle bg-bg-surface p-4 text-center">
-          <p className="text-sm text-fg-secondary">
+        <GlassCard className="text-center">
+          <p className="text-sm" style={{ color: CHART.dim }}>
             Вчера было спокойно: ни срочных пунктов, ни заметных событий,
             ни просевших сотрудников.
           </p>
-        </section>
+        </GlassCard>
       ) : null}
 
-      <section className="rounded border border-border-subtle bg-bg-surface p-4">
-        <h2 className="mb-2 text-lg font-semibold text-fg-primary">
-          Полный отчёт
-        </h2>
-        <div className="prose prose-sm prose-invert max-w-none text-fg-primary [&>*]:my-2">
-          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
-            {data.bodyMarkdown}
-          </ReactMarkdown>
-        </div>
-      </section>
-
-      <section className="rounded border border-border-subtle bg-bg-surface p-4">
-        <h2 className="mb-2 text-lg font-semibold text-fg-primary">
-          Температура команды
-        </h2>
-        {m.totalCheckIns === 0 ? (
-          <p className="text-sm text-fg-secondary">
+      {/* Температура команды — пончик зелёный/жёлтый/красный, центр = всего чек-инов. */}
+      {m.totalCheckIns === 0 ? (
+        <GlassCard>
+          <CardTitle icon={<ThermometerSun size={16} />} grad={GRAD.teal}>
+            Температура команды
+          </CardTitle>
+          <p className="mt-3 text-sm" style={{ color: CHART.dim }}>
             За {formatRu(data.dateLocal)} нет чек-инов с настроением.
           </p>
-        ) : (
-          <p className="text-sm text-fg-secondary">
-            Всего чек-инов: {m.totalCheckIns}. Зелёных {pct(m.greenShare)},
-            жёлтых {pct(m.yellowShare)}, красных {pct(m.redShare)}.
-          </p>
-        )}
-      </section>
+        </GlassCard>
+      ) : (
+        <DonutCard
+          title="Температура команды"
+          icon={<ThermometerSun size={16} />}
+          grad={GRAD.teal}
+          data={[
+            { name: `Зелёные ${pct(m.greenShare)}`, value: m.greenShare, c: CHART.mint },
+            { name: `Жёлтые ${pct(m.yellowShare)}`, value: m.yellowShare, c: CHART.amber },
+            { name: `Красные ${pct(m.redShare)}`, value: m.redShare, c: CHART.red },
+          ]}
+          centerValue={String(m.totalCheckIns)}
+          centerLabel="чек-инов"
+        />
+      )}
 
-      {/* §5.3/§5.4 — Hero-strip главных метрик дня с CountUp.
-          Временных рядов в API daily-digest нет — sparkline не выдумываем. */}
-      <section className="rounded-2xl bg-gradient-to-br from-bg-card via-bg-card to-accent/5 p-4 shadow-lg motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards md:p-5">
-        <h2 className="mb-3 text-xs uppercase tracking-widest text-fg-tertiary">
+      {/* §5.3/§5.4 — Hero-strip главных метрик дня (StatCard-ряд без спарклайнов —
+          у этих KPI нет временных рядов, не выдумываем). */}
+      <div>
+        <h2
+          className="mb-3 text-xs uppercase tracking-widest"
+          style={{ color: CHART.faint }}
+        >
           Главное за день
         </h2>
-        <CountersRow
-          items={[
-            { label: 'Новые блокеры', value: m.newBlockers.length },
-            { label: 'Просроченные обещания', value: m.overdueCommitments.length },
-            { label: 'Цели закрыты', value: m.goals.completed },
-            { label: 'Цели провалены', value: m.goals.failed },
-            { label: 'Новые сигналы', value: m.newHighInsights.length },
-            { label: 'Решения', value: m.decisions.length },
-          ]}
-        />
-      </section>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <StatCard
+            icon={<AlertTriangle size={20} />}
+            grad={GRAD.amber}
+            label="Новые блокеры"
+            value={String(m.newBlockers.length)}
+            tone={CHART.red}
+          />
+          <StatCard
+            icon={<AlarmClock size={20} />}
+            grad={GRAD.amber}
+            label="Просроченные обещания"
+            value={String(m.overdueCommitments.length)}
+            tone={CHART.amber}
+          />
+          <StatCard
+            icon={<CheckCircle2 size={20} />}
+            grad={GRAD.teal}
+            label="Цели закрыты"
+            value={String(m.goals.completed)}
+            tone={CHART.mint}
+          />
+          <StatCard
+            icon={<Flag size={20} />}
+            grad={GRAD.pink}
+            label="Цели провалены"
+            value={String(m.goals.failed)}
+            tone={CHART.red}
+          />
+          <StatCard
+            icon={<Sparkles size={20} />}
+            grad={GRAD.violet}
+            label="Новые сигналы"
+            value={String(m.newHighInsights.length)}
+            tone={CHART.violet}
+          />
+          <StatCard
+            icon={<Gauge size={20} />}
+            grad={GRAD.blue}
+            label="Решения"
+            value={String(m.decisions.length)}
+            tone={CHART.blue}
+          />
+        </div>
+      </div>
 
       {m.newBlockers.length > 0 ? (
-        <section className="rounded border border-border-subtle bg-bg-surface p-4">
-          <h2 className="mb-2 text-lg font-semibold text-fg-primary">
+        <GlassCard>
+          <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.amber}>
             Новые блокеры
-          </h2>
-          <ul className="space-y-1 text-sm">
+          </CardTitle>
+          <ul className="mt-3 space-y-1 text-sm">
             {m.newBlockers.map((b) => (
               <li
                 key={b.blockId}
-                className="flex items-start gap-2 text-fg-primary"
+                className="flex items-start gap-2 rounded-md p-2"
+                style={{ color: CHART.text }}
               >
-                <span className="text-fg-tertiary">·</span>
+                <span style={{ color: CHART.faint }}>·</span>
                 <span className="flex-1">{b.name}</span>
-                <span className="text-xs text-fg-tertiary">
+                <span className="text-xs" style={{ color: CHART.faint }}>
                   уверенность {Math.round(b.confidence * 100)}%
                 </span>
               </li>
             ))}
           </ul>
-        </section>
+        </GlassCard>
       ) : null}
 
       {m.overdueCommitments.length > 0 ? (
-        <section className="rounded border border-border-subtle bg-bg-surface p-4">
-          <h2 className="mb-2 text-lg font-semibold text-fg-primary">
+        <GlassCard>
+          <CardTitle icon={<AlarmClock size={16} />} grad={GRAD.amber}>
             Просроченные обещания
-          </h2>
-          <ul className="space-y-1 text-sm">
+          </CardTitle>
+          <ul className="mt-3 space-y-1 text-sm">
             {m.overdueCommitments.map((c) => (
               <li
                 key={c.blockId}
-                className="flex items-start gap-2 text-fg-primary"
+                className="flex items-start gap-2 rounded-md p-2"
+                style={{ color: CHART.text }}
               >
-                <span className="text-fg-tertiary">·</span>
+                <span style={{ color: CHART.faint }}>·</span>
                 <span className="flex-1">{c.name}</span>
                 {c.dueDate ? (
-                  <span className="text-xs text-fg-tertiary">
+                  <span className="text-xs" style={{ color: CHART.faint }}>
                     срок {formatRu(c.dueDate.slice(0, 10))}
                   </span>
                 ) : null}
               </li>
             ))}
           </ul>
-        </section>
+        </GlassCard>
       ) : null}
 
       {m.topRedCheckIns.length > 0 ? (
-        <section className="rounded border border-border-subtle bg-bg-surface p-4">
-          <h2 className="mb-2 text-lg font-semibold text-fg-primary">
+        <GlassCard>
+          <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.pink}>
             Красные чек-ины
-          </h2>
-          <ul className="space-y-2 text-sm">
+          </CardTitle>
+          <ul className="mt-3 space-y-2 text-sm">
             {m.topRedCheckIns.map((r) => (
-              <li key={r.checkInId} className="rounded bg-bg-overlay p-2">
-                <div className="text-xs text-fg-tertiary">
+              <li
+                key={r.checkInId}
+                className="rounded-xl p-2.5"
+                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              >
+                <div className="text-xs" style={{ color: CHART.faint }}>
                   {r.personName ?? 'без имени'}
                 </div>
-                <div className="text-fg-primary">{r.excerpt}</div>
+                <div style={{ color: CHART.text }}>{r.excerpt}</div>
               </li>
             ))}
           </ul>
-        </section>
+        </GlassCard>
       ) : null}
 
-      <p className="text-xs text-fg-tertiary">
+      {/* Полный отчёт — markdown внутри стеклянной карточки. */}
+      <GlassCard>
+        <CardTitle icon={<FileText size={16} />} grad={GRAD.blue}>
+          Полный отчёт
+        </CardTitle>
+        <div className="prose prose-sm prose-invert mt-3 max-w-none text-fg-primary [&>*]:my-2">
+          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+            {data.bodyMarkdown}
+          </ReactMarkdown>
+        </div>
+      </GlassCard>
+
+      <p className="text-xs" style={{ color: CHART.faint }}>
         Сгенерировано{' '}
         {data.createdAt.toLocaleString('ru-RU')}
         {data.llmTaskRouteId
@@ -391,24 +486,53 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
   );
 }
 
-function CountersRow(props: {
-  items: Array<{ label: string; value: number }>;
-}) {
+/**
+ * Ф5 — hero-тренд из digest.trend (Ф1b): два area-графика за последние дни.
+ * При <2 точек — стеклянная заглушка вместо пустого графика.
+ */
+function HeroTrend({ trend }: { trend: DailyDigestTrendPointApi[] }) {
+  if (trend.length < 2) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.violet}>
+          Динамика по дням
+        </CardTitle>
+        <p className="mt-3 text-sm" style={{ color: CHART.dim }}>
+          Тренд появится за несколько дней.
+        </p>
+      </GlassCard>
+    );
+  }
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {props.items.map((it) => (
-        <div
-          key={it.label}
-          className="rounded-xl border border-border-subtle bg-bg-surface p-3 shadow-sm transition-shadow hover:shadow-md"
-        >
-          <div className="text-[10px] uppercase tracking-wide text-fg-tertiary">
-            {it.label}
-          </div>
-          <div className="mt-1 text-2xl font-bold tabular-nums text-fg-primary">
-            <CountUp to={it.value} />
-          </div>
-        </div>
-      ))}
+    <div className="grid gap-6 lg:grid-cols-2">
+      <AreaTrend
+        title="Настроение по дням"
+        titleIcon={<ThermometerSun size={16} />}
+        titleGrad={GRAD.teal}
+        data={trend as unknown as Record<string, unknown>[]}
+        xKey="dateLocal"
+        height={220}
+        series={[
+          { key: 'greenShare', color: CHART.mint, label: 'Зелёные' },
+          { key: 'redShare', color: CHART.red, label: 'Красные' },
+        ]}
+      />
+      <AreaTrend
+        title="Нагрузка по дням"
+        titleIcon={<TrendingUp size={16} />}
+        titleGrad={GRAD.amber}
+        data={trend as unknown as Record<string, unknown>[]}
+        xKey="dateLocal"
+        height={220}
+        series={[
+          { key: 'blockers', color: CHART.amber, label: 'Блокеры' },
+          {
+            key: 'overdueCommitments',
+            color: CHART.pink,
+            label: 'Просроченные обещания',
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -474,29 +598,30 @@ function UrgentItemsSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.pink}>
         Срочные пункты
-      </h2>
-      <ul className="space-y-1">
+      </CardTitle>
+      <ul className="mt-3 space-y-1">
         {items.map((item) => (
           <li key={`${item.kind}-${item.id}`}>
             <Link
               href={item.link}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-white/5"
             >
-              <span className="flex items-center gap-2 text-fg-primary">
-                <span aria-hidden className="text-fg-tertiary">
+              <span className="flex items-center gap-2" style={{ color: CHART.text }}>
+                <span aria-hidden style={{ color: CHART.faint }}>
                   {urgentIcon(item.kind)}
                 </span>
                 <span>{item.title}</span>
               </span>
               <span
-                className={`rounded px-2 py-0.5 text-[11px] ${
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={
                   item.urgency === 'high'
-                    ? 'bg-chip-danger-bg text-chip-danger-fg'
-                    : 'bg-chip-warning-bg text-chip-warning-fg'
-                }`}
+                    ? { color: CHART.red, background: 'oklch(0.66 0.22 25 / 0.16)' }
+                    : { color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }
+                }
               >
                 {item.badge}
               </span>
@@ -504,7 +629,7 @@ function UrgentItemsSection({
           </li>
         ))}
       </ul>
-    </section>
+    </GlassCard>
   );
 }
 
@@ -515,29 +640,35 @@ function EventsTimelineSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <CardTitle icon={<CalendarDays size={16} />} grad={GRAD.blue}>
         Что произошло вчера
-      </h2>
-      <ul className="space-y-1">
+      </CardTitle>
+      <ul className="mt-3 space-y-1">
         {items.map((item) => (
           <li key={`${item.kind}-${item.id}`}>
             <Link
               href={item.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
             >
               <span
                 aria-hidden
-                className="w-12 shrink-0 font-mono text-xs text-fg-tertiary tabular-nums"
+                className="w-12 shrink-0 font-mono text-xs tabular-nums"
+                style={{ color: CHART.faint }}
               >
                 {formatTimeRu(item.occurredAt)}
               </span>
-              <span aria-hidden className="text-fg-tertiary">
+              <span aria-hidden style={{ color: CHART.faint }}>
                 {eventIcon(item.kind)}
               </span>
-              <span className="flex-1 text-fg-primary">{item.title}</span>
+              <span className="flex-1" style={{ color: CHART.text }}>
+                {item.title}
+              </span>
               {item.detail ? (
-                <span className="rounded bg-bg-overlay px-2 py-0.5 text-[11px] text-fg-tertiary">
+                <span
+                  className="rounded-full px-2 py-0.5 text-[11px]"
+                  style={{ color: CHART.faint, background: 'oklch(1 0 0 / 0.06)' }}
+                >
                   {item.detail}
                 </span>
               ) : null}
@@ -545,7 +676,7 @@ function EventsTimelineSection({
           </li>
         ))}
       </ul>
-    </section>
+    </GlassCard>
   );
 }
 
@@ -556,30 +687,35 @@ function WhoShinedSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <h2 className="mb-3 text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <CardTitle icon={<Star size={16} />} grad={GRAD.teal}>
         Кто выделился позитивом
-      </h2>
-      <ul className="space-y-1">
+      </CardTitle>
+      <ul className="mt-3 space-y-1">
         {items.map((p) => (
           <li key={`${p.reason}-${p.personId}`}>
             <Link
               href={p.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
             >
-              <span aria-hidden className="text-chip-success-fg">★</span>
-              <span className="font-medium text-fg-primary">{p.personName}</span>
-              <span className="rounded bg-chip-success-bg px-2 py-0.5 text-[11px] text-chip-success-fg">
+              <span aria-hidden style={{ color: CHART.mint }}>★</span>
+              <span className="font-medium" style={{ color: CHART.text }}>
+                {p.personName}
+              </span>
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={{ color: CHART.mint, background: 'oklch(0.85 0.15 165 / 0.14)' }}
+              >
                 {shinedReasonLabel(p.reason)}
               </span>
-              <span className="flex-1 truncate text-xs text-fg-secondary">
+              <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
                 {p.detail}
               </span>
             </Link>
           </li>
         ))}
       </ul>
-    </section>
+    </GlassCard>
   );
 }
 
@@ -590,12 +726,12 @@ function WhoStruggledSection({
 }) {
   if (items.length === 0) return null;
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <CardTitle icon={<Flag size={16} />} grad={GRAD.amber}>
           Кому нужна поддержка
-        </h2>
-        <span className="text-xs text-fg-tertiary">
+        </CardTitle>
+        <span className="text-xs" style={{ color: CHART.faint }}>
           для разговора с глазу на глаз
         </span>
       </div>
@@ -604,21 +740,26 @@ function WhoStruggledSection({
           <li key={`${p.reason}-${p.personId}`}>
             <Link
               href={p.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-bg-overlay"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
             >
-              <span aria-hidden className="text-chip-warning-fg">⚑</span>
-              <span className="font-medium text-fg-primary">{p.personName}</span>
-              <span className="rounded bg-chip-warning-bg px-2 py-0.5 text-[11px] text-chip-warning-fg">
+              <span aria-hidden style={{ color: CHART.amber }}>⚑</span>
+              <span className="font-medium" style={{ color: CHART.text }}>
+                {p.personName}
+              </span>
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                style={{ color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }}
+              >
                 {struggledReasonLabel(p.reason)}
               </span>
-              <span className="flex-1 truncate text-xs text-fg-secondary">
+              <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
                 {p.detail}
               </span>
             </Link>
           </li>
         ))}
       </ul>
-    </section>
+    </GlassCard>
   );
 }
 

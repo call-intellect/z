@@ -316,3 +316,197 @@ describe('ClonesService Ф6 knowledge-access — decisions в loadPersonSubgraph
     expect(mocks.partitionProjectionsByAccess).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * ТЗ 2026-06-08 (Ф6/G) — clone-respond hardening.
+ *
+ * G.1: judgmental-режим больше НЕ понижает анти-дипфейк-порог — при
+ *      requiredBlocksOverride=null берётся cfg.skill.cloneTopicMinBlocks (=2),
+ *      и при <2 reasoning-блоках (cosine≥0.70) клон отказывает так же, как
+ *      в factual (refused=true, topic_starved), а не отвечает по 1 блоку.
+ * G.2: parseCitations парсит `[DECISION:id]` наравне с `[BLOCK:id]`.
+ *
+ * Приватные методы тестируем через any-cast; сервис конструируем с
+ * минимальными моками (cfg.skill + embedder), как в соседних spec.
+ */
+describe('ClonesService Ф6 (G) — clone-respond hardening', () => {
+  type AssertTopicDensityArgs = {
+    question: string;
+    reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
+    requiredBlocksOverride?: number | null;
+  };
+  type AssertTopicDensityResult = {
+    refused: boolean;
+    matchedBlocks: number;
+    requiredBlocks: number;
+    similarityThreshold: number;
+  };
+  type CloneSubgraphLike = {
+    reasoningBlocks: Array<{
+      id: string;
+      text: string;
+      meetingId: string | null;
+      meetingTitle: string | null;
+      startMs: number | null;
+      endMs: number | null;
+      snippet: string | null;
+    }>;
+    knowledgeProfileSummary: string | null;
+    decisions: Array<{ id: string; statement: string; rationale: string | null }>;
+  };
+  type CitationLike = { blockId: string; snippet?: string };
+
+  function buildBareService(opts?: {
+    embedQuery?: () => Promise<number[] | null>;
+  }) {
+    const cfg = {
+      skill: {
+        cloneTopicMinBlocks: 2,
+        cloneTopicSimilarityThreshold: 0.7,
+      },
+    } as unknown as TypedConfigService;
+    const embedder = {
+      embedQuery: vi.fn(opts?.embedQuery ?? (async () => [0.1, 0.2, 0.3])),
+    } as unknown as never;
+    // Порядок: prisma, aiChatQuota, cfg, llm, metrics, personaBuilder,
+    // personaVersioning, rbac, accessResolver, embedder, dialog.
+    const svc = new ClonesService(
+      undefined as never,
+      undefined as never,
+      cfg,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      embedder,
+      undefined as never,
+    );
+    return svc;
+  }
+
+  function block(id: string) {
+    return {
+      id,
+      text: `текст блока ${id}`,
+      meetingId: null,
+      meetingTitle: null,
+      startMs: null,
+      endMs: null,
+      snippet: null,
+    };
+  }
+
+  describe('G.1 — assertTopicDensity единый порог для judgmental/factual', () => {
+    it('requiredBlocksOverride=null → requiredBlocks = cfg.cloneTopicMinBlocks (2), а не 1', async () => {
+      const svc = buildBareService();
+      const assert = (svc as unknown as {
+        assertTopicDensity: (a: AssertTopicDensityArgs) => Promise<AssertTopicDensityResult>;
+      }).assertTopicDensity.bind(svc);
+
+      const res = await assert({
+        question: 'как ты подходишь к найму?',
+        reasoningBlocks: [block('b1')], // всего 1 блок
+        requiredBlocksOverride: null, // judgmental-путь после G.1
+      });
+
+      expect(res.requiredBlocks).toBe(2);
+      // 1 < 2 → отказ (topic_starved), а не ответ по одному блоку.
+      expect(res.refused).toBe(true);
+    });
+
+    it('2+ блоков по теме (cosine≥0.70) при том же пороге → НЕ отказ', async () => {
+      // embedder возвращает тот же вектор, что и блоки → cosine=1 ≥ 0.70.
+      const svc = buildBareService();
+      // мокаем загрузку embedding'ов блоков (приватный loadBlockEmbeddings).
+      (svc as unknown as {
+        loadBlockEmbeddings: (ids: string[]) => Promise<Map<string, number[]>>;
+      }).loadBlockEmbeddings = async (ids: string[]) =>
+        new Map(ids.map((id) => [id, [0.1, 0.2, 0.3]]));
+
+      const assert = (svc as unknown as {
+        assertTopicDensity: (a: AssertTopicDensityArgs) => Promise<AssertTopicDensityResult>;
+      }).assertTopicDensity.bind(svc);
+
+      const res = await assert({
+        question: 'как ты подходишь к найму?',
+        reasoningBlocks: [block('b1'), block('b2')],
+        requiredBlocksOverride: null,
+      });
+
+      expect(res.requiredBlocks).toBe(2);
+      expect(res.matchedBlocks).toBeGreaterThanOrEqual(2);
+      expect(res.refused).toBe(false);
+    });
+  });
+
+  describe('G.2 — parseCitations парсит [DECISION:id]', () => {
+    function emptySubgraph(): CloneSubgraphLike {
+      return { reasoningBlocks: [], knowledgeProfileSummary: null, decisions: [] };
+    }
+
+    function parse(svc: ClonesService, text: string, subgraph: CloneSubgraphLike) {
+      return (svc as unknown as {
+        parseCitations: (t: string, s: CloneSubgraphLike) => CitationLike[];
+      }).parseCitations(text, subgraph);
+    }
+
+    it('вход с [DECISION:id] (есть в subgraph.decisions) → id в citations + snippet=statement', () => {
+      const svc = buildBareService();
+      const subgraph = emptySubgraph();
+      subgraph.decisions = [
+        { id: 'dec-1', statement: 'Перешли на недельные спринты', rationale: null },
+      ];
+
+      const out = parse(svc, 'Решение принято [DECISION:dec-1].', subgraph);
+
+      const ids = out.map((c) => c.blockId);
+      expect(ids).toContain('dec-1');
+      const dec = out.find((c) => c.blockId === 'dec-1');
+      expect(dec?.snippet).toBe('Перешли на недельные спринты');
+    });
+
+    it('вход с [DECISION:id] которого НЕТ в subgraph → id всё равно сохраняется (минимальная citation)', () => {
+      const svc = buildBareService();
+      const out = parse(svc, 'См. [DECISION:ghost].', emptySubgraph());
+      expect(out.map((c) => c.blockId)).toContain('ghost');
+    });
+
+    it('вход с [BLOCK:id] работает как раньше', () => {
+      const svc = buildBareService();
+      const subgraph = emptySubgraph();
+      subgraph.reasoningBlocks = [
+        {
+          ...block('blk-1'),
+          meetingId: 'm-1',
+          meetingTitle: 'Планёрка',
+          snippet: 'сниппет',
+        },
+      ];
+
+      const out = parse(svc, 'Как обсуждали [BLOCK:blk-1].', subgraph);
+
+      const cit = out.find((c) => c.blockId === 'blk-1');
+      expect(cit).toBeDefined();
+      expect(cit?.snippet).toBe('сниппет');
+    });
+
+    it('дедуп одинаковых id (BLOCK и DECISION с общим seen)', () => {
+      const svc = buildBareService();
+      const subgraph = emptySubgraph();
+      subgraph.reasoningBlocks = [block('dup')];
+      subgraph.decisions = [{ id: 'dup', statement: 'дубль', rationale: null }];
+
+      // 'dup' встречается и как BLOCK (дважды), и как DECISION → один раз в out.
+      const out = parse(
+        svc,
+        '[BLOCK:dup] и снова [BLOCK:dup] и [DECISION:dup]',
+        subgraph,
+      );
+
+      const dupCount = out.filter((c) => c.blockId === 'dup').length;
+      expect(dupCount).toBe(1);
+    });
+  });
+});

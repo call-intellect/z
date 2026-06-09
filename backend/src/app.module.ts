@@ -85,6 +85,7 @@ import { MailInboundModule } from './modules/mail/inbound/mail-inbound.module';
 import { MailModule } from './modules/mail/mail.module';
 import { MeModule } from './modules/me/me.module';
 import { MeetingReportsModule } from './modules/meeting-reports/meeting-reports.module';
+import { MeetingUploadsModule } from './modules/meeting-uploads/meeting-uploads.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { MeetingsBalanceModule } from './modules/meetings-balance/meetings-balance.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
@@ -240,6 +241,10 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     WebhooksModule,
     // Retention cron — нужен S3Service из RecordingsModule.
     RetentionModule,
+    // ТЗ-5 Ф2 — ручная загрузка встреч (presigned PUT + ingest). После
+    // RecordingsModule: использует S3Service (presignPut/listKeys/putObject)
+    // и compositeKey. Ingest-воркер живёт в WorkersModule.
+    MeetingUploadsModule,
 
     // Phase 8 — admin endpoints + дополнительные Crossmark endpoints.
     AdminModule,
@@ -683,12 +688,12 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware).forRoutes('{*path}');
 
     // RequestContextMiddleware — оборачивает запрос в AsyncLocalStorage-контекст
     // ПОСЛЕ RequestIdMiddleware (нужен req.id) и ПЕРЕД TenantMiddleware/guards,
     // чтобы LogService мог читать requestId/userId/orgId на горячем пути.
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware).forRoutes('{*path}');
 
     // TenantMiddleware — выставляет `req.tenantId` ДО глобальных guards
     // (SubscriptionGuard / EntitlementGuard), чтобы они могли работать на
@@ -697,7 +702,7 @@ export class AppModule implements NestModule {
     // TenantGuard, который бежит ПОСЛЕ глобальных guards → 403 tenant_required
     // на /api/v1/dashboard/director и других gated-эндпоинтах.
     // Single-org fallback остаётся в TenantGuard (нужен req.user.id).
-    consumer.apply(TenantMiddleware).forRoutes('api/v1/*');
+    consumer.apply(TenantMiddleware).forRoutes('api/v1/{*path}');
 
     // NB: сохранение `req.rawBody` для всех запросов — глобально через
     // `express.json({ verify })` в `main.ts`. Это нужно для проверки HMAC-

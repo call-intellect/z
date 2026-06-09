@@ -1,6 +1,7 @@
 import type { Job } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
@@ -140,11 +141,18 @@ function mkWorker(opts?: MkOpts): {
 
   const redis = { client: {} as unknown } as unknown as RedisService;
 
+  // Ф3 (2026-06-07): порог авто-Issue читается из AdminSetting-крутилки
+  // (cfg.tracker.autoAcceptConfidenceThreshold, дефолт 0.75).
+  const cfg = {
+    tracker: { autoAcceptConfidenceThreshold: 0.75 },
+  } as unknown as TypedConfigService;
+
   const worker = new IntakeAutoTriageWorker(
     redis,
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
     issues as unknown as IssuesService,
+    cfg,
     metrics as unknown as BusinessMetricsService,
   );
   return { worker, prisma, llm, issues, metrics };
@@ -291,6 +299,56 @@ describe('IntakeAutoTriageWorker', () => {
     expect(metrics.incAiIntakeAutoAccepted).not.toHaveBeenCalled();
     expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'pending' }),
+    );
+  });
+
+  // ТЗ B Фаза 4 — JSON-резилиенс: tryParseJson снимает ```json-обёртку,
+  // раньше одиночный JSON.parse падал и триаж терялся молча.
+  it('LLM вернул ```json-обёртку → триаж парсится (auto-accept), один вызов', async () => {
+    const wrapped =
+      '```json\n' +
+      JSON.stringify({
+        suggestedProjectIdentifier: 'DEV',
+        suggestedAssigneeHint: 'Иванов Сергей',
+        suggestedGoalName: null,
+        suggestedPriority: 'high',
+        suggestedDueDate: '2026-05-30',
+        suggestedLabels: [],
+        confidence: 0.95,
+      }) +
+      '\n```';
+    const { worker, llm, issues, metrics } = mkWorker({
+      intake: { suggestedAssigneeId: 'user-ivanov' },
+      llmText: wrapped,
+    });
+    await worker.process(
+      jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }),
+    );
+    // Валидный ответ с первой попытки → ровно один вызов LLM (break сразу).
+    expect(llm.call).toHaveBeenCalledTimes(1);
+    expect(issues.create).toHaveBeenCalledTimes(1);
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'auto_accepted' }),
+    );
+  });
+
+  it('LLM дважды вернул мусор → pending без throw + метрика llm_error', async () => {
+    const { worker, llm, issues, prisma, metrics } = mkWorker({
+      llmText: 'это вообще не json, просто проза',
+    });
+    // Не должно бросить (LLM ответил, просто JSON битый дважды).
+    await expect(
+      worker.process(
+        jobOf({ tenantId: 'org-1', intakeIssueId: 'intake-1' }),
+      ),
+    ).resolves.toBeUndefined();
+    // Ретрай×2 → ровно два вызова LLM.
+    expect(llm.call).toHaveBeenCalledTimes(2);
+    expect(issues.create).not.toHaveBeenCalled();
+    // IntakeIssue остаётся pending — suggested* не перезаписываем.
+    expect(prisma.intakeIssue.update).not.toHaveBeenCalled();
+    expect(metrics.incAiIntakeSuggested).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'llm_error' }),
     );
   });
 });

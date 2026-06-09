@@ -14,7 +14,9 @@ import {
 } from '@/api/operations-daily-digest.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  CHRONIC_BLOCKER_STATUS_LABEL,
   fromDailyDigestApi,
+  type DailyDigestChronicBlockerDomain,
   type DailyDigestDomain,
   type DailyDigestEventDomain,
   type DailyDigestPersonShinedDomain,
@@ -22,6 +24,10 @@ import {
   type DailyDigestUrgentItemDomain,
 } from '@/domain/operations-daily-digest';
 import { CountUp } from '@/ui/components/dashboard/charts';
+import {
+  GlassCard,
+  MODERN_PAGE_BG,
+} from '@/ui/components/dashboard/modern';
 import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
 
 /**
@@ -119,7 +125,8 @@ export function DailyDigestClient() {
   const errorMessage = swrErrorMessage(swr.error);
 
   return (
-    <div className="p-6">
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div className="p-6">
       {/* §5.2 — Sticky-header. */}
       <header className="sticky top-0 z-20 -mx-6 mb-6 border-b border-border-subtle/50 bg-bg-base/85 px-6 py-3 backdrop-blur-md">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
@@ -193,6 +200,7 @@ export function DailyDigestClient() {
       ) : (
         <EmptyState date={date} />
       )}
+      </div>
     </div>
   );
 }
@@ -223,7 +231,8 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
     data.eventsToday.length === 0 &&
     data.urgentItems.length === 0 &&
     data.whoShined.length === 0 &&
-    data.whoStruggled.length === 0;
+    data.whoStruggled.length === 0 &&
+    data.chronicBlockers.length === 0;
 
   return (
     <div className="space-y-6">
@@ -248,6 +257,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       <EventsTimelineSection items={data.eventsToday} />
       <WhoShinedSection items={data.whoShined} />
       <WhoStruggledSection items={data.whoStruggled} />
+      <ChronicBlockersSection items={data.chronicBlockers} />
 
       {allRuntimeEmpty ? (
         <section className="rounded border border-border-subtle bg-bg-surface p-4 text-center">
@@ -610,6 +620,72 @@ function WhoStruggledSection({
       </ul>
     </section>
   );
+}
+
+function ChronicBlockersSection({
+  items,
+}: {
+  items: DailyDigestChronicBlockerDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <GlassCard>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-fg-primary">
+          Хронические блокеры
+        </h2>
+        <span className="text-xs text-fg-tertiary">
+          повторяются изо дня в день
+        </span>
+      </div>
+      <ul className="space-y-2">
+        {items.map((b) => (
+          <li
+            key={b.id}
+            className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm"
+          >
+            <span aria-hidden className="text-chip-danger-fg">
+              ⚠
+            </span>
+            <span className="flex-1 text-fg-primary">{b.representativeText}</span>
+            <span
+              className={`rounded px-2 py-0.5 text-[11px] ${chronicStatusChipClass(
+                b.status,
+              )}`}
+            >
+              {CHRONIC_BLOCKER_STATUS_LABEL[b.status]}
+            </span>
+            <span className="text-xs text-fg-tertiary">
+              {b.daysOpen} дн. открыт
+            </span>
+            {b.linkedInsightId ? (
+              <Link
+                href={`/insights/${b.linkedInsightId}`}
+                className="rounded border border-border-subtle px-2 py-0.5 text-xs text-fg-secondary hover:bg-bg-overlay"
+              >
+                Причина: повторяющийся сигнал
+              </Link>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </GlassCard>
+  );
+}
+
+function chronicStatusChipClass(
+  status: DailyDigestChronicBlockerDomain['status'],
+): string {
+  switch (status) {
+    case 'new':
+      return 'bg-chip-warning-bg text-chip-warning-fg';
+    case 'recurring':
+      return 'bg-chip-danger-bg text-chip-danger-fg';
+    case 'resolved':
+      return 'bg-chip-success-bg text-chip-success-fg';
+    default:
+      return 'bg-bg-overlay text-fg-secondary';
+  }
 }
 
 function urgentIcon(kind: DailyDigestUrgentItemDomain['kind']): string {

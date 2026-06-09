@@ -22,6 +22,8 @@ import {
 } from '../../ai/services/prompts/common';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { SystemLogPipeline } from '../../logging/log-pipeline';
+import { LogService } from '../../logging/log.service';
 import {
   IDEA_EXTRACT_JSON_SCHEMA,
   IDEA_EXTRACT_SCHEMA_NAME,
@@ -40,6 +42,7 @@ interface IdeaSupporter {
 }
 
 interface IdeaDraft {
+  isIdea?: boolean;
   kind: 'internal' | 'client_request';
   statement: string;
   rationale?: string | null;
@@ -77,6 +80,7 @@ export class Specialist36Service {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(LogService) private readonly logs: LogService,
     // W4.1 — DataClassPolicyService для shadow-compare.
     @Optional()
     @Inject(DataClassPolicyService)
@@ -105,7 +109,64 @@ export class Specialist36Service {
     if (!block) return;
     if (block.tenantId !== args.tenantId) return;
     const allowed = new Set(['idea', 'feature_request']);
-    if (!allowed.has(block.signalType)) return;
+    if (!allowed.has(block.signalType)) {
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-6-ideas',
+        action: 'skipped',
+        message: `Idea пропущена: signalType '${block.signalType}' не идея`,
+        orgId: block.tenantId,
+        details: {
+          type: 'idea',
+          reason: 'signal_out_of_scope',
+          blockId: block.id,
+        },
+      });
+      return;
+    }
+
+    // Ф1 idea direct-path dedup (2026-06-08): если Idea уже материализована из
+    // ЭТОГО блока (block-ingest direct-path ИЛИ прошлый прогон специалиста при
+    // ретрае джоба) — НЕ создаём дубль. Обогащаем существующую (supporters /
+    // sourceBlockIds / weight), как KNN-merge, и выходим. Детерминированно по
+    // sourceBlockId — не зависит от наличия embedding'а у direct-path идеи.
+    const alreadyMaterialized = await this.prisma.idea.findFirst({
+      where: {
+        tenantId: block.tenantId,
+        sourceBlockIds: { has: block.id },
+        status: { notIn: ['rejected', 'archived'] },
+      },
+    });
+    if (alreadyMaterialized) {
+      try {
+        await this.updateExistingIdea({ existing: alreadyMaterialized, block });
+      } catch (err) {
+        this.logger.warn(
+          {
+            blockId: block.id,
+            ideaId: alreadyMaterialized.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-6: обогащение уже-материализованной идеи упало — пропуск',
+        );
+      }
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-6-ideas',
+        action: 'merged',
+        message: `Idea уже материализована из блока ${block.id} — обогащена ${alreadyMaterialized.id}`,
+        orgId: block.tenantId,
+        details: {
+          type: 'idea',
+          intoId: alreadyMaterialized.id,
+          blockId: block.id,
+          reason: 'source_block_dedup',
+        },
+      });
+      return;
+    }
 
     try {
       const queryText = this.buildQueryText(block);
@@ -115,11 +176,31 @@ export class Specialist36Service {
       });
       if (matched) {
         await this.updateExistingIdea({ existing: matched, block });
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-6-ideas',
+          action: 'merged',
+          message: `Idea слита в существующую ${matched.id}`,
+          orgId: block.tenantId,
+          details: { type: 'idea', intoId: matched.id, blockId: block.id },
+        });
         return;
       }
 
       const draft = await this.extractDraft(block);
-      if (!draft) return;
+      if (!draft) {
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-6-ideas',
+          action: 'skipped',
+          message: 'Idea не извлечена (нет черновика / низкий confidence)',
+          orgId: block.tenantId,
+          details: { type: 'idea', reason: 'no_draft', blockId: block.id },
+        });
+        return;
+      }
 
       // Resolve supporters and ownerUserId.
       const { supporters, ownerUserId } = await this.resolveSupportersAndOwner({
@@ -188,6 +269,16 @@ export class Specialist36Service {
           dataClassAudit: audit,
           createdByUserId: ownerUserId,
         },
+      });
+
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-6-ideas',
+        action: 'created',
+        message: `создана Idea ${idea.id}`,
+        orgId: block.tenantId,
+        details: { type: 'idea', entityId: idea.id, blockId: block.id },
       });
 
       await this.tryWriteEmbedding({ id: idea.id, text: queryText });
@@ -459,6 +550,15 @@ export class Specialist36Service {
         type: 'idea',
         reason: 'schema_validation',
       });
+      return null;
+    }
+    // C3 anti-плодёж: явный булев гейт. Срабатывает ТОЛЬКО на явный false —
+    // модель не обязана фабриковать карточку, если идеи в блоке нет.
+    if (parsed.isIdea === false) {
+      this.logger.debug(
+        { blockId: block.id },
+        'specialist-3-6.extractDraft: isIdea=false — это не идея, skip',
+      );
       return null;
     }
     if (parsed.confidence < Specialist36Service.MIN_EXTRACT_CONFIDENCE) {

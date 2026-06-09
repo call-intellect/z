@@ -331,6 +331,9 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // Соберём id блоков, у которых signalType='decision' — для fallback-
       // Decision (если LLM не вернул отдельный decisions[] item).
       const decisionBlockIds = new Set<string>();
+      // Ф1 idea direct-path: blockId → embedding блока (переиспользуем уже
+      // посчитанный vector, чтобы тонкая Idea была KNN-discoverable).
+      const ideaEmbeddingByBlockId = new Map<string, number[] | null>();
 
       for (let i = 0; i < blocksInOrder.length; i++) {
         const block = blocksInOrder[i] as ExtractedBlock;
@@ -362,8 +365,24 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           if (block.signalType === 'decision') {
             decisionBlockIds.add(blockId);
           }
+          if (block.signalType === 'idea') {
+            ideaEmbeddingByBlockId.set(blockId, vector ?? null);
+          }
         }
       }
+
+      // ── ТЗ-4 Ф4: документная привязка в граф ──
+      // Явная привязка человека при загрузке документа (attachedRoleId /
+      // attachedThemeId) перебивает LLM-роль и связывает блоки документа с темой.
+      // Только для doc-источника. Применяется ДАЖЕ если LLM не вернул ни одной
+      // роли (в этом и смысл — явная атрибуция действует независимо от извлечения).
+      // Best-effort: ошибка не валит ingest. См. applyDocumentAttribution.
+      await this.applyDocumentAttribution(event, payload, blockIds).catch((err) => {
+        this.logger.warn(
+          { rawEventId, err: err instanceof Error ? err.message : String(err) },
+          'block-ingest: документная привязка (ТЗ-4 Ф4) не удалась — пропуск',
+        );
+      });
 
       // ── Группа Б: типизированные сущности через GraphService.upsertEntity ──
       // Decision имеет приоритет: LLM-вернутый item затирает auto-create.
@@ -648,6 +667,84 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      // ── Ф1 idea direct-path (за kill-switch knowledge.ideaDirectPathEnabled) ──
+      // Детерминированная материализация Idea из блоков signalType='idea',
+      // чтобы Идея не зависела на 100% от 2-го LLM-вызова Specialist 3.6
+      // (extractDraft может упасть/отсеять по confidence<0.4 → Идея терялась).
+      // Идемпотентно по sourceBlockId; дубль против Specialist 3.6 исключён
+      // его guard'ом (он обогащает, а не создаёт второй раз).
+      if (this.cfg.knowledgeCore.ideaDirectPathEnabled && ideaEmbeddingByBlockId.size > 0) {
+        const ideaCandidateIds = [...ideaEmbeddingByBlockId.keys()];
+        // Уже материализованные блоки (повторный прогон / частичный сбой).
+        const existingIdeas = await this.prisma.idea.findMany({
+          where: { tenantId: event.tenantId, sourceBlockIds: { hasSome: ideaCandidateIds } },
+          select: { sourceBlockIds: true },
+        });
+        const coveredBlockIds = new Set<string>();
+        for (const it of existingIdeas) for (const bid of it.sourceBlockIds) coveredBlockIds.add(bid);
+
+        const toCreate = ideaCandidateIds.filter((bid) => !coveredBlockIds.has(bid));
+        if (toCreate.length > 0) {
+          const rows = await this.prisma.ideaBlock.findMany({
+            where: { id: { in: toCreate } },
+            select: { id: true, tenantId: true, trustedAnswer: true, confidence: true, dataClass: true, createdAt: true },
+          });
+          let createdAny = false;
+          for (const row of rows) {
+            const statement = (row.trustedAnswer ?? '').trim();
+            if (!statement) continue; // пустую идею не материализуем
+            try {
+              const conf = Math.max(0, Math.min(1, Number(row.confidence)));
+              const idea = await this.prisma.idea.create({
+                data: {
+                  tenantId: row.tenantId,
+                  kind: 'internal',
+                  statement,
+                  rationale: null,
+                  weight: new Prisma.Decimal(1.5),
+                  supporterCount: 1,
+                  firstProposedAt: row.createdAt,
+                  lastDiscussedAt: row.createdAt,
+                  status: 'captured',
+                  sourceBlockIds: [row.id],
+                  confidence: new Prisma.Decimal(conf),
+                  dataClass: row.dataClass,
+                  createdByUserId: null,
+                },
+              });
+              createdAny = true;
+              this.metrics.incExtractionEntity({ type: 'idea' });
+              // Переиспользуем embedding блока → Idea KNN-discoverable.
+              const emb = ideaEmbeddingByBlockId.get(row.id);
+              if (emb && emb.length > 0) {
+                try {
+                  const vecStr = `[${emb.join(',')}]`;
+                  await this.prisma.$executeRawUnsafe(
+                    `UPDATE "ideas" SET "embedding" = $1::vector WHERE "id" = $2`,
+                    vecStr,
+                    idea.id,
+                  );
+                } catch {
+                  // graceful — embedding не критичен для существования идеи
+                }
+              }
+            } catch (err) {
+              this.logger.warn(
+                { blockId: row.id, err: err instanceof Error ? err.message : String(err) },
+                'block-ingest: idea direct-path create упал — пропуск блока',
+              );
+            }
+          }
+          if (createdAny) {
+            try {
+              await this.coreQueue.enqueueIdeaClusterer({ tenantId: event.tenantId });
+            } catch {
+              // graceful
+            }
+          }
+        }
+      }
+
       // МТЗ Ф5 — при СИСТЕМНОМ отказе графа (age_unavailable) НЕ помечаем
       // RawEvent='ingested'. Бизнес-строки (IdeaBlock + те сущности, что
       // прошли) уже сохранены — повторный заход джоба идемпотентен (skip
@@ -811,6 +908,23 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     if (typeof payload !== 'object' || payload === null) return empty;
     const p = payload as Record<string, unknown>;
 
+    // chatbox с per-message сегментацией (transcript.turns с authorPersonId) —
+    // НЕ отдаём session-level authorPersonId: subject пишется по говорящему
+    // сегмента в attributeSubject (fail-closed по клиентским репликам).
+    const t = p['transcript'];
+    const turns =
+      t && typeof t === 'object'
+        ? (t as { turns?: unknown }).turns
+        : undefined;
+    const hasPerMessageAuthors =
+      Array.isArray(turns) &&
+      turns.some(
+        (tn) =>
+          tn !== null &&
+          typeof tn === 'object' &&
+          'authorPersonId' in (tn as Record<string, unknown>),
+      );
+
     // tracker — actor.userId
     const actor = p['actor'];
     if (actor && typeof actor === 'object') {
@@ -819,9 +933,11 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         return { ...empty, authorUserId: uid };
       }
     }
-    // chatbox — responsible.personId (linkedPersonId)
+    // chatbox — responsible.personId (linkedPersonId). При per-message
+    // сегментации session-level автор НЕ отдаётся (fail-open на клиентские
+    // реплики) — проваливаемся дальше; subject ставится по сегменту.
     const resp = p['responsible'];
-    if (resp && typeof resp === 'object') {
+    if (resp && typeof resp === 'object' && !hasPerMessageAuthors) {
       const pid = (resp as { personId?: unknown }).personId;
       if (typeof pid === 'string' && pid.trim().length > 0) {
         return { ...empty, authorPersonId: pid };
@@ -1166,36 +1282,58 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           args.block.evidenceStartMs >= s.startMs &&
           args.block.evidenceStartMs <= s.endMs,
       ) ?? null;
-    const speakerParticipantId = seg?.speakerParticipantId ?? null;
-    const speakerName = seg?.speakers?.[0] ?? null;
 
-    const subjectEntityId = await this.entities.resolveSubjectEntityId(
-      args.event.tenantId,
-      {
-        authorPersonId: args.authorPersonId ?? null,
-        authorEmail: args.authorEmail ?? null,
-        speakerParticipantId,
-        speakerName,
-        authorUserId: args.authorUserId,
-      },
-    );
+    // chatbox per-message: сегмент несёт детерминированного автора
+    // (string=сотрудник, null=клиент → subject НЕ пишем). Для встреч/одно-
+    // авторных источников поле отсутствует → прежнее поведение.
+    const segHasAuthor =
+      seg !== null &&
+      Object.prototype.hasOwnProperty.call(seg, 'authorPersonId');
 
-    // Ф1 — метрика доли субъект-атрибуций по источнику identity. Считается и при
-    // null-результате (via='none'), но ПОСЛЕ kill-switch (выключенная атрибуция
-    // не считается). via — по приоритету фактически присутствующего источника.
-    const via: string = subjectEntityId
-      ? args.authorPersonId
-        ? 'personId'
-        : args.authorUserId
-          ? 'userId'
-          : args.authorEmail
-            ? 'email'
-            : speakerParticipantId
-              ? 'participant'
-              : speakerName
-                ? 'name'
-                : 'none'
-      : 'none';
+    let subjectEntityId: string | null;
+    let via: string;
+    if (segHasAuthor) {
+      const segAuthor = seg?.authorPersonId ?? null;
+      subjectEntityId = segAuthor
+        ? await this.entities.resolveSubjectEntityId(args.event.tenantId, {
+            authorPersonId: segAuthor,
+            authorEmail: null,
+            speakerParticipantId: null,
+            speakerName: null,
+            authorUserId: null,
+          })
+        : null; // клиентская реплика — subject-менеджер не пишем
+      // Ф1 — метрика доли субъект-атрибуций по источнику identity. Считается
+      // и при null-результате (via='none'), но ПОСЛЕ kill-switch.
+      via = subjectEntityId ? 'personId' : 'none';
+    } else {
+      const speakerParticipantId = seg?.speakerParticipantId ?? null;
+      const speakerName = seg?.speakers?.[0] ?? null;
+      subjectEntityId = await this.entities.resolveSubjectEntityId(
+        args.event.tenantId,
+        {
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
+          speakerParticipantId,
+          speakerName,
+          authorUserId: args.authorUserId,
+        },
+      );
+      // via — по приоритету фактически присутствующего источника identity.
+      via = subjectEntityId
+        ? args.authorPersonId
+          ? 'personId'
+          : args.authorUserId
+            ? 'userId'
+            : args.authorEmail
+              ? 'email'
+              : speakerParticipantId
+                ? 'participant'
+                : speakerName
+                  ? 'name'
+                  : 'none'
+        : 'none';
+    }
     this.metrics.incSubjectAttribution({ via });
 
     if (!subjectEntityId) return;
@@ -1218,11 +1356,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         blockId: args.blockId,
         entityId: subjectEntityId,
         signalType: args.block.signalType,
-        via: speakerParticipantId
-          ? 'speakerParticipantId'
-          : args.authorUserId
-            ? 'authorUserId'
-            : 'speakerName',
+        via,
       },
       'block-ingest: автор помечен role=subject',
     );
@@ -1260,19 +1394,47 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           args.block.evidenceStartMs >= s.startMs &&
           args.block.evidenceStartMs <= s.endMs,
       ) ?? null;
-    const speakerParticipantId = seg?.speakerParticipantId ?? null;
-    const speakerName = seg?.speakers?.[0] ?? null;
 
-    const authorPersonId = await this.entities.resolveSubjectPersonId(
-      args.event.tenantId,
-      {
-        speakerParticipantId,
-        speakerName,
-        authorUserId: args.authorUserId,
-        authorPersonId: args.authorPersonId ?? null,
-        authorEmail: args.authorEmail ?? null,
-      },
-    );
+    // chatbox per-message: сегмент несёт детерминированного автора (string=
+    // сотрудник, null=клиент → обещание клиента менеджеру НЕ приписываем).
+    // Для встреч/одно-авторных источников поле отсутствует → прежний путь.
+    const segHasAuthor =
+      seg !== null &&
+      Object.prototype.hasOwnProperty.call(seg, 'authorPersonId');
+
+    let authorPersonId: string | null;
+    let via: string;
+    if (segHasAuthor) {
+      const segAuthor = seg?.authorPersonId ?? null;
+      authorPersonId = segAuthor
+        ? await this.entities.resolveSubjectPersonId(args.event.tenantId, {
+            speakerParticipantId: null,
+            speakerName: null,
+            authorUserId: null,
+            authorPersonId: segAuthor,
+            authorEmail: null,
+          })
+        : null;
+      via = 'personId';
+    } else {
+      const speakerParticipantId = seg?.speakerParticipantId ?? null;
+      const speakerName = seg?.speakers?.[0] ?? null;
+      authorPersonId = await this.entities.resolveSubjectPersonId(
+        args.event.tenantId,
+        {
+          speakerParticipantId,
+          speakerName,
+          authorUserId: args.authorUserId,
+          authorPersonId: args.authorPersonId ?? null,
+          authorEmail: args.authorEmail ?? null,
+        },
+      );
+      via = speakerParticipantId
+        ? 'speakerParticipantId'
+        : args.authorUserId
+          ? 'authorUserId'
+          : 'speakerName';
+    }
     if (!authorPersonId) return;
 
     await this.prisma.ideaBlock.update({
@@ -1284,11 +1446,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       {
         blockId: args.blockId,
         authorPersonId,
-        via: speakerParticipantId
-          ? 'speakerParticipantId'
-          : args.authorUserId
-            ? 'authorUserId'
-            : 'speakerName',
+        via,
       },
       'block-ingest: автор обещания проставлен (commitmentAuthorPersonId)',
     );
@@ -1512,6 +1670,52 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       result.documentId = ext.slice('doc:'.length);
     }
     return result;
+  }
+
+  /**
+   * ТЗ-4 Ф4 — документная привязка влияет на граф. Для RawEvent doc-источника
+   * (`sourceExternalId='doc:<id>'`) применяет явную привязку, заданную человеком
+   * при загрузке документа, ПОСЛЕ создания всех блоков:
+   *   - `attachedRoleId` → перебивает LLM-роль: всем блокам документа
+   *     `roleId = attachedRoleId`, `roleRelevant = true` (updateMany).
+   *   - `attachedThemeId` → связывает все блоки документа с темой графа
+   *     (ThemeIdeaBlock с weight=0.8; чуть ниже дефолта 1.0 — явная привязка
+   *     ценна, но слабее «органической» кластеризации).
+   *
+   * Идемпотентно: `updateMany` повторяемо, `createMany({ skipDuplicates })`
+   * не дублирует строки при ретрае (PK `[themeId, blockId]`). Применяется
+   * ДАЖЕ когда LLM не разрешил ни одной роли — явная атрибуция действует
+   * независимо от извлечения. НЕ трогает алгоритмы кластеризации/извлечения.
+   */
+  private async applyDocumentAttribution(
+    event: RawEvent,
+    payload: unknown,
+    blockIds: string[],
+  ): Promise<void> {
+    if (!event.sourceExternalId?.startsWith('doc:') || blockIds.length === 0) {
+      return;
+    }
+    const p = (payload ?? {}) as {
+      attachedRoleId?: string | null;
+      attachedThemeId?: string | null;
+    };
+    if (p.attachedRoleId) {
+      await this.prisma.ideaBlock.updateMany({
+        where: { id: { in: blockIds }, tenantId: event.tenantId },
+        data: { roleId: p.attachedRoleId, roleRelevant: true },
+      });
+    }
+    if (p.attachedThemeId) {
+      const themeId = p.attachedThemeId;
+      await this.prisma.themeIdeaBlock.createMany({
+        data: blockIds.map((blockId) => ({
+          themeId,
+          blockId,
+          weight: new Prisma.Decimal('0.8'),
+        })),
+        skipDuplicates: true,
+      });
+    }
   }
 
   private parseDecidedAt(input: string | null | undefined): Date | null {

@@ -58,7 +58,7 @@ export function QualityScoreWidget() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Раздел появится после первых встреч с AI-оценкой.
+            Раздел появится после первых встреч с оценкой качества.
           </p>
         </CardContent>
       </Card>
@@ -85,7 +85,7 @@ export function QualityScoreWidget() {
       <CardContent className="space-y-3">
         {meetingsCount === 0 ? (
           <p className="text-sm text-muted-foreground">
-            За период нет встреч с AI-оценкой.
+            За период нет встреч с оценкой качества.
           </p>
         ) : (
           <>

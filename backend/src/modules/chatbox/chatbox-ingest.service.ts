@@ -269,6 +269,24 @@ export class ChatboxIngestService {
     }));
     const fullText = renderTranscript(renderMsgs);
 
+    // Per-message сегментация для корректной атрибуции subject по говорящему
+    // (фикс cross-attribution chatbox). Менеджер-реплики → authorPersonId
+    // ответственного; клиент-реплики → authorPersonId=null (не сотрудник).
+    // Синтетические таймкоды (1 сообщение = 1 секунда) дают block-extraction
+    // привязку evidenceStartMs к нужному сегменту.
+    const transcriptTurns = messages.map((m, i) => ({
+      speaker:
+        m.senderType === 'CLIENT'
+          ? `Клиент${m.senderName ? ` [${m.senderName}]` : ''}`
+          : `Менеджер${m.senderName ? ` [${m.senderName}]` : ''}`,
+      text: m.text ?? '',
+      startSec: i,
+      endSec: i + 0.9,
+      speakerParticipantId: null,
+      authorPersonId:
+        m.senderType === 'CLIENT' ? null : (responsible?.personId ?? null),
+    }));
+
     const payload = {
       kind: 'chatbox_chat_session' as const,
       chatExternalId: chat?.externalId ?? null,
@@ -286,6 +304,9 @@ export class ChatboxIngestService {
       })),
       // Обязательно для block-ingest worker (generic-путь ищет fullText).
       fullText,
+      // Per-message turns (фикс cross-attribution): buildSegments идёт по
+      // meeting-пути и строит сегмент на сообщение с authorPersonId.
+      transcript: { turns: transcriptTurns },
     };
 
     const source = await this.upsertSource(tenantId);

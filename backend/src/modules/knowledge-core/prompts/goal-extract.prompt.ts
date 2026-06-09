@@ -14,9 +14,13 @@
  * стабилен, переменные данные (имя блока, цитаты, теги) — в конце USER.
  */
 
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  withAsrNote,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 
-export const GOAL_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
+export const GOAL_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withConfidenceCalibration(
   [
     'Ты — knowledge-инженер по целям компании. Тебе дают один IdeaBlock из встречи, в котором может звучать цель компании / отдела.',
     'Твоя задача — решить, выражает ли блок ЦЕЛЬ, и если да — извлечь её структурированный черновик на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
@@ -58,6 +62,7 @@ export const GOAL_EXTRACT_SYSTEM_PROMPT = withConfidenceCalibration(
     'Блок «Задачи на день» (plan_item). Цитаты: «Иван: сегодня поправлю баг с логином и отвечу на письмо клиента».',
     'Вывод: {"isGoal": false, "statement": "недостаточно сигнала для извлечения цели", "description": null, "horizon": "quarterly", "measurable": null, "confidence": 0.15}. Пояснение: это частные задачи-output на день, не изменение состояния компании.',
   ].join('\n'),
+  ),
 );
 
 export const GOAL_EXTRACT_USER_TEMPLATE = (args: {

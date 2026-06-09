@@ -76,6 +76,12 @@ enum MeetingStatus {
   recording_ready
   transcription_processing
   transcription_ready
+  /// ТЗ-5 Ф1 (meeting-upload-diarization): транскрипт диаризован, спикеры
+  /// извлечены (MeetingUploadSpeaker), но ещё НЕ сопоставлены с сотрудниками/
+  /// внешними. Промежуточное состояние ТОЛЬКО для встреч `source=upload`:
+  /// после ручного назначения спикеров (хост/админ) встреча уходит в
+  /// `ai_processing`. Для `source=livekit` не используется.
+  awaiting_speakers
   ai_processing
   ai_ready
   failed
@@ -84,6 +90,26 @@ enum MeetingStatus {
   /// терминального `failed`, при `ai_failed` запись встречи (Recording.status=ready,
   /// mainVideoUrl) остаётся смотрибельной — встреча не схлопывается целиком.
   ai_failed
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization): источник встречи.
+/// `livekit` — встреча проведена в комнате LiveKit (медиа-движок, дефолт).
+/// `upload` — встреча загружена файлом (аудио/видео) и диаризована вне LiveKit.
+enum MeetingSource {
+  livekit
+  upload
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization): как сопоставлен спикер диаризации
+/// с реальным участником (см. MeetingUploadSpeaker.assignment).
+/// `unassigned` — ещё не размечен; `employee` — сотрудник (personId);
+/// `external` — внешний участник (externalName/Company/Position);
+/// `excluded` — исключён из анализа (шум/нерелевантный голос).
+enum UploadSpeakerAssignment {
+  unassigned
+  employee
+  external
+  excluded
 }
 
 enum AiStepStatus {
@@ -843,6 +869,20 @@ enum GoalProgressStatus {
   dropped
 }
 
+/// ТЗ-2 Ф6.A (daily-value-dashboards) — MoSCoW-приоритет цели для портфеля.
+///   - must   — обязательно (must have).
+///   - should — следует сделать (should have).
+///   - could  — можно (could have).
+///   - wont   — пока не делаем (won't have this time).
+/// Nullable на Goal: приоритет проставляется владельцем вручную (Patch), AI не
+/// выдумывает — отсутствие = «не классифицировано» (корзина 'none' в портфеле).
+enum GoalPriority {
+  must
+  should
+  could
+  wont
+}
+
 /// Goals OKR v2 — откуда тянуть GoalKeyResult.currentValue автоматически.
 enum GoalKrSourceKind {
   manual
@@ -858,6 +898,30 @@ enum DocumentKind {
   markdown
   /// Создаётся из text.adapter (фронт /dump → POST /api/v1/dumps).
   text
+  /// ТЗ-4 Ф1 — Excel-таблица (.xlsx). Парсер ExcelJS → текст по листам.
+  xlsx
+  /// ТЗ-4 Ф1 — PowerPoint-презентация (.pptx). Текст по слайдам.
+  pptx
+  /// ТЗ-4 Ф1 — HTML-страница (выгрузка из вики/Confluence/Notion).
+  html
+  /// ТЗ-4 Ф1 — Rich Text Format (.rtf).
+  rtf
+  /// ТЗ-4 Ф1 — OpenDocument Text (.odt).
+  odt
+  /// ТЗ-4 Ф1 — CSV-таблица. Парсится как текст по строкам.
+  csv
+  other
+}
+
+/// ТЗ-4 Ф1 (manual-document-upload) — смысловой тип документа (что это по сути),
+/// в отличие от `DocumentKind` (формат файла). Заполняется вручную при загрузке
+/// или предлагается классификатором (`suggestedDocType`).
+enum DocumentType {
+  regulation
+  policy
+  instruction
+  process
+  job_description
   other
 }
 
@@ -868,6 +932,23 @@ enum DocumentStatus {
   parsed // парсер завершил
   blocks_extracted // BlockExtractionService отработал
   failed
+}
+
+/// ТЗ-4 Ф7 — источник массового импорта документов. `upload_zip` —
+/// загруженный пользователем ZIP-архив; `notion` / `confluence` —
+/// зарезервированы под Ф8/Ф9 (переиспользуют тот же batch-pipeline).
+enum DocumentImportSource {
+  upload_zip
+  notion
+  confluence
+}
+
+/// ТЗ-4 Ф7 — статус batch-импорта документов.
+enum DocumentImportStatus {
+  pending // создан, ждёт воркера
+  processing // воркер распаковывает и создаёт Document'ы
+  completed // все записи обработаны
+  failed // фатальная ошибка (битый архив / превышение лимита)
 }
 
 /// Статус сборки карты должности (Фаза 0d, RoleProfileAgent).
@@ -1273,6 +1354,16 @@ model Meeting {
   /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
   closedGroupKind String? @db.VarChar(20)
 
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — источник встречи. `livekit` (дефолт)
+  /// для встреч в комнате; `upload` для встреч, загруженных файлом и диаризованных.
+  source                MeetingSource @default(livekit)
+  /// ТЗ-5 Ф1 — подсказка числа спикеров для диаризации загруженной встречи
+  /// (необязательно; пользователь может указать ожидаемое число голосов).
+  uploadNumSpeakersHint Int?
+
+  /// ТЗ-5 Ф1 — спикеры диаризации загруженной встречи (для ручной разметки).
+  uploadSpeakers MeetingUploadSpeaker[]
+
   @@index([ownerId, createdAt])
   @@index([status, endedAt])
   @@index([deletedAt])
@@ -1280,6 +1371,37 @@ model Meeting {
   @@index([tenantId])
   @@index([linkedIssueId])
   @@index([linkedCycleId])
+  @@index([tenantId, source, createdAt])
+}
+
+/// ТЗ-5 Ф1 (meeting-upload-diarization) — спикер диаризации загруженной встречи.
+/// Один ряд = один обнаруженный голос (label вроде "SPEAKER_00"); хост/админ
+/// сопоставляет его с сотрудником (personId) или внешним участником, либо
+/// исключает. После полной разметки встреча уходит из `awaiting_speakers` в
+/// `ai_processing`.
+model MeetingUploadSpeaker {
+  id               String                  @id @default(cuid())
+  meetingId        String
+  meeting          Meeting                 @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  label            String
+  displayLabel     String
+  turnsCount       Int                     @default(0)
+  speakingSeconds  Int                     @default(0)
+  sampleText       String                  @db.Text
+  assignment       UploadSpeakerAssignment @default(unassigned)
+  personId         String?
+  person           Person?                 @relation(fields: [personId], references: [id], onDelete: SetNull)
+  externalName     String?                 @db.VarChar(200)
+  externalCompany  String?                 @db.VarChar(200)
+  externalPosition String?                 @db.VarChar(200)
+  mergedIntoLabel  String?
+  participantId    String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@unique([meetingId, label])
+  @@index([meetingId])
+  @@map("meeting_upload_speaker")
 }
 
 model Participant {
@@ -2378,6 +2500,7 @@ model Org {
   jobDescriptions JobDescription[]
   skills          Skill[]
   documents       Document[]
+  documentImports DocumentImport[]
   roleProfiles    RoleProfile[]
   // Группа Б
   missions        Mission[]
@@ -2404,6 +2527,27 @@ model Org {
   // ── SBA α-1 — Conversational Channels Foundation ──
   channels      Channel[]
   notifications Notification[]
+
+  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──
+  notificationBudgetLedgers NotificationBudgetLedger[]
+
+  // ── TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов ──
+  customerRiskSnapshots CustomerRiskSnapshot[]
+
+  // ── TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы ──
+  personalDailyBriefs PersonalDailyBrief[]
+
+  // ── TZ-1 Фаза 5 (daily-value-engine) — месячные снимки value-recap ──
+  valueRecapSnapshots ValueRecapSnapshot[]
+
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — недельные снимки здоровья портфеля целей ──
+  portfolioHealthSnapshots PortfolioHealthSnapshot[]
+
+  // ── TZ-1 Фаза 3.A (daily-value-engine) — синтез блокеров ──
+  blockerSyntheses BlockerSynthesis[]
+
+  // ── TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека ──
+  knowledgeAtRiskSnapshots KnowledgeAtRiskSnapshot[]
 
   // ── SBA β-8 — DailyCheckIn ──
   dailyCheckIns DailyCheckIn[]
@@ -3313,6 +3457,9 @@ model Entity {
   role       Role?       @relation("RoleEntity")
   /// SBA α-9 wave 2 — линковка с Department.
   department Department? @relation("DepartmentEntity")
+  /// TZ-1 Фаза 1 (daily-value-engine) — дневные снимки риска клиента
+  /// (только для Entity{type=customer}).
+  customerRiskSnapshots CustomerRiskSnapshot[] @relation("CustomerRiskSnapshotEntity")
 
   @@index([tenantId, type])
   @@index([tenantId, mergedIntoId])
@@ -3986,6 +4133,8 @@ model Theme {
   entities   ThemeEntity[]
   cards      Card[]           @relation("CardBornFromTheme")
   goalLinks  GoalTheme[]
+  /// ТЗ-4 Ф1 — документы, привязанные к этой теме (Document.attachedThemeId).
+  documents  Document[]       @relation("DocumentTheme")
 
   @@index([tenantId, status])
   @@index([tenantId, branch])
@@ -4130,6 +4279,10 @@ model Goal {
   promotionState GoalPromotionState @default(active)
   /// Статус движения для пульса (вычисляется авто, правится руками). Отдельная ось от status (жизненного цикла).
   progressStatus GoalProgressStatus @default(on_track)
+  /// ТЗ-2 Ф6.A (daily-value-dashboards) — MoSCoW-приоритет для портфеля целей.
+  /// NULL = не классифицировано (корзина 'none'). Проставляется владельцем через
+  /// PATCH /api/v1/goals/:id/priority; AI не перетирает.
+  priority       GoalPriority?
   /// Провенанс: блоки графа, из которых добыта цель. GIN-индекс — в postgres-init.sql. Пусто для ручных.
   sourceBlockIds String[]           @default([])
   /// Уверенность извлечения 0..1 (для AI). NULL для ручных.
@@ -4157,6 +4310,34 @@ model Goal {
   @@index([tenantId, ownerPersonId])
   /// ТЗ-B (2026-06-05) — дешёвый findFirst(where isPrimary) для «севера» компаса.
   @@index([tenantId, isPrimary])
+}
+
+/// ТЗ-2 Ф6.A (daily-value-dashboards) — недельный снимок здоровья портфеля
+/// целей компании. Cron `@Cron('0 5 * * 1')` (понедельник 05:00) считает
+/// `healthScore` (0..100) по распределению `progressStatus` живых целей,
+/// разрез по MoSCoW-приоритету (byPriorityJson) и upsert'ит снимок per
+/// (tenantId, dateLocal). Дельта к прошлой неделе берётся из предыдущего снимка.
+/// Идемпотентно — `@@unique([tenantId, dateLocal])`.
+model PortfolioHealthSnapshot {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// День снимка YYYY-MM-DD (МСК). Уникален в паре с tenantId.
+  dateLocal      String   @db.VarChar(10)
+  /// Интегральный балл здоровья портфеля 0..100.
+  healthScore    Int
+  /// Разрез по progressStatus: { on_track, at_risk, stalled, achieved, dropped } → count.
+  byStatusJson   Json
+  /// Разрез по MoSCoW: { must, should, could, wont, none } → { count, achievedCount, achievedPercent }.
+  byPriorityJson Json
+  /// Сколько живых целей участвовало в расчёте.
+  goalsCount     Int      @default(0)
+  snapshotAt     DateTime @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dateLocal])
+  @@index([tenantId, snapshotAt(sort: Desc)])
+  @@map("portfolio_health_snapshot")
 }
 
 /// M:M между Goal и Theme. На старте — ручная привязка от owner;
@@ -4569,6 +4750,19 @@ model Person {
   analyticsOptIn      Boolean            @default(false)
   /// Pulse Wave 4 §4.1 — когда дано последнее «полное» согласие.
   analyticsOptInAt    DateTime?
+  /// TZ-1 Фаза 0 (daily-value-engine) — состояние кампании привязки канала
+  /// (Telegram-бот). NULL = ещё не приглашали, 'invited' = отправлено первое
+  /// приглашение, 'reminded' = отправлено напоминание, 'bound' = есть verified
+  /// telegram-binding. Управляется `ChannelBindingCampaignCron`.
+  channelBindingCampaignState String? @db.VarChar(20)
+  /// TZ-1 Фаза 0 — когда отправлено первое приглашение привязать канал.
+  channelBindingInvitedAt     DateTime?
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — компания/работодатель Person
+  /// (для внешних контактов и обогащения карточки). NULL = неизвестно.
+  company             String?            @db.VarChar(200)
+  /// ТЗ-5 Ф1 — должность Person (для обогащения карточки при разметке
+  /// спикеров загруженной встречи). NULL = неизвестно.
+  jobTitle            String?            @db.VarChar(200)
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
@@ -4616,6 +4810,22 @@ model Person {
   engagementSnapshots         PersonEngagementSnapshot[]
   /// Pulse Wave 4 §4.1 — лог согласий 152-ФЗ (per dataType, append-only).
   consentLogs                 ConsentLog[]
+  /// TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений per-person.
+  notificationBudgetLedgers   NotificationBudgetLedger[]
+  /// TZ-1 Фаза 1 (daily-value-engine) — снимки риска клиентов, где этот Person
+  /// ответственный менеджер (CustomerRiskSnapshot.responsiblePersonId).
+  customerRiskSnapshots       CustomerRiskSnapshot[]             @relation("CustomerRiskSnapshotResponsible")
+  /// TZ-1 Фаза 2 (daily-value-engine) — персональные дневные брифы «Твой день».
+  personalDailyBriefs         PersonalDailyBrief[]               @relation("PersonalDailyBriefPerson")
+  /// TZ-1 Фаза 3.A (daily-value-engine) — кластеры блокеров, где этот Person
+  /// ответственный (BlockerSynthesis.responsiblePersonId).
+  blockerSyntheses            BlockerSynthesis[]                 @relation("BlockerSynthesisResponsible")
+  /// TZ-1 Фаза 4.C (daily-value-engine) — снимки знание-под-риском, где этот
+  /// Person — соло-эксперт под риском ухода (KnowledgeAtRiskSnapshot.soleExpertPersonId).
+  knowledgeAtRiskSnapshots    KnowledgeAtRiskSnapshot[]          @relation("KnowledgeAtRiskSoleExpert")
+  /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикеры загруженных встреч,
+  /// сопоставленные с этим Person (assignment=employee).
+  uploadSpeakers              MeetingUploadSpeaker[]
 
   @@unique([tenantId, email, deletedAt])
   @@index([tenantId, userId])
@@ -4787,6 +4997,25 @@ model Document {
   status         DocumentStatus @default(uploaded)
   /// Если документ привязан к Role — wizard step-4 или /structure → Загрузить должностную.
   attachedRoleId String?
+
+  /// ТЗ-4 Ф1 — смысловой тип документа (регламент/политика/инструкция/…). null =
+  /// не классифицирован вручную; подсказка хранится в `suggestedDocType`.
+  docType           DocumentType?
+  /// ТЗ-4 Ф1 — привязка документа к теме графа знаний (опц.).
+  attachedThemeId   String?
+  attachedTheme     Theme?        @relation("DocumentTheme", fields: [attachedThemeId], references: [id], onDelete: SetNull)
+  /// ТЗ-4 Ф1 — привязка документа к проекту трекера (опц.).
+  attachedProjectId String?
+  attachedProject   Project?      @relation("DocumentProject", fields: [attachedProjectId], references: [id], onDelete: SetNull)
+  /// ТЗ-4 Ф1 — хэш содержимого для дедупликации повторных загрузок.
+  contentHash       String?
+  /// ТЗ-4 Ф1 — предложенный классификатором смысловой тип (до подтверждения пользователем).
+  suggestedDocType  DocumentType?
+  /// ТЗ-4 Ф1 — предложенная классификатором тема (Theme.id) до подтверждения.
+  suggestedThemeId  String?
+  /// ТЗ-4 Ф1 — id batch-импорта (массовая загрузка); группирует документы одной операции.
+  importBatchId     String?
+
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
@@ -4813,7 +5042,56 @@ model Document {
   @@index([tenantId, status])
   @@index([tenantId, uploaderId])
   @@index([tenantId, attachedRoleId])
+  @@index([tenantId, docType])
+  @@index([tenantId, contentHash])
+  @@index([tenantId, attachedThemeId])
+  @@index([importBatchId])
   @@map("documents")
+}
+
+/// ТЗ-4 Ф7 — batch-импорт документов (ZIP-архив → N Document'ов).
+///
+/// Создаётся синхронно в `POST /api/v1/documents/import-zip` (status=pending),
+/// затем `DocumentImportWorker` (очередь `core.document-import`) распаковывает
+/// архив и для каждой поддерживаемой записи создаёт `Document` с
+/// `importBatchId = <этот id>`. Прогресс пишется в `doneFiles`/`failedFiles`,
+/// ошибки по конкретным записям — в `errorLog` (массив `{file, error}`).
+///
+/// ZIP хранится так же, как Document (inline ≤ inlineThreshold, иначе S3),
+/// чтобы воркер мог его прочитать. После обработки байты остаются как audit-
+/// артефакт (retention — отдельной фазой).
+model DocumentImport {
+  id          String               @id @default(cuid())
+  tenantId    String
+  source      DocumentImportSource
+  status      DocumentImportStatus @default(pending)
+  totalFiles  Int                  @default(0)
+  doneFiles   Int                  @default(0)
+  failedFiles Int                  @default(0)
+  /// Лог ошибок по записям: [{ file: string, error: string }]. null — ошибок нет.
+  errorLog    Json?
+  /// Person.id (НЕ User.id) — кто инициировал импорт.
+  createdById String
+
+  /// Batch-атрибуция, применяемая ко всем созданным Document'ам (опц.).
+  attachedThemeId   String?
+  attachedProjectId String?
+  docType           DocumentType?
+
+  /// S3-ключ архива; null если использован `zipInline`.
+  zipS3Key   String? @db.VarChar(500)
+  /// Inline-байты архива; null если использован S3.
+  zipInline  Bytes?
+  /// Размер архива в байтах (для логов/лимитов).
+  zipSize    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("document_import")
 }
 
 /// SBA β-7 — BrandVoiceProfile. 1:1 на Org-запись «голоса бренда».
@@ -5780,6 +6058,17 @@ model Decision {
   /// `reversibility`.
   reversibilityAt DateTime?
 
+  /// TZ-1 Фаза 3.B (daily-value-engine) — денормализованный счётчик связанных
+  /// задач (строк DecisionTaskLink). Обновляется backfill'ом и воркером.
+  /// 0 + actualOutcomes IS NULL + старше N дней → контролёр помечает 'stalled'.
+  linkedTaskCount      Int       @default(0)
+  /// TZ-1 Фаза 3.B — статус внедрения: 'not_started'|'in_progress'|'done'|
+  /// 'stalled'. NULL до первого прогона контролёра.
+  implementationStatus String?   @db.VarChar(24)
+  /// TZ-1 Фаза 3.B — когда контролёр (`DecisionImplementationCron`) последний
+  /// раз проверял внедрение решения.
+  implementationCheckedAt DateTime?
+
   org             Org             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   decidedBy       Person?         @relation("DecisionDecidedBy", fields: [decidedByPersonId], references: [id], onDelete: SetNull)
   sourceMeeting   Meeting?        @relation("DecisionSourceMeeting", fields: [sourceMeetingId], references: [id], onDelete: SetNull)
@@ -5789,6 +6078,8 @@ model Decision {
   supersededBy    Decision[]      @relation("DecisionSupersedes")
   currentVersion  CardVersion?    @relation("DecisionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
   appliedPolicy   DecisionPolicy? @relation("DecisionAppliedPolicy", fields: [appliedPolicyId], references: [id], onDelete: SetNull)
+  /// TZ-1 Фаза 3.B — связи решение↔задача (join DecisionTaskLink).
+  taskLinks       DecisionTaskLink[] @relation("DecisionTaskLinkDecision")
 
   @@index([tenantId, status])
   @@index([tenantId, decidedAt])
@@ -6475,6 +6766,10 @@ model Notification {
   responseStatus  NotificationResponseStatus?
   responsePayload Json?
   expiresAt       DateTime?
+  /// TZ-1 Фаза 0 (daily-value-engine) — приоритет уведомления для дневного
+  /// бюджета. 1 = критично/важно (обходит бюджет и тихие часы), 2 = обычное
+  /// (учитывается в дневном лимите). Default 2.
+  priorityTier    Int?                        @default(2)
   createdAt       DateTime                    @default(now())
   respondedAt     DateTime?
 
@@ -6616,6 +6911,251 @@ model DailyCheckIn {
   /// SBA β-8.1 — индекс для виджета «Температура команды».
   @@index([tenantId, sentiment, dateLocal])
   @@map("daily_check_ins")
+}
+
+/// TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений на
+/// одного Person'а в его локальном дне. Гарантирует, что человека не
+/// заваливают пушами: при достижении лимита (`notifications.daily_budget.
+/// per_person`, default 5) не-критические push-доставки откладываются (в
+/// in_app они всё равно видны). Учёт — атомарный upsert по
+/// `(tenantId, personId, dateLocal)`.
+model NotificationBudgetLedger {
+  id         String   @id @default(cuid())
+  tenantId   String
+  personId   String
+  /// YYYY-MM-DD по локальной TZ Person'а.
+  dateLocal  String   @db.VarChar(10)
+  /// Сколько push-уведомлений уже потрачено за этот локальный день.
+  sentCount  Int      @default(0)
+  lastSentAt DateTime?
+  /// Разбивка потраченного по eventType: { "checkin.prompt": 2, ... }.
+  byTrigger  Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personId, dateLocal])
+  @@index([tenantId, dateLocal])
+  @@map("notification_budget_ledger")
+}
+
+/// TZ-1 Фаза 1 (daily-value-engine) — дневной снимок риска клиента.
+///
+/// Дневной агент `CustomerRiskRadarCron` группирует IdeaBlock'и
+/// signalType ∈ {churn_risk, objection, pain, feature_request} по
+/// Entity{type=customer} (через IdeaBlockEntity), копит за окно (default 14
+/// дней) и ранжирует по money-риску. Веса/пороги/окно — AdminSetting, не код.
+///
+/// Идемпотентность — `@@unique([tenantId, customerEntityId, dateLocal])`:
+/// повторный прогон за тот же день перезаписывает снимок (upsert).
+model CustomerRiskSnapshot {
+  id               String @id @default(cuid())
+  tenantId         String
+  /// Entity{type=customer}.id — клиент, по которому считается риск.
+  customerEntityId String
+  /// YYYY-MM-DD (МСК) — день снимка.
+  dateLocal        String @db.VarChar(10)
+  /// { churn_risk, objection, pain, feature_request } — счётчики за окно.
+  signalCounts     Json
+  /// Размер окна накопления в днях (на момент снимка; из AdminSetting).
+  windowDays       Int    @default(14)
+  /// Взвешенная сумма сигналов: churn_risk*w1 + objection*w2 + pain*w3 +
+  /// feature_request*w4. Веса — AdminSetting.
+  riskScore        Decimal @db.Decimal(8, 4)
+  /// 'critical' | 'warning' | 'ok' — по порогам critical/warning (AdminSetting).
+  riskLevel        String  @db.VarChar(16)
+  /// До 20 IdeaBlock.id-источников (для drill-down).
+  topBlockIdsJson  Json
+  /// Ответственный менеджер (Person той же Org). NULL если не резолвится по
+  /// сделке/Project.customerCardId→owner. НЕ выдумываем.
+  responsiblePersonId String?
+  /// Когда отправлен push ответственному менеджеру (NULL — не отправляли).
+  deliveredManagerAt  DateTime?
+  snapshotAt          DateTime @default(now())
+
+  org             Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerEntity  Entity  @relation("CustomerRiskSnapshotEntity", fields: [customerEntityId], references: [id], onDelete: Cascade)
+  responsible     Person? @relation("CustomerRiskSnapshotResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, customerEntityId, dateLocal])
+  @@index([tenantId, riskLevel, snapshotAt(sort: Desc)])
+  @@index([tenantId, responsiblePersonId])
+  @@map("customer_risk_snapshot")
+}
+
+/// TZ-1 Фаза 2 (daily-value-engine) — идемпотентный снимок персонального
+/// дневного брифа «Твой день» per-person/день.
+///
+/// `PersonalDailyBriefCron` (`@Cron('0 * * * *')`) утром по локальной TZ Person'а
+/// синтезирует бриф (задачи/обещания/блокеры/что-обещали-тебе/подсказка/
+/// skill-помощь) → upsert по `@@unique([tenantId, personId, dateLocal])` →
+/// push через дневной бюджет Ф0 (priorityTier 2). `payloadJson` — структурный
+/// payload (SQL+шаблон, LLM только на «1 подсказку дня»). `deliveredAt` —
+/// момент push, `openedAt` — клик пользователя (единый паттерн «доставлено vs
+/// открыто», как у дайджестов).
+model PersonalDailyBrief {
+  id          String    @id @default(cuid())
+  tenantId    String
+  personId    String
+  /// YYYY-MM-DD по локальной TZ Person'а — день брифа.
+  dateLocal   String    @db.VarChar(10)
+  /// Структурный payload брифа (задачи/обещания/блокеры/что-обещали-тебе/
+  /// подсказка/skill-помощь). Контракт — `PersonalDailyBriefPayload`.
+  payloadJson Json
+  /// Когда отправлен push сотруднику (NULL — не отправляли).
+  deliveredAt DateTime?
+  /// Когда сотрудник открыл бриф (NULL — не открывал).
+  openedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  org    Org    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation("PersonalDailyBriefPerson", fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, personId, dateLocal])
+  @@index([tenantId, dateLocal])
+  @@map("personal_daily_brief")
+}
+
+/// TZ-1 Фаза 5 (daily-value-engine) — месячный снимок «что Кора сделала за
+/// месяц» (value-recap). Витрина владельцу (инструмент продления) на ТВЁРДЫХ
+/// данных: ведущая ось «снятая рутина» (счётчики из БД) + второй слой «команда
+/// лучше» (soft-цифры с плашкой «оценка» + знаменателем).
+///
+/// `ValueRecapCron` (`@Cron('0 7 1 * *')`, 1-е число месяца) обходит Org →
+/// `ValueRecapService.build` → upsert по `@@unique([tenantId, periodYm])`
+/// (идемпотентно) → push-first владельцу/COO (Telegram/email через бюджет Ф0,
+/// eventType `operations.monthly_recap`). `deliveredAt` — момент push,
+/// `openedAt` — клик владельца (drill-down на экран).
+///
+/// Запрещённые метрики (Р6) в `payloadJson` НЕ хранятся: часы×ставка=₽,
+/// было→стало «до Коры», medianHoursToAnswer, roiScore/alignment как KPI,
+/// «N знаний спасено». Гарантия — в `ValueRecapService` + unit-тест.
+model ValueRecapSnapshot {
+  id          String    @id @default(cuid())
+  tenantId    String
+  /// YYYY-MM — месяц снимка (например 2026-05).
+  periodYm    String    @db.VarChar(7)
+  /// Структурный payload витрины (счётчики снятой рутины + soft-слой + дельта
+  /// к прошлому месяцу + human-readable narrative). Контракт — `ValueRecapPayload`.
+  payloadJson Json
+  /// Когда отправлен push владельцу/COO (NULL — не отправляли).
+  deliveredAt DateTime?
+  /// Когда владелец открыл витрину (NULL — не открывал).
+  openedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, periodYm])
+  @@index([tenantId, createdAt])
+  @@map("value_recap_snapshot")
+}
+
+/// TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
+///
+/// `BlockerSynthesisCron` (`@Cron('0 22 * * *')`, после вечернего окна
+/// чек-инов) нормализует `DailyCheckIn.blockersJson` + `IdeaBlock(signalType=
+/// blocker)` дня, кластеризует (дешёвый ratio-детект + embedding KNN, как в
+/// insight-радаре) и сопоставляет с прошлыми днями (окно `blocker_synthesis.
+/// lookback_days`, default 7). Каждому кластеру присваивает статус
+/// (new|recurring|resolved), `daysOpen` и `businessImpactScore` (выше, если
+/// задевает customer/deadline/commitment). LLM — ТОЛЬКО на финальный
+/// абзац-сводку (`blocker-synthesis-summary`). При `status=recurring` и
+/// `daysOpen >= blocker_synthesis.recurring_days` — мостит кластер в `Insight`
+/// (через Specialist35Service).
+///
+/// Идемпотентность — `@@unique([tenantId, clusterKey])`: повторный прогон за
+/// тот же день апдейтит существующий кластер (upsert), не плодит дубли.
+model BlockerSynthesis {
+  id                  String  @id @default(cuid())
+  tenantId            String
+  /// Стабильный ключ кластера блокеров (детерминированный по нормализованному
+  /// тексту/embedding-кластеру) — якорь идемпотентности между днями.
+  clusterKey          String
+  /// Репрезентативный текст кластера (самый свежий/частый блокер).
+  representativeText  String  @db.Text
+  /// 'new' | 'recurring' | 'resolved'.
+  status              String  @db.VarChar(20)
+  /// YYYY-MM-DD (МСК) — когда кластер впервые замечен.
+  firstSeenDateLocal  String  @db.VarChar(10)
+  /// YYYY-MM-DD (МСК) — когда кластер последний раз замечен.
+  lastSeenDateLocal   String  @db.VarChar(10)
+  /// Сколько дней кластер открыт (по календарю между first/last seen).
+  daysOpen            Int     @default(0)
+  /// Взвешенный бизнес-удар: выше, если блокер задевает customer/deadline/
+  /// commitment. Веса — AdminSetting.
+  businessImpactScore Decimal @db.Decimal(8, 4)
+  /// IdeaBlock.id-источники кластера (для drill-down).
+  relatedBlockIdsJson Json
+  /// Связанный Insight (создан/привязан мостом при recurring). NULL — не мостили.
+  linkedInsightId     String?
+  /// Ответственный (Person той же Org), если резолвится по блокам. NULL — нет.
+  responsiblePersonId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  org         Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  responsible Person? @relation("BlockerSynthesisResponsible", fields: [responsiblePersonId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, clusterKey])
+  @@index([tenantId, status, lastSeenDateLocal])
+  @@map("blocker_synthesis")
+}
+
+/// TZ-1 Фаза 4.C (daily-value-engine) — знание-под-риском × уход человека.
+///
+/// Еженедельный снимок `KnowledgeAtRiskCron`: пересечение critical bus-factor
+/// (категория знаний держится на одном соло-эксперте — из
+/// `KnowledgeRiskSnapshot.riskLevel='critical'`) × активных high-severity
+/// risk-флагов носителя (`Person.riskFlagsJson`/`engagementScore`). Результат —
+/// подсветка РУКОВОДИТЕЛЮ: «зона X на одном человеке, и он под риском ухода —
+/// продублируй / поговори». Носителю НИЧЕГО не уходит (этика).
+model KnowledgeAtRiskSnapshot {
+  id                 String  @id @default(cuid())
+  tenantId           String
+  /// Категория знаний (= KnowledgeRiskSnapshot.categoryName).
+  categoryName       String
+  /// Соло-эксперт (Person той же Org), если резолвится. NULL — не определился.
+  soleExpertPersonId String?
+  /// Уровень bus-factor категории: 'critical' (0-1 эксперт) | 'warning' | 'ok'.
+  busFactorLevel     String  @db.VarChar(16)
+  /// Уровень риска ухода носителя из riskFlags/engagementScore:
+  /// 'high' | 'medium' | 'low'. NULL — нет данных по носителю.
+  personRiskLevel    String? @db.VarChar(16)
+  /// Совмещённая серьёзность (computeCombinedSeverity): 'critical' | 'warning' | 'ok'.
+  combinedSeverity   String  @db.VarChar(16)
+  snapshotAt         DateTime @default(now())
+
+  org        Org     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  soleExpert Person? @relation("KnowledgeAtRiskSoleExpert", fields: [soleExpertPersonId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, combinedSeverity, snapshotAt])
+  @@map("knowledge_at_risk_snapshot")
+}
+
+/// TZ-1 Фаза 3.B (daily-value-engine) — join-таблица связи Decision↔Issue.
+///
+/// Прямой связи Decision→Issue в схеме нет (Issue.sourceBlockIds — массив
+/// блоков, не FK на Decision). Вместо плодёжа массивов вводим явную join —
+/// заполняется `backfill-decision-linked-task-count.ts` и воркером триажа.
+/// `Decision.linkedTaskCount` — денормализованный счётчик строк этой таблицы.
+model DecisionTaskLink {
+  id         String   @id @default(cuid())
+  decisionId String
+  issueId    String
+  /// Как связаны: 'implements' (задача внедряет решение) | 'derived' (создана
+  /// из решения) | 'manual'. Строкой — расширение словаря без миграции.
+  linkType   String   @default("implements") @db.VarChar(24)
+  createdAt  DateTime @default(now())
+
+  decision Decision @relation("DecisionTaskLinkDecision", fields: [decisionId], references: [id], onDelete: Cascade)
+  issue    Issue    @relation("DecisionTaskLinkIssue", fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([decisionId, issueId])
+  @@index([issueId])
+  @@map("decision_task_link")
 }
 
 /// Pulse Wave 3 §3.3 — историческая лента engagement-score сотрудника.
@@ -7227,6 +7767,15 @@ model ChatV2Message {
   /// Структура: { model: string, inputTokens: number, outputTokens: number,
   /// tier?: 'primary'|'secondary'|'tertiary', fallbackUsed?: boolean }.
   llmMeta        Json?
+  /// TZ-1 Фаза 5 (daily-value-engine) — оценка пользователя «помог ли ответ»:
+  /// 'up' | 'down'. Только для assistant-сообщений (на user-сообщение оценку
+  /// не ставим). NULL — не оценивали. Эталон формы — AiResultFeedback.reaction.
+  /// Несущая часть честного helped-rate месячной витрины (value-recap).
+  helpful        String?            @db.VarChar(8)
+  /// TZ-1 Фаза 5 — когда поставлена/обновлена оценка `helpful`.
+  helpfulAt      DateTime?
+  /// TZ-1 Фаза 5 — опциональный комментарий к оценке (что не так / что помогло).
+  helpfulComment String?            @db.Text
   createdAt      DateTime           @default(now())
 
   @@index([conversationId, createdAt])
@@ -7295,11 +7844,14 @@ enum SkillConfidence {
 ///   - superseded_by: заменена более новой формулировкой (см. supersededById).
 ///   - archived: давно не подтверждалась (>SKILL_ARCHIVE_MONTHS).
 ///   - misleading: пометил direct manager / admin как неверную.
+///   - pending_verification: черта создана, ждёт grounding-проверки
+///     (skill-trait-verify); в персону НЕ попадает, пока не станет active.
 enum SkillTraitStatus {
   active
   superseded_by
   archived
   misleading
+  pending_verification
 }
 
 /// PersonaScope — область охвата исполняемой персоны.
@@ -8016,6 +8568,10 @@ model Project {
   /// привязанные к проекту (бриф, ТЗ, протокол, инструкция). См. модель
   /// `ProjectDocument` ниже и plans/tz/2026-05-27-tracker-project-documents.md.
   documents       ProjectDocument[]
+  /// ТЗ-4 Ф1 — документы (Document), привязанные к этому проекту
+  /// (Document.attachedProjectId). Имя поля `attachedDocuments`, т.к. `documents`
+  /// уже занято под `ProjectDocument[]` (rich-text доки трекера).
+  attachedDocuments Document[]      @relation("DocumentProject")
 
   @@unique([tenantId, slug])
   @@index([tenantId, archivedAt])
@@ -8375,6 +8931,9 @@ model Issue {
   /// Tracker Phase 4 (Email-to-task, T5) — логи входящих писем,
   /// из которых была создана эта задача. Обычно ≤1 запись на Issue.
   mailInboundLogs MailInboundLog[]
+
+  /// TZ-1 Фаза 3.B (daily-value-engine) — связи задача↔решение (join).
+  decisionLinks DecisionTaskLink[] @relation("DecisionTaskLinkIssue")
 
   @@unique([projectId, sequenceId])
   @@unique([tenantId, identifier])

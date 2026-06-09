@@ -25,7 +25,15 @@ import {
   type ListIdeasQuery,
   type ListIdeasResponse,
   type MyIdeasQuery,
+  type TopIdeasQuery,
+  type TopIdeasResponse,
 } from '../dto/ideas.dto';
+import {
+  DEFAULT_IDEAS_FRESHNESS_DAYS,
+  DEFAULT_IDEAS_RERANK_WEIGHTS,
+  rerankIdeas,
+  type IdeasRerankWeights,
+} from './ideas-rerank.scoring';
 
 @Injectable()
 export class IdeasService {
@@ -125,6 +133,99 @@ export class IdeasService {
       page: q.page,
       limit: q.limit,
     };
+  }
+
+  /**
+   * TZ-1 Фаза 4.A (daily-value-engine) — топ идей для виджета ленты идей.
+   * Ре-ранк: `weight` + свежесть (`lastDiscussedAt`) + связь с целью (`goalId`).
+   * Сделано ПО ОБРАЗЦУ `InsightsService.getTop` (топ-N виджета).
+   *
+   * Берём активные (не rejected/archived) идеи с запасом (limit×3 + l0), считаем
+   * скор чистой функцией `rerankIdeas`, гейтим доступ ДО slice (как в insights —
+   * иначе недоступные съели бы слоты топ-N), затем slice(limit).
+   */
+  async getTop(args: {
+    tenantId: string;
+    userId?: string;
+    query: TopIdeasQuery;
+  }): Promise<TopIdeasResponse> {
+    const limit = args.query.limit;
+    const items = await this.prisma.idea.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: { notIn: ['rejected', 'archived'] },
+      },
+      orderBy: [{ weight: 'desc' }, { lastDiscussedAt: 'desc' }],
+      // Запас под ре-ранк + гейт доступа (как insights.getTop: limit*3).
+      take: Math.max(limit * 3, limit),
+    });
+
+    const [weights, freshnessDays] = await Promise.all([
+      this.resolveRerankWeights(),
+      this.resolveFreshnessDays(),
+    ]);
+    // Ре-ранк чистой функцией. Считаем скор по id (weight — Decimal → Number),
+    // затем сортируем полные Idea-объекты (нужны для gateProjections/toListItem).
+    const now = new Date();
+    const scoreById = new Map(
+      rerankIdeas(
+        items.map((i) => ({
+          id: i.id,
+          weight: Number(i.weight),
+          lastDiscussedAt: i.lastDiscussedAt,
+          goalId: i.goalId,
+        })),
+        now,
+        weights,
+        freshnessDays,
+      ).map((s) => [s.item.id, s.score]),
+    );
+    const reranked = [...items].sort(
+      (a, b) => (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0),
+    );
+
+    // Ф6 — гейт доступа ДО slice (недоступные не должны съедать слоты топ-N).
+    const visible = await this.gateProjections(reranked, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+      surface: 'ideas',
+    });
+
+    this.metrics?.incIdeasTopServed();
+    return {
+      items: visible.slice(0, limit).map((i) => this.toListItem(i)),
+    };
+  }
+
+  private async resolveRerankWeights(): Promise<IdeasRerankWeights> {
+    if (!this.cfg) return DEFAULT_IDEAS_RERANK_WEIGHTS;
+    const [weight, freshness, goalLink] = await Promise.all([
+      this.cfg.getDynamic<number>(
+        'ideas.feed.rerank.weight',
+        'IDEAS_FEED_RERANK_WEIGHT',
+        DEFAULT_IDEAS_RERANK_WEIGHTS.weight,
+      ),
+      this.cfg.getDynamic<number>(
+        'ideas.feed.rerank.freshness',
+        'IDEAS_FEED_RERANK_FRESHNESS',
+        DEFAULT_IDEAS_RERANK_WEIGHTS.freshness,
+      ),
+      this.cfg.getDynamic<number>(
+        'ideas.feed.rerank.goal_link',
+        'IDEAS_FEED_RERANK_GOAL_LINK',
+        DEFAULT_IDEAS_RERANK_WEIGHTS.goalLink,
+      ),
+    ]);
+    return { weight, freshness, goalLink };
+  }
+
+  private async resolveFreshnessDays(): Promise<number> {
+    if (!this.cfg) return DEFAULT_IDEAS_FRESHNESS_DAYS;
+    return this.cfg.getDynamic<number>(
+      'ideas.feed.freshness_days',
+      'IDEAS_FEED_FRESHNESS_DAYS',
+      DEFAULT_IDEAS_FRESHNESS_DAYS,
+    );
   }
 
   async getById(args: { tenantId: string; id: string }): Promise<IdeaDetailDto> {

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ImportTrackerClient } from './ImportTrackerClient';
 
 export const metadata: Metadata = {
-  title: 'Импорт задач из других трекеров — Кора',
+  title: 'Импорт задач из других трекеров',
 };
 
 /**

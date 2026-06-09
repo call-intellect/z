@@ -6,13 +6,16 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Patch,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
+import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -42,6 +45,25 @@ interface AccessLogItemDto {
   viewerUserEmail: string | null;
   sectionAccessed: string;
 }
+
+/**
+ * TZ-1 Фаза 0 (daily-value-engine) — body для PATCH /me/notification-preferences.
+ * Все поля опциональны (частичное обновление). Хранятся в preferences
+ * in_app-ChannelBinding текущего пользователя; их читает
+ * NotificationBudgetService при решении о push-доставке.
+ */
+const NotificationPreferencesSchema = z
+  .object({
+    /** eventType'ы, от которых отписаться (push не приходит; in_app остаётся). */
+    optOutEventTypes: z.array(z.string().min(1)).max(100).optional(),
+    /** Час начала тихих часов 0..23 (перекрывает дефолт). */
+    quietHoursStart: z.number().int().min(0).max(23).optional(),
+    /** Час конца тихих часов 0..23 (перекрывает дефолт). */
+    quietHoursEnd: z.number().int().min(0).max(23).optional(),
+  })
+  .strict();
+
+type NotificationPreferencesBody = z.infer<typeof NotificationPreferencesSchema>;
 
 /**
  * `GET /api/v1/me/profile` — кто я в контексте текущей Org (X-Org-Id).
@@ -173,6 +195,91 @@ export class MeController {
       sectionAccessed: l.sectionAccessed,
     }));
     return { items };
+  }
+
+  /**
+   * TZ-1 Фаза 0 (daily-value-engine) — настройки уведомлений текущего
+   * пользователя (opt-out по eventType + личное окно тихих часов). Хранится в
+   * preferences in_app-ChannelBinding'а (переиспользуем существующий механизм
+   * preferences, без новой колонки). Читается NotificationBudgetService.
+   */
+  @Patch('notification-preferences')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Настройки моих уведомлений: отписка по типам + личные тихие часы (push)',
+  })
+  @ApiOkResponse({ description: '{ ok: true }' })
+  async updateNotificationPreferences(
+    @Body(new ZodValidationPipe(NotificationPreferencesSchema))
+    body: NotificationPreferencesBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true }> {
+    const t = this.requireTenant(tenantId);
+    if (
+      body.quietHoursStart !== undefined &&
+      body.quietHoursEnd !== undefined &&
+      body.quietHoursStart === body.quietHoursEnd
+    ) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'invalid_quiet_hours',
+          message: 'Начало и конец тихих часов не должны совпадать',
+        },
+      });
+    }
+
+    // Гарантируем наличие in_app-канала + binding'а текущего пользователя.
+    const channel = await this.prisma.channel.upsert({
+      where: { tenantId_kind: { tenantId: t, kind: 'in_app' } },
+      update: {},
+      create: {
+        tenantId: t,
+        kind: 'in_app',
+        direction: 'bidirectional',
+        maxDataClass: 'private',
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    const binding = await this.prisma.channelBinding.upsert({
+      where: {
+        channelId_externalId: { channelId: channel.id, externalId: user.id },
+      },
+      update: {},
+      create: {
+        userId: user.id,
+        channelId: channel.id,
+        externalId: user.id,
+        verifiedAt: new Date(),
+      },
+      select: { id: true, preferences: true },
+    });
+
+    const prev =
+      binding.preferences &&
+      typeof binding.preferences === 'object' &&
+      !Array.isArray(binding.preferences)
+        ? (binding.preferences as Record<string, unknown>)
+        : {};
+    const next: Record<string, unknown> = { ...prev };
+    if (body.optOutEventTypes !== undefined) {
+      next['notificationOptOutEventTypes'] = body.optOutEventTypes;
+    }
+    if (body.quietHoursStart !== undefined) {
+      next['notificationQuietHoursStart'] = body.quietHoursStart;
+    }
+    if (body.quietHoursEnd !== undefined) {
+      next['notificationQuietHoursEnd'] = body.quietHoursEnd;
+    }
+
+    await this.prisma.channelBinding.update({
+      where: { id: binding.id },
+      data: { preferences: next as Prisma.InputJsonValue },
+    });
+    return { ok: true };
   }
 
   // ─────────────────────────── helpers ──────────────────────────────

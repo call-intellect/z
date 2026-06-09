@@ -18,6 +18,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
@@ -33,6 +35,7 @@ function dayInWeek(dateLocal: string): Date {
 }
 
 interface CommitmentRow {
+  id?: string;
   commitmentAuthorPersonId: string | null;
   commitmentStatus: string | null;
   commitmentDueDate: Date | null;
@@ -45,6 +48,7 @@ interface PersonRow {
 }
 interface TaskRow {
   assigneeUserId: string | null;
+  evidenceBlockIds?: string[];
 }
 interface CheckInRow {
   personId: string;
@@ -63,6 +67,12 @@ function buildService(opts: {
   cacheValue?: string | null;
   cacheGetError?: Error;
   cacheSetError?: Error;
+  /**
+   * min_denominator для reliability. Дефолт 1 — чтобы существующие тесты вели
+   * себя как раньше (null только при знаменателе=0). Тесты ТЗ-2 Ф4 «мало
+   * данных» прокидывают 3.
+   */
+  minDenom?: number;
 } = {}): {
   service: WeeklyPerPersonService;
   prisma: {
@@ -74,6 +84,7 @@ function buildService(opts: {
   };
   redisGet: ReturnType<typeof vi.fn>;
   redisSet: ReturnType<typeof vi.fn>;
+  noAnswerCalls: Array<{ tenantTop: string; noAnswerTotal: number }>;
 } {
   const prisma = {
     ideaBlock: { findMany: vi.fn(async () => opts.commitments ?? []) },
@@ -95,12 +106,28 @@ function buildService(opts: {
     client: { get: redisGet, set: redisSet },
   } as unknown as RedisService;
 
+  const cfg = {
+    getDynamic: vi.fn(async () => opts.minDenom ?? 1),
+  } as unknown as TypedConfigService;
+
+  const noAnswerCalls: Array<{ tenantTop: string; noAnswerTotal: number }> = [];
+  const metrics = {
+    recordWeeklyPerPersonCompute: vi.fn(
+      (args: { tenantTop: string; noAnswerTotal: number }) => {
+        noAnswerCalls.push(args);
+      },
+    ),
+    incWeeklyPerPersonSelfViewServed: vi.fn(),
+  } as unknown as BusinessMetricsService;
+
   const service = new WeeklyPerPersonService(
     prisma as unknown as PrismaService,
     redis,
+    cfg,
+    metrics,
   );
 
-  return { service, prisma, redisGet, redisSet };
+  return { service, prisma, redisGet, redisSet, noAnswerCalls };
 }
 
 /**
@@ -403,6 +430,142 @@ describe('WeeklyPerPersonService', () => {
       expect(redisGet).toHaveBeenCalledWith(
         `weekly_per_person:t-1:${WEEK_START}:risk:10:5`,
       );
+    });
+  });
+
+  // ──────────────────────────── ТЗ-2 Ф4 ────────────────────────────────
+
+  describe('ТЗ-2 Ф4 — promisesNoAnswer (commitmentStatus=asked)', () => {
+    it('считает asked-обещания отдельным счётчиком, в дополнение к overdue', async () => {
+      const commitments: CommitmentRow[] = [
+        // asked с прошлым due → и noAnswer, и overdue
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'asked', commitmentDueDate: dayInWeek('2026-06-02') },
+        // asked с будущим due → noAnswer, но НЕ overdue
+        { id: 'b2', commitmentAuthorPersonId: 'P1', commitmentStatus: 'asked', commitmentDueDate: dayInWeek('2026-06-06') },
+        // open → не noAnswer
+        { id: 'b3', commitmentAuthorPersonId: 'P1', commitmentStatus: 'open', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      const { service } = buildService({ commitments, persons });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.promisesNoAnswer).toBe(2); // b1 + b2
+      // overdue не изменился: b1 (asked,прошлый) + b3 (open,прошлый) = 2
+      expect(p1.promisesOverdue).toBe(2);
+    });
+
+    it('метрика recordWeeklyPerPersonCompute получает сумму noAnswer', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'asked', commitmentDueDate: dayInWeek('2026-06-02') },
+        { id: 'b2', commitmentAuthorPersonId: 'P2', commitmentStatus: 'asked', commitmentDueDate: dayInWeek('2026-06-03') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'A', userId: null, primaryDepartmentId: null },
+        { id: 'P2', name: 'B', userId: null, primaryDepartmentId: null },
+      ];
+      const { service, noAnswerCalls } = buildService({ commitments, persons });
+      await service.compute(
+        { tenantId: 't-7', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      expect(noAnswerCalls.length).toBe(1);
+      expect(noAnswerCalls[0]!.noAnswerTotal).toBe(2);
+      expect(typeof noAnswerCalls[0]!.tenantTop).toBe('string');
+    });
+  });
+
+  describe('ТЗ-2 Ф4 — denom-guard (reliability.min_denominator)', () => {
+    it('знаменатель < minDenom → reliabilityPercent=null («мало данных»)', async () => {
+      // P1: 1 kept, 1 broken → denom=2; при minDenom=3 → null.
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+        { id: 'b2', commitmentAuthorPersonId: 'P1', commitmentStatus: 'missed', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: null, primaryDepartmentId: null },
+      ];
+      const { service } = buildService({ commitments, persons, minDenom: 3 });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.promisesKept).toBe(1);
+      expect(p1.promisesBroken).toBe(1);
+      expect(p1.reliabilityPercent).toBeNull(); // denom=2 < 3
+    });
+
+    it('знаменатель >= minDenom → процент считается', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+        { id: 'b2', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+        { id: 'b3', commitmentAuthorPersonId: 'P1', commitmentStatus: 'missed', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: null, primaryDepartmentId: null },
+      ];
+      const { service } = buildService({ commitments, persons, minDenom: 3 });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.reliabilityPercent).toBe(67); // 2/3 = 66.7 → 67
+    });
+  });
+
+  describe('ТЗ-2 Ф4 — dedup задач против учтённых обещаний', () => {
+    it('задача, порождённая учтённым блоком-обещанием, НЕ удваивает tasksDone', async () => {
+      // P1: одно обещание (block 'b-com') учтено в promisesGiven.
+      const commitments: CommitmentRow[] = [
+        { id: 'b-com', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      const tasks: TaskRow[] = [
+        // эта задача порождена тем же блоком-обещанием → НЕ считаем
+        { assigneeUserId: 'U1', evidenceBlockIds: ['b-com'] },
+        // независимая задача (legacy / другой источник) → считаем
+        { assigneeUserId: 'U1', evidenceBlockIds: [] },
+        // задача от чужого блока → считаем
+        { assigneeUserId: 'U1', evidenceBlockIds: ['b-other'] },
+      ];
+      const { service } = buildService({ commitments, persons, tasks });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.promisesGiven).toBe(1);
+      expect(p1.tasksDone).toBe(2); // 3 задачи − 1 дубль обещания
+    });
+
+    it('без evidenceBlockIds (независимые источники) — обе считаются', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b-com', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      const tasks: TaskRow[] = [
+        { assigneeUserId: 'U1' },
+        { assigneeUserId: 'U1' },
+      ];
+      const { service } = buildService({ commitments, persons, tasks });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.promisesGiven).toBe(1);
+      expect(p1.promisesKept).toBe(1);
+      expect(p1.tasksDone).toBe(2);
     });
   });
 });

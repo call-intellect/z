@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { StructureClient } from './StructureClient';
 
 export const metadata: Metadata = {
-  title: 'Структура — Кора',
+  title: 'Структура',
 };
 
 /**

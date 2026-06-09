@@ -6,6 +6,8 @@ import type {
   MeetingTranscriptChunk,
 } from '@prisma/client';
 
+import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
+
 /**
  * Контекст для single-meeting режима (Фаза А — context-stuffing).
  *
@@ -63,8 +65,9 @@ export function buildSingleMeetingContext(input: SingleMeetingInput): BuiltConte
   }).`;
   parts.push(meta, '');
 
-  if (input.aiResult?.summary) {
-    parts.push('Summary:', String(input.aiResult.summary), '');
+  const summary = input.aiResult ? pickPrimarySummary(input.aiResult) : '';
+  if (summary) {
+    parts.push('Summary:', summary, '');
   }
   if (input.chapters.length > 0) {
     parts.push('Главы:');

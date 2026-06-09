@@ -38,6 +38,7 @@ export class ProviderSmokeTestCron {
   private readonly lastAlertAt = new Map<string, number>();
   private static readonly ALERT_COOLDOWN_MS = 2 * 3600 * 1000;
   private static readonly SMOKE_PROMPT = 'Reply with the single word OK.';
+  private static readonly SMOKE_MAX_TOKENS = 64; // > OpenAI floor (16) + запас на reasoning-вывод
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -67,6 +68,58 @@ export class ProviderSmokeTestCron {
         'provider-smoke-test.cron: непойманная ошибка',
       );
     }
+    // Ф6 Часть 3 — отдельный best-effort шаг: доля prompt-cache хитов DeepSeek.
+    // Не бросает, не влияет на основной smoke выше.
+    await this.checkCacheHitRatio();
+  }
+
+  /**
+   * Ф6 Часть 3 — наблюдаемость: считает долю prompt-cache хитов по DeepSeek
+   * (z_llm_cache_hit_total / z_llm_calls_total) и пишет WARN, если ниже порога.
+   * Best-effort: никогда не бросает.
+   *
+   * ratio === null (мало данных) → debug, без WARN (не шуметь на низком трафике).
+   */
+  async checkCacheHitRatio(): Promise<void> {
+    try {
+      if (!this.cfg.llm.cacheSmokeEnabled) {
+        this.logger.debug('cache-hit-ratio smoke: disabled by setting');
+        return;
+      }
+      const threshold = this.cfg.llm.cacheHitRatioWarnThreshold;
+      const { hits, total, ratio } =
+        await this.metrics.getLlmCacheHitRatio('deepseek');
+
+      if (ratio === null) {
+        this.logger.debug(
+          { provider: 'deepseek', hits, total, threshold },
+          'cache-hit-ratio smoke: мало данных — пропускаем (без WARN)',
+        );
+        return;
+      }
+
+      const below = ratio < threshold;
+      this.metrics.setLlmCacheHitRatioBelowThreshold({
+        provider: 'deepseek',
+        below,
+      });
+      if (below) {
+        this.logger.warn(
+          { provider: 'deepseek', ratio, threshold, hits, total },
+          'cache-hit-ratio ниже порога — возможно taskType ушёл на некэширующий провайдер',
+        );
+      } else {
+        this.logger.debug(
+          { provider: 'deepseek', ratio, threshold, hits, total },
+          'cache-hit-ratio smoke: норма',
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'cache-hit-ratio smoke: непойманная ошибка (best-effort, игнорируем)',
+      );
+    }
   }
 
   async runOnce(): Promise<{
@@ -79,13 +132,22 @@ export class ProviderSmokeTestCron {
     });
     let successes = 0;
     let failures = 0;
+    let scanned = 0;
     for (const p of providers) {
+      // Без baseUrl провайдер заведомо упадёт — это конфиг, а не сбой; пропускаем со скипом.
+      if (!p.baseUrl || p.baseUrl.trim().length === 0) {
+        this.logger.debug(
+          `provider-smoke-test: skip ${p.name} — нет baseUrl (не сконфигурирован)`,
+        );
+        continue;
+      }
+      scanned++;
       const r = await this.testProvider(p.name);
       if (r.success) successes++;
       else failures++;
     }
     return {
-      providersScanned: providers.length,
+      providersScanned: scanned,
       successes,
       failures,
     };
@@ -115,7 +177,7 @@ export class ProviderSmokeTestCron {
         input: {
           system: { text: 'You are a smoke-test responder.' },
           user: ProviderSmokeTestCron.SMOKE_PROMPT,
-          maxTokens: 8,
+          maxTokens: ProviderSmokeTestCron.SMOKE_MAX_TOKENS,
         },
       });
       success = typeof out.text === 'string' && out.text.length > 0;
@@ -193,11 +255,9 @@ export class ProviderSmokeTestCron {
           recipientUserId: r.userId,
           eventType: 'system.message',
           payload: {
-            kind: 'provider_smoke_test_failed',
-            provider: providerName,
-            streak,
-            error,
-            message: `LLM-провайдер ${providerName} провалил ${streak} smoke-теста подряд: ${error}`,
+            title: `LLM-провайдер ${providerName} недоступен`,
+            body: `Провалил ${streak} smoke-теста подряд. Последняя ошибка: ${error}`,
+            severity: 'error',
           },
           dataClass: 'internal',
           critical: true,
@@ -219,9 +279,9 @@ export class ProviderSmokeTestCron {
           recipientUserId: r.userId,
           eventType: 'system.message',
           payload: {
-            kind: 'provider_smoke_test_recovered',
-            provider: providerName,
-            message: `LLM-провайдер ${providerName} восстановился после провалов.`,
+            title: `LLM-провайдер ${providerName} восстановился`,
+            body: `Провайдер ${providerName} снова отвечает на smoke-тест.`,
+            severity: 'info',
           },
           dataClass: 'internal',
         });

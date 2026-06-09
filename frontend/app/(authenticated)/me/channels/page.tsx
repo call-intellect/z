@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ChannelsClient } from './ChannelsClient';
 
 export const metadata: Metadata = {
-  title: 'Мои каналы — Кора',
+  title: 'Мои каналы',
 };
 
 /**

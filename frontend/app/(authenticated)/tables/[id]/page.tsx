@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { TableClient } from './TableClient';
 
 export const metadata: Metadata = {
-  title: 'Таблица — Кора',
+  title: 'Таблица',
 };
 
 export default async function TablePage({

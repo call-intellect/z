@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SprintDashboardClient } from './SprintDashboardClient';
 
 export const metadata: Metadata = {
-  title: 'Спринт — Кора',
+  title: 'Спринт',
 };
 
 export default async function SprintDashboardPage({

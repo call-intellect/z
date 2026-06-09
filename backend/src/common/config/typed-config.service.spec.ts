@@ -289,6 +289,13 @@ describe('Фаза 6 — пороги графа knowledge-core живые (reso
     expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.5);
   });
 
+  it('tracker.autoAcceptConfidenceThreshold — code-default 0.75 + ЖИВАЯ крутилка (hydrateSync побеждает)', () => {
+    const cfg = buildService();
+    expect(cfg.tracker.autoAcceptConfidenceThreshold).toBe(0.75); // code-default
+    cfg.hydrateSync([['tracker.autoAcceptConfidenceThreshold', 0.6]]);
+    expect(cfg.tracker.autoAcceptConfidenceThreshold).toBe(0.6);
+  });
+
   it('entityGraphMinComentions / themeClusteringMinBlocks / themeClusterMinSize — code-defaults под малый тенант', () => {
     const cfg = buildService();
     expect(cfg.knowledgeCore.entityGraphMinComentions).toBe(2);

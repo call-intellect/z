@@ -5,11 +5,13 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import type {
+  WeeklyDeltaDto,
   WeeklyDigestMetricsDto,
   WeeklyDigestSourcesDto,
   WeeklyForecastItemDto,
   WeeklyKpiDeltaDto,
   WeeklyOperationsDigestDto,
+  WeeklySectionDeltasDto,
   WeeklyTeamDynamicsRowDto,
 } from '../dto/weekly-digest.dto';
 import {
@@ -135,6 +137,16 @@ export class WeeklyDigestService {
         statement: d.statement,
         ageDays: d.ageDays,
       })),
+      // TZ-1 Ф4.A — секция идей недели (опускается промптом, если пусто).
+      ...(aggregates.metrics.topIdeas && aggregates.metrics.topIdeas.length > 0
+        ? {
+            topIdeas: aggregates.metrics.topIdeas.map((i) => ({
+              statement: i.statement,
+              status: i.status,
+              supporterCount: i.supporterCount,
+            })),
+          }
+        : {}),
     };
 
     let bodyMarkdown: string;
@@ -215,6 +227,7 @@ export class WeeklyDigestService {
       goals,
       decisions,
       goalsPrev,
+      ideasRaw,
     ] = await Promise.all([
       // Чек-ины текущей недели — для долей green/yellow/red.
       this.prisma.dailyCheckIn.findMany({
@@ -291,7 +304,37 @@ export class WeeklyDigestService {
         },
         select: { id: true, status: true },
       }),
+      // TZ-1 Ф4.A — топ идей недели: активные (не rejected/archived),
+      // обсуждавшиеся за окно недели, по weight + свежесть lastDiscussedAt.
+      this.prisma.idea.findMany({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: {
+            gte: parseDateLocalToUtc(args.weekStart),
+            lte: endOfDayUtc(parseDateLocalToUtc(args.weekEnd)),
+          },
+        },
+        select: {
+          id: true,
+          statement: true,
+          status: true,
+          weight: true,
+          supporterCount: true,
+        },
+        orderBy: [{ weight: 'desc' }, { lastDiscussedAt: 'desc' }],
+        take: 5,
+      }),
     ]);
+
+    // TZ-1 Ф4.A — топ идей недели (опускается, если пусто).
+    const topIdeas = ideasRaw.map((i) => ({
+      ideaId: i.id,
+      statement: (i.statement ?? '').slice(0, 400),
+      status: i.status,
+      weight: Number(i.weight),
+      supporterCount: i.supporterCount,
+    }));
 
     // Доли по чек-инам.
     let g = 0;
@@ -385,6 +428,8 @@ export class WeeklyDigestService {
         failedDelta: failedNow - failedPrev,
       },
       hangingDecisions,
+      // TZ-1 Ф4.A — топ идей недели (пустой массив опускается на рендере).
+      ...(topIdeas.length > 0 ? { topIdeas } : {}),
     };
 
     const sources: WeeklyDigestSourcesDto = {
@@ -392,6 +437,9 @@ export class WeeklyDigestService {
       insightIds: insights.map((i) => i.id),
       goalIds: goals.map((g0) => g0.id),
       decisionIds: decisions.map((d) => d.id),
+      ...(topIdeas.length > 0
+        ? { ideaIds: topIdeas.map((i) => i.ideaId) }
+        : {}),
     };
 
     return { metrics, sources };
@@ -430,6 +478,9 @@ export class WeeklyDigestService {
       kpiDeltas: [],
       teamDynamics: [],
       forecast: [],
+      // ТЗ-2 Ф3 — посекционные дельты, заполняются в enrichDto(). Пустой
+      // дефолт type-корректен для ветки без enrich (unit-тесты).
+      sectionDeltas: emptySectionDeltas(),
     };
   }
 
@@ -481,6 +532,7 @@ export class WeeklyDigestService {
     kpiDeltas: WeeklyKpiDeltaDto[];
     teamDynamics: WeeklyTeamDynamicsRowDto[];
     forecast: WeeklyForecastItemDto[];
+    sectionDeltas: WeeklySectionDeltasDto;
   }> {
     const curStart = args.weekStart;
     const curEnd = args.weekEnd;
@@ -505,6 +557,18 @@ export class WeeklyDigestService {
       prevCommitments,
       curHanging,
       prevHanging,
+      // ТЗ-2 Ф3 — посекционные счётчики (текущая/предыдущая неделя).
+      // Блокеры — IdeaBlock(signalType=blocker) по createdAt в окне.
+      curBlockerCount,
+      prevBlockerCount,
+      // Инсайты — тот же фильтр, что и topInsights в aggregate()
+      // (status='active' + lastObservedAt в окне; severity-фильтра нет).
+      curInsightCount,
+      prevInsightCount,
+      // Идеи — тот же фильтр и окно, что и topIdeas в aggregate()
+      // (status notIn rejected/archived + lastDiscussedAt в окне).
+      curIdeaCount,
+      prevIdeaCount,
     ] = await Promise.all([
       this.prisma.dailyCheckIn.findMany({
         where: {
@@ -582,6 +646,53 @@ export class WeeklyDigestService {
           createdAt: { lt: addDays(prevEndUtc, -7) },
         },
       }),
+      // ── sectionDeltas: блокеры (IdeaBlock signalType=blocker, createdAt в окне).
+      this.prisma.ideaBlock.count({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.ideaBlock.count({
+        where: {
+          tenantId: args.tenantId,
+          signalType: 'blocker',
+          createdAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
+      // ── sectionDeltas: инсайты (мирроринг topInsights — status=active +
+      // lastObservedAt в окне).
+      this.prisma.insight.count({
+        where: {
+          tenantId: args.tenantId,
+          status: 'active',
+          lastObservedAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.insight.count({
+        where: {
+          tenantId: args.tenantId,
+          status: 'active',
+          lastObservedAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
+      // ── sectionDeltas: идеи (мирроринг topIdeas — notIn rejected/archived +
+      // lastDiscussedAt в окне).
+      this.prisma.idea.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: { gte: curStartUtc, lte: curEndUtc },
+        },
+      }),
+      this.prisma.idea.count({
+        where: {
+          tenantId: args.tenantId,
+          status: { notIn: ['rejected', 'archived'] },
+          lastDiscussedAt: { gte: prevStartUtc, lte: prevEndUtc },
+        },
+      }),
     ]);
 
     // ── KPI #1: индекс настроения = (green-red)/total * 100 (округлено).
@@ -628,7 +739,17 @@ export class WeeklyDigestService {
       prevHanging,
     });
 
-    return { kpiDeltas, teamDynamics, forecast };
+    // ── sectionDeltas (ТЗ-2 Ф3): кол-во блокеров/инсайтов/идей за неделю +
+    // дельта к предыдущей. previous-окно по факту всегда имеет данные (запрос
+    // выполнен), поэтому previous=число, а не null; форма допускает null на
+    // случай отсутствия данных за предыдущую неделю (тогда delta=null).
+    const sectionDeltas: WeeklySectionDeltasDto = {
+      blockers: buildSectionDelta(curBlockerCount, prevBlockerCount),
+      insights: buildSectionDelta(curInsightCount, prevInsightCount),
+      ideas: buildSectionDelta(curIdeaCount, prevIdeaCount),
+    };
+
+    return { kpiDeltas, teamDynamics, forecast, sectionDeltas };
   }
 
   /**
@@ -1034,6 +1155,30 @@ function emptyMetrics(): WeeklyDigestMetricsDto {
 
 function emptySources(): WeeklyDigestSourcesDto {
   return { blockerCheckInIds: [], insightIds: [], goalIds: [], decisionIds: [] };
+}
+
+/**
+ * ТЗ-2 Ф3 — пустой `sectionDeltas` для `toDto` (ветка без enrich).
+ * previous=null → delta=null для всех секций.
+ */
+function emptySectionDeltas(): WeeklySectionDeltasDto {
+  const zero: WeeklyDeltaDto = { current: 0, previous: null, delta: null };
+  return { blockers: { ...zero }, insights: { ...zero }, ideas: { ...zero } };
+}
+
+/**
+ * ТЗ-2 Ф3 — собрать дельту одной секции. `previous=null` → `delta=null`
+ * (нет данных за предыдущую неделю).
+ */
+function buildSectionDelta(
+  current: number,
+  previous: number | null,
+): WeeklyDeltaDto {
+  return {
+    current,
+    previous,
+    delta: previous === null ? null : current - previous,
+  };
 }
 
 function parseDateLocalToUtc(dateLocal: string): Date {

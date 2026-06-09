@@ -35,3 +35,18 @@ references:
 
 ## Provenance в API
 `GET /api/v1/documents/:id` возвращает `extractedEntities: { processes, decisions, ... }` — readonly + confidence. Только для admin/owner.
+
+## Расширение канала (ТЗ-4, 2026-06-09)
+
+**Источник:** [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».
+
+- **Новые форматы** (`DocumentKind +=` xlsx/pptx/html/rtf/odt/csv): `officeparser` (v7, функция `parseOffice`) для pptx/rtf/odt/csv/html, `exceljs` для .xlsx (текст по листам). `detectKind` расширен. PDF — `pdf-parse` (заброшен, но работает), DOCX — `mammoth`. ⚠ officeparser имеет `postinstall` — проверить нативную сборку на проде.
+- **Мультифайл-загрузка** `POST /documents` (`FileFieldsInterceptor`) + дедуп по `Document.contentHash` (sha256 содержимого).
+- **Смысловой тип** `Document.docType` (`DocumentType`: regulation/policy/instruction/process/job_description/other) — отдельно от `DocumentKind` (формат файла).
+- **Явная привязка**: `attachedThemeId`/`attachedProjectId` + должность; **проброс в граф** через `block-ingest.applyDocumentAttribution` (`roleId`/`roleRelevant` + `ThemeIdeaBlock`).
+- **AI-подсказка привязки** (human-in-the-loop): LLM `document-attribution-suggest` (`deepseek-v4-flash`) пишет `suggestedDocType`/`suggestedThemeId`; принимается через `PATCH /documents/:id/attribution`. Флаг `documents.ai_attribution.enabled`. См. [[ai-jobs]].
+- **Массовый импорт**: `POST /documents/import-zip` (ZIP/Notion через `source`, `fflate`) + `POST /documents/import-confluence` (Confluence API, токен crypto-encrypted в job) → batch `DocumentImport` → очередь `core.document-import` → каждый файл = отдельный `Document` (re-use ingest-пути). См. [[workers-queues]].
+- **chat-v2 citations** += `documentId`/`documentName` — документ-источник в ответах AI-чата.
+- Крутилки: `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}` (AdminSetting). Модели — [[../02_architecture/data-model]] §«Батч 5».
+
+**Остаток (Волна 3, не сделано):** OCR (`tesseract.js`) для сканов + конвертация через `docling` (нужен `DOCLING_SERVICE_URL` владельца). См. реестр `04_не-сделано`.

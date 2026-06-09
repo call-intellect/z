@@ -17,6 +17,8 @@ import {
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import { SystemLogPipeline } from '../../logging/log-pipeline';
+import { LogService } from '../../logging/log.service';
 import {
   GOAL_EXTRACT_JSON_SCHEMA,
   GOAL_EXTRACT_SCHEMA_NAME,
@@ -31,6 +33,8 @@ import {
 } from '../prompts/goal-hierarchy-link.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { GoalTaskLinkerService } from './goal-task-linker.service';
+import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
 /** Метрика-тип для core_specialist_*. */
 const METRIC_TYPE = 'goal';
@@ -81,6 +85,26 @@ export class Specialist314GoalsService {
   /** Cap фокуса: > N active+suggested целей одного горизонта — не плодим. */
   private static readonly MAX_ACTIVE_GOALS_PER_HORIZON = 7;
 
+  /**
+   * Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированный линкер
+   * Goal↔Theme. Инжектится property-injection'ом (не через конструктор), чтобы
+   * не сдвигать позиционные аргументы существующих unit-тестов. @Optional:
+   * в spec-конструкторе (positional) сервис не передаётся — хук тогда no-op.
+   */
+  @Optional()
+  @Inject(GoalThemeLinkerService)
+  private readonly goalThemeLinker?: GoalThemeLinkerService;
+
+  /**
+   * Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+   * новой AI-цели (`goal-task-link`, DEFAULT OFF). Тот же property-injection
+   * паттерн, что и goalThemeLinker (не сдвигаем позиционные аргументы тестов).
+   * @Optional: в spec-конструкторе сервис не передаётся → хук no-op.
+   */
+  @Optional()
+  @Inject(GoalTaskLinkerService)
+  private readonly goalTaskLinker?: GoalTaskLinkerService;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
@@ -88,6 +112,7 @@ export class Specialist314GoalsService {
     private readonly embedder: KnowledgeEmbeddingService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(LogService) private readonly logs: LogService,
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
@@ -126,7 +151,18 @@ export class Specialist314GoalsService {
     if (block.tenantId !== args.tenantId) return;
 
     const draft = await this.extractGoalDraft(block);
-    if (!draft) return;
+    if (!draft) {
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-14-goals',
+        action: 'skipped',
+        message: 'Goal не извлечена (не цель / низкий confidence)',
+        orgId: block.tenantId,
+        details: { type: 'goal', reason: 'no_draft', blockId: block.id },
+      });
+      return;
+    }
 
     try {
       const queryText = `${draft.statement} ${draft.description ?? ''}`;
@@ -156,6 +192,19 @@ export class Specialist314GoalsService {
           tenantId: block.tenantId,
           targetId: verdict.targetId,
         });
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'merged',
+          message: `Goal-дубликат слит в существующую ${verdict.targetId}`,
+          orgId: block.tenantId,
+          details: {
+            type: 'goal',
+            intoId: verdict.targetId,
+            blockId: block.id,
+          },
+        });
         return;
       }
 
@@ -181,6 +230,15 @@ export class Specialist314GoalsService {
           { blockId: block.id, horizon: draft.horizon },
           'specialist-3-14: cap фокуса по горизонту достигнут — цель не создаём',
         );
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'skipped',
+          message: 'Goal не создана: достигнут cap фокуса по горизонту',
+          orgId: block.tenantId,
+          details: { type: 'goal', reason: 'focus_cap', blockId: block.id },
+        });
         return;
       }
 
@@ -191,6 +249,15 @@ export class Specialist314GoalsService {
           { blockId: block.id, tenantId: block.tenantId },
           'specialist-3-14: не найден owner Org — пропускаю создание цели',
         );
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-14-goals',
+          action: 'skipped',
+          message: 'Goal не создана: не найден owner Org',
+          orgId: block.tenantId,
+          details: { type: 'goal', reason: 'no_owner', blockId: block.id },
+        });
         return;
       }
 
@@ -208,6 +275,16 @@ export class Specialist314GoalsService {
         sourceBlockIds: [block.id],
       });
 
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-14-goals',
+        action: 'created',
+        message: `создана Goal ${goal.id}`,
+        orgId: block.tenantId,
+        details: { type: 'goal', entityId: goal.id, blockId: block.id },
+      });
+
       this.metrics.incCoreSpecialistCards({
         type: METRIC_TYPE,
         status: promotionState,
@@ -221,6 +298,42 @@ export class Specialist314GoalsService {
           measurable: draft.measurable,
           createdById: ownerUserId,
         });
+      }
+
+      // Agent-chain overhaul Фаза 4.2 — on-event авто-привязка тем к новой
+      // AI-цели (провенанс + co-mention). Best-effort: не критично для создания
+      // цели, ошибка только логируется. Без тем strategic-alignment.worker
+      // делает ранний return (themesCount===0) → cachedAlignment не считается.
+      if (this.goalThemeLinker) {
+        try {
+          await this.goalThemeLinker.linkGoalThemes(block.tenantId, goal.id);
+        } catch (err) {
+          this.logger.warn(
+            {
+              goalId: goal.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'goal-theme-linker on-event: ошибка (не критично)',
+          );
+        }
+      }
+
+      // Agent-chain overhaul Фаза 4.1 — on-event LLM-привязка задач встречи к
+      // новой AI-цели (DEFAULT OFF — линкер сам no-op при выключенном флаге).
+      // Best-effort: ошибка только логируется. На момент создания цели задач
+      // может ещё не быть (триаж позже) — это ок, GoalTaskLinkerCron догонит.
+      if (this.goalTaskLinker) {
+        try {
+          await this.goalTaskLinker.linkGoalTasks(block.tenantId, goal.id);
+        } catch (err) {
+          this.logger.warn(
+            {
+              goalId: goal.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'goal-task-linker on-event: ошибка (не критично)',
+          );
+        }
       }
 
       this.logger.log(

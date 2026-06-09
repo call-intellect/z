@@ -104,9 +104,30 @@ const registry = new Map<string, ZodTypeAny>([
   // пользовательский Task для action-items НЕ создаётся, а потребители
   // читают задачи встречи из Issue. Дефолт FALSE — текущее поведение (Task).
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
+  // Ф1 idea direct-path (2026-06-08) — kill-switch материализации Idea
+  // напрямую из блока встречи (signalType='idea') в block-ingest.
+  ['knowledge.ideaDirectPathEnabled', z.boolean()],
+
+  // ── семантический дедуп задач встречи (Ф5 Р2, 2026-06-08) ─────────────
+  // taskDedupeEnabled — флаг (дефолт FALSE, data-affecting); taskDedupeThreshold
+  // — KNN cosine-порог уверенного слияния fast-черновика в canonical.
+  ['meetings.taskDedupeEnabled', z.boolean()],
+  ['meetings.taskDedupeThreshold', UNIT_INTERVAL],
 
   // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],
+
+  // ── AI feature-flags (aiFeatures.*) ──────────────────────────────────
+  // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — флаг legacy summary-агента
+  // (analyze.worker runSummary, MiniMax). Дефолт TRUE — обратимо; false = −1
+  // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
+  ['aiFeatures.summaryAgentEnabled', z.boolean()],
+
+  // ── LLM cache-smoke (llm.*) — Ф6 Часть 3, наблюдаемость ───────────────
+  // cacheSmokeEnabled — включает smoke-проверку доли cache-хитов в cron'е.
+  // cacheHitRatioWarnThreshold — порог [0..1]: ниже → WARN в логи.
+  ['llm.cacheSmokeEnabled', z.boolean()],
+  ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
 
   // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
@@ -133,9 +154,76 @@ const registry = new Map<string, ZodTypeAny>([
   // Порог cosine-схожести схем: ≥ порога → предлагаем «слить» с таблицей.
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
+  // ── Trekker: авто-триаж задач из встреч (tracker.*) ──────────────────
+  // Ф3 agent-chain-overhaul (2026-06-07): порог авто-создания Issue из триажа.
+  // Дефолт 0.75 (живая речь). Жёсткие гейты source=meeting+assignee+project.
+  ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
+
   // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей (goals.pulse.*) ────
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],
+
+  // ── Agent-chain overhaul Фаза 4.2 — авто-привязка тем к целям (goals.*) ──
+  ['goals.themeAutolinkMinWeight', UNIT_INTERVAL],
+  ['goals.themeAutolinkLlmEnabled', z.boolean()],
+
+  // ── Agent-chain overhaul Фаза 4.1 — авто-привязка задач к целям (goals.*) ──
+  ['goals.goalTaskLinkEnabled', z.boolean()],
+
+  // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ──────
+  // goal-vector: мин. покрытие commitmentAuthorPersonId для атрибуции автору.
+  ['goals.author_coverage_min', UNIT_INTERVAL],
+  // надёжность обещаний: мин. знаменатель, ниже которого «мало данных».
+  ['reliability.min_denominator', POSITIVE_INT],
+  // probe-триггеры burnout-детектора (пороги детекции).
+  ['probe.reply_latency_rise.factor', z.number().positive()],
+  ['probe.workload_overload.load_percent', POSITIVE_INT],
+  ['probe.meeting_noshows.count', POSITIVE_INT],
+
+  // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
+  ['blocker_synthesis.lookback_days', POSITIVE_INT],
+  ['blocker_synthesis.recurring_days', POSITIVE_INT],
+  ['blocker_synthesis.impact.base', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.customer', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.deadline', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.commitment', NON_NEGATIVE_INT],
+  ['blocker_synthesis.impact.per_day_open', z.number().nonnegative()],
+  ['operations.blocker_synthesis.enabled', z.boolean()],
+
+  // ── TZ-1 Ф3.B (daily-value-engine) — контролёр внедрения решений ──────
+  ['decision.stale_days', POSITIVE_INT],
+  ['operations.decision_controller.enabled', z.boolean()],
+
+  // ── TZ-1 Ф3.C (daily-value-engine) — каскад обещаний ──────────────────
+  ['operations.promise_cascade.enabled', z.boolean()],
+
+  // ── TZ-1 Ф4 (daily-value-engine) — улучшения и знания ─────────────────
+  // Ф4.A — лента идей (ре-ранк + морфинг статуса).
+  ['ideas.feed.rerank.weight', z.number().nonnegative()],
+  ['ideas.feed.rerank.freshness', z.number().nonnegative()],
+  ['ideas.feed.rerank.goal_link', z.number().nonnegative()],
+  ['ideas.feed.freshness_days', POSITIVE_INT],
+  ['ideas.feed.enabled', z.boolean()],
+  // Ф4.B — re-check митигированных инсайтов.
+  ['insight.recheck_days', POSITIVE_INT],
+  ['insights.recheck.enabled', z.boolean()],
+  // Ф4.C — знание-под-риском × уход человека.
+  ['operations.knowledge_at_risk.enabled', z.boolean()],
+  // Ф4.D — capacity-агрегат по командам.
+  ['team_capacity.overload_percent', POSITIVE_INT],
+  ['team_capacity.underload_percent', NON_NEGATIVE_INT],
+  ['operations.team_capacity.enabled', z.boolean()],
+  // Ф4.E — онбординг-рамп новичка.
+  ['onboarding.silent_days', POSITIVE_INT],
+  ['operations.onboarding_ramp.enabled', z.boolean()],
+
+  // ── ТЗ-2 Ф4 (daily-value-dashboards) — self-view недельного план-факта ──
+  // kill-switch self-эндпоинта /me/weekly-per-person (моя строка + среднее команды).
+  ['operations.per_person_self_view.enabled', z.boolean()],
+
+  // ── ТЗ-2 Ф5 (daily-value-dashboards) — виджеты ежедневной ценности в /me ──
+  // kill-switch self-эндпоинтов /me/ideas + /me/recognitions (4 виджета /me).
+  ['me.daily_value_widgets.enabled', z.boolean()],
 
   // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
@@ -144,6 +232,44 @@ const registry = new Map<string, ZodTypeAny>([
   ['billing.baseSeatsIncluded', POSITIVE_INT],
   ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
   ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
+  // ТЗ-5 Ф6 (meeting-upload-diarization) — месячный лимит ручных загрузок
+  // встреч на Org (owner-decision крутилка; отдельно от MeetingsBalance).
+  ['billing.meetingUploadsPerMonth', POSITIVE_INT],
+
+  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──────
+  ['notifications.daily_budget.per_person', POSITIVE_INT],
+  ['notifications.quiet_hours.start', z.number().int().min(0).max(23)],
+  ['notifications.quiet_hours.end', z.number().int().min(0).max(23)],
+  ['notifications.daily_budget.enabled', z.boolean()],
+  ['notifications.binding_campaign.enabled', z.boolean()],
+
+  // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──────
+  ['customer_risk.window_days', POSITIVE_INT],
+  ['customer_risk.weight.churn_risk', NON_NEGATIVE_INT],
+  ['customer_risk.weight.objection', NON_NEGATIVE_INT],
+  ['customer_risk.weight.pain', NON_NEGATIVE_INT],
+  ['customer_risk.weight.feature_request', NON_NEGATIVE_INT],
+  ['customer_risk.threshold.critical', NON_NEGATIVE_INT],
+  ['customer_risk.threshold.warning', NON_NEGATIVE_INT],
+  ['operations.customer_risk_radar.enabled', z.boolean()],
+
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──────
+  ['portfolio.health.threshold_healthy', NON_NEGATIVE_INT],
+  ['portfolio.health.threshold_warning', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_achieved', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_on_track', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_at_risk', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_stalled', NON_NEGATIVE_INT],
+  ['portfolio.health.weight_dropped', NON_NEGATIVE_INT],
+  ['operations.portfolio_health.enabled', z.boolean()],
+
+  // ── ТЗ-4 Ф6 (manual-document-upload) — лимиты ручной загрузки документов ──
+  // owner-decision крутилки (размер/кол-во/форматы) — редактируются super_admin.
+  ['documents.maxSizeMb', POSITIVE_INT],
+  ['documents.maxFilesPerUpload', POSITIVE_INT],
+  ['documents.acceptedFormats', z.array(z.string())],
+  // ТЗ-4 Ф7 — потолок размера ZIP-архива массового импорта (МБ).
+  ['documents.maxZipSizeMb', POSITIVE_INT],
 
   // ── pending-actions «требует действия» (Action Center C2) ─────────────
   // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.

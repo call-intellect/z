@@ -2,9 +2,12 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { SignalType } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminCacheService } from '../../admin/services/admin-cache.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 import type {
   DirectorDashboardAlertGoalDto,
@@ -19,6 +22,7 @@ import type {
   DirectorDashboardSignalDto,
   DirectorDashboardStrategicAlignmentDto,
   DirectorDashboardThemeDto,
+  DirectorDashboardValueStripDto,
   NarrativeSummaryDto,
 } from '../dto/director-dashboard.dto';
 import {
@@ -87,6 +91,10 @@ export class DirectorDashboardService {
     private readonly hangingSvc: HangingDecisionsService,
     @Inject(PendingActionsService)
     private readonly pendingActions: PendingActionsService,
+    @Inject(TypedConfigService)
+    private readonly config: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   /**
@@ -131,6 +139,8 @@ export class DirectorDashboardService {
       sentimentRes,
       commitRes,
       hangingRes,
+      valueStrip,
+      mainReworkEnabled,
     ] = await Promise.all([
       this.fetchNewThemes(args.tenantId, since),
       this.fetchNewSignals(args.tenantId, since),
@@ -147,7 +157,24 @@ export class DirectorDashboardService {
         scope: 'company',
       }),
       this.hangingSvc.count({ tenantId: args.tenantId }),
+      // ТЗ-2 Ф1 — «Полоса пользы» (всегда считается, в т.ч. для пустого tenant'а).
+      this.fetchValueStrip(args.tenantId, args.period),
+      // ТЗ-2 Ф1 — kill-switch новой компоновки главной (default ON).
+      this.config.getDynamic<boolean>(
+        'dashboard.main_rework.enabled',
+        undefined,
+        true,
+      ),
     ]);
+
+    // ТЗ-2 Ф1 — метрики отдачи: каждый собранный «Полосы пользы» + размер
+    // первого экрана новой компоновки (7 величин). tenant_top — cardinality-safe.
+    const tenantTop = tenantTopOf(args.tenantId);
+    this.metrics.incDashboardValueStripServed({ tenantTop });
+    this.metrics.setDashboardMainFirstScreenWidgetCount({
+      tenantTop,
+      count: 7,
+    });
 
     // Pulse Wave 1 §1.5 — три KPI-hero для главной.
     const kpiSentimentIndex: DirectorDashboardKpiDto = {
@@ -217,6 +244,10 @@ export class DirectorDashboardService {
         goalsTree,
         goalsPulse,
         isEmpty: true,
+        // ТЗ-2 Ф1 — реальные счётчики пользы за период (без подмены на sample;
+        // у пустого tenant'а они закономерно нулевые / минимальные).
+        valueStrip,
+        mainReworkEnabled,
       };
       this.cache.setWithTtl(cacheKey, sampleResult, DASHBOARD_TTL_MS);
       return sampleResult;
@@ -251,6 +282,9 @@ export class DirectorDashboardService {
       goalsTree,
       goalsPulse,
       isEmpty: false,
+      // ТЗ-2 Ф1 — «Полоса пользы» + флаг новой компоновки.
+      valueStrip,
+      mainReworkEnabled,
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);
@@ -509,11 +543,46 @@ export class DirectorDashboardService {
         },
       },
     });
+    // ТЗ-2 Ф1 — резолв `reasonSourceRef`: для сигналов, чьё первое evidence
+    // ссылается на встречу, подтягиваем заголовок встречи batch'ем (одним
+    // findMany, без N+1).
+    const meetingIds = new Set<string>();
+    for (const r of rows) {
+      const firstEv = r.evidence[0];
+      if (
+        firstEv &&
+        firstEv.rawEvent.sourceType === 'meeting' &&
+        firstEv.rawEvent.sourceExternalId
+      ) {
+        meetingIds.add(firstEv.rawEvent.sourceExternalId);
+      }
+    }
+    const titleById = new Map<string, string>();
+    if (meetingIds.size > 0) {
+      const meetings = await this.prisma.meeting.findMany({
+        where: { tenantId, id: { in: [...meetingIds] } },
+        select: { id: true, title: true },
+      });
+      for (const m of meetings) {
+        titleById.set(m.id, m.title);
+      }
+    }
+
     return rows.map((r) => {
       const firstEv = r.evidence[0];
       const evidenceMeetingId =
         firstEv && firstEv.rawEvent.sourceType === 'meeting'
           ? firstEv.rawEvent.sourceExternalId ?? null
+          : null;
+      // reasonSourceRef: встреча → {meetingId, meetingTitle}; иначе null.
+      // (Модель evidence не несёт прямой ссылки на Decision — ветка
+      // `{ decisionId }` зарезервирована в DTO под будущий источник-решение.)
+      const reasonSourceRef: DirectorDashboardSignalDto['reasonSourceRef'] =
+        evidenceMeetingId
+          ? {
+              meetingId: evidenceMeetingId,
+              meetingTitle: titleById.get(evidenceMeetingId) ?? undefined,
+            }
           : null;
       return {
         id: r.id,
@@ -523,6 +592,7 @@ export class DirectorDashboardService {
         criticalQuestion: r.criticalQuestion,
         trustedAnswer: this.truncate(r.trustedAnswer, TRUSTED_ANSWER_TRUNCATE),
         evidenceMeetingId,
+        reasonSourceRef,
       };
     });
   }
@@ -648,6 +718,92 @@ export class DirectorDashboardService {
       criticalQuestion: r.criticalQuestion,
       createdAt: r.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * ТЗ-2 Ф1 — «Полоса пользы» (Value Strip): 5 твёрдых счётчиков за период.
+   * Окно (`since`) — то же, что у остальных fetch*-методов (см. `calcSince`).
+   *
+   *   - `meetingsProtocoled`        — `Meeting` tenant'а в окне с готовым AI-отчётом
+   *                                   (через relation `aiResult`: summaryFast OR
+   *                                   summary заполнены) ИЛИ `analyzeV2Status='ready'`;
+   *   - `tasksExtracted`            — `Task` tenant'а, созданные в окне;
+   *   - `decisionsExtracted`        — `Decision` tenant'а, созданные в окне;
+   *   - `questionsAnsweredByMemory` — assistant-сообщения `ChatV2Message` с непустым
+   *                                   citations-массивом (та же техника, что у
+   *                                   `ChatV2FeedbackService.getChatUsageStats`:
+   *                                   jsonb_typeof='array' AND jsonb_array_length>0);
+   *   - `commitmentsKept`           — `IdeaBlock` signalType='commitment' AND
+   *                                   commitmentStatus='fulfilled', созданные в окне.
+   */
+  private async fetchValueStrip(
+    tenantId: string,
+    period: 'week' | 'month',
+  ): Promise<DirectorDashboardValueStripDto> {
+    const since = this.calcSince(period);
+
+    type CountRow = { cnt: bigint | number };
+
+    const [
+      meetingsProtocoled,
+      tasksExtracted,
+      decisionsExtracted,
+      questionsRows,
+      commitmentsKept,
+    ] = await Promise.all([
+      // Встречи с готовым AI-отчётом: aiResult.summaryFast OR summary заполнены,
+      // ИЛИ analyzeV2Status='ready'. createdAt в окне.
+      this.prisma.meeting.count({
+        where: {
+          tenantId,
+          createdAt: { gte: since },
+          OR: [
+            { analyzeV2Status: 'ready' },
+            { aiResult: { is: { summaryFast: { not: null } } } },
+            { aiResult: { is: { summary: { not: '' } } } },
+          ],
+        },
+      }),
+      this.prisma.task.count({
+        where: { tenantId, createdAt: { gte: since } },
+      }),
+      this.prisma.decision.count({
+        where: { tenantId, createdAt: { gte: since } },
+      }),
+      // Ответы AI-чата с привязкой к источнику — та же техника, что в
+      // ChatV2FeedbackService.getChatUsageStats (jsonb-type-guard массива
+      // citations). ChatV2Message не несёт tenantId напрямую — join к
+      // ChatV2Conversation.
+      this.prisma.$queryRaw<CountRow[]>`
+        SELECT COUNT(*)::bigint AS cnt
+        FROM "ChatV2Message" m
+        JOIN "ChatV2Conversation" c ON c."id" = m."conversationId"
+        WHERE c."tenantId" = ${tenantId}
+          AND m."role" = 'assistant'
+          AND m."createdAt" >= ${since}
+          AND m."citations" IS NOT NULL
+          AND jsonb_typeof(m."citations") = 'array'
+          AND jsonb_array_length(m."citations") > 0
+      `,
+      this.prisma.ideaBlock.count({
+        where: {
+          tenantId,
+          signalType: 'commitment',
+          commitmentStatus: 'fulfilled',
+          createdAt: { gte: since },
+        },
+      }),
+    ]);
+
+    const questionsAnsweredByMemory = Number(questionsRows[0]?.cnt ?? 0);
+
+    return {
+      meetingsProtocoled,
+      tasksExtracted,
+      decisionsExtracted,
+      questionsAnsweredByMemory,
+      commitmentsKept,
+    };
   }
 
   /**

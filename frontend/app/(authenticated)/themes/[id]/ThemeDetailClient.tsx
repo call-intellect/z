@@ -305,7 +305,7 @@ function SaveAsCardDialog({
             />
             <p className="mt-1 text-xs text-fg-tertiary">
               Карточка будет создана как «Тема» (kind=topic) с описанием темы.
-              История связи с AI-темой сохранится.
+              История связи с темой сохранится.
             </p>
           </div>
           <DialogFooter className="mt-2">

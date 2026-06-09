@@ -63,12 +63,18 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
     getDynamic: vi.fn(async () => opts?.trackerOnly ?? false),
   };
 
+  // Ф5 Р2 — MeetingTaskDedupeService (best-effort no-op в writeTasks).
+  const taskDedupe = {
+    dedupeForMeeting: vi.fn(async () => ({ merged: 0 })),
+  };
+
   const worker = new MeetingReportFastWorker(
     {} as never, // redis
     prisma as never,
     {} as never, // router
     {} as never, // participantContext (writeTasks получает participants аргументом)
     assigneeResolver,
+    taskDedupe as never, // taskDedupe (MeetingTaskDedupeService)
     cfg as never, // cfg (TypedConfigService) — gate meetingTasksToTrackerOnly
     undefined, // metrics @Optional()
   );

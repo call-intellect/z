@@ -4,7 +4,7 @@ import { ProjectViewShell } from '../ProjectViewShell';
 import { BoardClient } from './BoardClient';
 
 export const metadata: Metadata = {
-  title: 'Доска — Кора',
+  title: 'Доска',
 };
 
 export default async function ProjectBoardPage({

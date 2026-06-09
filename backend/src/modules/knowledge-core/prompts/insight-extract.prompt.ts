@@ -13,6 +13,7 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
@@ -23,7 +24,8 @@ import {
 // промта — это качественная шкала, не connected к confidence.
 // F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика
 // пустых/противоречивых входов и относительных сроков.
-export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксирована проблема, риск, блокер или неэффективность.',
@@ -48,6 +50,7 @@ export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     '  Это поле обязательное. Если в блоке прямо не указано — выбери наиболее правдоподобное по контексту; если совсем неясно — "unknown".',
     '- `confidence` — насколько уверенно ты извлёк суть сигнала (0..1). Якоря см. ниже.',
     ].join('\n'),
+  ),
   ),
 );
 

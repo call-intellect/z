@@ -51,6 +51,9 @@ export class BusinessMetricsService implements OnModuleInit {
   private kcEntityGraphInvalidJsonTotal!: Counter<'reason'>;
   private kcEntityGraphFallbackNoneTotal!: Counter<'reason'>;
 
+  // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
+  private taskDedupeTotal!: Counter<'result'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -59,6 +62,13 @@ export class BusinessMetricsService implements OnModuleInit {
   private llmCacheHitTotal!: Counter<'provider' | 'model' | 'task_type'>;
   private llmCacheReadTokensTotal!: Counter<'provider' | 'model'>;
   private llmCacheCreationTokensTotal!: Counter<'provider' | 'model'>;
+  // Ф6 Часть 3 — знаменатель hit-ratio: общее число успешных LLM-вызовов
+  // per provider. Инкрементируется в той же точке (AiUsageLogService.record),
+  // где фиксируется cache_hit. ratio = cache_hit / calls по тем же провайдерам.
+  private llmCallsTotal!: Counter<'provider'>;
+  // Ф6 Часть 3 — gauge-флаг: smoke-cron выставляет 1, если доля cache-хитов
+  // по провайдеру ниже порога, иначе 0. Для алёртов в Grafana.
+  private llmCacheHitRatioBelowThreshold!: Gauge<'provider'>;
 
   // ── deepseek schema→tool conversion (ТЗ 2026-05-25) ─────────────────
   // DeepSeek-V4-Pro в thinking-режиме не поддерживает strict json_schema —
@@ -210,6 +220,54 @@ export class BusinessMetricsService implements OnModuleInit {
   private conversationalInboundTotal!: Counter<'kind' | 'type'>;
   private conversationalLinkAttemptsTotal!: Counter<'kind' | 'status'>;
   private conversationalResponseTimeSeconds!: Histogram<'kind' | 'event_type'>;
+
+  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет + кампания привязки ──
+  private notificationBudgetConsumedTotal!: Counter<'trigger'>;
+  private notificationBudgetBlockedTotal!: Counter<'reason'>;
+  private notificationDeferredToDigestTotal!: Counter<string>;
+  private channelBindingCoverageRatio!: Gauge<'tenant_top'>;
+  private channelBindingCampaignInvitedTotal!: Counter<'tenant_top'>;
+  private checkinPromptDeliveredTotal!: Counter<'channel'>;
+
+  // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
+  private customerRiskSnapshotsTotal!: Counter<'level'>;
+  private customerRiskRadarFailedTotal!: Counter<'reason'>;
+  private customerRiskManagerNotifiedTotal!: Counter<string>;
+
+  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──
+  private portfolioHealthScore!: Gauge<'tenant_top'>;
+  private portfolioHealthSnapshotTotal!: Counter<'tenant_top'>;
+  private portfolioPrioritySetTotal!: Counter<'tenant_top' | 'priority'>;
+
+  // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
+  private personalDailyBriefBuiltTotal!: Counter<string>;
+  private personalDailyBriefDeliveredTotal!: Counter<'channel'>;
+  private personalDailyBriefOpenedTotal!: Counter<string>;
+  private knowsWhoMatchTotal!: Counter<'found'>;
+
+  // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
+  // Cardinality-safe: status ∈ new|recurring|resolved; decision_throughput —
+  // gauge без tenant в labels (top-100 агрегацию делает Grafana поверх БД).
+  private blockerSynthesisRecurringTotal!: Counter<'status'>;
+  private decisionStalledTotal!: Counter<string>;
+  private decisionThroughputPercent!: Gauge<'tenant_top'>;
+  private promiseCascadeAlertTotal!: Counter<string>;
+
+  // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──
+  private ideasTopServedTotal!: Counter<string>;
+  private ideaStatusAutoAdvancedTotal!: Counter<'to'>;
+  private ideaStatusChangedNotifiedTotal!: Counter<string>;
+  private insightRecheckedTotal!: Counter<'reactivated'>;
+  private knowledgeAtRiskTotal!: Counter<'severity'>;
+  private teamCapacityOverloadTotal!: Counter<string>;
+  private onboardingRampStalledTotal!: Counter<string>;
+
+  // ── TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap ──
+  private valueRecapBuiltTotal!: Counter<string>;
+  private valueRecapDeliveredTotal!: Counter<'channel'>;
+  private valueRecapOpenedTotal!: Counter<string>;
+  private chatV2FeedbackTotal!: Counter<'reaction'>;
+  private chatV2AnsweredWithCitation!: Gauge<'mode'>;
 
   // ── telegram bot channel (SBA β-1) ────────────────────────────────
   private telegramBotApiErrorsTotal!: Counter<'api_method' | 'code'>;
@@ -401,6 +459,19 @@ export class BusinessMetricsService implements OnModuleInit {
   // было бы отфильтровано (сверка перед enforce); enforce: сколько исключено.
   private kcAccessShadowDiffTotal!: Counter<'surface'>;
   private kcAccessDeniedTotal!: Counter<'surface'>;
+  // Agent-chain overhaul Фаза 0a (2026-06-07) — встречи, где блоки с signalType
+  // (decision/idea) есть, а соответствующая запись (Decision/Idea) не
+  // материализовалась. Эмитит cron graph-materialization-verify (type).
+  private kcMaterializationGapTotal!: Counter<'type'>;
+  // Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированная авто-привязка
+  // Goal↔Theme. method: 'provenance' (блоки-источники цели уже в теме) |
+  // 'comention' (тема упоминает те же сущности). Эмитит GoalThemeLinkerService.
+  private goalThemeAutolinkTotal!: Counter<'method'>;
+  // Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+  // AI-цели (goal-task-link, DEFAULT OFF). result: 'linked' (Issue.goalId
+  // проставлен) | 'rejected' (арбитр develops=false / низкий confidence / уже
+  // не null) | 'fallback' (арбитр провалился) | 'skipped' (резерв).
+  private goalTaskLinkTotal!: Counter<'result'>;
   // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста
   // `ingestMeeting` (analyze.worker → MeetingIngestAdapter). Раньше .catch
   // глушил провал в resolved-null → встреча выглядела «зелёной», RawEvent не
@@ -678,6 +749,21 @@ export class BusinessMetricsService implements OnModuleInit {
   private goalCascadeMissesTotal!: Counter<'tenant_top'>;
   private personalRelationBuilderRunsTotal!: Counter<'tenant_top' | 'result'>;
 
+  // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ─────────
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private dashboardValueStripServedTotal!: Counter<'tenant_top'>;
+  private dashboardMainFirstScreenWidgetCount!: Gauge<'tenant_top'>;
+
+  // ── ТЗ-2 Ф4 — недельный план-факт по людям (self-view + «без ответа») ──
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private weeklyPerPersonSelfViewServedTotal!: Counter<'tenant_top'>;
+  private weeklyPerPersonNoAnswerTotal!: Counter<'tenant_top'>;
+
+  // ── ТЗ-2 Ф5 — виджеты ежедневной ценности в /me (self-эндпоинты) ──
+  // Cardinality-safe: tenant_top — top-100 bucket через tenantTopOf.
+  private myIdeasFateServedTotal!: Counter<'tenant_top'>;
+  private myRecognitionsServedTotal!: Counter<'tenant_top'>;
+
   // ── SBA β-8.1 — добивка панели операционного директора ────────────
   // Cardinality-safe: tenant_top — top-100 bucket; sentiment — 'green'|'yellow'|'red'.
   private cooSentimentAnalyzedTotal!: Counter<'tenant_top' | 'sentiment'>;
@@ -688,6 +774,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
+  // ── ТЗ-2 Ф2 — «зеркало закрытого» + capacity-виджет COO ──
+  // Cardinality-safe: tenant_top — top-100 bucket (resolveOperationsTenantTop).
+  private cooBlockersResolvedTotal!: Gauge<'tenant_top'>;
+  private cooTeamCapacityWidgetServedTotal!: Counter<'tenant_top'>;
 
   // ── SBA β-8.3 — ежедневный отчёт COO ──────────────────────────────
   // Cardinality-safe: tenant_top — top-100 bucket; reason — короткий
@@ -697,6 +787,17 @@ export class BusinessMetricsService implements OnModuleInit {
   private cooDailyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooDailyDigestDeliveredTotal!: Counter<'tenant_top' | 'channel'>;
   private cooDailyDigestAgeSeconds!: Gauge<'tenant_top'>;
+
+  // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ────
+  // Cardinality-safe: tenant_top — top-100 bucket; trigger — фиксированный
+  // whitelist probe-триггеров (reply_latency_rise|workload_overload|
+  // meeting_noshows).
+  // - commitment_author_coverage_ratio: доля commitment с непустым
+  //   commitmentAuthorPersonId в прогоне goal-vector (0..1). Ниже
+  //   goals.author_coverage_min → fallback на адресата.
+  // - probe_suggested_total: сработавший risk/probe-триггер burnout-детектора.
+  private commitmentAuthorCoverageRatio!: Gauge<'tenant_top'>;
+  private probeSuggestedTotal!: Counter<'trigger'>;
 
   // ── SBA β-8.3 Wave 2 — COO overview расширения ─────────────────────
   // Cardinality-safe: tenant_top — top-100 bucket; cause — фиксированный
@@ -1063,6 +1164,17 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['reason'] as const,
     });
 
+    // Ф5 Р2 — семантический дедуп задач встречи. result:
+    //   knn_merged — fast-черновик удалён по cosine >= порога (без LLM);
+    //   llm_merged — удалён по вердикту 'same' LLM-арбитра (серая зона);
+    //   kept       — оставлен (нет близкого canonical или вердикт 'different');
+    //   skipped    — дедуп пропущен (флаг OFF / embed упал / ошибка).
+    this.taskDedupeTotal = this.getOrCreateCounter({
+      name: 'z_task_dedupe_total',
+      help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
+      labelNames: ['result'] as const,
+    });
+
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
     // объём токенов, экономящихся за счёт кеша Anthropic (cache_read ≈ 0.1×
     // input price, cache_creation ≈ 1.25× для 5min-TTL). Алёрт: cache_hit
@@ -1082,6 +1194,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_llm_cache_creation_tokens_total',
       help: 'T7-F3 — суммарно токенов, записанных в prompt cache (cost ~1.25× input price для 5min-TTL). Релевантно только Anthropic-семейству.',
       labelNames: ['provider', 'model'] as const,
+    });
+    // Ф6 Часть 3 — общее число успешных LLM-вызовов per provider (знаменатель
+    // cache hit-ratio). z_llm_cache_hit_total / z_llm_calls_total = доля хитов.
+    this.llmCallsTotal = this.getOrCreateCounter({
+      name: 'z_llm_calls_total',
+      help: 'Ф6 — счётчик успешных LLM-вызовов per provider. Знаменатель для cache hit-ratio (z_llm_cache_hit_total / z_llm_calls_total).',
+      labelNames: ['provider'] as const,
+    });
+    this.llmCacheHitRatioBelowThreshold = this.getOrCreateGauge({
+      name: 'z_llm_cache_hit_ratio_below_threshold',
+      help: 'Ф6 — 1, если доля prompt-cache хитов по провайдеру ниже порога (smoke-cron), иначе 0. Алёрт: дрейф на некэширующий провайдер.',
+      labelNames: ['provider'] as const,
     });
 
     this.deepseekSchemaToToolConversionTotal = this.getOrCreateCounter({
@@ -1484,6 +1608,180 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Время ответа пользователя на probe-нотификацию (секунды, по kind × eventType).',
       labelNames: ['kind', 'event_type'] as const,
       buckets: [10, 60, 300, 900, 1800, 3600, 14_400, 86_400, 604_800],
+    });
+
+    // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет + кампания привязки ──
+    this.notificationBudgetConsumedTotal = this.getOrCreateCounter({
+      name: 'notification_budget_consumed_total',
+      help: 'TZ-1 Ф0 — потрачено единиц дневного бюджета push-уведомлений (по trigger=eventType).',
+      labelNames: ['trigger'] as const,
+    });
+    this.notificationBudgetBlockedTotal = this.getOrCreateCounter({
+      name: 'notification_budget_blocked_total',
+      help: 'TZ-1 Ф0 — push-доставка заблокирована (reason ∈ budget_exceeded|quiet_hours|opted_out); in_app всё равно доставлен.',
+      labelNames: ['reason'] as const,
+    });
+    this.notificationDeferredToDigestTotal = this.getOrCreateCounter({
+      name: 'notification_deferred_to_digest_total',
+      help: 'TZ-1 Ф0 — сколько push-уведомлений отложено (бюджет/тихие часы/opt-out). Кандидаты в дайджест.',
+      labelNames: [] as const,
+    });
+    this.channelBindingCoverageRatio = this.getOrCreateGauge({
+      name: 'channel_binding_coverage_ratio',
+      help: 'TZ-1 Ф0 — доля сотрудников с verified Telegram-привязкой (0..1) по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.channelBindingCampaignInvitedTotal = this.getOrCreateCounter({
+      name: 'channel_binding_campaign_invited_total',
+      help: 'TZ-1 Ф0 — отправлено приглашений/напоминаний привязать канал (кампания), по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.checkinPromptDeliveredTotal = this.getOrCreateCounter({
+      name: 'checkin_prompt_delivered_total',
+      help: 'TZ-1 Ф0 — доставлен дневной чек-ин prompt по каналу (channel ∈ telegram_bot|max_bot|in_app|email_smtp).',
+      labelNames: ['channel'] as const,
+    });
+
+    // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──
+    this.customerRiskSnapshotsTotal = this.getOrCreateCounter({
+      name: 'customer_risk_snapshots_total',
+      help: 'TZ-1 Ф1 — построено снимков риска клиента (level ∈ critical|warning|ok).',
+      labelNames: ['level'] as const,
+    });
+    this.customerRiskRadarFailedTotal = this.getOrCreateCounter({
+      name: 'customer_risk_radar_failed_total',
+      help: 'TZ-1 Ф1 — сбой радара клиентов (reason ∈ compute_failed|notify_failed).',
+      labelNames: ['reason'] as const,
+    });
+    this.customerRiskManagerNotifiedTotal = this.getOrCreateCounter({
+      name: 'customer_risk_manager_notified_total',
+      help: 'TZ-1 Ф1 — отправлено push ответственному менеджеру по клиенту под риском.',
+      labelNames: [] as const,
+    });
+
+    // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──
+    this.portfolioHealthScore = this.getOrCreateGauge({
+      name: 'portfolio_health_score',
+      help: 'ТЗ-2 Ф6.A — интегральный балл здоровья портфеля целей (0..100) по tenant_top.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.portfolioHealthSnapshotTotal = this.getOrCreateCounter({
+      name: 'portfolio_health_snapshot_total',
+      help: 'ТЗ-2 Ф6.A — построено недельных снимков здоровья портфеля (upsert).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.portfolioPrioritySetTotal = this.getOrCreateCounter({
+      name: 'portfolio_priority_set_total',
+      help: 'ТЗ-2 Ф6.A — проставлен MoSCoW-приоритет цели (priority ∈ must|should|could|wont|none).',
+      labelNames: ['tenant_top', 'priority'] as const,
+    });
+
+    // ── TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день» ──
+    this.personalDailyBriefBuiltTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_built_total',
+      help: 'TZ-1 Ф2 — построено персональных дневных брифов (upsert).',
+      labelNames: [] as const,
+    });
+    this.personalDailyBriefDeliveredTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_delivered_total',
+      help: 'TZ-1 Ф2 — доставлен персональный бриф по каналу (channel ∈ push|in_app|...).',
+      labelNames: ['channel'] as const,
+    });
+    this.personalDailyBriefOpenedTotal = this.getOrCreateCounter({
+      name: 'personal_daily_brief_opened_total',
+      help: 'TZ-1 Ф2 — сотрудник открыл персональный бриф (POST /me/daily-brief/:id/opened).',
+      labelNames: [] as const,
+    });
+    this.knowsWhoMatchTotal = this.getOrCreateCounter({
+      name: 'knows_who_match_total',
+      help: 'TZ-1 Ф2 — поиск носителя знания «кто знает X» (found ∈ yes|no).',
+      labelNames: ['found'] as const,
+    });
+
+    // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
+    this.blockerSynthesisRecurringTotal = this.getOrCreateCounter({
+      name: 'blocker_synthesis_recurring_total',
+      help: 'TZ-1 Ф3.A — синтезированный кластер блокеров по статусу (status ∈ new|recurring|resolved).',
+      labelNames: ['status'] as const,
+    });
+    this.decisionStalledTotal = this.getOrCreateCounter({
+      name: 'decision_stalled_total',
+      help: 'TZ-1 Ф3.B — решение помечено stalled контролёром внедрения (0 задач + нет actualOutcomes старше N дней).',
+      labelNames: [] as const,
+    });
+    this.decisionThroughputPercent = this.getOrCreateGauge({
+      name: 'decision_throughput_percent',
+      help: 'TZ-1 Ф3.B — доля решений, доведённых до actualOutcomes, % (несущая метрика витрины Ф5).',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.promiseCascadeAlertTotal = this.getOrCreateCounter({
+      name: 'promise_cascade_alert_total',
+      help: 'TZ-1 Ф3.C — дневной алерт каскада обещаний (просроченное обещание держит чужую работу).',
+      labelNames: [] as const,
+    });
+
+    // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──────
+    this.ideasTopServedTotal = this.getOrCreateCounter({
+      name: 'ideas_top_served_total',
+      help: 'TZ-1 Ф4.A — отдача ленты идей (GET /ideas/top).',
+      labelNames: [] as const,
+    });
+    this.ideaStatusAutoAdvancedTotal = this.getOrCreateCounter({
+      name: 'idea_status_auto_advanced_total',
+      help: 'TZ-1 Ф4.A — авто-продвижение статуса идеи при закрытии связанной задачи (label to = новый статус).',
+      labelNames: ['to'] as const,
+    });
+    this.ideaStatusChangedNotifiedTotal = this.getOrCreateCounter({
+      name: 'idea_status_changed_notified_total',
+      help: 'TZ-1 Ф4.A — уведомление автору/supporter\'ам о смене статуса идеи доставлено.',
+      labelNames: [] as const,
+    });
+    this.insightRecheckedTotal = this.getOrCreateCounter({
+      name: 'insight_rechecked_total',
+      help: 'TZ-1 Ф4.B — re-check митигированного инсайта (reactivated=true → вернулся в active).',
+      labelNames: ['reactivated'] as const,
+    });
+    this.knowledgeAtRiskTotal = this.getOrCreateCounter({
+      name: 'knowledge_at_risk_total',
+      help: 'TZ-1 Ф4.C — снимок знание-под-риском по совмещённой серьёзности (severity ∈ critical|warning|ok).',
+      labelNames: ['severity'] as const,
+    });
+    this.teamCapacityOverloadTotal = this.getOrCreateCounter({
+      name: 'team_capacity_overload_total',
+      help: 'TZ-1 Ф4.D — отдел помечен перегруженным агрегатом capacity.',
+      labelNames: [] as const,
+    });
+    this.onboardingRampStalledTotal = this.getOrCreateCounter({
+      name: 'onboarding_ramp_stalled_total',
+      help: 'TZ-1 Ф4.E — новичок не активировался за окно онбординга (молчит).',
+      labelNames: [] as const,
+    });
+
+    // ── TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap ──
+    this.valueRecapBuiltTotal = this.getOrCreateCounter({
+      name: 'value_recap_built_total',
+      help: 'TZ-1 Ф5 — построено месячных снимков value-recap (upsert).',
+      labelNames: [] as const,
+    });
+    this.valueRecapDeliveredTotal = this.getOrCreateCounter({
+      name: 'value_recap_delivered_total',
+      help: 'TZ-1 Ф5 — доставлен месячный value-recap владельцу/COO по каналу (channel ∈ push|in_app|...).',
+      labelNames: ['channel'] as const,
+    });
+    this.valueRecapOpenedTotal = this.getOrCreateCounter({
+      name: 'value_recap_opened_total',
+      help: 'TZ-1 Ф5 — владелец открыл месячный value-recap (POST /value-recap/:id/opened).',
+      labelNames: [] as const,
+    });
+    this.chatV2FeedbackTotal = this.getOrCreateCounter({
+      name: 'chat_v2_feedback_total',
+      help: 'TZ-1 Ф5 — поставлена оценка ответа AI-чата (reaction ∈ up|down).',
+      labelNames: ['reaction'] as const,
+    });
+    this.chatV2AnsweredWithCitation = this.getOrCreateGauge({
+      name: 'chat_v2_answered_with_citation_total',
+      help: 'TZ-1 Ф5 — ответов AI-чата с привязкой к источнику (grounding-proxy, НЕ дефлекция) за окно (mode ∈ self|org).',
+      labelNames: ['mode'] as const,
     });
 
     // ── telegram bot (SBA β-1) ─────────────────────────────────────
@@ -1986,6 +2284,24 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'kc_access_denied_total',
       help: 'Ф4 knowledge-access — в enforce-режиме: сколько блоков исключено гейтом доступа (по поверхности).',
       labelNames: ['surface'] as const,
+    });
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — расхождение материализации графа.
+    this.kcMaterializationGapTotal = this.getOrCreateCounter({
+      name: 'kc_materialization_gap_total',
+      help: 'knowledge-core — встречи, где блоки с signalType (decision/idea) есть, а соответствующая запись (Decision/Idea) не материализовалась (type).',
+      labelNames: ['type'] as const,
+    });
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — авто-привязка Goal↔Theme.
+    this.goalThemeAutolinkTotal = this.getOrCreateCounter({
+      name: 'goal_theme_autolink_total',
+      help: 'knowledge-core — детерминированные авто-привязки Goal↔Theme (GoalTheme source=ai). method: provenance (блоки-источники цели уже в теме) | comention (тема упоминает те же сущности).',
+      labelNames: ['method'] as const,
+    });
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач↔цели.
+    this.goalTaskLinkTotal = this.getOrCreateCounter({
+      name: 'z_goal_task_link_total',
+      help: 'knowledge-core — LLM-привязка задач встречи к AI-цели (goal-task-link, DEFAULT OFF). result: linked (Issue.goalId проставлен) | rejected (develops=false / низкий confidence / уже привязана) | fallback (арбитр провалился) | skipped.',
+      labelNames: ['result'] as const,
     });
     // Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — провалы моста ingestMeeting.
     this.meetingIngestFailedTotal = this.getOrCreateCounter({
@@ -2714,6 +3030,42 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['tenant_top', 'result'] as const,
     });
 
+    // ── ТЗ-2 Ф1 — отдача главной директора (новая компоновка) ──
+    this.dashboardValueStripServedTotal = this.getOrCreateCounter({
+      name: 'dashboard_value_strip_served_total',
+      help: 'ТЗ-2 Ф1 — сколько раз отдана «Полоса пользы» директора (5 твёрдых счётчиков). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.dashboardMainFirstScreenWidgetCount = this.getOrCreateGauge({
+      name: 'dashboard_main_first_screen_widget_count',
+      help: 'ТЗ-2 Ф1 — число величин на первом экране новой компоновки главной директора (≤7). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── ТЗ-2 Ф4 — недельный план-факт по людям ──
+    this.weeklyPerPersonSelfViewServedTotal = this.getOrCreateCounter({
+      name: 'weekly_per_person_self_view_served_total',
+      help: 'ТЗ-2 Ф4 — сколько раз отдан self-view недельного план-факта (/me/weekly-per-person). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.weeklyPerPersonNoAnswerTotal = this.getOrCreateCounter({
+      name: 'weekly_per_person_no_answer_total',
+      help: 'ТЗ-2 Ф4 — суммарное число обещаний «без ответа» (commitmentStatus=asked) при расчёте недельного план-факта. tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+
+    // ── ТЗ-2 Ф5 — виджеты ежедневной ценности в /me ──
+    this.myIdeasFateServedTotal = this.getOrCreateCounter({
+      name: 'me_ideas_fate_served_total',
+      help: 'ТЗ-2 Ф5 — сколько раз отдан self-эндпоинт «судьба моих идей» (/me/ideas). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.myRecognitionsServedTotal = this.getOrCreateCounter({
+      name: 'me_recognitions_served_total',
+      help: 'ТЗ-2 Ф5 — сколько раз отдан self-эндпоинт «полученные признания» (/me/recognitions). tenant_top — top-100 bucket через tenantTopOf.',
+      labelNames: ['tenant_top'] as const,
+    });
+
     // ── SBA β-8.1 — добивка панели операционного директора ──
     this.cooSentimentAnalyzedTotal = this.getOrCreateCounter({
       name: 'coo_sentiment_analyzed_total',
@@ -2740,6 +3092,17 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-8.1 — доля красных чек-инов за 7 дней (0..1). Тревога Grafana при > 0.3.',
       labelNames: ['tenant_top'] as const,
     });
+    // ── ТЗ-2 Ф2 — «зеркало закрытого» + capacity-виджет COO ──
+    this.cooBlockersResolvedTotal = this.getOrCreateGauge({
+      name: 'coo_blockers_resolved_total',
+      help: 'ТЗ-2 Ф2 — блокеры (BlockerSynthesis), закрытые (status=resolved) за последние 30 дней. «Зеркало закрытого» на COO-дашборде.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.cooTeamCapacityWidgetServedTotal = this.getOrCreateCounter({
+      name: 'coo_team_capacity_widget_served_total',
+      help: 'ТЗ-2 Ф2 — отдача виджета загрузки команд COO (GET /dashboard/operations/team-capacity).',
+      labelNames: ['tenant_top'] as const,
+    });
 
     // ── SBA β-8.3 — ежедневный отчёт COO ──
     this.cooDailyDigestGeneratedTotal = this.getOrCreateCounter({
@@ -2761,6 +3124,18 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_daily_digest_age_seconds',
       help: 'SBA β-8.3 — возраст последнего ежедневного дайджеста (now − createdAt) в секундах. Тревога Grafana при > 25 часов.',
       labelNames: ['tenant_top'] as const,
+    });
+
+    // ── TZ-1 Ф3.D — фиксы достоверности агентов ──
+    this.commitmentAuthorCoverageRatio = this.getOrCreateGauge({
+      name: 'commitment_author_coverage_ratio',
+      help: 'TZ-1 Ф3.D.1 — доля commitment с непустым commitmentAuthorPersonId в прогоне goal-vector (0..1). Ниже goals.author_coverage_min → атрибуция откатывается на адресата.',
+      labelNames: ['tenant_top'] as const,
+    });
+    this.probeSuggestedTotal = this.getOrCreateCounter({
+      name: 'probe_suggested_total',
+      help: 'TZ-1 Ф3.D.3 — сработавший risk/probe-триггер burnout-детектора (trigger ∈ reply_latency_rise|workload_overload|meeting_noshows).',
+      labelNames: ['trigger'] as const,
     });
 
     // ── SBA β-8.3 Wave 2 — COO overview расширения ──
@@ -3659,6 +4034,62 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   /**
+   * Ф6 Часть 3 — фиксирует один УСПЕШНЫЙ LLM-вызов per provider.
+   * Вызывается из AiUsageLogService.record при `success === true`.
+   * Знаменатель для cache hit-ratio (вместе с incLlmCacheHit).
+   */
+  incLlmCall(args: { provider: string }): void {
+    this.llmCallsTotal.inc({ provider: args.provider });
+  }
+
+  /**
+   * Ф6 Часть 3 — выставляет gauge-флаг «доля cache-хитов ниже порога».
+   * 1 = ниже порога (тревога), 0 = норма. Вызывается smoke-cron'ом.
+   */
+  setLlmCacheHitRatioBelowThreshold(args: {
+    provider: string;
+    below: boolean;
+  }): void {
+    this.llmCacheHitRatioBelowThreshold.set(
+      { provider: args.provider },
+      args.below ? 1 : 0,
+    );
+  }
+
+  /**
+   * Ф6 Часть 3 — снимок доли prompt-cache хитов по провайдерам, чьё имя
+   * содержит `providerSubstring` (например 'deepseek'). Суммирует
+   * `z_llm_cache_hit_total` (по всем model/task_type) и делит на суммарный
+   * `z_llm_calls_total` тех же провайдеров.
+   *
+   * ratio === null, если total < `minTotal` (мало данных — не делаем выводов
+   * на низком трафике, иначе цифра шумная).
+   */
+  async getLlmCacheHitRatio(
+    providerSubstring: string,
+    minTotal = 20,
+  ): Promise<{ hits: number; total: number; ratio: number | null }> {
+    const needle = providerSubstring.toLowerCase();
+    const matches = (label: unknown): boolean =>
+      typeof label === 'string' && label.toLowerCase().includes(needle);
+
+    const hitSnapshot = await this.llmCacheHitTotal.get();
+    let hits = 0;
+    for (const v of hitSnapshot.values) {
+      if (matches(v.labels.provider)) hits += v.value;
+    }
+
+    const callsSnapshot = await this.llmCallsTotal.get();
+    let total = 0;
+    for (const v of callsSnapshot.values) {
+      if (matches(v.labels.provider)) total += v.value;
+    }
+
+    const ratio = total >= minTotal ? hits / total : null;
+    return { hits, total, ratio };
+  }
+
+  /**
    * ТЗ 2026-05-25 — фиксирует один случай автоконвертации json_schema → tool
    * в DeepSeekService. Вызывается, когда caller передал
    * `responseFormat: json_schema` без `tools`, а модель — Pro (thinking-mode
@@ -3741,6 +4172,15 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incKcEntityGraphFallbackNone(args: { reason: string }): void {
     this.kcEntityGraphFallbackNoneTotal.inc({ reason: args.reason });
+  }
+
+  /**
+   * Ф5 Р2 — один результат семантического дедупа задачи-черновика встречи.
+   * result: 'knn_merged' | 'llm_merged' | 'kept' | 'skipped'. Optional-safe:
+   * счётчик может быть не инициализирован в тестовых моках сервиса.
+   */
+  incTaskDedupe(args: { result: string }): void {
+    this.taskDedupeTotal?.inc({ result: args.result });
   }
 
   /**
@@ -4138,6 +4578,211 @@ export class BusinessMetricsService implements OnModuleInit {
       kind: args.kind,
       status: args.status,
     });
+  }
+
+  // ──────────────── TZ-1 Фаза 0 — дневной бюджет уведомлений ──────────
+
+  /** Counter `notification_budget_consumed_total{trigger}`. */
+  incNotificationBudgetConsumed(args: { trigger: string }): void {
+    this.notificationBudgetConsumedTotal.inc({ trigger: args.trigger });
+  }
+
+  /** Counter `notification_budget_blocked_total{reason}`. */
+  incNotificationBudgetBlocked(args: { reason: string }): void {
+    this.notificationBudgetBlockedTotal.inc({ reason: args.reason });
+  }
+
+  /** Counter `notification_deferred_to_digest_total`. */
+  incNotificationDeferredToDigest(): void {
+    this.notificationDeferredToDigestTotal.inc();
+  }
+
+  /** Gauge `channel_binding_coverage_ratio{tenant_top}` (0..1). */
+  setChannelBindingCoverageRatio(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.channelBindingCoverageRatio.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, Math.min(1, args.value)),
+    );
+  }
+
+  /** Counter `channel_binding_campaign_invited_total{tenant_top}`. */
+  incChannelBindingCampaignInvited(args: { tenantTop: string }): void {
+    this.channelBindingCampaignInvitedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `checkin_prompt_delivered_total{channel}`. */
+  incCheckinPromptDelivered(args: { channel: string }): void {
+    this.checkinPromptDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  // ──────────────── TZ-1 Фаза 1 — радар клиентов под риском ───────────
+
+  /** Counter `customer_risk_snapshots_total{level}`. */
+  incCustomerRiskSnapshots(args: { level: string }): void {
+    this.customerRiskSnapshotsTotal.inc({ level: args.level });
+  }
+
+  /** Counter `customer_risk_radar_failed_total{reason}`. */
+  incCustomerRiskRadarFailed(args: { reason: string }): void {
+    this.customerRiskRadarFailedTotal.inc({ reason: args.reason });
+  }
+
+  /** Gauge `portfolio_health_score{tenant_top}` (0..100). */
+  setPortfolioHealthScore(args: { tenantTop: string; score: number }): void {
+    if (!Number.isFinite(args.score)) return;
+    this.portfolioHealthScore.set(
+      { tenant_top: args.tenantTop },
+      Math.min(100, Math.max(0, args.score)),
+    );
+  }
+
+  /** Counter `portfolio_health_snapshot_total{tenant_top}`. */
+  incPortfolioHealthSnapshot(args: { tenantTop: string }): void {
+    this.portfolioHealthSnapshotTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /** Counter `portfolio_priority_set_total{tenant_top,priority}`. */
+  incPortfolioPrioritySet(args: { tenantTop: string; priority: string }): void {
+    this.portfolioPrioritySetTotal.inc({
+      tenant_top: args.tenantTop,
+      priority: args.priority,
+    });
+  }
+
+  /** Counter `customer_risk_manager_notified_total`. */
+  incCustomerRiskManagerNotified(): void {
+    this.customerRiskManagerNotifiedTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 2 — движок рядового «Твой день» ──────────
+
+  /** Counter `personal_daily_brief_built_total`. */
+  incPersonalDailyBriefBuilt(): void {
+    this.personalDailyBriefBuiltTotal.inc();
+  }
+
+  /** Counter `personal_daily_brief_delivered_total{channel}`. */
+  incPersonalDailyBriefDelivered(args: { channel: string }): void {
+    this.personalDailyBriefDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  /** Counter `personal_daily_brief_opened_total`. */
+  incPersonalDailyBriefOpened(): void {
+    this.personalDailyBriefOpenedTotal.inc();
+  }
+
+  /** Counter `knows_who_match_total{found}`. */
+  incKnowsWhoMatch(args: { found: 'yes' | 'no' }): void {
+    this.knowsWhoMatchTotal.inc({ found: args.found });
+  }
+
+  // ──────────────── TZ-1 Фаза 3.A/B/C — агенты исполнения ──────────────
+
+  /** Counter `blocker_synthesis_recurring_total{status}`. */
+  incBlockerSynthesisRecurring(args: { status: string }): void {
+    this.blockerSynthesisRecurringTotal.inc({ status: args.status });
+  }
+
+  /** Counter `decision_stalled_total`. */
+  incDecisionStalled(): void {
+    this.decisionStalledTotal.inc();
+  }
+
+  /** Gauge `decision_throughput_percent{tenant_top}` (0..100). */
+  setDecisionThroughputPercent(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.decisionThroughputPercent.set(
+      { tenant_top: args.tenantTop },
+      Math.min(100, Math.max(0, args.value)),
+    );
+  }
+
+  /** Counter `promise_cascade_alert_total`. */
+  incPromiseCascadeAlert(): void {
+    this.promiseCascadeAlertTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 4 — улучшения и знания ───────────────────
+
+  /** Counter `ideas_top_served_total` (Ф4.A — отдача ленты идей). */
+  incIdeasTopServed(): void {
+    this.ideasTopServedTotal.inc();
+  }
+
+  /** Counter `idea_status_auto_advanced_total{to}` (Ф4.A — авто-морфинг статуса). */
+  incIdeaStatusAutoAdvanced(args: { to: string }): void {
+    this.ideaStatusAutoAdvancedTotal.inc({ to: args.to });
+  }
+
+  /** Counter `idea_status_changed_notified_total` (Ф4.A — автор уведомлён). */
+  incIdeaStatusChangedNotified(): void {
+    this.ideaStatusChangedNotifiedTotal.inc();
+  }
+
+  /**
+   * Counter `insight_rechecked_total{reactivated}` (Ф4.B — re-check митигаций).
+   * `reactivated` = 'true' если митигированный инсайт вернулся в active.
+   */
+  incInsightRechecked(args: { reactivated: boolean }): void {
+    this.insightRecheckedTotal.inc({
+      reactivated: args.reactivated ? 'true' : 'false',
+    });
+  }
+
+  /** Counter `knowledge_at_risk_total{severity}` (Ф4.C — знание-под-риском). */
+  incKnowledgeAtRisk(args: { severity: string }): void {
+    this.knowledgeAtRiskTotal.inc({ severity: args.severity });
+  }
+
+  /** Counter `team_capacity_overload_total` (Ф4.D — перегруженные команды). */
+  incTeamCapacityOverload(): void {
+    this.teamCapacityOverloadTotal.inc();
+  }
+
+  /** Counter `onboarding_ramp_stalled_total` (Ф4.E — молчащие новички). */
+  incOnboardingRampStalled(): void {
+    this.onboardingRampStalledTotal.inc();
+  }
+
+  // ──────────────── TZ-1 Фаза 5 — месячная витрина value-recap ─────────
+
+  /** Counter `value_recap_built_total` (Ф5 — построено месячных снимков). */
+  incValueRecapBuilt(): void {
+    this.valueRecapBuiltTotal.inc();
+  }
+
+  /** Counter `value_recap_delivered_total{channel}` (Ф5 — доставка владельцу). */
+  incValueRecapDelivered(args: { channel: string }): void {
+    this.valueRecapDeliveredTotal.inc({ channel: args.channel });
+  }
+
+  /** Counter `value_recap_opened_total` (Ф5 — владелец открыл витрину). */
+  incValueRecapOpened(): void {
+    this.valueRecapOpenedTotal.inc();
+  }
+
+  /** Counter `chat_v2_feedback_total{reaction}` (Ф5 — оценка ответа up|down). */
+  incChatV2Feedback(args: { reaction: 'up' | 'down' }): void {
+    this.chatV2FeedbackTotal.inc({ reaction: args.reaction });
+  }
+
+  /**
+   * Gauge `chat_v2_answered_with_citation_total{mode}` (Ф5 — grounding-proxy,
+   * НЕ «дефлекция»). Ставится по итогам агрегации `getChatUsageStats`.
+   */
+  setChatAnsweredWithCitation(args: { mode: string; value: number }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.chatV2AnsweredWithCitation.set(
+      { mode: args.mode },
+      Math.max(0, args.value),
+    );
   }
 
   /** Inbound-сообщение (free_note/response/chat_query) из канала. */
@@ -4824,6 +5469,36 @@ export class BusinessMetricsService implements OnModuleInit {
       specialist: args.specialist,
       reason: args.reason,
     });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 0a (2026-06-07) — расхождение материализации
+   * графа: у встречи есть блоки с signalType (decision/idea), а
+   * соответствующей записи (Decision/Idea) нет. Эмитит cron
+   * graph-materialization-verify по каждому gap.
+   */
+  incKcMaterializationGap(args: { type: string }): void {
+    this.kcMaterializationGapTotal.inc({ type: args.type });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированная авто-привязка
+   * Goal↔Theme (GoalTheme source='ai'). Эмитит GoalThemeLinkerService по каждой
+   * реально созданной связи. method ∈ provenance | comention.
+   */
+  incGoalThemeAutolink(args: { method: string }): void {
+    this.goalThemeAutolinkTotal.inc({ method: args.method });
+  }
+
+  /**
+   * Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
+   * AI-цели (`goal-task-link`, DEFAULT OFF). Эмитит GoalTaskLinkerService по
+   * каждой задаче-вердикту. result ∈ linked | rejected | fallback | skipped.
+   * optional-safe (?.): сервис инжектит метрику как @Optional() — мок/worker
+   * могут не иметь.
+   */
+  incGoalTaskLink(args: { result: string }): void {
+    this.goalTaskLinkTotal.inc({ result: args.result });
   }
 
   /**
@@ -6047,6 +6722,76 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  // ────────────────────── ТЗ-2 Ф1 (главная директора) ──────────────────
+
+  /**
+   * Counter `dashboard_value_strip_served_total{tenant_top}`.
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf` (top-100 bucket).
+   */
+  incDashboardValueStripServed(args: { tenantTop: string }): void {
+    this.dashboardValueStripServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Gauge `dashboard_main_first_screen_widget_count{tenant_top}`.
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  setDashboardMainFirstScreenWidgetCount(args: {
+    tenantTop: string;
+    count: number;
+  }): void {
+    if (!Number.isFinite(args.count)) return;
+    this.dashboardMainFirstScreenWidgetCount.set(
+      { tenant_top: args.tenantTop },
+      args.count,
+    );
+  }
+
+  /**
+   * ТЗ-2 Ф4 — фиксируем расчёт недельного план-факта:
+   *  - `weekly_per_person_no_answer_total{tenant_top}` += суммарные «без ответа»
+   *    (commitmentStatus='asked') за этот compute (если > 0).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf` (top-100 bucket).
+   */
+  recordWeeklyPerPersonCompute(args: {
+    tenantTop: string;
+    noAnswerTotal: number;
+  }): void {
+    if (Number.isFinite(args.noAnswerTotal) && args.noAnswerTotal > 0) {
+      this.weeklyPerPersonNoAnswerTotal.inc(
+        { tenant_top: args.tenantTop },
+        args.noAnswerTotal,
+      );
+    }
+  }
+
+  /**
+   * Counter `weekly_per_person_self_view_served_total{tenant_top}` (ТЗ-2 Ф4 —
+   * каждая успешная отдача self-view /me/weekly-per-person).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incWeeklyPerPersonSelfViewServed(args: { tenantTop: string }): void {
+    this.weeklyPerPersonSelfViewServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `me_ideas_fate_served_total{tenant_top}` (ТЗ-2 Ф5 — каждая успешная
+   * отдача self-эндпоинта «судьба моих идей» /me/ideas).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incMyIdeasFateServed(args: { tenantTop: string }): void {
+    this.myIdeasFateServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
+  /**
+   * Counter `me_recognitions_served_total{tenant_top}` (ТЗ-2 Ф5 — каждая
+   * успешная отдача self-эндпоинта «полученные признания» /me/recognitions).
+   * `tenantTop` нормализуется caller'ом через `tenantTopOf`.
+   */
+  incMyRecognitionsServed(args: { tenantTop: string }): void {
+    this.myRecognitionsServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
   // ────────────────────── SBA β-8.1 (COO добивка) ──────────────────────
 
   /** Counter `coo_sentiment_analyzed_total{tenant_top, sentiment}`. */
@@ -6105,6 +6850,26 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
+  /**
+   * ТЗ-2 Ф2 — Gauge `coo_blockers_resolved_total{tenant_top}`.
+   * Сколько блокеров закрыто (status=resolved) за последние 30 дней.
+   */
+  setCooBlockersResolved(args: { tenantTop: string; count: number }): void {
+    if (!Number.isFinite(args.count)) return;
+    this.cooBlockersResolvedTotal.set(
+      { tenant_top: args.tenantTop },
+      Math.max(0, args.count),
+    );
+  }
+
+  /**
+   * ТЗ-2 Ф2 — Counter `coo_team_capacity_widget_served_total{tenant_top}`.
+   * Инкремент на каждую отдачу виджета загрузки команд COO.
+   */
+  incCooTeamCapacityWidgetServed(args: { tenantTop: string }): void {
+    this.cooTeamCapacityWidgetServedTotal.inc({ tenant_top: args.tenantTop });
+  }
+
   // ────────────────────── SBA β-8.3 — Daily Digest ────────────────────
 
   /** Counter `coo_daily_digest_generated_total{tenant_top}`. */
@@ -6141,6 +6906,28 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.max(0, args.value),
     );
+  }
+
+  // ────────────────────── TZ-1 Ф3.D — фиксы достоверности ──────────────
+
+  /**
+   * Gauge `commitment_author_coverage_ratio{tenant_top}` (0..1). Доля
+   * commitment с непустым commitmentAuthorPersonId в прогоне goal-vector.
+   */
+  setCommitmentAuthorCoverageRatio(args: {
+    tenantTop: string;
+    value: number;
+  }): void {
+    if (!Number.isFinite(args.value)) return;
+    this.commitmentAuthorCoverageRatio.set(
+      { tenant_top: args.tenantTop },
+      Math.min(1, Math.max(0, args.value)),
+    );
+  }
+
+  /** Counter `probe_suggested_total{trigger}`. */
+  incProbeSuggested(args: { trigger: string }): void {
+    this.probeSuggestedTotal.inc({ trigger: args.trigger });
   }
 
   // ────────────────────── SBA β-8.3 Wave 2 — COO overview ────────────

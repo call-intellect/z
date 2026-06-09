@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { LlmTaskType } from '../../ai/services/llm-router.service';
+import { withAsrNote } from '../../ai/services/prompts/common';
 import type { MeetingBlock } from '../services/block-fetch.service';
 
 /** taskType для LlmRouter (см. llm-router.service.ts). */
@@ -52,7 +53,7 @@ export const CHAPTERS_V2_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-const SYSTEM_PROMPT = `Ты — навигатор расшифровки встречи. Тебе дают канонические IdeaBlock'и встречи в хронологическом порядке (по таймкоду evidence). Каждый блок — атомарное смысловое утверждение (вопрос + доверенный ответ + signalType).
+const SYSTEM_PROMPT = withAsrNote(`Ты — навигатор расшифровки встречи. Тебе дают канонические IdeaBlock'и встречи в хронологическом порядке (по таймкоду evidence). Каждый блок — атомарное смысловое утверждение (вопрос + доверенный ответ + signalType).
 
 Твоя задача — нарезать блоки на ГЛАВЫ: смысловые сегменты встречи, по которым удобно «прыгать» в плеере. Глава = группа подряд идущих блоков, объединённых одной темой/контекстом.
 
@@ -68,7 +69,7 @@ const SYSTEM_PROMPT = `Ты — навигатор расшифровки вст
 - Минимальная длина главы — 1 блок. Не дроби каждый блок в отдельную главу — объединяй смысловые цепочки.
 - Если все блоки = одна тема → одна глава на всю встречу. Это нормально.
 - Ответ — строго JSON, валидный по схеме. Никакого markdown, преамбул, объяснений.
-`;
+`);
 
 interface BuildArgs {
   meetingId: string;

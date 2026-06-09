@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { PersonPulseClient } from './PersonPulseClient';
 
-export const metadata: Metadata = { title: 'Карточка сотрудника — Кора' };
+export const metadata: Metadata = { title: 'Карточка сотрудника' };
 
 /**
  * `/persons/:id/pulse` — Pulse-карточка сотрудника (Wave 3 §3.4 + §3.6 + §3.8).

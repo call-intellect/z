@@ -1,0 +1,97 @@
+/**
+ * SBA γ-1 — Specialist 3.7 (SkillProfile) — Ф3(D) grounding-верификатор черты.
+ *
+ * LLM-промпт `skill-trait-verify` — дешёвый grounding-срез ПЕРЕД попаданием
+ * черты в исполняемую персону. Получает ГИПОТЕЗУ о черте поведения сотрудника
+ * (statement + category) и дословные цитаты-источники (reasoning-блоки, на
+ * которых черта построена). Возвращает `grounded=true` ТОЛЬКО если черта
+ * прямо подтверждается ≥2 цитируемыми reasoning-блоками И это рассуждение о
+ * СОБСТВЕННОМ рабочем подходе сотрудника.
+ *
+ * Цель — отсечь фабрикации (на golden-прогоне фикстура из 3 уточняющих
+ * тех-вопросов дала выдуманную черту): уточняющие вопросы, общие фразы,
+ * приписанное другим — `grounded=false`. Контраст: practice-skills имеют
+ * верификационный гейт, skill-traits до Ф3(D) — нет.
+ *
+ * Cache-friendly: SYSTEM — стабильная константа; переменные (statement,
+ * category, цитаты) — В КОНЦЕ USER.
+ */
+
+import {
+  withAsrNote,
+  withEdgeCasePolicy,
+} from '../../ai/services/prompts/common';
+
+export const SKILL_TRAIT_VERIFY_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
+    [
+      'Ты — knowledge-инженер-верификатор. Тебе дают ГИПОТЕЗУ о черте рабочего поведения сотрудника и дословные цитаты-источники (reasoning-блоки), на которых эта гипотеза построена.',
+      'Твоя задача — проверить грунтованность (grounding) гипотезы строго по цитатам. Отвечай строго в формате JSON по предоставленной схеме.',
+      '',
+      'Верни grounded=true ТОЛЬКО если выполнены ВСЕ условия:',
+      '1. Черта прямо подтверждается НЕ МЕНЕЕ чем двумя (≥2) цитируемыми reasoning-блоками.',
+      '2. Это рассуждение о СОБСТВЕННОМ рабочем подходе сотрудника (ПОЧЕМУ он принимает решения именно так), а не:',
+      '   - уточняющие/наводящие вопросы («а что если…», «можешь пояснить…»);',
+      '   - общие/риторические фразы («стараюсь делать качественно»);',
+      '   - подход, приписанный другим людям, а не самому сотруднику.',
+      '',
+      'Во ВСЕХ остальных случаях верни grounded=false. В частности grounded=false, если:',
+      '- подтверждение есть только в одной цитате (одно наблюдение — недостаточно);',
+      '- цитаты не содержат ПОЧЕМУ (только commitments/ответы без объяснения подхода);',
+      '- формулировка черты шире того, что реально звучит в цитатах (домысел/экстраполяция).',
+      '',
+      'В поле reason — короткое (1–2 предложения) обоснование вердикта со ссылкой на номера подтверждающих цитат (или на их отсутствие). Не выдумывай факты вне цитат.',
+    ].join('\n'),
+  ),
+);
+
+export const SKILL_TRAIT_VERIFY_USER_TEMPLATE = (args: {
+  category: string;
+  statement: string;
+  quotes: ReadonlyArray<{ blockId: string; quote: string }>;
+}): string => {
+  const lines = args.quotes.length
+    ? args.quotes
+        .map(
+          (q, i) => `  ${i + 1}. «${q.quote.slice(0, 600)}» (block=${q.blockId})`,
+        )
+        .join('\n')
+    : '  (цитат нет)';
+  return [
+    'Проверь грунтованность гипотезы о черте по цитатам ниже.',
+    '',
+    `Категория черты: ${args.category}`,
+    `Гипотеза (statement): ${args.statement}`,
+    '',
+    `Цитаты-источники (${args.quotes.length}):`,
+    lines,
+    '',
+    'Верни JSON по схеме `skill_trait_verify_v1`.',
+  ].join('\n');
+};
+
+/**
+ * JSON Schema strict для `skill-trait-verify`. Поддерживается DeepSeek V4
+ * и OpenAI Responses API; Ollama fallback падает с
+ * `LlmFormatNotSupportedError` — роутер переходит к secondary.
+ */
+export const SKILL_TRAIT_VERIFY_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['grounded', 'reason'],
+  properties: {
+    grounded: {
+      type: 'boolean',
+      description:
+        'true — черта подтверждается ≥2 reasoning-цитатами о собственном подходе сотрудника; иначе false.',
+    },
+    reason: {
+      type: 'string',
+      maxLength: 500,
+      description:
+        'Короткое обоснование вердикта со ссылкой на номера цитат (или их отсутствие).',
+    },
+  },
+};
+
+export const SKILL_TRAIT_VERIFY_SCHEMA_NAME = 'skill_trait_verify_v1';

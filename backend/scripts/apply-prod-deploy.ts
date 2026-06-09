@@ -66,8 +66,20 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-admin-settings.ts' },
   { phase: 'seed-base', script: 'scripts/seed-admin-settings-billing.ts', hint: '6 ключей billing.* для tier_standard' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-daily-digest.ts' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-dashboard-main.ts', hint: 'dashboard.main_rework.enabled kill-switch (ТЗ-2 Ф1 новая компоновка главной директора)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-goals-pulse.ts', hint: 'goals.pulse.{enabled,deliver_to_telegram} (Goals OKR v2 Фаза 4)' },
   { phase: 'seed-base', script: 'scripts/seed-admin-setting-chatbox.ts', hint: 'chatbox.session.idle_gap_hours + chatbox.enabled (ChatBox-интеграция)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-notification-budget.ts', hint: 'notifications.daily_budget.* + quiet_hours.* + binding_campaign.enabled (TZ-1 Ф0 daily-value)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-customer-risk.ts', hint: 'customer_risk.window_days + weight.* + threshold.* + operations.customer_risk_radar.enabled (TZ-1 Ф1 радар клиентов)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-personal-brief.ts', hint: 'operations.personal_daily_brief.{enabled,morning_hour} + operations.knows_who.enabled + knows_who.min_confidence (TZ-1 Ф2 движок рядового)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-execution-agents.ts', hint: 'goals.author_coverage_min + reliability.min_denominator + probe.* (Ф3.D) + blocker_synthesis.* + decision.stale_days + operations.{blocker_synthesis,decision_controller,promise_cascade}.enabled (TZ-1 Ф3.A/B/C агенты исполнения)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-knowledge-improvement-agents.ts', hint: 'ideas.feed.* + insight.recheck_days + team_capacity.{overload,underload}_percent + onboarding.silent_days + 5 kill-switch (ideas.feed/insights.recheck/operations.{knowledge_at_risk,team_capacity,onboarding_ramp}.enabled) (TZ-1 Ф4 улучшения и знания)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-value-recap.ts', hint: 'operations.value_recap.enabled + chat_v2.feedback.{enabled,min_rated,retry_dedup_seconds} (TZ-1 Ф5 месячная витрина value-recap)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-dashboard.ts', hint: 'operations.dashboard_rework.enabled kill-switch (ТЗ-2 Ф2 новая раскладка COO-дашборда)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-operations-per-person.ts', hint: 'operations.per_person_self_view.enabled kill-switch (ТЗ-2 Ф4 self-view /me/weekly-per-person)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-me-widgets.ts', hint: 'me.daily_value_widgets.enabled kill-switch (ТЗ-2 Ф5 виджеты /me: /me/ideas + /me/recognitions)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-portfolio-health.ts', hint: 'portfolio.health.{threshold_*,weight_*} + operations.portfolio_health.enabled kill-switch (ТЗ-2 Ф6.A здоровье портфеля целей)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-document-attribution.ts', hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)' },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
@@ -104,6 +116,12 @@ const STEPS: Step[] = [
     // Goals OKR v2 (2026-06-02, Фаза 2) — Specialist 3-14 (Goals):
     // goal-extract / goal-hierarchy-link / goals-pulse-summarize.
     'goals',
+    // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
+    'task-dedupe',
+    // Ф4.1 (2026-06-08) — goal-task-link (LLM-привязка задач встречи к AI-цели,
+    // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
+    // поедет по аварийному DEFAULT_FALLBACK_CHAIN.
+    'goal-task-link',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -171,6 +189,19 @@ const STEPS: Step[] = [
   // 2026-06-03 — восстановить secondary/tertiary fallback для meeting-report-fast
   // (нормализованный primary затенял legacy 3-провайдерную цепочку → single-provider timeout)
   { phase: 'patch', script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts', hint: 'fallback openai+ollama для meeting-report-fast', skipBootstrap: true },
+  // 2026-06-07 Ф6 agent-chain-overhaul — вернуть цепочку отчёта на DeepSeek (кэш).
+  // На проде summary/report-by-type/tasks ушли на MiniMax (0% кэш); DeepSeek
+  // кэширует 81-99% без ручного cache_control. Идемпотентен (всегда update до
+  // DeepSeek). На чистом старте дефолтный сид уже пишет DeepSeek → skipBootstrap.
+  { phase: 'patch', script: 'scripts/patch-llm-routes-report-chain-deepseek.ts', hint: 'summary/report-by-type/tasks → DeepSeek (кэш)', skipBootstrap: true },
+  // 2026-06-08 Ship-On (ТЗ enable-shipped-features-by-default Ф3) — перевести
+  // готовые AdminSetting-флаги в true на существующем проде (seed их не
+  // перезатирает). Уважает admin-override (updatedBy != null → no-op). Идемпотентен.
+  { phase: 'patch', script: 'scripts/patch-enable-shipped-flags.ts', skipBootstrap: true, hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)' },
+  // 2026-06-08 TZ-1 Фаза 0 (daily-value-engine) — владелец авторизовал доставку
+  // дайджестов в Telegram. Флипает operations.daily_digest.deliver_to_telegram +
+  // goals.pulse.deliver_to_telegram → true (уважает admin-override). Идемпотентен.
+  { phase: 'patch', script: 'scripts/patch-enable-telegram-digests.ts', skipBootstrap: true, hint: 'включить доставку дайджестов COO + пульса целей в Telegram (TZ-1 Ф0)' },
   // safe to run всегда (idempotent, no-op если нет existing Appointment'ов)
   { phase: 'patch', script: 'scripts/patch-migrate-clone-access.ts', hint: 'миграция грантов перед CLONE_V2_ENABLED=true' },
   // 2026-05-26 — регистрация глобального Telegram-бота в прокси
@@ -292,6 +323,10 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  // TZ-1 Ф3.B (daily-value-engine) — засеять DecisionTaskLink из пересечения
+  // sourceBlockIds (Decision×Issue) + пересчитать Decision.linkedTaskCount.
+  // Идемпотентно (skipDuplicates). На чистом старте — no-op → skipBootstrap.
+  { phase: 'backfill', script: 'scripts/backfill-decision-linked-task-count.ts', hint: 'Decision.linkedTaskCount + DecisionTaskLink из sourceBlockIds (TZ-1 Ф3.B)', skipBootstrap: true },
   // Tracker Boards (2026-05-27) — каждому проекту нужна default-доска
   // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
@@ -433,6 +468,17 @@ const STEPS: Step[] = [
     phase: 'backfill',
     script: 'scripts/backfill-commitment-author.ts',
     hint: 'ТЗ-D: заполнение commitmentAuthorPersonId для исторических обещаний',
+    skipBootstrap: true,
+  },
+  // 2026-06-08 Часть B Ф3 (ТЗ enable-shipped-features-by-default) — снять ложные
+  // subject=менеджер связи от chatbox (cross-attribution: реплики клиента
+  // приписывались менеджеру). Скрипт по умолчанию dry-run; агрегатор запускает
+  // с --apply. Идемпотентен (повтор → 0). mentioned и не-chatbox subject не трогает.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-chatbox-subject-cleanup.ts',
+    args: ['--apply'],
+    hint: 'очистка ложных subject=менеджер от chatbox (cross-attribution)',
     skipBootstrap: true,
   },
 

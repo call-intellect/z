@@ -69,6 +69,19 @@ intake), чтобы окно и пороги не рассинхронились
 | `pendingActions.urgentAgeDays` | `5` | возраст незакрытого действия, после которого оно помечается срочным. |
 | `pendingActions.reminderLeadDays` | `3` | за сколько дней до дедлайна начинать напоминать. |
 
+### Ключи оверхола цепочки агентов (2026-06-08)
+
+Добавлены в `seed-admin-settings.ts` (уже в `apply-prod-deploy`), читаются через
+`TypedConfigService.getDynamic` с code-fallback. Источник —
+[`plans/tz/2026-06-07-agent-chain-overhaul.md`](../../plans/tz/2026-06-07-agent-chain-overhaul.md).
+
+| Ключ | Default | Смысл |
+|---|---|---|
+| `tracker.autoAcceptConfidenceThreshold` | `0.75` | порог уверенности, выше которого Issue из встречи авто-принимается (раньше был мёртвый hardcoded `0.92`). Ф3. |
+| `goals.themeAutolinkMinWeight` | — | минимальный вес связи Goal↔Theme, при котором `GoalThemeLinkerCron` пишет `GoalTheme(source='ai')`. Ф4.2. |
+| `goals.themeAutolinkLlmEnabled` | — | включён ли дополнительный LLM-арбитр для авто-привязки Goal↔Theme поверх детерминированного провенанса. Ф4.2. |
+| `aiFeatures.summaryAgentEnabled` | `true` | kill-switch summary-агента (Ф5). Дублируется ENV `SUMMARY_AGENT_ENABLED`. При OFF потребители падают на `summaryV2 ?? summary` через `pickPrimarySummary`. |
+
 ## Поверхности курации (detail-страницы)
 
 С 2026-06-03 (Action Center, Фаза C3) у курации появились собственные

@@ -70,6 +70,334 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔔 2026-06-08 — TZ-1 Фаза 0: daily-value foundation (ТГ-доставка + бюджет + кампания привязки)
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 0). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`.
+>
+> **Зачем для прода:** включает доставку дневного чек-ина в Telegram (раньше `checkin.prompt` падал на in_app), вводит per-person дневной бюджет push-уведомлений (не заваливать человека) + тихие часы + opt-out, и кампанию привязки Telegram-канала (приглашение + напоминание). Владелец авторизовал доставку дайджестов в ТГ (LOCKED DECISION). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (все тумблеры — AdminSetting с code-fallback, ENV-fallback опционален).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-notification-budget.ts`, см. Шаг 7; ENV-fallback опционален):
+  - `notifications.daily_budget.per_person` (int, **default 5**) — лимит push на сотрудника в его локальный день. ENV-fallback `NOTIFICATIONS_DAILY_BUDGET_PER_PERSON`.
+  - `notifications.quiet_hours.start` / `.end` (int 0..23, **default 22 / 8**) — окно тихих часов (локальная TZ). ENV `NOTIFICATIONS_QUIET_HOURS_START/END`.
+  - `notifications.daily_budget.enabled` (bool, **default true**, kill-switch ON) — дневной бюджет. ENV `NOTIFICATIONS_DAILY_BUDGET_ENABLED`.
+  - `notifications.binding_campaign.enabled` (bool, **default true**, kill-switch ON) — кампания привязки канала. ENV `NOTIFICATIONS_BINDING_CAMPAIGN_ENABLED`.
+  - **Флипаются patch'ем (Шаг 6):** `operations.daily_digest.deliver_to_telegram` + `goals.pulse.deliver_to_telegram` → `true` (владелец авторизовал ТГ-доставку 2026-06-08).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608130000_notification_budget_and_binding`): `+ table notification_budget_ledger`, `+ persons.channelBindingCampaignState/channelBindingInvitedAt`, `+ notifications.priorityTier`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный, в STEPS** (`phase:'patch'`, `skipBootstrap`): `scripts/patch-enable-telegram-digests.ts` — выставляет `true` для `operations.daily_digest.deliver_to_telegram` и `goals.pulse.deliver_to_telegram` ТОЛЬКО если не правил человек (`updatedBy` IS NULL/`'system'`); absent → пропуск (seed покроет). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-notification-budget.ts` — 5 ключей `notifications.*` (см. Шаг 1). Защищает admin-edited. Прогон агрегатором или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-notification-budget.ts`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `NotificationBudgetService` (бюджет в `ConversationalService.sendNotification`), `ChannelBindingCampaignCron` `@Cron('0 9 * * *')`, `checkin.prompt` в policy, `GET /api/v1/dashboard/operations/binding-coverage`, `PATCH /api/v1/me/notification-preferences`, 6 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `channel-binding-campaign.cron: проход завершён` (≤ след. 09:00 локального окна), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/binding-coverage` (owner/coo) и `PATCH /api/v1/me/notification-preferences`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'notification_budget_consumed_total|notification_budget_blocked_total|notification_deferred_to_digest_total|channel_binding_coverage_ratio|channel_binding_campaign_invited_total|checkin_prompt_delivered_total'` — присутствуют.
+  - ТГ-доставка чек-ина: `diag-routes`/логи показывают, что `checkin.prompt` уходит в `telegram_bot` для сотрудников с verified-привязкой (метрика `checkin_prompt_delivered_total{channel="telegram_bot"}` растёт).
+  - Дайджесты в ТГ: `operations.daily_digest.deliver_to_telegram` и `goals.pulse.deliver_to_telegram` = `true` (через `/admin/settings` или `diag`).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 💰 2026-06-08 — TZ-1 Фаза 1: Радар клиентов и сделок под риском (деньги)
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 1). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. **Зависит от Ф0** (доставка push + бюджет).
+>
+> **Зачем для прода:** дневной агент группирует клиентские сигналы (отток/возражения/боли/доработки) по `Entity{type=customer}`, ранжирует по money-риску, кладёт секцию «Клиенты под риском» в COO-дайджест и шлёт push ответственному менеджеру по его клиенту. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-customer-risk.ts`, см. Шаг 7; code-fallback есть):
+  - `customer_risk.window_days` (int, **default 14**) — окно накопления сигналов.
+  - `customer_risk.weight.churn_risk` / `.objection` / `.pain` / `.feature_request` (int, **default 5 / 3 / 2 / 1**) — веса сигналов (churn весомее). Правка в админке меняет ранжирование без деплоя.
+  - `customer_risk.threshold.critical` / `.warning` (int, **default 10 / 4**) — пороги уровня риска.
+  - `operations.customer_risk_radar.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг радара. ENV-fallback `OPERATIONS_CUSTOMER_RISK_RADAR_ENABLED`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608140000_customer_risk_snapshot`): `+ table customer_risk_snapshot` (FK → `Org`/`Entity`/`persons`, 3 индекса, unique по (tenantId, customerEntityId, dateLocal)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-customer-risk.ts` — 8 ключей `customer_risk.*` + `operations.customer_risk_radar.enabled` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `customer-risk-digest` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-customer-risk.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `CustomerRiskRadarService`, `CustomerRiskRadarCron` `@Cron('0 21 * * *')`, секция «Клиенты под риском» в COO-дайджесте, `GET /api/v1/dashboard/operations/customer-risk`, `GET /api/v1/me/customer-risk`, новый taskType `customer-risk-digest`, 3 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `customer-risk-radar.cron: проход завершён` (≤ след. 21:00 UTC), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/customer-risk` (owner/coo) и `GET /api/v1/me/customer-risk` (self).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'customer_risk_snapshots_total|customer_risk_radar_failed_total|customer_risk_manager_notified_total'` — присутствуют.
+  - Маршрут LLM: `customer-risk-digest` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### TZ-1 Фаза 2 (daily-value-engine) — движок рядового: «Твой день» + «кто знает X»
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 2). **Зависит от Ф0** (доставка push + бюджет). Gate Ф0 ≥70% привязки — продуктовое условие старта рассылки, на выкат кода не влияет (cron без verified-binding просто не доставит push).
+>
+> **Зачем для прода:** утренний персональный бриф сотруднику (его задачи/обещания/блокеры на сегодня + что обещали ему + 1 подсказка) и помощник «кто знает X» (семантический поиск носителя знания по блокеру через skill-профили). Источник зависимости снизу. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты строго self-scope (Р8).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-personal-brief.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.personal_daily_brief.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг брифа. ENV-fallback `OPERATIONS_PERSONAL_DAILY_BRIEF_ENABLED`.
+  - `operations.personal_daily_brief.morning_hour` (int, **default 9**) — локальный час утреннего окна (по `Person.timezone`).
+  - `operations.knows_who.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг «кто знает X». ENV-fallback `OPERATIONS_KNOWS_WHO_ENABLED`.
+  - `knows_who.min_confidence` (number, **default 0.5**) — порог cosine similarity для зачёта носителя. ENV-fallback `KNOWS_WHO_MIN_CONFIDENCE`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608150000_personal_daily_brief`): `+ table personal_daily_brief` (FK → `Org`/`persons`, 2 индекса, unique по (tenantId, personId, dateLocal)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-personal-brief.ts` — 4 ключа `operations.personal_daily_brief.*` + `operations.knows_who.enabled` + `knows_who.min_confidence` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `personal-brief-hint` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-personal-brief.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `PersonalDailyBriefService`, `KnowsWhoService`, `PersonalDailyBriefCron` `@Cron('0 * * * *')`, `GET /api/v1/me/daily-brief`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who`, новый taskType `personal-brief-hint`, 4 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron: в логах backend `personal-daily-brief.cron: проход завершён` (в течение часа), без ERROR.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/me/daily-brief`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who` (все self-scope).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'personal_daily_brief_built_total|personal_daily_brief_delivered_total|personal_daily_brief_opened_total|knows_who_match_total'` — присутствуют.
+  - Маршрут LLM: `personal-brief-hint` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения: синтез блокеров · контролёр решений · каскад обещаний
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 3.A/B/C). **Зависит от Ф0** (доставка push + бюджет). Ф3.D (фиксы достоверности) — уже выкачена отдельно.
+>
+> **Зачем для прода:** (А) накопительный синтез блокеров (cron 22:00 → статусы new/recurring/resolved + бизнес-удар + мост хроники в инсайт-радар); (Б) контролёр внедрения решений (cron 06:00 → решения без задач/результатов старше N дней → stalled + push ответственному + агрегат «% доведённых»); (В) каскад обещаний (cron 08:00 → просроченное обещание с зависимостью → дневной алерт автору и руководителю). **3 миграции БД** (все аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/coo.
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-execution-agents.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.blocker_synthesis.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_BLOCKER_SYNTHESIS_ENABLED`.
+  - `operations.decision_controller.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_DECISION_CONTROLLER_ENABLED`.
+  - `operations.promise_cascade.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_PROMISE_CASCADE_ENABLED`.
+  - `blocker_synthesis.lookback_days` (int, **default 7**), `blocker_synthesis.recurring_days` (int, **default 2**), `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}` (веса бизнес-удара: 1/4/3/2/0.5).
+  - `decision.stale_days` (int, **default 21**) — после скольких дней решение без задач/outcomes → stalled.
+- **Шаг 4 — Prisma** — **обязательно, авто** (3 миграции, все аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260608160000_blocker_synthesis`: `+ table blocker_synthesis` (FK → `Org`/`persons`, unique по (tenantId, clusterKey), индекс по (tenantId, status, lastSeenDateLocal)).
+  - `20260608160100_decision_implementation`: `+ decisions.linkedTaskCount/implementationStatus/implementationCheckedAt` (ADD COLUMN, default/nullable).
+  - `20260608160200_decision_task_link`: `+ table decision_task_link` (join Decision↔Issue, FK → `decisions`/`Issue` onDelete CASCADE, unique по (decisionId, issueId)).
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-execution-agents.ts` — добавлены ключи Ф3.A/B/C (см. Шаг 1) к ключам Ф3.D. Защищает admin-edited. Также **новый LLM-маршрут** `blocker-synthesis-summary` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-execution-agents.ts`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `scripts/backfill-decision-linked-task-count.ts` — засевает `DecisionTaskLink` из пересечения `sourceBlockIds` (Decision×Issue) + пересчитывает `Decision.linkedTaskCount`. Идемпотентно (skipDuplicates). Сначала `--dry-run`: `docker compose exec backend bun run scripts/backfill-decision-linked-task-count.ts --dry-run` → затем без флага. Через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `BlockerSynthesisService`+`BlockerSynthesisCron` `@Cron('0 22 * * *')`, `DecisionImplementationService`+`DecisionImplementationCron` `@Cron('0 6 * * *')`, `PromiseCascadeService`+`PromiseCascadeCron` `@Cron('0 8 * * *')`, 3 новых эндпоинта, новый taskType `blocker-synthesis-summary`, 4 новые метрики; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые cron в логах backend (без ERROR): `blocker-synthesis.cron: проход завершён`, `decision-implementation.cron: проход завершён`, `promise-cascade.cron: проход завершён`.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/blockers/chronic`, `GET /api/v1/dashboard/operations/decisions/throughput`, `GET /api/v1/dashboard/operations/decisions/stalled` (все owner/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'blocker_synthesis_recurring_total|decision_stalled_total|decision_throughput_percent|promise_cascade_alert_total'` — присутствуют.
+  - Маршрут LLM: `blocker-synthesis-summary` виден в `/admin/ai-models` (primary deepseek-v4-flash).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания: лента идей · re-check инсайтов · знание-под-риском · capacity · онбординг
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 4). **Зависит от Ф0** (доставка push + бюджет) и Ф3 (авто-статус идеи из закрытия задач). BACKEND-ONLY (фронт-виджеты — отдельным ТЗ).
+>
+> **Зачем для прода:** (А) лента идей `GET /ideas/top` (ре-ранк weight+свежесть+цель) + авто-морфинг статуса идеи при закрытии связанной задачи (по общей цели) + расширена policy `idea.status_changed` (+telegram) + recognition `idea_shipped` при shipped + секция «Идеи недели» в недельном COO-дайджесте; (Б) re-check митигированных инсайтов в insight-clusterer cron (повтор паттерна → active) + «ты не один» в персональном брифе; (В) знание-под-риском × уход человека (weekly cron пн 05:00, push только руководителю); (Г) capacity-агрегат по командам (endpoint); (Д) онбординг-рамп новичка (daily cron 07:00, push руководителю + новичку). **1 миграция БД** (аддитивная, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/admin/coo.
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-knowledge-improvement-agents.ts`, см. Шаг 7; code-fallback есть):
+  - `ideas.feed.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `IDEAS_FEED_ENABLED`.
+  - `insights.recheck.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `INSIGHTS_RECHECK_ENABLED`.
+  - `operations.knowledge_at_risk.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_KNOWLEDGE_AT_RISK_ENABLED`.
+  - `operations.team_capacity.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_TEAM_CAPACITY_ENABLED`.
+  - `operations.onboarding_ramp.enabled` (bool, **default true**, kill-switch ON). ENV-fallback `OPERATIONS_ONBOARDING_RAMP_ENABLED`.
+  - `ideas.feed.rerank.{weight,freshness,goal_link}` (1/0.5/0.75), `ideas.feed.freshness_days` (int, **default 30**).
+  - `insight.recheck_days` (int, **default 14**).
+  - `team_capacity.overload_percent` (int, **default 120**), `team_capacity.underload_percent` (int, **default 50**).
+  - `onboarding.silent_days` (int, **default 5**).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608170000_knowledge_at_risk`): `+ table knowledge_at_risk_snapshot` (FK → `Org`/`persons`, индекс по (tenantId, combinedSeverity, snapshotAt)). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-knowledge-improvement-agents.ts` — 14 ключей `ideas.feed.*` / `insight.recheck_days` / `insights.recheck.enabled` / `team_capacity.*` / `onboarding.silent_days` / `operations.{knowledge_at_risk,team_capacity,onboarding_ramp}.enabled` (см. Шаг 1). Защищает admin-edited. Без новых LLM-маршрутов (Ф4 без chat-LLM). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-knowledge-improvement-agents.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `KnowledgeAtRiskService`+`KnowledgeAtRiskCron` `@Cron('0 5 * * 1')`, `OnboardingRampService`+`OnboardingRampCron` `@Cron('0 7 * * *')`, `TeamCapacityService`, `IdeaStatusAutoAdvanceService` (@OnEvent `tracker.event_occurred`), `IdeasService.getTop`, re-check в insight-clusterer cron, 4 новых эндпоинта, расширена policy `idea.status_changed`, 7 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые cron в логах backend (без ERROR): `knowledge-at-risk.cron: проход завершён`, `onboarding-ramp.cron: проход завершён`; insight-clusterer лог содержит `totalReactivated`.
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/ideas/top` (owner/admin/coo), `GET /api/v1/dashboard/operations/knowledge-at-risk`, `GET /api/v1/dashboard/operations/team-capacity`, `GET /api/v1/dashboard/operations/onboarding-ramp` (owner/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'ideas_top_served_total|idea_status_auto_advanced_total|idea_status_changed_notified_total|insight_rechecked_total|knowledge_at_risk_total|team_capacity_overload_total|onboarding_ramp_stalled_total'` — присутствуют.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🟢 TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap + оценка ответов AI-чата
+
+> Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 5). **Зависит от Ф0** (доставка push + бюджет), Ф3.B (`getDecisionThroughput`). BACKEND-ONLY (фронт-экран — отдельным ТЗ).
+>
+> **Зачем для прода:** (А) оценка «помог ли ответ» на ChatV2Message (палец вверх/вниз, web + Telegram/in_app) + агрегатор метрики чата (`GET /chat-v2/usage-stats`, type-guard citations = grounding-proxy, helped-rate скрыт при rated<min); (Б) месячная витрина value-recap на ТВЁРДЫХ данных (cron 1-го числа → build за прошлый месяц + push-first владельцу/COO eventType `operations.monthly_recap`) + эндпоинты read/opened/export(slides|json). **Честность Р6** (нет ₽/было→стало/medianHoursToAnswer/roiScore) гарантирована кодом (`assertNoForbiddenMetricKeys`) + unit-тестом. **2 миграции БД** (аддитивные, авто). **Новых ENV нет** (все крутилки — AdminSetting с code-fallback). Эндпоинты owner/admin/coo (usage-stats org-scope) + self (usage-stats self, feedback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (все засеиваются `seed-admin-setting-value-recap.ts`, см. Шаг 7; code-fallback есть):
+  - `operations.value_recap.enabled` (bool, **default true**, kill-switch ON) — мастер-флаг витрины. ENV-fallback `OPERATIONS_VALUE_RECAP_ENABLED`.
+  - `chat_v2.feedback.enabled` (bool, **default true**, kill-switch ON) — оценка ответов чата. ENV-fallback `CHAT_V2_FEEDBACK_ENABLED`.
+  - `chat_v2.feedback.min_rated` (int, **default 10**) — порог скрытия helped-rate («мало данных»).
+  - `chat_v2.feedback.retry_dedup_seconds` (int, **default 30**) — окно дедупа ретраев в метрике чата.
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260608180000_chat_v2_message_helpful`: `+ ChatV2Message.helpful (VARCHAR 8) / helpfulAt / helpfulComment` (все nullable, `ADD COLUMN IF NOT EXISTS`).
+  - `20260608180100_value_recap_snapshot`: `+ table value_recap_snapshot` (FK → `Org`, unique по (tenantId, periodYm), индекс по (tenantId, createdAt)).
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-value-recap.ts` — 4 ключа `operations.value_recap.enabled` + `chat_v2.feedback.{enabled,min_rated,retry_dedup_seconds}` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `value-recap-narrative` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-setting-value-recap.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `ValueRecapService`+`ValueRecapCron` `@Cron('0 7 1 * *')`, `ChatV2FeedbackService`, 3 новых эндпоинта chat-v2 (feedback POST/DELETE + usage-stats), 3 новых эндпоинта value-recap (get/opened/export), новый eventType `operations.monthly_recap` (policy + payload-схема), новый LLM-taskType `value-recap-narrative`, 5 новых метрик; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron в логах backend (без ERROR, 1-го числа): `value-recap.cron: проход завершён`.
+  - Новые REST: Swagger `/api/docs` → `POST /api/v1/chat-v2/messages/:id/feedback`, `DELETE /api/v1/chat-v2/messages/:id/feedback`, `GET /api/v1/chat-v2/usage-stats` (self / org owner-coo); `GET /api/v1/dashboard/operations/value-recap`, `POST .../value-recap/:id/opened`, `GET .../value-recap/:id/export` (owner/admin/coo).
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'value_recap_built_total|value_recap_delivered_total|value_recap_opened_total|chat_v2_feedback_total|chat_v2_answered_with_citation_total'` — присутствуют.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📊 2026-06-09 — ТЗ-2 ⊕ ТЗ-3: дашборды (состав + современный визуал) + здоровье портфеля целей
+
+> Контракты: `plans/tz/2026-06-08-dashboards-info-rework.md` (состав ТЗ-2) ⊕ `plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md` (визуал ТЗ-3). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, фазы S2.1–S2.9.
+>
+> **Зачем для прода:** главная директора сжата до ≤7 величин (флаг `dashboard.main_rework.enabled`), COO-overview += «сколько закрыли» (флаг `operations.dashboard_rework.enabled`), self-view план-факта `/me/weekly-per-person` (флаг `operations.per_person_self_view.enabled`), /me 5→9 виджетов + 👍/👎 на ответах чата (флаг `me.daily_value_widgets.enabled`), два новых дашборда `/dashboard/portfolio` (здоровье портфеля целей + MoSCoW) и `/dashboard/value-recap`. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (все флаги — AdminSetting с code-fallback).
+
+- **Шаг 1 — AdminSetting / kill-switch** (засеиваются отдельными `seed-admin-setting-*`, см. Шаг 7; code-fallback есть):
+  - `dashboard.main_rework.enabled` (bool, kill-switch ON) — новая компоновка главной директора (ТЗ-2 Ф1).
+  - `operations.dashboard_rework.enabled` (bool, kill-switch ON) — новая раскладка COO-дашборда (ТЗ-2 Ф2).
+  - `operations.per_person_self_view.enabled` (bool, kill-switch ON) — self-view `GET /me/weekly-per-person` (ТЗ-2 Ф4).
+  - `me.daily_value_widgets.enabled` (bool, kill-switch ON) — 4 виджета пользы + чат-feedback на /me (ТЗ-2 Ф5).
+  - `operations.portfolio_health.enabled` (bool, kill-switch ON) + крутилки `portfolio.health.{threshold_healthy,threshold_warning,weight_achieved,weight_on_track,weight_at_risk,weight_stalled,weight_dropped}` (ТЗ-2 Ф6.A). Все зарегистрированы в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608190000_goal_priority_moscow`): `+ enum GoalPriority (must|should|could|wont)`, `+ Goal.priority GoalPriority?`, `+ table portfolio_health_snapshot` (FK → `Org` ON DELETE CASCADE, unique (tenantId, dateLocal), индекс по (tenantId, snapshotAt desc)). Все изменения аддитивны (CREATE TYPE / ADD COLUMN / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **5 новых, идемпотентных, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-dashboard-main.ts`, `...-operations-dashboard.ts`, `...-operations-per-person.ts`, `...-me-widgets.ts`, `...-portfolio-health.ts` (ключи см. Шаг 1). Все защищают admin-edited. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или каждый напрямую). Без сидеров работают на code-дефолтах.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `PortfolioHealthService` + `PortfolioHealthSnapshotCron` `@Cron('0 5 * * 1')`, `GET /api/v1/dashboard/operations/portfolio-health`, `PATCH /api/v1/goals/:id/priority`, `GET /api/v1/me/{ideas,recognitions,weekly-per-person}`, `fetchValueStrip`/`reasonSourceRef`/`mainReworkEnabled` в director-dashboard, chat-v2 feedback; frontend: новые виджеты главной + `/dashboard/portfolio` + `/dashboard/value-recap` + modern-визуал/фон админки): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron (≤ след. пн 05:00, без ERROR): в логах backend `portfolio-health-snapshot.cron` (`@Cron('0 5 * * 1')`, per-Org).
+  - Новые REST: Swagger `/api/docs` → `GET /api/v1/dashboard/operations/portfolio-health`, `PATCH /api/v1/goals/:id/priority`, `GET /api/v1/me/ideas`, `GET /api/v1/me/recognitions`, `GET /api/v1/me/weekly-per-person`, `GET /api/v1/dashboard/operations/value-recap/:id/export`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'portfolio_health_score|portfolio_health_snapshot_total|portfolio_priority_set_total|dashboard_value_strip_served_total|dashboard_main_first_screen_widget_count|coo_blockers_resolved_total|coo_team_capacity_widget_served_total|weekly_per_person|me_ideas_fate_served_total|me_recognitions_served_total'` — присутствуют.
+  - Миграция применена: в логах migrate-контейнера `goal_priority_moscow` без ошибок.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📄 2026-06-09 — ТЗ-4 Ф1+Ф10: новые форматы документов + смысловой тип/привязки + AI-подсказка привязки
+
+> Контракт: `plans/tz/2026-06-08-manual-document-upload-and-import-tz.md` (Ф1 схема/парсер/мультифайл/дедуп/привязка + Ф10 AI-подсказка). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** канал `/documents` расширен — новые форматы (xlsx/pptx/html/rtf/odt/csv), мультифайл-загрузка + дедуп `contentHash` + явная привязка (тема/проект/должность → граф) + смысловой тип `docType`; LLM-подсказка привязки (human-in-the-loop). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет** (флаги/крутилки — AdminSetting с code-fallback). Библиотеки `officeparser` + `exceljs` (уже в `package.json`). ⚠ `officeparser` имеет `postinstall` — проверить нативную сборку на прод-Docker.
+
+- **Шаг 1 — AdminSetting / kill-switch** (засеивается `seed-admin-setting-document-attribution.ts` + `seed-admin-settings.ts`, см. Шаг 7; code-fallback есть):
+  - `documents.ai_attribution.enabled` (bool, kill-switch ON) — LLM-подсказка привязки документа (`document-attribution-suggest`). Зарегистрирован в `admin-setting-schema-registry.ts`.
+  - `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats}` (int/int/array) — лимиты мультизагрузки. `documents.maxZipSizeMb` — см. блок «ТЗ-4 Ф7» ниже.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608200000_documents_formats_type_attribution`): `+ enum DocumentType (regulation|policy|instruction|process|job_description|other)`, `+ значения xlsx/pptx/html/rtf/odt/csv в enum DocumentKind`, `+ Document.docType/suggestedDocType/suggestedThemeId/attachedThemeId/attachedProjectId/contentHash/importBatchId` + индексы (`(tenantId,docType)`, `(tenantId,contentHash)`, `(tenantId,attachedThemeId)`, `(importBatchId)`). Все изменения аддитивны (ADD VALUE / CREATE TYPE / ADD COLUMN), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **1 новый, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-setting-document-attribution.ts` — `documents.ai_attribution.enabled` (см. Шаг 1). Защищает admin-edited. Также **новый LLM-маршрут** `document-attribution-suggest` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-default.ts` (уже в STEPS, идемпотентно). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: парсер `officeparser`+`exceljs`, мультифайл `POST /documents` + дедуп `contentHash` + attribution → граф (`block-ingest.applyDocumentAttribution`), `PATCH /documents/:id/attribution`, `DocumentAttributionService` + taskType `document-attribution-suggest`, chat-v2 citations += documentId/Name; frontend: мультизагрузка + форма привязки + SuggestionBanner + doc-citation): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый REST: Swagger `/api/docs` → `PATCH /api/v1/documents/:id/attribution`; `POST /api/v1/documents` принимает несколько файлов.
+  - Маршрут LLM: `docker compose exec backend bun run scripts/diag-routes.ts` → `document-attribution-suggest` ведёт на `deepseek-v4-flash`.
+  - Парсер форматов: загрузить .pptx/.xlsx → `Document.status` доходит до `parsed`/`blocks_extracted` без ERROR (проверка нативной сборки `officeparser`).
+  - Миграция применена: в логах migrate-контейнера `documents_formats_type_attribution` без ошибок.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📦 2026-06-08 — ТЗ-4 Ф7: массовый импорт документов из ZIP-архива
+
+> Контракт: `plans/analysis/2026-06-08-manual-document-upload-and-import.md` (ТЗ-4 Ф7). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** новый канал загрузки — пользователь грузит ZIP, каждый поддержанный файл внутри становится отдельным Document (re-use существующего ingest-пути → граф). Новая очередь BullMQ `core.document-import` + воркер. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (лимит — AdminSetting с code-fallback). Библиотека `fflate` (pure-TS, уже была транзитивной — теперь явная зависимость).
+
+- **Шаг 1 — AdminSetting** (засеивается `seed-admin-settings.ts`, см. Шаг 7; code-fallback есть):
+  - `documents.maxZipSizeMb` (int, **default 200**) — потолок размера ZIP-архива массового импорта. ENV-fallback `DOCUMENT_MAX_ZIP_SIZE_MB` (опц.). Зарегистрирован в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608210000_document_import`): `+ enum DocumentImportSource`, `+ enum DocumentImportStatus`, `+ table document_import` (FK → `Org` ON DELETE CASCADE, индекс по (tenantId, status)). Все изменения аддитивны (CREATE TYPE / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-settings.ts` пополнен ключом `documents.maxZipSizeMb` (default 200, секция `documents`). Защищает admin-edited. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-settings.ts`). Без сидера работает на code-дефолте 200.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новая очередь `core.document-import` + `DocumentImportWorker`, эндпоинт `POST /api/v1/documents/import-zip`, новая зависимость `fflate`; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новая очередь/воркер в логах backend (без ERROR): `DocumentImportWorker запущен (core.document-import)`.
+  - Новый REST: Swagger `/api/docs` → `POST /api/v1/documents/import-zip` (owner/admin write).
+  - Зависимость на месте: `docker compose exec backend node -e "require('fflate')"` — без ошибки.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🎙️ 2026-06-08 — ТЗ-5: ручная загрузка встреч с диаризацией и разметкой спикеров
+
+> Контракт: `plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md` (Ф1–Ф6). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`.
+>
+> **Зачем для прода:** новый канал — пользователь грузит готовое видео/аудио встречи (≤2 ГБ, любой формат) → ingest (ffmpeg-нормализация) → диаризация (Vox) → ручная разметка говорящих (сотрудник/внешний/исключить/слить) → AI-анализ как у обычной встречи. Новые BullMQ-очереди `meeting.upload-ingest` / `meeting.upload-transcribe` + воркеры. **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых обязательных ENV нет** (рубильник и квота — с code-fallback).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch** (рубильник работает на code-fallback; квота засеивается, см. Шаг 7):
+  - `MEETING_UPLOAD_ENABLED` (bool, **default true**, kill-switch ON) — аварийный рубильник `POST /meetings/upload`. При `false` создание новой загрузки → `UPLOAD_DISABLED` (уже принятые загрузки доезжают). Также переопределяется AdminSetting-ключом `meeting_upload.enabled` (ENV — fallback под него; читается sync `cfg.recording.meetingUploadEnabled` и async в `MeetingUploadsService.assertUploadEnabled`). Реестр флагов — `docs/operations/feature-flags.md`.
+  - `billing.meetingUploadsPerMonth` (AdminSetting, int, **default 20**) — месячный лимит ручных загрузок встреч на Org (≥ лимита → `UPLOAD_QUOTA_EXCEEDED`; отдельно от грантов `MeetingsBalance`). ENV-fallback `BILLING_MEETING_UPLOADS_PER_MONTH` (опц.). Зарегистрирован в `admin-setting-schema-registry.ts`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608220000_meeting_upload_diarization`): `+ enum MeetingSource (livekit|upload)`, `+ enum UploadSpeakerAssignment (unassigned|employee|external|excluded)`, `+ value 'awaiting_speakers'` в enum `MeetingStatus` (BEFORE `ai_processing`), `+ Meeting.source (default 'livekit')` / `+ Meeting.uploadNumSpeakersHint`, `+ persons.company` / `+ persons.jobTitle`, `+ table meeting_upload_speaker` (FK → `Meeting` ON DELETE CASCADE / `persons` ON DELETE SET NULL, unique (meetingId,label), индекс по meetingId), `+ индекс Meeting(tenantId, source, createdAt)`. Все изменения аддитивны (ADD VALUE / ADD COLUMN / CREATE TYPE / CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 7 — Seed** — **расширен существующий, идемпотентный, в STEPS** (`phase:'seed-base'`): `scripts/seed-admin-settings-billing.ts` пополнен ключом `billing.meetingUploadsPerMonth` (default 20, секция `tariff-standard`, severity medium). Защищает admin-edited (findUnique → skip). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `docker compose exec backend bun run scripts/seed-admin-settings-billing.ts`). Без сидера квота работает на code-дефолте 20.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новые очереди `meeting.upload-ingest` / `meeting.upload-transcribe` + воркеры (ingest=ffmpeg-нормализация, transcribe=Vox-диаризация), `MeetingUploadsController` под `/api/v1/meetings`, эндпоинты загрузки/разметки спикеров; frontend Ф5 отдельно): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новые очереди/воркеры в логах backend (без ERROR): `meeting.upload-ingest` и `meeting.upload-transcribe` — `curl -s localhost:3000/metrics | grep -E 'meeting.upload-ingest|meeting.upload-transcribe'` (или по логам старта воркеров).
+  - Новые REST: Swagger `/api/docs` → `POST /api/v1/meetings/upload`, `POST /api/v1/meetings/:id/upload/complete`, `GET /api/v1/meetings/:id/upload/playback`, `GET /api/v1/meetings/:id/speakers`, `PUT /api/v1/meetings/:id/speakers`, `POST /api/v1/meetings/:id/speakers/confirm`.
+  - Рубильник: `MEETING_UPLOAD_ENABLED`/`meeting_upload.enabled` = ON по умолчанию; квота `billing.meetingUploadsPerMonth` = 20 в `/admin/settings` (или code-fallback).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔗 2026-06-08 — Батч из 3 ТЗ: умные таблицы · качество клона · Ship-On дефолтов
+
+> Контракты: `plans/tz/2026-06-08-{smart-tables-import-agent-quality, clone-quality-improvements, enable-shipped-features-by-default}.md`. Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`, 10 коммитов: tables R1-R4 `e84d8ace`; clone Ф1(A) `dbf9b0d4`, Ф6(G) `8446e89a`, Ф7(H) `fc8901fe`, Ф3(D) `3376fae1`, Ф2+Ф4 `2b59c8da`, Ф5(F) `4c28bea1`; ship-on `bb7701dc`.
+>
+> **Зачем для прода:** TZ#1 — надёжность импорта таблиц (retry pass-1, union опций, type-guard, Jaccard-dedup); TZ#2 — качество клона сотрудника (атрибуция chatbox по говорящему, verify-гейт черт, confidence из дат, decay 1-шаг, split-floor, арбитраж merge); TZ#3 — включение готовых фич дефолтом + очистка отравленных данных. **Всё авто-применяется агрегатором** `apply-prod-deploy.ts --mode update` (migrate-контейнер на каждом `up`).
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `CONCIERGE_DIALOG_LAYER_ENABLED`** (`typed-config.service.ts`) — **дефолт переведён OFF→ON** (TZ#3). Новой ENV нет; kill-switch сохранён: `CONCIERGE_DIALOG_LAYER_ENABLED=false` в `.env` всё ещё выключает. На выкате ENV можно НЕ трогать (включится сам).
+  - Новые AdminSetting-крутилки (code-fallback, регистрации/seed НЕ требуют): `table.agent.draft_max_attempts`(3), `table.import.dedup_col_jaccard`(0.6), `knowledge.skillProfileMinObservations`(тек.), `knowledge.skillClusterMinObservations`(3). Работают без записи в БД.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260608120000_add_skill_trait_pending_verification`: `ALTER TYPE "SkillTraitStatus" ADD VALUE 'pending_verification'`). Применяется автоматически `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна (повторно no-op). Ручных действий нет.
+- **Шаг 6 — Patch** — **1 новый, идемпотентный, в STEPS** (`phase:'patch'`): `scripts/patch-enable-shipped-flags.ts` — выставляет `true` для AdminSetting `knowledge.meetingTasksToTrackerOnly` / `feature.tables_text_to_schema` / `knowledge.curationAutotuneEnabled` ТОЛЬКО если `updatedBy IS NULL` (уважает admin-override); absent → пропуск (code-fallback покроет). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 7 — Seed** — **дефолты изменены** в `seed-admin-settings.ts` (`knowledge.meetingTasksToTrackerOnly`, `feature.tables_text_to_schema` → `true`) — влияет ТОЛЬКО на чистый старт (существующий прод чинит patch Шага 6). **+ новый LLM-маршрут** `skill-trait-verify` (primary `deepseek-v4-flash`) в `seed-llm-task-routes-skill-and-clone.ts` (уже в STEPS через `skill-and-clone`, идемпотентно).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `args:['--apply']`): `scripts/backfill-chatbox-subject-cleanup.ts` — снимает ложные `IdeaBlockEntity{role='subject'}` у блоков с chatbox-evidence (cross-attribution клиент→менеджер). `mentioned` и не-chatbox subject НЕ трогает. Применяется агрегатором с `--apply`; ручная dry-run проверка: `docker compose exec backend bun run scripts/backfill-chatbox-subject-cleanup.ts` (без `--apply`).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый `SkillTraitVerifyCron`, taskType `skill-trait-verify`, post-passы table-agent, merge/decay/attribution-правки; frontend без изменений в этом батче): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Cron виден: `docker compose exec backend grep -r "skill-trait-verify" dist/ | head` ИЛИ в логах воркера `skill-trait-verify.cron: START` (≤ след. 03:30).
+  - Маршрут есть: `/admin/ai-models` содержит `skill-trait-verify` (primary deepseek-v4-flash).
+  - Миграция применена: в логах migrate-контейнера `pending_verification` без ошибок; `diag.ts logs --level ERROR` — нет `Invalid prisma.skillTrait` по статусу.
+  - Backfill отработал: в логах агрегатора `backfill-chatbox-subject-cleanup ... УДАЛЕНО N` (N≥0).
+
+---
+
+### 🔗 2026-06-08 — Ретест №2: оверхол цепочки агентов (4 ТЗ + зонтичные 8 фаз)
+
+> Контракты: 4 точечных ТЗ ретеста `plans/tz/2026-06-07-{tables-detail-render-loop-and-route-fix, provider-smoke-test-and-alerting-fix, ui-copy-meeting-types-titles-and-anglicisms, asr-word-timestamps-duration-behavior}.md` + зонтичный `plans/tz/2026-06-07-agent-chain-overhaul.md` (8 фаз). Ветка `feature/retest2-agent-chain-overhaul`, 12 коммитов: ТЗ A `26219233`, Ф0a `b31c311f`, Ф0b `7c9d6a21`, Ф7+ТЗ D `c8cf2602`, Ф3 `4ef90bde`, ТЗ B `3a2d0ce4`, ТЗ C `f1ca83f6`, Ф1 `0c066468`, Ф2 C1 `c9339992`, Ф4.2 `5f55ee35`, Ф5 `ac3fa181`, Ф6 `c381e7c8`.
+>
+> **Зачем для прода:** ТЗ A — оживляет детальные страницы «Таблицы» (рендер-петля Zustand + 404 pending-patches); ТЗ B — глушит шум smoke-теста + чинит доставку алертинга; ТЗ C — русские типы встреч/`<title>`/убран «AI»/канон `/chat`; ТЗ D — ненулевые длительность/поведение участников при пустых пословных таймингах ASR; зонтичный — наблюдаемость графа, trace специалистов, recall Решений/Идей, ASR-нота, авто-привязка целей↔тем, консолидация summary, кэш-маршруты, порог авто-Issue. **Миграций БД НЕТ** (`GoalTheme` и все таблицы уже существовали). Фронт — пересборка.
+
+- **Шаг 1 — ENV / AdminSetting**:
+  - **ENV `SUMMARY_AGENT_ENABLED`** (`env.schema.ts`, **дефолт TRUE**) — kill-switch summary-агента (Ф5). Можно не выставлять (code-default true); читается также через AdminSetting `aiFeatures.summaryAgentEnabled`. `false` — только если summary-агент создаёт проблемы (тогда потребители падают на `summaryV2 ?? summary` через `pickPrimarySummary`).
+  - Прочие новые AdminSetting (`tracker.autoAcceptConfidenceThreshold`, `goals.themeAutolinkMinWeight`, `goals.themeAutolinkLlmEnabled`) — см. Шаг 7 (засеиваются `seed-admin-settings.ts`, code-fallback есть).
+- **Шаг 4 — Prisma** — **не требуется** (схема не менялась; `GoalTheme` уже существовал, привязка целей↔тем пишет в существующую модель `GoalTheme(source='ai')`).
+- **Шаг 6 — Patch** — **1 новый, идемпотентный**: `scripts/patch-llm-routes-report-chain-deepseek.ts` — переводит маршруты `summary` / `report-by-type` / `tasks` на DeepSeek (кэш-дружелюбная цепочка, Ф6). Зарегистрирован в `apply-prod-deploy.ts` STEPS. Прогон: `docker compose exec backend bun run scripts/patch-llm-routes-report-chain-deepseek.ts` (или через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`). Не трогает маршруты с `editedByAdmin=true`.
+- **Шаг 7 — Seed** — `scripts/seed-admin-settings.ts` пополнен 4 ключами (идемпотентно, защищает admin-edited): `tracker.autoAcceptConfidenceThreshold` (дефолт **0.75**, был мёртвый hardcoded 0.92 — порог авто-принятия Issue из встречи), `goals.themeAutolinkMinWeight` + `goals.themeAutolinkLlmEnabled` (Ф4.2 авто-привязка Goal↔Theme), `aiFeatures.summaryAgentEnabled` (Ф5, дефолт **true**). Прогон: `docker compose exec backend bun run scripts/seed-admin-settings.ts` (или агрегатором `apply-prod-deploy.ts --mode update`). Без сидера все 4 работают на code-дефолте.
+- **Промпт-правки — отдельной seed-операции НЕ требуют.** Маркеры decision/idea в `block-ingest.prompt` (Ф1) и ASR-нота `withAsrNote` на 10 извлекающих промптах (Ф2 C1) — это **code-промпты** (prompt registry с code-fallback), едут с деплоем кода. Отдельный seed/patch не нужен.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `GraphMaterializationService` + `GraphDiagnosticsController` (`/api/v1/platform/graph`) + `GraphMaterializationVerifyCron`, trace специалистов в диспетчере `core.specialist-routing`, `GoalThemeLinkerService` + `GoalThemeLinkerCron`, `merge.worker`/`behavior-metrics.worker` + `vox.types`, `pickPrimarySummary` у потребителей, smoke-кламп в openai-proxy, новая ENV; frontend: `useShallow` на таблицах, русские типы встреч + `<title>` + канон `/chat`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke**:
+  - Новые cron (grep в логах backend через ≥30 мин): `graph-materialization-verify` (`@Cron` 30 мин, per-Org) и `goal-theme-linker` (`@Cron` 30 мин) — строки запуска присутствуют, без ERROR.
+  - Новый REST: Swagger `/api/docs` показывает `GET /api/v1/platform/graph/materialization` (SuperAdmin); `diag graph --meeting <id>` отдаёт расхождения материализации.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'kc_materialization_gap_total|goal_theme_autolink_total'` → `kc_materialization_gap_total{type}` (разрыв материализации графа) и `goal_theme_autolink_total{method}` (авто-привязка Goal↔Theme) присутствуют.
+  - Таблицы: `/tables/[id]` открывается (нет белого экрана / React #185); `GET /api/v1/tables/pending-patches` не 404.
+  - Trace специалистов: на тест-встрече `diag chain --meeting <id>` → специалисты слоя 3 видны под `traceId=mtg_<id>` (раньше были невидимы под `block_`).
+  - Кэш-маршруты: `docker compose exec backend bun run scripts/diag-routes.ts` → `summary`/`report-by-type`/`tasks` ведут на DeepSeek.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔁 2026-06-08 — Ретест №2: остаток цепочки агентов без golden (ТЗ `agent-chain-remaining-no-golden`)
+
+> Контракт: `plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`. Ветка `feature/retest2-agent-chain-overhaul`, 7 коммитов `7430162e..accdfe7b`: Ф1 idea direct-path `7430162e`, Ф2 промпты `0c283e60`/`6dd216f5`/`0dfe170f`, Ф5 Р2 task-dedupe `a933138e`, Ф4.1 goal-task-link `e174baaa`, Ф6 smoke cache-hit `f28200cb`, ТЗ B код-хвост `c457403d`, ТЗ D Vox `accdfe7b`.
+>
+> **Зачем для прода:** Ф1 — детерминированная материализация Idea из блоков (recall идей без LLM-плодёжа); Ф2 — ASR-нота/калибровка/анти-галлюцинация имён/булевы гейты на экстракторах (качество извлечения, code-промпты); Ф5 Р2 — семантический дедуп задач встречи (LLM-арбитр серой зоны, за флагом OFF); Ф4.1 — авто-привязка AI-цели встречи к её задачам (Issue.goalId, за флагом OFF); Ф6 — smoke cache-hit-ratio WARN по DeepSeek (видимость экономии кэша); ТЗ B — Express5 named-wildcard + JSON-резилиенс в 2 воркерах; ТЗ D — Vox word-timings из extendedResult + PII-safe диагностика. **Миграций БД НЕТ** (schema.prisma не менялся, все флаги через `resolveSync`). **Новых ENV в `env.schema.ts` НЕТ** (флаги читаются `resolveSync` с code-дефолтом при отсутствии ENV). Новые арбитры — за флагами OFF (поведение прода не меняется до явного включения владельцем).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch**:
+  - **Новых ENV НЕТ** (`env.schema.ts` не трогался). Все новые тумблеры — **AdminSetting-ключи** (читаются через `resolveSync`, code-fallback при отсутствии записи; засеиваются `seed-admin-settings.ts`, см. Шаг 7):
+    - `knowledge.ideaDirectPathEnabled` (bool, **default true**) — детерминированная материализация Idea из блоков `signalType='idea'` в `block-ingest.worker` (Ф1). Дедуп по `sourceBlockId` (guard в specialist-3-6-ideas). OFF — вернуть старое поведение (идеи только через LLM-специалиста).
+    - `meetings.taskDedupeEnabled` (bool, **default false**) — семантический дедуп задач встречи (`MeetingTaskDedupeService`, embedding KNN + LLM-арбитр серой зоны, удаляет fast-черновики-дубли). **Флип ON владельцем после прод-наблюдения** (data-affecting: удаляет Task-черновики).
+    - `meetings.taskDedupeThreshold` (number, **default 0.85**) — порог косинусной близости для KNN-кандидатов дедупа.
+    - `goals.goalTaskLinkEnabled` (bool, **default false**) — авто-привязка AI-цели встречи к её Issue (`Issue.goalId`, non-destructive) через LLM-арбитр (`GoalTaskLinkerService` + cron). **Флип ON владельцем после прод-наблюдения** (новый арбитр + cron).
+    - `llm.cacheSmokeEnabled` (bool, **default true**) — включает проверку cache-hit-ratio DeepSeek в `provider-smoke-test.cron`.
+    - `llm.cacheHitRatioWarnThreshold` (number, **default 0.6**) — порог WARN: если доля кэш-хитов DeepSeek ниже — smoke пишет WARN (видимость, что правки SYSTEM ломают кэш).
+  - **taskDedupe / goalTaskLink остаются OFF на выкате** — это новые арбитры с побочными эффектами (удаление черновиков / запись `Issue.goalId`). Включать только после прод-наблюдения метрик `z_task_dedupe_total` / `z_goal_task_link_total` через админку настроек (super_admin).
+- **Шаг 4 — Prisma** — **не требуется** (schema.prisma не менялся; `Issue.goalId` уже существовал, дедуп оперирует существующими `Task`/`Issue`/`MeetingChapter`).
+- **Шаг 5 — postgres-init.sql** — **не затронут** (новых HNSW/GIN/partial/extension нет).
+- **Шаг 7 — Seed** — **2 новых маршрута + пополнение `seed-admin-settings.ts`**, все идемпотентны и **уже в `apply-prod-deploy.ts` STEPS** (прогон агрегатора их подхватит):
+  - `scripts/seed-llm-task-routes-task-dedupe.ts` — taskType `task-dedupe` → `deepseek-v4-flash` (cheap-арбитр серой зоны). Phase `seed-llm-routes`.
+  - `scripts/seed-llm-task-routes-goal-task-link.ts` — taskType `goal-task-link` → `deepseek-v4-flash` (cheap-арбитр). Phase `seed-llm-routes`. Маршрут нужен заранее — иначе при включении флага вызов поедет по аварийному `DEFAULT_FALLBACK_CHAIN`.
+  - `scripts/seed-admin-settings.ts` пополнен новыми ключами (`knowledge.ideaDirectPathEnabled`, `meetings.taskDedupeEnabled`, `meetings.taskDedupeThreshold`, `goals.goalTaskLinkEnabled`, `llm.cacheSmokeEnabled`, `llm.cacheHitRatioWarnThreshold`) — идемпотентно, защищает admin-edited. Уже в агрегаторе.
+  - Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. Без сидов всё работает на code-дефолтах (`resolveSync`).
+- **Промпт-правки (Ф2) — отдельной seed-операции НЕ требуют.** ASR-нота/калибровка/анти-галлюцинация имён/`meetingDateIso` на `meeting-report-fast`+`block-ingest`; ASR/калибровка на `block-distill`/`theme-classify`/`axis-classify`/`knowledge-clone-extract`/`chapters-v2`/`goal-hierarchy-link`/`entity-merge-arbiter`; C8 `entity-merge` SYSTEM «5→1»; C3 булевы гейты `isDecision`/`isIdea` на decision/idea extract — это **code-промпты** (prompt registry с code-fallback), едут с деплоем кода.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingTaskDedupeService` (modules/meetings), `GoalTaskLinkerService` + `GoalTaskLinkerCron` (modules/knowledge-core), idea direct-path в `block-ingest.worker`, smoke cache-hit в `provider-smoke-test.cron` + `BusinessMetricsService.getLlmCacheHitRatio`, Express5 named-wildcard в `app.module` + JSON-резилиенс в `intake-auto-triage.worker`/`meeting-speaker-analyzer.worker`, `parseVoxResult` extendedResult): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый cron (grep в логах backend через ≥30 мин): `goal-task-linker` (`@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) — строки запуска присутствуют, без ERROR. Cron `provider-smoke-test` теперь дополнительно делает `checkCacheHitRatio` (WARN при доле кэша DeepSeek ниже `llm.cacheHitRatioWarnThreshold`).
+  - Новые taskType (read-only): `docker compose exec backend bun run scripts/diag-routes.ts` → `task-dedupe` и `goal-task-link` ведут на `deepseek-v4-flash`.
+  - Новые метрики: `curl -s localhost:3000/metrics | grep -E 'z_task_dedupe_total|z_goal_task_link_total|z_llm_calls_total|z_llm_cache_hit_ratio_below_threshold'` → `z_task_dedupe_total{result}` (дедуп задач), `z_goal_task_link_total{result}` (привязка цель↔задача), `z_llm_calls_total{provider}` (знаменатель кэш-доли), `z_llm_cache_hit_ratio_below_threshold{provider}` (gauge — 1 если ниже порога) присутствуют.
+  - Флаги (по умолчанию): `task-dedupe`/`goal-task-link` — OFF, удалений/привязок нет; `idea-direct-path` — ON (идеи материализуются детерминированно из блоков `signalType='idea'`); cache-smoke — ON (WARN в логах при низком кэш-хите DeepSeek).
+  - **Включение data-affecting флагов — отдельно, после наблюдения:** `meetings.taskDedupeEnabled` и `goals.goalTaskLinkEnabled` флипнуть в админке настроек только после проверки метрик/логов на тест-встрече.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🩹 2026-06-06 — Стабильность прода: 6 ТЗ (ветка `feature/prod-stability-2026-06-06`)
 
 > Контракты: `plans/tz/2026-06-06-{frontend-stability-chunk-and-video, recording-pipeline-reliability-reconcile, meeting-tasks-quality-dedup-asr, graph-arbiter-json-resilience, meeting-report-copy-download-actions, agent-quality-golden-harness}.md`.

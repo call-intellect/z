@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PersonKnowledgeProfileClient } from './PersonKnowledgeProfileClient';
 
 export const metadata: Metadata = {
-  title: 'Профиль знаний — Кора',
+  title: 'Профиль знаний',
 };
 
 /**

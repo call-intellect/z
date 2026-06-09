@@ -365,6 +365,24 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 **Шаблон продаж (бэк):** русификация ролей в `TeamTemplate.definition` — SDR → «Специалист по квалификации», BANT/CHAMP → «методике квалификации» (patch `patch-team-templates-ru.ts`); бэк-промпт «Кора».
 
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2 (состав) ⊕ ТЗ-3 (modern-визуал), ТЗ-4, ТЗ-5. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. API/модули — [[api-layer]] §«Батч 5», [[../02_architecture/module-map]] §«Батч 5».
+
+**Новые страницы:**
+- `/dashboard/portfolio` — здоровье портфеля целей (PortfolioHealthService + MoSCoW), гейт `operations.portfolio_health.enabled`.
+- `/dashboard/value-recap` — экран месячной витрины пользы (поверх ValueRecap S1.5) + экспорт слайдов/печать.
+- `/meetings/upload` — мастер ручной загрузки встречи (видео/аудио → диаризация).
+- `/meetings/[id]/speakers` — экран подписи говорящих (сотрудник/внешний/исключить/слить); `STATUS_VIEW` для статуса `awaiting_speakers`.
+
+**Изменённые экраны:**
+- `/dashboard` (главная директора): первый экран сжат до ≤7 величин (ValueStrip + чат/настроение/обещания/висящие решения + вердикт компаса + AI-сводка + Top-1 риск), гейт `dashboard.main_rework.enabled`; новые виджеты `ValueStripWidget`/`WhatWeLearnedWidget`/`GoalVectorVerdictWidget`/`IdeasTopWidget`/`ChatUsageWidget`.
+- `/dashboard/operations` (COO): += `TeamCapacityWidget`/`ChronicBlockersWidget`, гейт `operations.dashboard_rework.enabled`.
+- `/me` (5→9 виджетов): `MemoryHelpedMeWidget`/`MyWeeklyPlanFactWidget`/`MyIdeasFateWidget`/`RecognitionInboxWidget`; кнопки 👍/👎 на ответах чата (chat-v2 feedback); гейт `me.daily_value_widgets.enabled`.
+- `/documents`: мультизагрузка + форма привязки + `ImportDocumentsDialog` (ZIP/Notion/Confluence) + `SuggestionBanner` (accept/edit AI-подсказки) + ссылка на документ-источник в citations чата.
+- Визуал: `/goals`,`/actions`,`/maturity` на modern; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css.
+- ⚠ Светлая тема дашбордов (ТЗ-3) — задизайнит владелец отдельно (в «не сделано»).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.

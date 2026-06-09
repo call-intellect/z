@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { MeTabsClient } from './MeTabsClient';
 
 export const metadata: Metadata = {
-  title: 'Я — Кора',
+  title: 'Я',
 };
 
 /**

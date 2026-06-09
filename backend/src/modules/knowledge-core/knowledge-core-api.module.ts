@@ -6,6 +6,7 @@ import { KnowledgeGraphController } from './api/graph.controller';
 import { KnowledgeSearchController } from './api/search.controller';
 import { SprintReviewController } from './api/sprint-review.controller';
 import { KnowledgeThemesController } from './api/themes.controller';
+import { GraphDiagnosticsController } from './controllers/graph-diagnostics.controller';
 import { KnowledgeCoreModule } from './knowledge-core.module';
 import { KnowledgeSnapshotModule } from './snapshot.module';
 
@@ -36,6 +37,10 @@ import { KnowledgeSnapshotModule } from './snapshot.module';
     // POST /cycles/:id/review/regenerate. Контроллер живёт здесь, потому что
     // SprintReviewService инжектит CurationService + LlmRouterService.
     SprintReviewController,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — платформенный (SUPER_ADMIN)
+    // read-only эндпоинт наблюдаемости материализации графа из встречи.
+    // GraphMaterializationService берётся из @Global KnowledgeCoreModule.
+    GraphDiagnosticsController,
   ],
 })
 export class KnowledgeCoreApiModule {}

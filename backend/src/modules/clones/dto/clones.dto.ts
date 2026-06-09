@@ -73,7 +73,17 @@ export interface SkillTraitDto {
   sourceBlockIds: string[];
   firstObservedAt: string;
   lastConfirmedAt: string;
-  status: 'active' | 'superseded_by' | 'archived' | 'misleading';
+  /**
+   * pending_verification (Ф3(D)) добавлен для совместимости типов с Prisma-enum;
+   * read-эндпоинты профиля фильтруют `status='active'`, поэтому на практике в
+   * DTO попадают только active-черты.
+   */
+  status:
+    | 'active'
+    | 'superseded_by'
+    | 'archived'
+    | 'misleading'
+    | 'pending_verification';
 }
 
 export interface SkillProfileDto {

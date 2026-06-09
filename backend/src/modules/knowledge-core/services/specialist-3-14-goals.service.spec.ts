@@ -75,6 +75,7 @@ interface Mocks {
     incCoreSpecialistLlmTokens: ReturnType<typeof vi.fn>;
     incCoreSpecialistExtractionFailure: ReturnType<typeof vi.fn>;
   };
+  logs: { write: ReturnType<typeof vi.fn> };
 }
 
 function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
@@ -101,6 +102,7 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
       incCoreSpecialistLlmTokens: vi.fn(),
       incCoreSpecialistExtractionFailure: vi.fn(),
     },
+    logs: { write: vi.fn() },
   };
 
   const svc = new Specialist314GoalsService(
@@ -112,6 +114,7 @@ function buildService(): { svc: Specialist314GoalsService; m: Mocks } {
     m.embedder as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     m.metrics as any,
+    m.logs as any,
     undefined,
   );
   return { svc, m };

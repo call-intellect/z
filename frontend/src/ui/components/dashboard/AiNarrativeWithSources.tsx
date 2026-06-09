@@ -35,7 +35,7 @@ export function AiNarrativeWithSources({ data, periodLabel, className }: Props) 
     >
       <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-accent">
         <Sparkles size={14} />
-        AI-сводка за {periodLabel}
+        Сводка Коры за {periodLabel}
       </div>
       <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
         {parts}
@@ -63,7 +63,7 @@ export function AiNarrativeWithSources({ data, periodLabel, className }: Props) 
         </div>
       )}
       <p className="mt-2 text-[11px] text-fg-tertiary">
-        AI-сводка, может содержать ошибки.
+        Сводка Коры, может содержать ошибки.
       </p>
     </div>
   );

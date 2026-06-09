@@ -31,6 +31,12 @@ import {
   SKILL_TRAIT_MERGE_SYSTEM_PROMPT,
   SKILL_TRAIT_MERGE_USER_TEMPLATE,
 } from '../prompts/skill-trait-merge.prompt';
+import {
+  SKILL_TRAIT_VERIFY_JSON_SCHEMA,
+  SKILL_TRAIT_VERIFY_SCHEMA_NAME,
+  SKILL_TRAIT_VERIFY_SYSTEM_PROMPT,
+  SKILL_TRAIT_VERIFY_USER_TEMPLATE,
+} from '../prompts/skill-trait-verify.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { SkillTraitConceptService } from './skill-trait-concept.service';
@@ -64,6 +70,10 @@ export class Specialist37Service {
   private static readonly GROUP_SIMILARITY_THRESHOLD = 0.78;
   /** Top-K кандидатов для skill-trait-merge KNN-арбитра. */
   private static readonly MERGE_KNN_TOP_K = 5;
+  /** Ф5(F) — нижний порог попадания в арбитраж merge. Кандидаты в [0.78,0.85)
+   *  («band») всё равно судятся арбитром (не форс-new), но мерджатся только при
+   *  совпадении смысловой категории. ≥0.85 — «hard». */
+  private static readonly ARBITRATION_FLOOR = 0.78;
   /** Максимум блоков, загружаемых из БД за один rebuild (защита от взрыва токенов). */
   private static readonly MAX_BLOCKS_PER_REBUILD = 200;
   /** Максимум групп, обрабатываемых LLM за один rebuild. */
@@ -143,6 +153,123 @@ export class Specialist37Service {
   }
 
   /**
+   * Ф3(D) — grounding-проверка pending_verification черт перед попаданием в
+   * персону. grounded=true → active; иначе остаётся pending (decay уберёт).
+   * Fail-open (Р2): ошибка/таймаут LLM → промоут в active (как было до D).
+   *
+   * Вызывается из SkillTraitVerifyCron батчем (default limit 100).
+   */
+  async verifyPendingTraits(
+    limit = 100,
+  ): Promise<{ checked: number; promoted: number; held: number }> {
+    let checked = 0;
+    let promoted = 0;
+    let held = 0;
+    try {
+      const pending = await this.prisma.skillTrait.findMany({
+        where: { status: 'pending_verification' },
+        select: {
+          id: true,
+          category: true,
+          statement: true,
+          sourceBlockIds: true,
+          profileId: true,
+          profile: { select: { tenantId: true } },
+        },
+        take: limit,
+      });
+
+      for (const trait of pending) {
+        checked++;
+        const tenantId = trait.profile?.tenantId ?? null;
+        try {
+          // Цитаты-источники: дословные reasoning-блоки (critical/trusted).
+          const blockIds = trait.sourceBlockIds.slice(0, 10);
+          const blocks = blockIds.length
+            ? await this.prisma.ideaBlock.findMany({
+                where: { id: { in: blockIds } },
+                select: {
+                  id: true,
+                  criticalQuestion: true,
+                  trustedAnswer: true,
+                },
+              })
+            : [];
+          const quotes = blocks.map((b) => ({
+            blockId: b.id,
+            quote: `${b.criticalQuestion} ${b.trustedAnswer}`.slice(0, 600),
+          }));
+
+          const res = await this.llm.call({
+            taskType: 'skill-trait-verify',
+            systemPrompt: SKILL_TRAIT_VERIFY_SYSTEM_PROMPT,
+            userMessage: SKILL_TRAIT_VERIFY_USER_TEMPLATE({
+              category: trait.category,
+              statement: trait.statement,
+              quotes,
+            }),
+            tenantId,
+            responseFormat: {
+              type: 'json_schema',
+              name: SKILL_TRAIT_VERIFY_SCHEMA_NAME,
+              schema: SKILL_TRAIT_VERIFY_JSON_SCHEMA,
+              strict: true,
+            },
+            sourceRef: { type: 'skill_profile', id: trait.profileId },
+            dataClass: 'internal',
+          });
+
+          const parsed = JSON.parse(res.text) as { grounded?: unknown };
+          const grounded = parsed.grounded === true;
+          if (grounded) {
+            await this.prisma.skillTrait.update({
+              where: { id: trait.id },
+              data: { status: 'active' },
+            });
+            promoted++;
+          } else {
+            // Не грунтовано — оставляем pending (decay уберёт).
+            held++;
+          }
+        } catch (err) {
+          // FAIL-OPEN (Р2): ошибка LLM/parse → промоут в active, не блокируем
+          // формирование клона из-за недоступности верификатора.
+          this.logger.warn(
+            {
+              traitId: trait.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-7.verifyPendingTraits: verify упал — fail-open promote в active',
+          );
+          try {
+            await this.prisma.skillTrait.update({
+              where: { id: trait.id },
+              data: { status: 'active' },
+            });
+            promoted++;
+          } catch (updErr) {
+            this.logger.warn(
+              {
+                traitId: trait.id,
+                err:
+                  updErr instanceof Error ? updErr.message : String(updErr),
+              },
+              'specialist-3-7.verifyPendingTraits: fail-open update тоже упал — skip',
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        'specialist-3-7.verifyPendingTraits: выборка/проход упали',
+      );
+      return { checked, promoted, held };
+    }
+    return { checked, promoted, held };
+  }
+
+  /**
    * Пересборка профиля. Вызывается из SkillProfileRebuildWorker.
    *
    * Best-effort: ошибки на каждом шаге не пробрасываются, только метрика +
@@ -200,20 +327,31 @@ export class Specialist37Service {
         entityId: profile.person.entityId,
         lookbackMonths: this.cfg.skill.lookbackMonths,
       });
-      const minObservations = this.cfg.skill.minObservations;
-      if (blocks.length < minObservations) {
+      // Ф4(E) — split-floor: профиль-порог (сколько всего блоков нужно) и
+      // кластер-порог (сколько в группе) — разные AdminSetting-крутилки.
+      const profileMinObservations = await this.cfg.getDynamic<number>(
+        'knowledge.skillProfileMinObservations',
+        undefined,
+        this.cfg.skill.minObservations,
+      );
+      if (blocks.length < profileMinObservations) {
         this.logger.debug(
-          { profileId: profile.id, blocksCount: blocks.length, minObservations },
+          { profileId: profile.id, blocksCount: blocks.length, profileMinObservations },
           'specialist-3-7: блоков меньше порога — skip',
         );
         // Probe: пустой профиль (стартует сам по cron'у, не здесь).
         return;
       }
+      const clusterMinObservations = await this.cfg.getDynamic<number>(
+        'knowledge.skillClusterMinObservations',
+        undefined,
+        3,
+      );
 
       // 3. Группировать блоки по embedding similarity → кандидаты на traits.
       const groups = await this.groupBlocksBySimilarity(blocks);
       const eligibleGroups = groups
-        .filter((g) => g.length >= minObservations)
+        .filter((g) => g.length >= clusterMinObservations)
         .slice(0, Specialist37Service.MAX_GROUPS_PER_REBUILD);
       this.logger.debug(
         {
@@ -603,6 +741,7 @@ export class Specialist37Service {
       lastConfirmedAt: Date;
       observationCount: number;
       sourceBlockIds: string[];
+      bucket: 'hard' | 'band';
     }> = [];
 
     let embedding: number[] | null;
@@ -641,9 +780,13 @@ export class Specialist37Service {
           args.profile.id,
           vec,
         );
-        // cosine_distance = 1 - cosine_sim. Фильтруем по threshold по близости.
+        // cosine_distance = 1 - cosine_sim. Ф5(F): фильтруем по ARBITRATION_FLOOR
+        // (0.78) — кандидаты в [0.78,threshold) («band») всё равно судятся арбитром
+        // (не форс-new), но помечаются как слабое совпадение. rows уже отсортированы
+        // по distance asc = similarity desc; cap top-3.
         candidates = rows
-          .filter((r) => 1 - r.distance >= threshold)
+          .filter((r) => 1 - r.distance >= Specialist37Service.ARBITRATION_FLOOR)
+          .slice(0, 3)
           .map((r) => ({
             id: r.id,
             category: r.category,
@@ -652,6 +795,9 @@ export class Specialist37Service {
             lastConfirmedAt: r.lastConfirmedAt,
             observationCount: r.observationCount,
             sourceBlockIds: r.sourceBlockIds ?? [],
+            bucket: (1 - r.distance >= threshold ? 'hard' : 'band') as
+              | 'hard'
+              | 'band',
           }));
       } catch (err) {
         this.logger.debug(
@@ -691,8 +837,14 @@ export class Specialist37Service {
       }
       await this.mergeIntoExisting({
         profileId: args.profile.id,
-        existing: target,
+        existing: {
+          id: target.id,
+          sourceBlockIds: target.sourceBlockIds,
+          observationCount: target.observationCount,
+          confidence: target.confidence,
+        },
         draft: args.draft,
+        embedding,
       });
       return 'merged';
     }
@@ -736,6 +888,7 @@ export class Specialist37Service {
       statement: string;
       confidence: SkillConfidence;
       lastConfirmedAt: Date;
+      bucket: 'hard' | 'band';
     }>;
   }): Promise<MergeVerdict> {
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты, исходно из транскриптов).
@@ -752,6 +905,7 @@ export class Specialist37Service {
         statement: c.statement,
         confidence: c.confidence,
         lastConfirmedAt: c.lastConfirmedAt.toISOString(),
+        bucket: c.bucket,
       })),
     });
     let result: LlmCallResult;
@@ -853,7 +1007,10 @@ export class Specialist37Service {
           sourceBlockIds: args.draft.sourceBlockIds.slice(0, 50),
           firstObservedAt: this.safeDate(args.draft.firstObservedAt),
           lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
-          status: 'active',
+          // Ф3(D) — новая черта создаётся в pending_verification: в персону
+          // НЕ попадает, пока skill-trait-verify cron не подтвердит grounding
+          // (grounded=true → active; ошибка LLM → fail-open active).
+          status: 'pending_verification',
         },
       });
       if (args.embedding) {
@@ -915,22 +1072,71 @@ export class Specialist37Service {
       id: string;
       sourceBlockIds: string[];
       observationCount: number;
+      confidence: SkillConfidence;
     };
     draft: TraitDraft;
+    embedding: number[] | null;
   }): Promise<void> {
     const merged = new Set([
       ...args.existing.sourceBlockIds,
       ...args.draft.sourceBlockIds,
     ]);
+
+    // Ф2-B (Р6) — confidence пересчитывается из разброса РАЗНЫХ ДАТ наблюдений
+    // (число различных дней по createdAt блоков), НЕ из числа блоков: одна
+    // болтливая встреча не должна дать ложный `high`. Уже достигнутый уровень
+    // не понижаем (MAX(текущий, evidence-floor)).
+    let newConfidence: SkillConfidence = args.existing.confidence;
     try {
-      await this.prisma.skillTrait.update({
-        where: { id: args.existing.id },
-        data: {
-          sourceBlockIds: [...merged],
-          observationCount: Math.min(1_000, merged.size),
-          confidence: args.draft.confidence as SkillConfidence,
-          lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
+      const blocks = await this.prisma.ideaBlock.findMany({
+        where: { id: { in: [...merged] } },
+        select: { createdAt: true },
+      });
+      const distinctDays = new Set(
+        blocks.map((b) => b.createdAt.toISOString().slice(0, 10)),
+      ).size;
+      const evidenceLevel: SkillConfidence =
+        distinctDays >= 4 ? 'high' : distinctDays >= 2 ? 'medium' : 'low';
+      newConfidence = this.maxConfidence(args.existing.confidence, evidenceLevel);
+    } catch (err) {
+      // Fail-open: не смогли пересчитать — оставляем существующий уровень.
+      this.logger.debug(
+        {
+          traitId: args.existing.id,
+          err: err instanceof Error ? err.message : String(err),
         },
+        'specialist-3-7.mergeIntoExisting: пересчёт confidence из дат упал — оставляем текущий',
+      );
+    }
+
+    // Ф2-C (Р7) — якорь statement+embedding обновляем ТОЛЬКО ВМЕСТЕ: есть
+    // непустой draft.statement И передан embedding. Иначе ни то, ни другое
+    // (откат к старому). Обе записи в ОДНОЙ транзакции — при ошибке
+    // откатываются вместе.
+    const updateAnchor =
+      args.embedding != null && args.draft.statement.trim().length > 0;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.skillTrait.update({
+          where: { id: args.existing.id },
+          data: {
+            sourceBlockIds: [...merged],
+            observationCount: Math.min(1_000, merged.size),
+            confidence: newConfidence,
+            lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
+            ...(updateAnchor
+              ? { statement: args.draft.statement.slice(0, 2_000) }
+              : {}),
+          },
+        });
+        if (updateAnchor && args.embedding) {
+          const vec = `[${args.embedding.join(',')}]`;
+          await tx.$executeRawUnsafe(
+            `UPDATE "skill_traits" SET "embedding" = $1::vector WHERE "id" = $2`,
+            vec,
+            args.existing.id,
+          );
+        }
       });
     } catch (err) {
       this.logger.warn(
@@ -941,6 +1147,15 @@ export class Specialist37Service {
         'specialist-3-7.mergeIntoExisting: update упал — skip',
       );
     }
+  }
+
+  /**
+   * Ф2-B — MAX по лестнице уверенности (low<medium<high): не понижаем уже
+   * достигнутый уровень черты при пересчёте из разброса дат.
+   */
+  private maxConfidence(a: SkillConfidence, b: SkillConfidence): SkillConfidence {
+    const RANK: Record<SkillConfidence, number> = { low: 0, medium: 1, high: 2 };
+    return RANK[a] >= RANK[b] ? a : b;
   }
 
   /**
@@ -965,16 +1180,9 @@ export class Specialist37Service {
         data: { status: 'archived' },
       });
 
-      // Decay confidence: high → medium → low (если lastConfirmed < decayCutoff).
-      await this.prisma.skillTrait.updateMany({
-        where: {
-          profileId,
-          status: 'active',
-          confidence: 'high',
-          lastConfirmedAt: { lt: decayCutoff },
-        },
-        data: { confidence: 'medium' },
-      });
+      // Decay confidence на ОДНУ ступень за проход.
+      // порядок: medium→low ДО high→medium — иначе high упадёт в low за один
+      // проход (свежеставший из high `medium` иначе попал бы во второй шаг).
       await this.prisma.skillTrait.updateMany({
         where: {
           profileId,
@@ -983,6 +1191,15 @@ export class Specialist37Service {
           lastConfirmedAt: { lt: decayCutoff },
         },
         data: { confidence: 'low' },
+      });
+      await this.prisma.skillTrait.updateMany({
+        where: {
+          profileId,
+          status: 'active',
+          confidence: 'high',
+          lastConfirmedAt: { lt: decayCutoff },
+        },
+        data: { confidence: 'medium' },
       });
     } catch (err) {
       this.logger.warn(

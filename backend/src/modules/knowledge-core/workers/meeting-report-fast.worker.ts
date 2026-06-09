@@ -68,6 +68,7 @@ import {
   type MeetingReportFastJobData,
 } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
 import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
 /** Максимум ретраев перед поднятием exception (как в meeting-analyze-v2). */
@@ -93,6 +94,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
+    // Ф5 Р2 — семантический дедуп задач встречи (best-effort, за флагом OFF).
+    // Вызывается в конце writeTasks на случай, если fast завершился ПОСЛЕ
+    // structured-пути (иначе остаточные дубли fast-черновиков).
+    @Inject(MeetingTaskDedupeService)
+    private readonly taskDedupe: MeetingTaskDedupeService,
     // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
     // чтение AdminSetting-флага `knowledge.meetingTasksToTrackerOnly`
     // (gate на создание пользовательского Task для action-items встречи).
@@ -200,12 +206,27 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       data: { reportFastStatus: 'processing', reportFastError: null },
     });
 
+    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
+    // список участников встречи. Используется ДВАЖДЫ: (1) C6/C2 — имена и
+    // дата встречи в промпт (анти-галлюцинация имён, разрешение сроков);
+    // (2) пост-фактум резолв `assigneeUserId` из `assigneeRaw` в writeTasks.
+    const participants = await this.participantContext.loadForMeeting(meetingId);
+
     // ── 1. Промпт ──
     const transcriptText = formatTranscript(turns);
     const built = buildMeetingReportFastPrompt({
       meetingType: meeting.type,
       meetingTitle: meeting.title,
       transcript: transcriptText,
+      // C6 — отображаемые имена участников (как в formatParticipantsForPrompt:
+      // fullName в скобках, если отличается от display name).
+      participants: participants.map((p) =>
+        p.fullName && p.fullName !== p.displayName
+          ? `${p.displayName} (${p.fullName})`
+          : p.displayName,
+      ),
+      // C2 — дата встречи (YYYY-MM-DD) для разрешения относительных сроков.
+      meetingDateIso: meeting.startedAt?.toISOString().slice(0, 10) ?? null,
     });
 
     // Защита от prompt-injection: оборачиваем user-секцию в маркеры,
@@ -304,11 +325,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
 
     // ── 3. Запись результатов ──
     const failures: string[] = [];
-
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
-    // список участников встречи для жёсткого резолва `assigneeUserId` в
-    // извлечённых задачах (после Ф0.2 включает и приглашённых сотрудников).
-    const participants = await this.participantContext.loadForMeeting(meetingId);
 
     // 3a. Chapters (пересоздаём только fast-главы; legacy/v2 не трогаем).
     try {
@@ -553,6 +569,24 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       { meetingId: args.meetingId, created, skipped },
       'meeting-report-fast: tasks-write done',
     );
+
+    // Ф5 Р2 — на случай fast-после-structured: дедуп свежесозданных
+    // fast-черновиков против уже существующих canonical-задач встречи.
+    // Best-effort: сервис сам no-op при флаге OFF; ошибка не валит воркер.
+    try {
+      await this.taskDedupe.dedupeForMeeting({
+        tenantId: args.tenantId,
+        meetingId: args.meetingId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          meetingId: args.meetingId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'meeting-report-fast: task-dedupe упал (игнорируем)',
+      );
+    }
   }
 
   /**

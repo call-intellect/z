@@ -79,6 +79,17 @@ export interface DirectorDashboardSignalDto {
   /** Если первое evidence ссылается на встречу (RawEvent.sourceType=meeting),
    *  возвращаем meetingId (RawEvent.sourceExternalId). Иначе null. */
   evidenceMeetingId: string | null;
+  /**
+   * ТЗ-2 Ф1 — «почему так» / источник сигнала для drill-down в новой
+   * компоновке главной. Если первое evidence резолвится во встречу —
+   * `{ meetingId, meetingTitle }`; если в решение — `{ decisionId }`;
+   * иначе `null`. `evidenceMeetingId` оставлен без изменений для backward-compat.
+   */
+  reasonSourceRef: {
+    meetingId?: string;
+    meetingTitle?: string;
+    decisionId?: string;
+  } | null;
 }
 
 export interface DirectorDashboardSignalCountersDto {
@@ -105,6 +116,27 @@ export interface DirectorDashboardOpenQuestionDto {
   name: string;
   criticalQuestion: string;
   createdAt: string;
+}
+
+/**
+ * ТЗ-2 Ф1 — «Полоса пользы» (Value Strip): 5 твёрдых счётчиков за период,
+ * подтверждающих, что Кора сделала работу. Все значения — целые счётчики.
+ *
+ *   - `meetingsProtocoled`            — встречи с готовым AI-отчётом в окне;
+ *   - `tasksExtracted`                — задачи, извлечённые в окне;
+ *   - `decisionsExtracted`            — решения, зафиксированные в окне;
+ *   - `questionsAnsweredByMemory`     — ответы AI-чата с привязкой к источнику
+ *                                       (assistant-сообщения с непустыми citations);
+ *   - `commitmentsKept`               — выполненные обещания
+ *                                       (IdeaBlock signalType='commitment',
+ *                                       commitmentStatus='fulfilled') в окне.
+ */
+export interface DirectorDashboardValueStripDto {
+  meetingsProtocoled: number;
+  tasksExtracted: number;
+  decisionsExtracted: number;
+  questionsAnsweredByMemory: number;
+  commitmentsKept: number;
 }
 
 /**
@@ -232,4 +264,15 @@ export interface DirectorDashboardDto {
    * компании» (plans/tz/2026-05-30-pulse-full.md).
    */
   isEmpty: boolean;
+  /**
+   * ТЗ-2 Ф1 — «Полоса пользы»: 5 твёрдых счётчиков за период. Считается
+   * всегда (в т.ч. для пустого tenant'а — там нули или sample-значения).
+   */
+  valueStrip: DirectorDashboardValueStripDto;
+  /**
+   * ТЗ-2 Ф1 — kill-switch новой компоновки главной директора
+   * (`dashboard.main_rework.enabled`, default ON). Frontend выбирает раскладку
+   * первого экрана; на backend ничего не гейтит — `valueStrip` считается всегда.
+   */
+  mainReworkEnabled: boolean;
 }

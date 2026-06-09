@@ -8,6 +8,8 @@ import {
   PinOff,
   Plus,
   Send,
+  ThumbsDown,
+  ThumbsUp,
 } from 'lucide-react';
 import {
   useCallback,
@@ -17,6 +19,7 @@ import {
   type FormEvent,
   type ReactElement,
 } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
@@ -346,7 +349,7 @@ function ConversationDetail({
           messages.map((m) => <MessageView key={m.id} message={m} />)
         )}
         {sending ? (
-          <div className="text-sm italic text-fg-tertiary">AI печатает ответ...</div>
+          <div className="text-sm italic text-fg-tertiary">Кора печатает ответ...</div>
         ) : null}
         {lastCacheHit ? (
           <div className="inline-flex items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg self-start">
@@ -364,7 +367,10 @@ function ConversationDetail({
       {/* Input */}
       <form
         onSubmit={onSubmit}
-        className="border-t border-border bg-surface p-3 flex flex-col gap-2"
+        // Нижний/правый отступ оставляет место плавающей кнопке «Помощник
+        // компании» (AssistantSidebar FAB, fixed bottom-6 right-6), чтобы она
+        // не перекрывала кнопку отправки и поле ввода.
+        className="border-t border-border bg-surface p-3 pb-20 sm:pr-20 flex flex-col gap-2"
       >
         {/* SBA α-5 dialog-layer — advanced: temporal query (validAt). */}
         <div className="flex items-center justify-between text-xs text-fg-tertiary">
@@ -401,7 +407,7 @@ function ConversationDetail({
         <input
           type="text"
           className="flex-1 rounded border border-border bg-bg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          placeholder="Спросите AI о памяти компании..."
+          placeholder="Спросите Кору о памяти компании..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
@@ -429,7 +435,7 @@ function EmptyState(): ReactElement {
           Начните новый диалог
         </h2>
         <p className="mt-2 text-sm">
-          Задайте любой вопрос — AI ответит на основе встреч, документов и
+          Задайте любой вопрос — Кора ответит на основе встреч, документов и
           решений вашей компании. Каждый ответ подкреплён цитатами из
           источников.
         </p>
@@ -438,8 +444,21 @@ function EmptyState(): ReactElement {
   );
 }
 
+/**
+ * Защитная очистка текста ассистента от служебных маркеров источников
+ * `[BLOCK:<id>]`, которые приходят с бэкенда: цитаты показываем отдельным
+ * блоком «Источники», в самом тексте маркеры пользователю не нужны.
+ */
+function stripBlockMarkers(text: string): string {
+  return text
+    .replace(/\[BLOCK:[^\]]+\]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function MessageView({ message }: { message: ChatV2Message }): ReactElement {
   const isUser = message.role === 'user';
+  const displayText = isUser ? message.text : stripBlockMarkers(message.text);
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
@@ -454,22 +473,33 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
             Режим: {chatV2ModeLabel(message.mode)}
           </div>
         ) : null}
-        <div>{message.text}</div>
+        <div>{displayText}</div>
 
         {!isUser && message.citations.length > 0 ? (
           <div className="mt-3 space-y-1.5 border-t border-border pt-2">
             <div className="text-xs font-medium text-fg-tertiary">Источники:</div>
             {message.citations.map((c, idx) => (
               <div
-                key={`${c.meetingId}-${c.startMs}-${idx}`}
+                key={`${c.documentId ?? c.meetingId}-${c.startMs}-${idx}`}
                 className="rounded bg-bg px-2 py-1.5 text-xs"
               >
-                <div className="font-medium">
-                  {c.meetingTitle}{' '}
-                  <span className="text-fg-tertiary">
-                    [{formatTimestamp(c.startMs)}]
-                  </span>
-                </div>
+                {c.documentId ? (
+                  <div className="font-medium">
+                    <Link
+                      href={`/documents/${encodeURIComponent(c.documentId)}`}
+                      className="text-accent hover:underline"
+                    >
+                      Документ: {c.documentName ?? 'без названия'}
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="font-medium">
+                    {c.meetingTitle}{' '}
+                    <span className="text-fg-tertiary">
+                      [{formatTimestamp(c.startMs)}]
+                    </span>
+                  </div>
+                )}
                 <div className="mt-0.5 italic text-fg-secondary">
                   &laquo;{c.snippet}&raquo;
                 </div>
@@ -477,7 +507,60 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
             ))}
           </div>
         ) : null}
+
+        {!isUser ? <MessageFeedback messageId={message.id} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * TZ-3 Ф3 — оценка ответа ассистента (👍/👎). Тонкий ряд под сообщением.
+ * Optimistic local state: при клике сразу подсвечиваем выбор и шлём запрос
+ * fire-and-forget; при ошибке откатываем. Повторный клик по активной кнопке
+ * снимает оценку (DELETE). Channel-agnostic эндпоинт на бэке поддерживает оба.
+ */
+function MessageFeedback({ messageId }: { messageId: string }): ReactElement {
+  const [helpful, setHelpful] = useState<'up' | 'down' | null>(null);
+
+  function vote(next: 'up' | 'down'): void {
+    const prev = helpful;
+    if (prev === next) {
+      // Повторный клик по активной — снять оценку.
+      setHelpful(null);
+      void chatV2Api.clearFeedback(messageId).catch(() => setHelpful(prev));
+      return;
+    }
+    setHelpful(next);
+    void chatV2Api.setFeedback(messageId, next).catch(() => setHelpful(prev));
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+      <button
+        type="button"
+        onClick={() => vote('up')}
+        title="Ответ помог"
+        aria-label="Ответ помог"
+        aria-pressed={helpful === 'up'}
+        className={`rounded p-1 transition-colors hover:bg-surface-hover ${
+          helpful === 'up' ? 'text-accent' : 'text-fg-tertiary'
+        }`}
+      >
+        <ThumbsUp size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => vote('down')}
+        title="Ответ не помог"
+        aria-label="Ответ не помог"
+        aria-pressed={helpful === 'down'}
+        className={`rounded p-1 transition-colors hover:bg-surface-hover ${
+          helpful === 'down' ? 'text-danger' : 'text-fg-tertiary'
+        }`}
+      >
+        <ThumbsDown size={14} />
+      </button>
     </div>
   );
 }

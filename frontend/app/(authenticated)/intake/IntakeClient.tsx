@@ -53,6 +53,7 @@ import {
   type IssuePriority,
   type TriageDecision,
 } from '@/domain/tracker';
+import { pluralRu } from '@/domain/contribution';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -293,8 +294,8 @@ function PageShell({
             Входящие
           </h1>
           <p className="text-xs text-fg-tertiary">
-            Разбор входящих задач из писем, чатов, встреч и внешних сервисов. AI
-            заранее заполнил подсказки — ваша задача — подтвердить или поправить.
+            Разбор входящих задач из писем, чатов, встреч и внешних сервисов. Кора
+            заранее заполнила подсказки — ваша задача — подтвердить или поправить.
             {typeof total === 'number' && total > 0 ? (
               <>
                 {' · '}
@@ -432,7 +433,7 @@ function IntakeCard({
           {item.suggestedLabels && item.suggestedLabels.length > 0 && (
             <SuggestionChip>
               <Tag size={11} aria-hidden />
-              {item.suggestedLabels.length} меток
+              {pluralRu(item.suggestedLabels.length, 'метка', 'метки', 'меток')}
             </SuggestionChip>
           )}
           {confidencePct !== null && (

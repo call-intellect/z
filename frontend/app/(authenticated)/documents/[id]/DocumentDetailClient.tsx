@@ -7,6 +7,8 @@ import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
 import {
+  documentKindLabel,
+  documentTypeLabel,
   documentsApi,
   type DocumentDetailApi,
   type DocumentEntityKindApi,
@@ -24,6 +26,11 @@ import {
   AdminError,
   AdminForbidden,
 } from '@app/(admin)/admin/AdminStateViews';
+
+import {
+  SuggestionBanner,
+  hasPendingSuggestion,
+} from '../DocumentsListClient';
 
 const STATUS_LABELS: Record<DocumentStatusApi, string> = {
   uploaded: 'загружен',
@@ -129,15 +136,26 @@ function Content({
     );
   }
   if (!swr.data) return null;
-  return <Detail data={swr.data} canSeeEntities={canSeeEntities} />;
+  return (
+    <Detail
+      data={swr.data}
+      canSeeEntities={canSeeEntities}
+      orgId={orgId}
+      onChanged={() => void swr.mutate()}
+    />
+  );
 }
 
 function Detail({
   data,
   canSeeEntities,
+  orgId,
+  onChanged,
 }: {
   data: DocumentDetailApi;
   canSeeEntities: boolean;
+  orgId: string;
+  onChanged: () => void;
 }) {
   const { document, parsedText, ideaBlocks, entityGroups } = data;
   return (
@@ -157,6 +175,12 @@ function Detail({
           <Badge variant="secondary" className="text-[10px]">
             {STATUS_LABELS[document.status]}
           </Badge>
+          {document.docType && (
+            <Badge variant="default" className="text-[10px]">
+              {documentTypeLabel(document.docType)}
+            </Badge>
+          )}
+          <span className="text-fg-tertiary">{documentKindLabel(document.kind)}</span>
           {document.attachedRoleId && (
             <Link
               href={`/roles/${encodeURIComponent(document.attachedRoleId)}`}
@@ -177,6 +201,16 @@ function Detail({
           )}
         </div>
       </header>
+
+      {hasPendingSuggestion(document) && (
+        <div className="mb-6">
+          <SuggestionBanner
+            orgId={orgId}
+            doc={document}
+            onChanged={onChanged}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr,1fr]">
         <Card>
@@ -250,7 +284,7 @@ function Detail({
                   <CardContent className="p-4">
                     {entityGroups.length === 0 ? (
                       <p className="text-sm text-fg-tertiary">
-                        Сущности появятся после парсинга и AI-разметки.
+                        Сущности появятся после разбора и разметки Корой.
                       </p>
                     ) : (
                       <div className="space-y-4">

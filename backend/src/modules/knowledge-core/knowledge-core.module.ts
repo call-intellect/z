@@ -27,7 +27,10 @@ import { EntityResolutionService } from './services/entity-resolution.service';
 import { ExecutablePersonaBuildService } from './services/executable-persona-build.service';
 import { ExecutablePersonaVersioningService } from './services/executable-persona-versioning.service';
 import { FactSupersedeService } from './services/fact-supersede.service';
+import { GoalTaskLinkerService } from './services/goal-task-linker.service';
+import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
+import { GraphMaterializationService } from './services/graph-materialization.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
@@ -252,6 +255,22 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Вызывается best-effort из BlockLinkerWorker / entity-graph-builder
     // (через EntityLinkService). См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
     TemporalConflictService,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — GraphMaterializationService.
+    // Read-only наблюдаемость: «материализовались ли Decision/Idea/Goal из
+    // встречи». Инжектится платформенным контроллером (KnowledgeCoreApiModule)
+    // и cron'ом graph-materialization-verify (WorkersModule).
+    GraphMaterializationService,
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — GoalThemeLinkerService.
+    // Детерминированная авто-привязка Goal↔Theme (провенанс + co-mention,
+    // GoalTheme source='ai'). Закрывает «0 тем» у AI-целей. Инжектится
+    // Specialist314GoalsService (on-event) и GoalThemeLinkerCron (WorkersModule).
+    GoalThemeLinkerService,
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — GoalTaskLinkerService.
+    // LLM-привязка задач встречи к AI-цели (goal-task-link, DEFAULT OFF,
+    // non-destructive). Инжектится Specialist314GoalsService (on-event) и
+    // GoalTaskLinkerCron (WorkersModule). LlmRouterService берётся из @Global
+    // AiModule (HTTP) / зарегистрирован в WorkersModule (worker-процесс).
+    GoalTaskLinkerService,
   ],
   exports: [
     SegmentBuilderService,
@@ -360,6 +379,15 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Agents v2 Фаза A1 (2026-05-30) — экспорт для BlockLinkerWorker
     // (WorkersModule) и entity-graph-builder.cron.
     TemporalConflictService,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — экспорт для платформенного
+    // контроллера (graph-diagnostics) и cron'а graph-materialization-verify.
+    GraphMaterializationService,
+    // Agent-chain overhaul Фаза 4.2 — экспорт для Specialist314GoalsService
+    // (on-event хук) и GoalThemeLinkerCron (WorkersModule, догоночный sweep).
+    GoalThemeLinkerService,
+    // Agent-chain overhaul Фаза 4.1 — экспорт для Specialist314GoalsService
+    // (on-event хук) и GoalTaskLinkerCron (WorkersModule, догоночный sweep).
+    GoalTaskLinkerService,
   ],
 })
 export class KnowledgeCoreModule {}

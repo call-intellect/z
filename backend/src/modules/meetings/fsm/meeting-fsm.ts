@@ -23,13 +23,20 @@ import { InvalidFsmTransitionError } from '../../../common/errors/domain-errors'
  * (показывать нечего).
  */
 export const ALLOWED_TRANSITIONS: Readonly<Record<MeetingStatus, readonly MeetingStatus[]>> = {
-  scheduled: ['active', 'failed'],
+  // ТЗ-5 Ф1 (meeting-upload-diarization): загруженная встреча (`source=upload`)
+  // входит в pipeline из `scheduled` сразу в `recording_processing` (нормализация
+  // медиа), минуя `active`/`completed` (комнаты LiveKit нет).
+  scheduled: ['active', 'recording_processing', 'failed'],
   active: ['completed', 'failed'],
   completed: ['recording_processing', 'transcription_processing', 'failed'],
   recording_processing: ['recording_ready', 'failed'],
   recording_ready: ['transcription_processing', 'failed', 'ai_failed'],
-  transcription_processing: ['transcription_ready', 'failed', 'ai_failed'],
+  // ТЗ-5 Ф1: после диаризации загруженной встречи спикеры ещё не размечены —
+  // уходим в `awaiting_speakers` (ручная разметка хостом/админом).
+  transcription_processing: ['transcription_ready', 'awaiting_speakers', 'failed', 'ai_failed'],
   transcription_ready: ['ai_processing', 'failed', 'ai_failed'],
+  // ТЗ-5 Ф1: после ручной разметки спикеров загруженная встреча запускает AI-анализ.
+  awaiting_speakers: ['ai_processing', 'failed', 'ai_failed'],
   ai_processing: ['ai_ready', 'failed', 'ai_failed'],
   ai_ready: ['ai_failed'],
   failed: [],

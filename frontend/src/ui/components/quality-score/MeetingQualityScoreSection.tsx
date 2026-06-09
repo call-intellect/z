@@ -278,7 +278,7 @@ function PendingSkeleton() {
       className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-3"
     >
       <h2 className="text-lg font-semibold text-fg-primary">Оценка качества встречи</h2>
-      <p className="text-sm text-fg-secondary">Считаем AI-оценку. Обычно занимает 1–2 минуты.</p>
+      <p className="text-sm text-fg-secondary">Считаем оценку качества. Обычно занимает 1–2 минуты.</p>
       <div className="h-20 animate-pulse rounded-lg bg-bg-subtle" />
       <div className="h-3 w-3/4 animate-pulse rounded bg-bg-subtle" />
       <div className="h-3 w-1/2 animate-pulse rounded bg-bg-subtle" />

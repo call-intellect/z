@@ -26,6 +26,17 @@ export interface WeeklyDigestMetricsDto {
     failedDelta: number;
   };
   hangingDecisions: Array<{ decisionId: string; statement: string; ageDays: number }>;
+  /**
+   * TZ-1 Ф4.A (daily-value-engine) — топ идей недели (по weight + свежесть
+   * lastDiscussedAt). Опускается из дайджеста, если пусто (см. weekly-digest.prompt).
+   */
+  topIdeas?: Array<{
+    ideaId: string;
+    statement: string;
+    status: string;
+    weight: number;
+    supporterCount: number;
+  }>;
 }
 
 export interface WeeklyDigestSourcesDto {
@@ -33,6 +44,8 @@ export interface WeeklyDigestSourcesDto {
   insightIds: string[];
   goalIds: string[];
   decisionIds: string[];
+  /** TZ-1 Ф4.A — id идей, попавших в секцию недели (drill-down). */
+  ideaIds?: string[];
 }
 
 /**
@@ -92,6 +105,33 @@ export interface WeeklyForecastItemDto {
   confidence: 'low' | 'medium';
 }
 
+/**
+ * ТЗ-2 Ф3 — дельта одной секции «текущая неделя vs предыдущая».
+ *
+ * `delta = current - previous`; `null`, если нет данных за предыдущую неделю
+ * (`previous=null`). Универсальная форма для всех посекционных счётчиков.
+ */
+export interface WeeklyDeltaDto {
+  current: number;
+  previous: number | null;
+  /** current - previous, null если нет данных за предыдущую неделю. */
+  delta: number | null;
+}
+
+/**
+ * ТЗ-2 Ф3 — посекционные дельты недельного дайджеста (к предыдущей неделе).
+ *
+ * Считается в `computeRuntimeSections()` теми же окнами, что и `kpiDeltas`.
+ */
+export interface WeeklySectionDeltasDto {
+  /** Кол-во блокер-сигналов (IdeaBlock signalType=blocker) за неделю. */
+  blockers: WeeklyDeltaDto;
+  /** Кол-во инсайтов за неделю (тот же фильтр, что и topInsights). */
+  insights: WeeklyDeltaDto;
+  /** Кол-во идей, обсуждавшихся за неделю. */
+  ideas: WeeklyDeltaDto;
+}
+
 export interface WeeklyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -111,6 +151,8 @@ export interface WeeklyOperationsDigestDto {
   teamDynamics: WeeklyTeamDynamicsRowDto[];
   /** Прогноз тренда на следующую неделю (3 элемента: sentiment/promises/hanging). */
   forecast: WeeklyForecastItemDto[];
+  /** ТЗ-2 Ф3 — посекционные дельты к предыдущей неделе (блокеры/инсайты/идеи). */
+  sectionDeltas: WeeklySectionDeltasDto;
 }
 
 /**

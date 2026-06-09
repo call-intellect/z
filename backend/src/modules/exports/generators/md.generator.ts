@@ -6,6 +6,8 @@ import type {
   Transcript,
 } from '@prisma/client';
 
+import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
+
 /**
  * Минимальная форма задачи для рендера (ТЗ Ф5.2): берём только используемые
  * поля, чтобы подходили и Prisma `Task`, и нормализованный `MeetingActionItem`.
@@ -36,8 +38,9 @@ export class MdGenerator {
     lines.push(`- **Длительность:** ${formatDuration(input.meeting.durationMs)}`);
     lines.push('');
 
-    if (input.aiResult?.summary) {
-      lines.push('## Summary', '', String(input.aiResult.summary), '');
+    const summary = input.aiResult ? pickPrimarySummary(input.aiResult) : '';
+    if (summary) {
+      lines.push('## Summary', '', summary, '');
     }
 
     if (input.chapters.length > 0) {

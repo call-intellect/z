@@ -193,6 +193,73 @@ describe('ChatboxIngestService.ingestSession', () => {
       }),
     );
   });
+
+  it('per-message сегментация: turn клиента authorPersonId=null, менеджера = responsible.personId; fullText сохранён', async () => {
+    const { service, prisma, ingest } = makeService();
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({
+      id: 's1',
+      chatId: 'c1',
+      seq: 3,
+      startedAt: new Date('2026-06-04T12:00:00.000Z'),
+      endedAt: new Date('2026-06-04T12:30:00.000Z'),
+      previousSessionId: null,
+    });
+    prisma.chatboxChat.findFirst.mockResolvedValue({
+      externalId: 'chatExt',
+      channelType: 'TELEGRAM',
+      customerExternalId: 'custExt',
+      responsibleExternalId: 'memExt',
+    });
+    prisma.chatboxMessage.findMany.mockResolvedValue([
+      {
+        senderType: 'CLIENT',
+        senderName: 'Arsenii',
+        text: 'У меня вопрос по цене',
+        contentType: 'TEXT',
+        externalCreatedAt: new Date('2026-06-04T12:23:00.000Z'),
+      },
+      {
+        senderType: 'USER',
+        senderName: 'Никита',
+        text: 'Скидку дам, если оплатите сегодня',
+        contentType: 'TEXT',
+        externalCreatedAt: new Date('2026-06-04T12:28:00.000Z'),
+      },
+    ]);
+    prisma.chatboxCustomer.findUnique.mockResolvedValue({
+      externalId: 'custExt',
+      name: 'Arsenii',
+    });
+    prisma.chatboxMember.findUnique.mockResolvedValue({
+      externalId: 'memExt',
+      name: 'Никита',
+      linkedPersonId: 'p-manager',
+    });
+    prisma.source.findUnique.mockResolvedValue({ id: 'src1' });
+    ingest.ingest.mockResolvedValue({ rawEvent: { id: 're1' }, idempotent: false });
+
+    await service.ingestSession('t1', 's1');
+
+    const payload = (ingest.ingest.mock.calls[0]![0] as { payload: any }).payload;
+    expect(payload.transcript.turns).toHaveLength(2);
+    // turn клиента — authorPersonId=null (не сотрудник)
+    expect(payload.transcript.turns[0]).toMatchObject({
+      speaker: 'Клиент [Arsenii]',
+      text: 'У меня вопрос по цене',
+      startSec: 0,
+      authorPersonId: null,
+    });
+    // turn менеджера — authorPersonId = responsible.personId
+    expect(payload.transcript.turns[1]).toMatchObject({
+      speaker: 'Менеджер [Никита]',
+      text: 'Скидку дам, если оплатите сегодня',
+      startSec: 1,
+      authorPersonId: 'p-manager',
+    });
+    // fullText (back-compat) сохранён
+    expect(payload.fullText).toContain('Клиент [Arsenii]: У меня вопрос по цене');
+    expect(payload.fullText).toContain('Менеджер [Никита]: Скидку дам');
+  });
 });
 
 describe('ChatboxIngestService.upsertSource (через ingestSession)', () => {

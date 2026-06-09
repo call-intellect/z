@@ -13,7 +13,7 @@
  *   { facts: [{ propertyId, value, confidence: 0..1, quote, timeSec }] }
  */
 
-import { withInjectionGuard } from './common';
+import { withAsrNote, withInjectionGuard } from './common';
 
 /**
  * Каталог типов колонок для подсказки модели, как форматировать `value`.
@@ -61,7 +61,8 @@ function buildSystem(): string {
     ([t, ru]) => `  - \`${t}\` — ${ru}`,
   ).join('\n');
 
-  return withInjectionGuard(
+  return withAsrNote(
+    withInjectionGuard(
     [
       // Cache-friendly: SYSTEM стабилен, переменное в USER (Б10).
       'Ты извлекаешь факты для колонок таблицы СТРОГО из транскрипта встречи. Тебе дают схему колонок (id, название, тип), метку сущности и фрагмент транскрипта. Твоя задача — вернуть значения только тех колонок, факт по которым ПРЯМО назван в транскрипте применительно к указанной сущности.',
@@ -83,6 +84,7 @@ function buildSystem(): string {
       '`{ "facts": [ { "propertyId": string, "value": string|number|boolean|array, "confidence": number, "quote": string, "timeSec": number } ] }`',
       'Если в транскрипте нет ни одного подтверждённого факта по колонкам — верни `{ "facts": [] }`.',
     ].join('\n'),
+    ),
   );
 }
 

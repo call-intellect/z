@@ -93,6 +93,16 @@ export interface ChatV2Citation {
   startMs: number;
   endMs: number;
   snippet: string;
+  /**
+   * ТЗ-4 Ф11 — провенанс документа. Если цитируемый блок происходит из
+   * загруженного документа (его evidence-RawEvent имеет
+   * `sourceExternalId='doc:<id>'`), citation несёт ссылку на документ.
+   * Фронт строит ссылку `/documents/<documentId>`. Для citation из встречи
+   * оба поля undefined (meeting-поля как раньше). Citation может быть либо
+   * встречным, либо документным.
+   */
+  documentId?: string;
+  documentName?: string;
 }
 
 export interface ChatV2Output {
@@ -123,6 +133,17 @@ interface ContextBlock {
     meetingTitle: string;
     startMs: number;
     endMs: number;
+    snippet: string;
+  } | null;
+  /**
+   * ТЗ-4 Ф11 — первая evidence блока, привязанная к загруженному документу
+   * (RawEvent.sourceExternalId='doc:<id>'), если у блока НЕТ meeting-evidence.
+   * Используется как fallback-источник citation: блок, обоснованный
+   * регламентом/политикой, цитирует документ, а не встречу.
+   */
+  primaryDocumentSource: {
+    documentId: string;
+    documentName: string;
     snippet: string;
   } | null;
 }
@@ -526,6 +547,18 @@ export class ChatV2Service {
     const meetingIdToTitle = new Map<string, string>();
     for (const m of meetings) meetingIdToTitle.set(m.id, m.title);
 
+    // ТЗ-4 Ф11 — провенанс документа. Для блоков БЕЗ meeting-evidence ищем
+    // первую evidence, привязанную к загруженному документу
+    // (RawEvent.sourceExternalId='doc:<id>'). Так блок, обоснованный
+    // регламентом/политикой, цитирует документ, а не встречу.
+    const blocksWithoutMeeting = blocks
+      .map((b) => b.id)
+      .filter((id) => !firstByBlock.has(id));
+    const docSourceByBlock = await this.loadDocumentSources(
+      tenantId,
+      blocksWithoutMeeting,
+    );
+
     // Сохраняем порядок blockIds.
     const byId = new Map(blocks.map((b) => [b.id, b] as const));
     const out: ContextBlock[] = [];
@@ -549,6 +582,8 @@ export class ChatV2Service {
           };
         }
       }
+      // ТЗ-4 Ф11 — document fallback (только если нет meeting-evidence).
+      const docSource = primary ? null : docSourceByBlock.get(id) ?? null;
       out.push({
         id: b.id,
         name: b.name,
@@ -556,9 +591,91 @@ export class ChatV2Service {
         trustedAnswer: b.trustedAnswer,
         dataClass: b.dataClass,
         primaryMeetingEvidence: primary,
+        primaryDocumentSource: docSource,
       });
     }
     return out;
+  }
+
+  /**
+   * ТЗ-4 Ф11 — батч-резолв документного провенанса для блоков, у которых нет
+   * meeting-evidence. Переиспользует тот же путь, что и
+   * `DocumentsService.getDetail`: IdeaBlockEvidence → RawEvent с
+   * `sourceExternalId='doc:<id>'`. Возвращает Map blockId → {documentId,
+   * documentName, snippet}. Один findMany по evidence + один по document —
+   * без N+1. tenantId-scope сохранён (block + rawEvent + document по tenantId).
+   */
+  private async loadDocumentSources(
+    tenantId: string,
+    blockIds: string[],
+  ): Promise<
+    Map<string, { documentId: string; documentName: string; snippet: string }>
+  > {
+    const result = new Map<
+      string,
+      { documentId: string; documentName: string; snippet: string }
+    >();
+    if (blockIds.length === 0) return result;
+
+    // Evidence этих блоков, чей RawEvent — документ (sourceExternalId 'doc:').
+    const evidenceRows = await this.prisma.ideaBlockEvidence.findMany({
+      where: {
+        blockId: { in: blockIds },
+        rawEvent: {
+          tenantId,
+          sourceExternalId: { startsWith: 'doc:' },
+        },
+      },
+      select: {
+        blockId: true,
+        quote: true,
+        rawEvent: { select: { sourceExternalId: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (evidenceRows.length === 0) return result;
+
+    // Первая doc-evidence на блок + сбор documentId'ов (для одного findMany).
+    type DocEvidence = { documentId: string; snippet: string };
+    const firstDocByBlock = new Map<string, DocEvidence>();
+    const documentIds = new Set<string>();
+    for (const ev of evidenceRows) {
+      if (firstDocByBlock.has(ev.blockId)) continue;
+      const ext = ev.rawEvent?.sourceExternalId;
+      if (!ext || !ext.startsWith('doc:')) continue;
+      const documentId = ext.slice('doc:'.length);
+      if (!documentId) continue;
+      firstDocByBlock.set(ev.blockId, {
+        documentId,
+        snippet: ev.quote.slice(0, 240),
+      });
+      documentIds.add(documentId);
+    }
+    if (documentIds.size === 0) return result;
+
+    // Батч-резолв имён документов (tenantId-scope, не удалённые).
+    const documents = await this.prisma.document.findMany({
+      where: {
+        id: { in: [...documentIds] },
+        tenantId,
+        deletedAt: null,
+      },
+      select: { id: true, name: true },
+    });
+    const docNameById = new Map<string, string>();
+    for (const d of documents) docNameById.set(d.id, d.name);
+
+    for (const [blockId, ev] of firstDocByBlock) {
+      const documentName = docNameById.get(ev.documentId);
+      // Документ удалён / другой tenant — пропускаем (нет валидной ссылки).
+      if (!documentName) continue;
+      result.set(blockId, {
+        documentId: ev.documentId,
+        documentName,
+        snippet: ev.snippet,
+      });
+    }
+    return result;
   }
 
   /**
@@ -931,18 +1048,37 @@ export class ChatV2Service {
       const id = m[1];
       if (!id) continue;
       const block = byId.get(id);
-      if (!block || !block.primaryMeetingEvidence) continue;
-      const ev = block.primaryMeetingEvidence;
-      const key = `${ev.meetingId}:${ev.startMs}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        meetingId: ev.meetingId,
-        meetingTitle: ev.meetingTitle,
-        startMs: ev.startMs,
-        endMs: ev.endMs,
-        snippet: ev.snippet,
-      });
+      if (!block) continue;
+      if (block.primaryMeetingEvidence) {
+        const ev = block.primaryMeetingEvidence;
+        const key = `meeting:${ev.meetingId}:${ev.startMs}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          meetingId: ev.meetingId,
+          meetingTitle: ev.meetingTitle,
+          startMs: ev.startMs,
+          endMs: ev.endMs,
+          snippet: ev.snippet,
+        });
+      } else if (block.primaryDocumentSource) {
+        // ТЗ-4 Ф11 — citation на загруженный документ (ответ обоснован
+        // регламентом/политикой). meeting-поля пустые, фронт строит ссылку
+        // `/documents/<documentId>`. Дедуп по documentId.
+        const doc = block.primaryDocumentSource;
+        const key = `doc:${doc.documentId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          meetingId: '',
+          meetingTitle: '',
+          startMs: 0,
+          endMs: 0,
+          snippet: doc.snippet,
+          documentId: doc.documentId,
+          documentName: doc.documentName,
+        });
+      }
     }
     return out;
   }

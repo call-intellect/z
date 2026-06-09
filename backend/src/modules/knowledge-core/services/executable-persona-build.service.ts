@@ -277,7 +277,10 @@ export class ExecutablePersonaBuildService {
       for (const p of activeProfiles) {
         aggregatedTraits.push(...p.traits.slice(0, 5));
       }
-      if (aggregatedTraits.length < this.cfg.persona.minTraits) return null;
+      // Ф7 (H) — схлопнуть черты по conceptId: одна и та же черта от N
+      // сотрудников не должна повторяться N раз в персоне роли.
+      const dedupedTraits = this.dedupeTraitsByConcept(aggregatedTraits);
+      if (dedupedTraits.length < this.cfg.persona.minTraits) return null;
 
       const role = await this.prisma.role.findUnique({
         where: { id: args.roleId },
@@ -287,7 +290,7 @@ export class ExecutablePersonaBuildService {
         tenantId: args.tenantId,
         personName: role?.name ?? 'роль',
         personRole: role?.name ?? null,
-        traits: aggregatedTraits,
+        traits: dedupedTraits,
       });
       if (!personaPrompt) return null;
 
@@ -304,7 +307,7 @@ export class ExecutablePersonaBuildService {
       let dataClassAudit: Prisma.InputJsonValue | undefined;
       if (this.dataClassPolicy) {
         const derived = this.dataClassPolicy.derive({
-          sources: aggregatedTraits.map((t) => ({
+          sources: dedupedTraits.map((t) => ({
             dataClass: 'internal' as const,
             sourceId: t.id,
             sourceKind: 'skill_trait' as const,
@@ -316,7 +319,7 @@ export class ExecutablePersonaBuildService {
           legacyResult: 'internal',
           proposedResult: derived.dataClass,
           kind: 'executable_persona',
-          sourceIds: aggregatedTraits.map((t) => t.id),
+          sourceIds: dedupedTraits.map((t) => t.id),
         });
         dataClassAudit = derived.audit as unknown as Prisma.InputJsonValue;
       }
@@ -343,9 +346,9 @@ export class ExecutablePersonaBuildService {
             scopeRefId: args.roleId,
             version: nextVersion,
             personaPrompt,
-            includedTraitIds: aggregatedTraits.map((t) => t.id),
+            includedTraitIds: dedupedTraits.map((t) => t.id),
             status: 'active',
-            builtFromTraitsCount: aggregatedTraits.length,
+            builtFromTraitsCount: dedupedTraits.length,
             triggerReason,
             triggerEventAt,
             ...(dataClassAudit ? { dataClassAudit } : {}),
@@ -395,6 +398,38 @@ export class ExecutablePersonaBuildService {
       );
       return null;
     }
+  }
+
+  /** Ф7 (H) — схлопывает черты по conceptId (один представитель на концепт):
+   *  max observationCount, при равенстве — выше confidence. conceptId=null —
+   *  оставляем как есть (не схлопываем). Порядок остальных сохраняется. */
+  private dedupeTraitsByConcept(traits: SkillTrait[]): SkillTrait[] {
+    const rank: Record<string, number> = { high: 3, medium: 2, low: 1 };
+    const byConcept = new Map<string, SkillTrait>();
+    const out: SkillTrait[] = [];
+    for (const t of traits) {
+      if (!t.conceptId) {
+        out.push(t);
+        continue;
+      }
+      const cur = byConcept.get(t.conceptId);
+      if (!cur) {
+        byConcept.set(t.conceptId, t);
+        out.push(t);
+        continue;
+      }
+      const better =
+        t.observationCount > cur.observationCount ||
+        (t.observationCount === cur.observationCount &&
+          (rank[t.confidence] ?? 0) > (rank[cur.confidence] ?? 0));
+      if (better) {
+        // заменить представителя в out на текущий
+        const idx = out.indexOf(cur);
+        if (idx >= 0) out[idx] = t;
+        byConcept.set(t.conceptId, t);
+      }
+    }
+    return out;
   }
 
   private async compilePersonaPrompt(args: {

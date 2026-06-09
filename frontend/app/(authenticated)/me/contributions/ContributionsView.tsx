@@ -338,12 +338,12 @@ function AiRecognitionSection({ items }: { items: RecognitionEntry[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Благодарности от AI-агента</CardTitle>
+        <CardTitle className="text-base">Благодарности от Коры</CardTitle>
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
           <p className="text-sm text-fg-secondary">
-            Пока тихо. AI-агент шлёт благодарности только когда есть что отметить.
+            Пока тихо. Кора шлёт благодарности только когда есть что отметить.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

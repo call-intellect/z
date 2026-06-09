@@ -577,3 +577,42 @@ entity-graph поднят до уровня block-linker (`tryParseJson` + ре�
 — через связанную встречу, не по самой `Recording`.
 
 [[../index|← index]]
+
+## Качество клона + chatbox-атрибуция (TZ#2, 2026-06-08)
+
+### Merge перезаписывал confidence последним `draft.confidence` вместо пересчёта из дат
+
+`mergeIntoExisting` (specialist-3-7-skill) при слиянии черты **затирал** уверенность
+значением `confidence` последнего draft'а от LLM — то есть свежее одиночное
+наблюдение могло понизить устоявшуюся high-черту. **Правило:** confidence трейта —
+производная от **числа разных дат** блоков-источников (по `createdAt`: ≥4 разных дат
+→ high, ≥2 → medium), и при merge берётся **MAX** с текущим (не понижаем).
+Связано: `statement` и `embedding` теперь обновляются **вместе в одной транзакции**
+— раньше можно было обновить текст черты, но не вектор (или наоборот), и поиск по
+эмбеддингу врал. ТЗ [`2026-06-08-clone-quality-improvements`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф2.
+
+### Decay двойной шаг (high→low за один проход) — был в ДВУХ местах (класс-баг)
+
+Затухание уверенности гоняло **две ступени за один прогон**: порядок двух
+`updateMany` (high→medium, затем medium→low) приводил к тому, что только что
+переведённый в medium трейт **сразу же** падал в low. Свежая high-черта за один
+проход проваливалась в low. **Правило:** одна ступень за проход — выполнять
+medium→low **ДО** high→medium. Грабля была **в двух местах сразу** — `runDecay`
+(специалист 3-7) **и** `SkillProfileRecalibrateCron` (`skill-profile-recalibrate.cron.ts`);
+чинить надо оба (класс, не кейс — см. [[../../MEMORY|feedback_fix_the_whole_class_not_the_case]]).
+ТЗ [`2026-06-08-clone-quality-improvements`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф2.
+
+### chatbox: атрибуция всех блоков сессии session-level ответственным = cross-attribution клиент→менеджер
+
+При ingest'е клиентского чата (chatbox) **нет записей `Participant`** (в отличие от
+встреч), и identity автора реплики несётся как **`Person.id` прямо в сегменте**
+(поле `authorPersonId` на `Segment`/`MeetingTurn`), а НЕ как `speakerParticipantId`.
+До фикса все блоки сессии атрибутировались **session-level ответственному менеджеру**
+→ клиентские реплики записывались как высказывания/обязательства менеджера (искажало
+knowledge-/skill-профиль). **Правило:** при per-message сегментации
+`tryGetActorIdentity` НЕ отдаёт session-level менеджера; subject резолвится по автору
+**конкретного** сегмента; клиентская реплика (`authorPersonId=null`) → subject НЕ
+пишется (**fail-closed для клиента**). Встречи и одно-авторные источники не тронуты.
+ТЗ [`2026-06-08-clone-quality-improvements`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф1; см. [[../01_projects/knowledge-clone]] §«Атрибуция по говорящему».
+
+[[../index|← index]]

@@ -1,8 +1,12 @@
 import type {
   Decision,
   Document,
+  DocumentImport,
+  DocumentImportSource,
+  DocumentImportStatus,
   DocumentKind,
   DocumentStatus,
+  DocumentType,
   IdeaBlock,
   Metric,
   Policy,
@@ -27,6 +31,179 @@ export const UploadDocumentQuerySchema = z.object({
   attachedRoleId: z.string().cuid().optional(),
 });
 export type UploadDocumentQuery = z.infer<typeof UploadDocumentQuerySchema>;
+
+/**
+ * ТЗ-4 Ф3 — атрибуция multipart-загрузки. Поля передаются как form-fields
+ * в том же multipart-теле, что и файлы (`files`). Валидируется отдельно от
+ * query (query-поле `attachedRoleId` остаётся работать для обратной
+ * совместимости; если задано и тут, и там — приоритет у body).
+ *
+ *   - `attachedRoleId` / `attachedThemeId` / `attachedProjectId` — привязка к
+ *     должности / теме графа / проекту трекера (все опц.; tenantId-проверка в
+ *     сервисе).
+ *   - `docType` — смысловой тип документа (enum совпадает с Prisma
+ *     `DocumentType`).
+ */
+export const UploadDocumentBodySchema = z.object({
+  attachedRoleId: z.string().cuid().optional(),
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: z
+    .enum([
+      'regulation',
+      'policy',
+      'instruction',
+      'process',
+      'job_description',
+      'other',
+    ])
+    .optional(),
+});
+export type UploadDocumentBodyDto = z.infer<typeof UploadDocumentBodySchema>;
+
+/**
+ * Результат multipart-загрузки (ТЗ-4 Ф3). Один элемент на загруженный файл.
+ *   - `deduped: true` — файл с тем же `contentHash` уже существует в Org;
+ *     новый Document НЕ создан, `id`/`status` — у существующего.
+ */
+export interface UploadDocumentItemDto {
+  id: string;
+  status: DocumentStatus;
+  name: string;
+  deduped: boolean;
+}
+
+export interface UploadDocumentResultDto {
+  items: UploadDocumentItemDto[];
+}
+
+const DocTypeEnumSchema = z.enum([
+  'regulation',
+  'policy',
+  'instruction',
+  'process',
+  'job_description',
+  'other',
+]);
+
+/**
+ * ТЗ-4 Ф7/Ф8 — атрибуция batch-импорта ZIP (`POST /api/v1/documents/import-zip`).
+ * Поля передаются как form-fields вместе с файлом архива (`file`). Применяются
+ * ко ВСЕМ Document'ам, созданным из записей архива.
+ *
+ * ТЗ-4 Ф8 (`source`): `upload_zip` (обычный архив, по умолчанию) или `notion`
+ * (экспорт Notion — те же `.md`/`.csv`, но имена несут дерево страниц + 32-hex
+ * id, который чистится). `confluence` сюда НЕ принимается — у него отдельный
+ * JSON-эндпоинт (`/import-confluence`), архив не передаётся.
+ */
+export const ImportZipBodySchema = z.object({
+  source: z.enum(['upload_zip', 'notion']).optional(),
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: DocTypeEnumSchema.optional(),
+});
+export type ImportZipBodyDto = z.infer<typeof ImportZipBodySchema>;
+
+export interface ImportZipResultDto {
+  importId: string;
+}
+
+/**
+ * ТЗ-4 Ф9 — тело `POST /api/v1/documents/import-confluence` (JSON, без файла).
+ * Тянет страницы одного пространства Confluence Cloud и заводит их как
+ * Document'ы (source=confluence). `apiToken` НЕ хранится в БД — шифруется
+ * (`CryptoService`) и кладётся в зашифрованном виде в job-payload.
+ *
+ *   - `baseUrl` — адрес инстанса, например `https://acme.atlassian.net`.
+ *   - `email` — email учётки Atlassian (логин Basic-auth).
+ *   - `apiToken` — API-токен Atlassian (НЕ пароль).
+ *   - `spaceKey` — ключ пространства (например `ENG`).
+ *   - `attachedThemeId` / `attachedProjectId` / `docType` — batch-атрибуция (опц.).
+ */
+export const ImportConfluenceBodySchema = z.object({
+  baseUrl: z.string().trim().url().max(500),
+  email: z.string().trim().email().max(320),
+  apiToken: z.string().trim().min(1).max(2000),
+  spaceKey: z.string().trim().min(1).max(255),
+  attachedThemeId: z.string().cuid().optional(),
+  attachedProjectId: z.string().cuid().optional(),
+  docType: DocTypeEnumSchema.optional(),
+});
+export type ImportConfluenceBodyDto = z.infer<typeof ImportConfluenceBodySchema>;
+
+export interface ImportConfluenceResultDto {
+  importId: string;
+}
+
+/**
+ * ТЗ-4 Волна 2 (B1) — статус batch-импорта для UI прогресса
+ * (`GET /api/v1/documents/imports/:id`). Один элемент `errorLog` — `{file, error}`.
+ */
+export interface DocumentImportDto {
+  id: string;
+  source: DocumentImportSource;
+  status: DocumentImportStatus;
+  totalFiles: number;
+  doneFiles: number;
+  failedFiles: number;
+  errorLog: Array<{ file: string; error: string }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Сериализует `DocumentImport` для статус-эндпоинта. `errorLog` хранится как
+ * `Json?` — нормализуем в массив `{file, error}` (мусор/невалидные элементы
+ * отбрасываем, чтобы UI не падал на неожиданной форме).
+ */
+export function toDocumentImportDto(row: DocumentImport): DocumentImportDto {
+  return {
+    id: row.id,
+    source: row.source,
+    status: row.status,
+    totalFiles: row.totalFiles,
+    doneFiles: row.doneFiles,
+    failedFiles: row.failedFiles,
+    errorLog: normalizeImportErrorLog(row.errorLog),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function normalizeImportErrorLog(
+  raw: unknown,
+): Array<{ file: string; error: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ file: string; error: string }> = [];
+  for (const e of raw) {
+    if (
+      e &&
+      typeof e === 'object' &&
+      typeof (e as { file?: unknown }).file === 'string' &&
+      typeof (e as { error?: unknown }).error === 'string'
+    ) {
+      out.push({
+        file: (e as { file: string }).file,
+        error: (e as { error: string }).error,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * ТЗ-4 Волна 2 (B2) — тело `PATCH /api/v1/documents/:id/attribution`.
+ * Устанавливает/меняет смысловую атрибуцию документа человеком и очищает
+ * подсказки классификатора (`suggestedDocType`/`suggestedThemeId`). Все поля
+ * опц.; `null` явно снимает привязку. Theme/Project проверяются на принадлежность
+ * tenantId (как при загрузке). После — проекция в граф для блоков документа.
+ */
+export const SetAttributionBodySchema = z.object({
+  docType: DocTypeEnumSchema.nullable().optional(),
+  attachedThemeId: z.string().cuid().nullable().optional(),
+  attachedProjectId: z.string().cuid().nullable().optional(),
+});
+export type SetAttributionBodyDto = z.infer<typeof SetAttributionBodySchema>;
 
 export const ListDocumentsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
@@ -56,6 +233,16 @@ export interface DocumentDto {
   originalSize: number;
   status: DocumentStatus;
   attachedRoleId: string | null;
+  /** ТЗ-4 Ф5 — смысловой тип документа (отдельно от формата `kind`). */
+  docType: DocumentType | null;
+  /** ТЗ-4 — привязка к теме графа (Theme). */
+  attachedThemeId: string | null;
+  /** ТЗ-4 — привязка к проекту трекера (Project). */
+  attachedProjectId: string | null;
+  /** ТЗ-4 Ф10 — предложенный классификатором тип (до подтверждения человеком). */
+  suggestedDocType: DocumentType | null;
+  /** ТЗ-4 Ф10 — предложенная классификатором тема (Theme.id) до подтверждения. */
+  suggestedThemeId: string | null;
   parsedText: string | null;
   parseError: string | null;
   createdAt: string;
@@ -73,6 +260,11 @@ export function toDocumentDto(doc: Document): DocumentDto {
     originalSize: doc.originalSize,
     status: doc.status,
     attachedRoleId: doc.attachedRoleId,
+    docType: doc.docType,
+    attachedThemeId: doc.attachedThemeId,
+    attachedProjectId: doc.attachedProjectId,
+    suggestedDocType: doc.suggestedDocType,
+    suggestedThemeId: doc.suggestedThemeId,
     parsedText: doc.parsedText,
     parseError: doc.parseError,
     createdAt: doc.createdAt.toISOString(),

@@ -18,8 +18,16 @@ import {
 } from './decision-extract.prompt';
 
 describe('decision-extract — snapshot сборки промта', () => {
-  it('system prompt стабилен (включает CONFIDENCE_CALIBRATION + EDGE_CASE_POLICY)', () => {
+  it('system prompt стабилен (включает CONFIDENCE_CALIBRATION + EDGE_CASE_POLICY + ASR_NOTE)', () => {
     expect(DECISION_EXTRACT_SYSTEM_PROMPT).toMatchSnapshot('system');
+  });
+
+  // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
+  // извлекающим промптам (восстановление искажённых ASR чисел/имён по контексту).
+  it('system содержит ASR-ноту (withAsrNote)', () => {
+    expect(DECISION_EXTRACT_SYSTEM_PROMPT).toContain(
+      'автоматического распознавания речи',
+    );
   });
 
   it('user prompt стабилен для блока «Поставщик SMS» с цитатами и контекстом', () => {

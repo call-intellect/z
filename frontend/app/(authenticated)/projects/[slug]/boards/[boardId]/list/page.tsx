@@ -5,7 +5,7 @@ import { ProjectViewShell } from '../../../ProjectViewShell';
 import { ListClient } from './ListClient';
 
 export const metadata: Metadata = {
-  title: 'Список задач — Кора',
+  title: 'Список задач',
 };
 
 /**

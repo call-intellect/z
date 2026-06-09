@@ -13,6 +13,7 @@ import { ChevronDown, FileText, Shield } from 'lucide-react';
 
 import { cn } from '@/ui/shadcn/lib/utils';
 import { AdminCommandPaletteProvider } from '@/ui/components/admin/AdminCommandPalette';
+import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import {
   ADMIN_NAV_SECTIONS,
   findActiveSectionKey,
@@ -88,6 +89,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <AdminCommandPaletteProvider>
+      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 py-6 md:flex-row">
         <aside className="md:w-64 md:shrink-0">
           <div className="mb-3 flex items-center justify-between px-3 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -119,6 +121,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
         <div className="min-w-0 flex-1">{children}</div>
+      </div>
       </div>
     </AdminCommandPaletteProvider>
   );

@@ -2253,3 +2253,89 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`backend/src/modules/ai/services/` — `OrgContextService`** (`@Global`) — вынос `loadOrgContext` из воркеров; отдаёт контекст компании (проекты / цели / сотрудники) для инъекции в промпты summary / report (ТЗ-4). См. [[../01_projects/ai-jobs]] §«Качество извлечения».
 
 [[../index|← index]]
+
+## Оверхол цепочки агентов — наблюдаемость + recall + авто-привязка (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-07-agent-chain-overhaul.md`](../../plans/tz/2026-06-07-agent-chain-overhaul.md) (8 фаз) + точечный ТЗ D ([`plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md`](../../plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md)). Ветка `feature/retest2-agent-chain-overhaul`. AI-пайплайн — [[../01_projects/ai-jobs]] §«Оверхол цепочки агентов»; cron'ы/очереди — [[../01_projects/workers-queues]].
+
+### Наблюдаемость материализации графа (Ф0a)
+
+- **`backend/src/modules/knowledge-core/` — `GraphMaterializationService`** — on-demand сверка: доехали ли извлечённые блоки/сущности встречи до графа/проекций (расчёт расхождения по типам).
+- **`GraphDiagnosticsController` — `GET /api/v1/platform/graph/materialization?meetingId=`** (раздел `platform`, гейт SuperAdmin) — REST-обёртка над сервисом. Также доступно через CLI `diag graph --meeting <id>`.
+- **`GraphMaterializationVerifyCron`** (`@Cron` 30 мин, per-Org) — фоновая проверка → метрика `kc_materialization_gap_total{type}`.
+
+### Trace специалистов слоя 3 (Ф0b)
+
+- Диспетчер очереди `core.specialist-routing` оборачивает специалистов в pipeline-контекст `KNOWLEDGE_GRAPH` с `traceId=mtg_<id>` (раньше `block_<id>` → специалисты были невидимы в цепочке встречи `diag chain`) + логи created/skipped/merged у decisions/ideas/goals.
+
+### Авто-привязка Goal↔Theme (Ф4.2)
+
+- **`backend/src/modules/goals/ — GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет существующую модель `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. **Схема БД не менялась** (`GoalTheme` уже существовал). LLM-арбитр Goal↔Task (Ф4.1) отложен — см. реестр «не-сделано».
+
+### Прочие правки (Ф1/Ф2/Ф3/Ф5/Ф6 + ТЗ D)
+
+- `block-ingest.prompt` — маркеры decision/idea (Ф1, recall); `withAsrNote` на 10 извлекающих промптах (Ф2 C1) — code-промпты, без seed.
+- `pickPrimarySummary` (`summaryFast ?? summaryV2 ?? summary`) у потребителей + флаг `aiFeatures.summaryAgentEnabled` / ENV `SUMMARY_AGENT_ENABLED` (Ф5, дефолт TRUE).
+- `merge.worker` / `behavior-metrics.worker` + `vox.types` — ненулевые длительность/поведение при пустых пословных таймингах ASR (Ф7 + ТЗ D).
+- `tracker.autoAcceptConfidenceThreshold` (AdminSetting, дефолт 0.75; был мёртвый hardcoded 0.92) — порог авто-Issue (Ф3).
+- Patch `patch-llm-routes-report-chain-deepseek.ts` — маршруты summary/report-by-type/tasks → DeepSeek (Ф6, кэш).
+- Frontend: `useShallow` на селекторах `/tables/[id]` (ТЗ A, React #185); русские типы встреч + `<title> '%s — Кора'` + канон `/chat`→ChatV2 (ТЗ C).
+
+[[../index|← index]]
+
+## Остаток цепочки агентов без golden — новые арбитры + direct-path (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`](../../plans/tz/2026-06-08-agent-chain-remaining-no-golden.md). Ветка `feature/retest2-agent-chain-overhaul` (коммиты `7430162e..accdfe7b`). AI-пайплайн/taskType — [[../01_projects/ai-jobs]] §«Остаток цепочки агентов»; cron'ы — [[../01_projects/workers-queues]].
+
+### Новые сервисы
+
+- **`backend/src/modules/meetings/ — MeetingTaskDedupeService`** (Ф5 Р2) — семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр серой зоны (taskType `task-dedupe`, `deepseek-v4-flash`) → удаляет fast-черновики-дубли. Вызывается из `tasks-extract.worker` + `meeting-report-fast.worker`. Флаг `AdminSetting.meetings.taskDedupeEnabled` (default **OFF**) + порог `meetings.taskDedupeThreshold` (0.85). Метрика `z_task_dedupe_total{result}`. Маршрут — `seed-llm-task-routes-task-dedupe.ts` (в `apply-prod-deploy.ts` STEPS).
+- **`backend/src/modules/knowledge-core/ — GoalTaskLinkerService`** + **`GoalTaskLinkerCron`** (Ф4.1, `@Cron` 30 мин, per-Org, `WorkerOrgGate`, в `ai/workers.module`) + on-event из специалиста `3-14-goals` — LLM-арбитр `goal-task-link` (`deepseek-v4-flash`) привязывает AI-цель встречи к её задачам (`Issue.goalId`, non-destructive). Флаг `AdminSetting.goals.goalTaskLinkEnabled` (default **OFF**). Метрика `z_goal_task_link_total{result}`. Закрывает «LLM-арбитр Goal↔Task (Ф4.1) отложен» из §«Авто-привязка Goal↔Theme». Маршрут — `seed-llm-task-routes-goal-task-link.ts` (в STEPS).
+
+### Прочие правки (Ф1/Ф2/Ф6 + ТЗ B/D)
+
+- `block-ingest.worker` — idea direct-path: детерминированная материализация Idea из блоков `signalType='idea'` (без LLM) + анти-дубль guard по `sourceBlockId` в специалисте `3-6-ideas`. Флаг `knowledge.ideaDirectPathEnabled` (default **ON**) (Ф1).
+- Ф2 hardening экстракторов (code-промпты, без seed): ASR-нота/калибровка/анти-галлюцинация имён/`meetingDateIso` на `meeting-report-fast`+`block-ingest`; ASR/калибровка на `block-distill`/`theme-classify`/`axis-classify`/`knowledge-clone-extract`/`chapters-v2`/`goal-hierarchy-link`/`entity-merge-arbiter`; C8 `entity-merge` SYSTEM↔код; C3 булевы гейты `isDecision`/`isIdea`.
+- Ф6 smoke: `BusinessMetricsService.getLlmCacheHitRatio` + `provider-smoke-test.cron.checkCacheHitRatio` (WARN при низком кэш-хите DeepSeek). Метрики `z_llm_calls_total{provider}`, `z_llm_cache_hit_ratio_below_threshold{provider}`. Флаги `llm.cacheSmokeEnabled` (true) / `llm.cacheHitRatioWarnThreshold` (0.6).
+- ТЗ B: Express5 named-wildcard в `app.module` (`'{*path}'` / `'api/v1/{*path}'`) + JSON-резилиенс (`tryParseJson` + ретрай×2 + validate) в `intake-auto-triage.worker` & `meeting-speaker-analyzer.worker`.
+- ТЗ D: `parseVoxResult` расширен на `extendedResult` + PII-safe диагностика `vox.no_words` (+`extendedResultKeys`/`taskParamsKeys`).
+
+**Миграций БД НЕТ** (schema.prisma не менялся; `Issue.goalId` уже существовал). **Новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
+
+[[../index|← index]]
+
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) (состав) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md) (визуал), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, 32 коммита. Модели — [[data-model]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+
+### Новый модуль `meeting-uploads` (ТЗ-5)
+
+`backend/src/modules/meeting-uploads/` — ручная загрузка готовой встречи с диаризацией:
+- `meeting-uploads.controller.ts` (`@Controller('api/v1/meetings')`) — presignPut + `POST /upload`(+`:id/upload/complete`) + `GET /:id/upload/playback` + `GET/PUT /:id/speakers` + `POST /:id/speakers/confirm`.
+- `meeting-uploads.service.ts` (загрузка + квота `billing.meetingUploadsPerMonth` + рубильник `MEETING_UPLOAD_ENABLED`) + `meeting-uploads-speakers.service.ts` (подпись говорящих: создаёт/привязывает `Person` external company/jobTitle + `Participant`, relabel turns, enqueue анализа).
+- `workers/meeting-upload-ingest.worker.ts` (очередь `meeting.upload-ingest`, concurrency=1, ffmpeg-нормализация любого формата) + `workers/meeting-upload-transcribe.worker.ts` (`meeting.upload-transcribe`, Vox-диаризация → turns + `MeetingUploadSpeaker`, гейт `awaiting_speakers` БЕЗ анализа).
+- очереди в `meeting-uploads.queues.ts` (`MEETING_UPLOAD_QUEUE_NAMES = { UPLOAD_INGEST:'meeting.upload-ingest', UPLOAD_TRANSCRIBE:'meeting.upload-transcribe' }`).
+- ASR: `ai/services/vox.service.ts`/`vox.types.ts` расширены `VoxDiarizedSegment` + парсинг `segments`. См. [[../01_projects/workers-queues]].
+
+### Документы (ТЗ-4): расширение `documents` + `ingest` + `knowledge-core`
+
+- **`documents/documents.controller.ts`** (`@Controller('api/v1/documents')`): `POST /` теперь мультифайл (`FileFieldsInterceptor`) + дедуп `contentHash` + attribution; `POST /import-zip` (batch ZIP/Notion `source`, `fflate`); `POST /import-confluence` (API-импорт); `GET /imports/:id`; `PATCH /:id/attribution` (accept AI-подсказки + проекция в граф).
+- **`documents/document-import.service.ts`** + **`document-import.worker.ts`** (очередь `core.document-import`, `CORE_QUEUE_NAMES.DOCUMENT_IMPORT`) — распаковка ZIP + per-entry создание Document'ов; Notion (`source=notion`, чистка 32-hex id из имён).
+- **`documents/confluence-client.ts`** — клиент Confluence API; токен передаётся в job **crypto-encrypted**.
+- **`documents/document-attribution.service.ts`** + промпт `ai/services/prompts/document-attribution-suggest.prompt.ts` — LLM-подсказка привязки (taskType `document-attribution-suggest`, `deepseek-v4-flash`, human-in-the-loop), флаг `documents.ai_attribution.enabled`. См. [[../01_projects/ai-jobs]].
+- **Парсер:** `+officeparser` (pptx/rtf/odt/csv/html), xlsx через `exceljs`; `detectKind` расширен. **`block-ingest.applyDocumentAttribution`** — проброс привязки в граф (`roleId`/`roleRelevant` + `ThemeIdeaBlock`).
+- **chat-v2 citations** += `documentId`/`documentName` (документ-источник в ответах чата).
+- Крутилки `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`.
+
+### Дашборды (ТЗ-2 состав ⊕ ТЗ-3 визуал)
+
+- **`operations/services/portfolio-health.service.ts`** + `portfolio-health.scoring.ts` + cron **`operations/workers/portfolio-health-snapshot.cron.ts`** (`PortfolioHealthSnapshotCron @Cron('0 5 * * 1')`) — здоровье портфеля целей + MoSCoW; эндпоинт `GET /dashboard/operations/portfolio-health`; `goals.controller.ts` += `PATCH /goals/:id/priority`. Модель `PortfolioHealthSnapshot` + enum `GoalPriority` — [[data-model]] §«Батч 5».
+- **`operations/controllers/my-daily-value.controller.ts`** (`@Controller('api/v1/me')`) — `GET /me/ideas` + `GET /me/recognitions` (виджеты /me, флаг `me.daily_value_widgets.enabled`); **`my-weekly-per-person.controller.ts`** — `GET /me/weekly-per-person` (self-view план-факта, флаг `operations.per_person_self_view.enabled`).
+- `dashboard/services/director-dashboard.service.ts` — `fetchValueStrip` + `reasonSourceRef` + `mainReworkEnabled` (флаг `dashboard.main_rework.enabled`); `operations-dashboard.controller.ts` overview += blockers/frictions resolved + value-recap export `GET /dashboard/operations/value-recap/:id/export` (флаг `operations.dashboard_rework.enabled`).
+- Фронт: 5 новых виджетов главной + `/dashboard/portfolio` + `/dashboard/value-recap` + `/meetings/upload` + `/meetings/[id]/speakers`; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css. См. [[../01_projects/frontend-pages]], [[../01_projects/director-dashboard]].
+
+### AdminSettings (kill-switch / крутилки)
+
+Новые ключи в `admin-setting-schema-registry.ts`: `dashboard.main_rework.enabled`, `operations.dashboard_rework.enabled`, `operations.per_person_self_view.enabled`, `me.daily_value_widgets.enabled`, `operations.portfolio_health.enabled` + `portfolio.health.{threshold_healthy,threshold_warning,weight_*}`, `documents.ai_attribution.enabled`, `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`, `billing.meetingUploadsPerMonth`, `meeting_upload.enabled`. ENV: `MEETING_UPLOAD_ENABLED` (kill-switch, default true). Сиды — 6 `seed-admin-setting-*` в `apply-prod-deploy.ts` STEPS. См. [[../01_projects/admin-settings]].
+
+[[../index|← index]]

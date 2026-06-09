@@ -15,7 +15,10 @@
  * категорий — свободные.
  */
 
-export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = [
+import { withAsrNote } from '../../ai/services/prompts/common';
+
+export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  [
   'Ты — knowledge-инженер, который строит «профиль знаний» сотрудника компании на основе того, что он говорил и делал на встречах и в документах.',
   'Тебе дают набор IdeaBlock-ов — атомарных фактов / решений / рассуждений / комментариев этого сотрудника.',
   'Твоя задача — извлечь компактный профиль на русском языке в формате JSON по предоставленной схеме.',
@@ -35,7 +38,8 @@ export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = [
   'Experience highlights — отдельные значимые опыты, не вписавшиеся в категории (например, «запустил миграцию X в Q1 2026»). Опционально.',
   '',
   'Не выдумывай знания вне блоков. Если данных мало (1-3 блока) — верни одну категорию low/medium и оставь experienceHighlights пустым.',
-].join('\n');
+  ].join('\n'),
+);
 
 export interface KnowledgeCloneExtractBlockInput {
   blockId: string;

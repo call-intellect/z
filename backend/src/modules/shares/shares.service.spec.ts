@@ -235,7 +235,9 @@ describe('SharesService', () => {
             dueDate: null,
           },
         ],
-        aiResult: { summary: 'Краткое резюме' },
+        // Р6: select теперь тянет summaryFast/summaryV2/summary; legacy-only
+        // встреча (fast ещё не сгенерирован) → pickPrimarySummary падает на summary.
+        aiResult: { summaryFast: null, summaryV2: null, summary: 'Краткое резюме' },
         transcript: null,
         recording: null,
       });
@@ -254,6 +256,36 @@ describe('SharesService', () => {
       expect(result.transcript).toBeUndefined();
       // просмотр зарегистрирован
       expect(repo.incrementView).toHaveBeenCalled();
+    });
+
+    it('Р6: summaryFast приоритетнее legacy summary в публичной шаре', async () => {
+      repo.findByToken.mockResolvedValue(buildShare());
+      prisma.meeting.findUnique.mockResolvedValue({
+        id: 'm1',
+        title: 'Demo',
+        type: 'team',
+        startedAt: new Date('2026-01-01T10:00:00Z'),
+        endedAt: new Date('2026-01-01T11:00:00Z'),
+        durationMs: 3_600_000,
+        deletedAt: null,
+        chapters: [],
+        tasks: [],
+        aiResult: {
+          summaryFast: 'Быстрая сводка',
+          summaryV2: 'V2 сводка',
+          summary: 'Legacy сводка',
+        },
+        transcript: null,
+        recording: null,
+      });
+
+      const svc = make();
+      const result = await svc.getPublicMeetingShare('tok', {
+        ip: '127.0.0.1',
+        userAgent: 'agent',
+        referrer: null,
+      });
+      expect(result.summary).toBe('Быстрая сводка');
     });
   });
 

@@ -144,7 +144,7 @@ function FailedState({
     <div className="flex flex-col items-center gap-3 rounded-md border border-danger/30 bg-danger/10 px-6 py-10 text-center">
       <XCircle size={28} className="text-danger" />
       <div className="text-sm font-medium text-fg-primary">
-        AI недоступен, попробуйте позже
+        Кора недоступна, попробуйте позже
       </div>
       <p className="text-xs text-fg-tertiary">Причина: {error}</p>
       <Button

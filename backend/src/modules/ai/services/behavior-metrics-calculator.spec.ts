@@ -307,4 +307,68 @@ describe('BehaviorMetricsCalculator', () => {
     expect(guest!.questionCount).toBe(1);
     expect(guest!.speakingTimeMs).toBe(30_000);
   });
+
+  // 15. фикс псевдо-turn: один сегмент на всю длительность дорожки → метрики
+  //     НЕ нулевые. Раньше Vox без таймингов давал endMs=0 → сегмент
+  //     отбрасывался (endMs<=startMs) и всё поведение обнулялось.
+  it('один сегмент на всю длительность дорожки → метрики оживают (speakingTime>0)', () => {
+    const r = calculateBehaviorMetrics(
+      buildInput({
+        participants: [ALICE],
+        totalDurationMs: 60_000,
+        diarization: [seg('alice', 0, 60_000, 'Полный текст дорожки.')],
+      }),
+    );
+    const alice = r.participants.find((m) => m.participantId === 'p_alice')!;
+    expect(alice.speakingTimeMs).toBeGreaterThan(0);
+    expect(alice.speakingTimeMs).toBe(60_000);
+    expect(alice.turnsCount).toBe(1);
+    expect(r.meeting.totalSpeechMs).toBeGreaterThan(0);
+  });
+
+  // 16. wordTimingsAvailable=false → lowConfidence=true даже при высоком confidence.
+  it('wordTimingsAvailable=false → lowConfidence=true при высоком diarizationConfidence', () => {
+    const r = calculateBehaviorMetrics(
+      buildInput({
+        diarizationConfidence: 0.99,
+        wordTimingsAvailable: false,
+        diarization: [
+          seg('alice', 0, 30_000),
+          seg('bob', 30_000, 90_000),
+        ],
+      }),
+    );
+    expect(r.meeting).toEqual(expect.objectContaining({ lowConfidence: true }));
+    // Метрики при этом всё равно посчитаны.
+    expect(r.meeting.totalSpeechMs).toBe(90_000);
+  });
+
+  // 17. wordTimingsAvailable=true + высокий confidence + норм. длительность → lowConfidence=false.
+  it('wordTimingsAvailable=true + высокий confidence → lowConfidence=false', () => {
+    const r = calculateBehaviorMetrics(
+      buildInput({
+        diarizationConfidence: 0.99,
+        wordTimingsAvailable: true,
+        diarization: [
+          seg('alice', 0, 30_000),
+          seg('bob', 30_000, 90_000),
+        ],
+      }),
+    );
+    expect(r.meeting).toEqual(expect.objectContaining({ lowConfidence: false }));
+  });
+
+  // 18. wordTimingsAvailable=undefined (старый путь) + высокий confidence → lowConfidence=false.
+  it('wordTimingsAvailable=undefined + высокий confidence → lowConfidence=false', () => {
+    const r = calculateBehaviorMetrics(
+      buildInput({
+        diarizationConfidence: 0.99,
+        diarization: [
+          seg('alice', 0, 30_000),
+          seg('bob', 30_000, 90_000),
+        ],
+      }),
+    );
+    expect(r.meeting).toEqual(expect.objectContaining({ lowConfidence: false }));
+  });
 });

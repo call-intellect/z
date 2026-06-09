@@ -65,7 +65,9 @@ export class OpenAiProxyService {
       input: [{ role: 'user', content: userText }],
     };
     if (input.maxTokens !== undefined) {
-      params['max_output_tokens'] = input.maxTokens;
+      // OpenAI floor: max_output_tokens >= 16 (для reasoning-моделей это вкл. reasoning-токены).
+      // Клампим вверх, чтобы маленький лимит не давал 400 'integer below minimum value'.
+      params['max_output_tokens'] = Math.max(16, input.maxTokens);
     }
     if (isReasoning) {
       const effort = input.reasoningEffort ?? 'medium';

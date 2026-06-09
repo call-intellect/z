@@ -29,6 +29,8 @@ interface BillingSettingSeed {
   key: string;
   value: number;
   description: string;
+  /** Опц. переопределение `SEVERITY` (по умолчанию 'high' для цен). */
+  severity?: Severity;
 }
 
 const SEEDS: BillingSettingSeed[] = [
@@ -61,6 +63,16 @@ const SEEDS: BillingSettingSeed[] = [
     key: 'billing.perExtraSeatMeetingsGrant',
     value: 5,
     description: 'Дополнительный грант встреч за каждое доп. место',
+  },
+  // ТЗ-5 Ф6 (meeting-upload-diarization) — месячный лимит ручных загрузок встреч
+  // на Org. Owner-decision крутилка (отдельно от MeetingsBalance/грантов выше).
+  // Читается `MeetingUploadsService.assertQuota` через getDynamic
+  // ('billing.meetingUploadsPerMonth' → ENV BILLING_MEETING_UPLOADS_PER_MONTH → 20).
+  {
+    key: 'billing.meetingUploadsPerMonth',
+    value: 20,
+    description: 'Месячный лимит ручных загрузок встреч на компанию',
+    severity: 'medium',
   },
 ];
 
@@ -96,7 +108,7 @@ async function main(): Promise<void> {
         value: seed.value as Prisma.InputJsonValue,
         category: CATEGORY,
         section: SECTION,
-        severity: SEVERITY,
+        severity: seed.severity ?? SEVERITY,
         description: seed.description,
         schemaId: null,
         updatedBy: null,

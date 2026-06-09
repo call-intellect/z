@@ -12,6 +12,8 @@ import {
   TextRun,
 } from 'docx';
 
+import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
+
 /**
  * Генератор DOCX. Возвращает Buffer; вызывающий код заливает в S3.
  */
@@ -46,10 +48,11 @@ export class DocxGenerator {
       }),
     );
 
-    if (input.aiResult?.summary) {
+    const summary = input.aiResult ? pickPrimarySummary(input.aiResult) : '';
+    if (summary) {
       sections.push(
         new Paragraph({ text: 'Summary', heading: HeadingLevel.HEADING_2 }),
-        new Paragraph({ text: String(input.aiResult.summary) }),
+        new Paragraph({ text: summary }),
       );
     }
 

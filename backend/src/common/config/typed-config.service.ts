@@ -255,6 +255,31 @@ export class TypedConfigService {
     } as const;
   }
 
+  /**
+   * Ф6 Часть 3 — наблюдаемость доли prompt-cache хитов (DeepSeek).
+   * Крутилки admin-editable (resolveSync: cacheMap → default; ENV не вводим).
+   * Только лог/метрика — безопасно (best-effort smoke, ничего не блокирует).
+   */
+  get llm() {
+    return {
+      /** Включает smoke-проверку cache hit-ratio в provider-smoke-test cron. */
+      cacheSmokeEnabled: this.resolveSync<boolean>(
+        'llm.cacheSmokeEnabled',
+        undefined,
+        true,
+      ),
+      /**
+       * Порог доли cache-хитов по DeepSeek: ниже — WARN в логи (возможно
+       * taskType ушёл на некэширующий провайдер). Доля 0..1, дефолт 0.6.
+       */
+      cacheHitRatioWarnThreshold: this.resolveSync<number>(
+        'llm.cacheHitRatioWarnThreshold',
+        undefined,
+        0.6,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── ai ─────────────────────────────────
   get ai() {
     return {
@@ -632,6 +657,19 @@ export class TypedConfigService {
         'PROMPT_INJECTION_GUARD_ENABLED',
         true,
       ),
+      /**
+       * ТЗ 2026-06-07 agent-chain-overhaul, Фаза 5 / Р6 — флаг legacy
+       * summary-агента (analyze.worker `runSummary`, MiniMax, 0% кэш). При
+       * `true` (default) агент работает как раньше — обратимо, ничего не ломает.
+       * Каноническая сводка теперь идёт из meeting-report-fast (`summaryFast`);
+       * после подтверждения покрытия `summaryFast` можно выставить `false` —
+       * это `−1` LLM-вызов MiniMax (ops-решение).
+       */
+      summaryAgentEnabled: this.resolveSync<boolean>(
+        'aiFeatures.summaryAgentEnabled',
+        'SUMMARY_AGENT_ENABLED',
+        true,
+      ),
     } as const;
   }
 
@@ -800,6 +838,30 @@ export class TypedConfigService {
       // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
       // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
       biTemporalEdgesEnabled: this.get('BI_TEMPORAL_EDGES_ENABLED'),
+      // Ф1 idea direct-path (2026-06-08): block-ingest материализует Idea
+      // напрямую из блока signalType='idea' (идемпотентно по sourceBlockId),
+      // чтобы Идея не зависела на 100% от 2-го LLM-вызова Specialist 3.6.
+      // Kill-switch (AdminSetting, дефолт ON) — откат без редеплоя при дублях.
+      ideaDirectPathEnabled: this.resolveSync<boolean>(
+        'knowledge.ideaDirectPathEnabled',
+        undefined,
+        true,
+      ),
+      // Ф5 Р2 (2026-06-08) — семантический дедуп задач встречи. РИСКОВО (может
+      // скрыть задачу) → дефолт FALSE (data-affecting), включается осознанно.
+      // `taskDedupeThreshold` — KNN cosine-порог уверенного слияния fast-черновика
+      // в canonical (серая зона = [threshold-0.07, threshold) → LLM-арбитр).
+      // Admin-editable (resolveSync: cacheMap → default; ENV не вводим — крутилка).
+      taskDedupeEnabled: this.resolveSync<boolean>(
+        'meetings.taskDedupeEnabled',
+        undefined,
+        false,
+      ),
+      taskDedupeThreshold: this.resolveSync<number>(
+        'meetings.taskDedupeThreshold',
+        undefined,
+        0.85,
+      ),
     } as const;
   }
 
@@ -1044,6 +1106,53 @@ export class TypedConfigService {
        */
       s3Bucket: customBucket && customBucket.length > 0 ? customBucket : this.get('S3_BUCKET'),
     } as const;
+  }
+
+  /**
+   * ТЗ-4 Ф6 — «живые» лимиты ручной загрузки документов (admin-editable).
+   * Читаются через `getDynamic` (AdminSetting → ENV-fallback → default).
+   *   - `maxSizeMb` — потолок размера одного файла (МБ).
+   *   - `maxFilesPerUpload` — максимум файлов в одном multipart-запросе.
+   *   - `acceptedFormats` — белый список расширений (`DocumentKind`-совместимый).
+   *
+   * Намеренно async (в отличие от sync-геттера `document`) — это
+   * owner-decision крутилки, редактируемые из админки без рестарта.
+   */
+  async documentLimits(): Promise<{
+    maxSizeMb: number;
+    maxSizeBytes: number;
+    maxFilesPerUpload: number;
+    acceptedFormats: readonly string[];
+    /** ТЗ-4 Ф7 — потолок размера ZIP-архива массового импорта (МБ). */
+    maxZipSizeMb: number;
+    maxZipSizeBytes: number;
+  }> {
+    const [maxSizeMb, maxFilesPerUpload, acceptedFormats, maxZipSizeMb] =
+      await Promise.all([
+        this.getDynamic<number>('documents.maxSizeMb', 'DOCUMENT_MAX_SIZE_MB', 50),
+        this.getDynamic<number>('documents.maxFilesPerUpload', undefined, 20),
+        this.getDynamic<readonly string[]>('documents.acceptedFormats', undefined, [
+          'pdf',
+          'docx',
+          'xlsx',
+          'pptx',
+          'md',
+          'txt',
+          'html',
+          'rtf',
+          'odt',
+          'csv',
+        ]),
+        this.getDynamic<number>('documents.maxZipSizeMb', undefined, 200),
+      ]);
+    return {
+      maxSizeMb,
+      maxSizeBytes: maxSizeMb * 1024 * 1024,
+      maxFilesPerUpload,
+      acceptedFormats,
+      maxZipSizeMb,
+      maxZipSizeBytes: maxZipSizeMb * 1024 * 1024,
+    };
   }
 
   // ─────────────────────────── smart tables (Фаза 0) ────────────
@@ -1306,7 +1415,7 @@ export class TypedConfigService {
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',
         undefined,
-        false,
+        true,
       ),
       thresholdMin: this.resolveSync<number>(
         'knowledge.curationThresholdMin',
@@ -1378,6 +1487,41 @@ export class TypedConfigService {
         'pendingActions.reminderLeadDays',
         undefined,
         3,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── goals (OKR) ───────────────────────────────────
+  /**
+   * Крутилки целей (OKR). Admin-editable (resolveSync: cacheMap → ENV → default).
+   *
+   *   - `themeAutolinkMinWeight` — порог веса детерминированной авто-привязки
+   *     темы к цели (провенанс + co-mention). Кандидаты с weight < порога
+   *     отбрасываются. Сидится `goals.themeAutolinkMinWeight` (UNIT_INTERVAL).
+   *   - `themeAutolinkLlmEnabled` — вкл LLM-дозор серой зоны авто-привязки
+   *     (agent-chain overhaul Фаза 4.2 step 3). Default false; ветка не
+   *     реализована (golden-gated отдельной задачей) — флаг существует, no-op.
+   *   - `goalTaskLinkEnabled` — вкл LLM-арбитр авто-привязки задач встречи к
+   *     AI-цели (agent-chain overhaul Фаза 4.1, `goal-task-link`). Default false:
+   *     новый арбитр, риск мис-атрибуции, golden нет. Non-destructive (ставит
+   *     Issue.goalId только где null). При выключенном флаге линкер — no-op.
+   */
+  get goals() {
+    return {
+      themeAutolinkMinWeight: this.resolveSync<number>(
+        'goals.themeAutolinkMinWeight',
+        undefined,
+        0.15,
+      ),
+      themeAutolinkLlmEnabled: this.resolveSync<boolean>(
+        'goals.themeAutolinkLlmEnabled',
+        undefined,
+        false,
+      ),
+      goalTaskLinkEnabled: this.resolveSync<boolean>(
+        'goals.goalTaskLinkEnabled',
+        undefined,
+        false,
       ),
     } as const;
   }
@@ -1617,6 +1761,18 @@ export class TypedConfigService {
       compositeReconcileEnabled: this.resolveSync<boolean>(
         'recording.compositeReconcileEnabled',
         'RECORDING_COMPOSITE_RECONCILE_ENABLED',
+        true,
+      ),
+      /**
+       * Ручная загрузка встреч (ТЗ-5 Ф6) — аварийный рубильник `POST
+       * /meetings/upload`. AdminSetting `meeting_upload.enabled` →
+       * ENV `MEETING_UPLOAD_ENABLED` → default true (Ship-On, ON).
+       * Сервис читает тот же ключ через async `getDynamic` (см.
+       * MeetingUploadsService.assertUploadEnabled).
+       */
+      meetingUploadEnabled: this.resolveSync<boolean>(
+        'meeting_upload.enabled',
+        'MEETING_UPLOAD_ENABLED',
         true,
       ),
     } as const;
@@ -1946,7 +2102,8 @@ export class TypedConfigService {
     };
     const dialogLayerRaw = process.env.CONCIERGE_DIALOG_LAYER_ENABLED;
     const dialogLayerEnabled =
-      dialogLayerRaw !== undefined &&
+      dialogLayerRaw === undefined ||
+      dialogLayerRaw === '' ||
       ['true', '1', 'yes', 'on'].includes(dialogLayerRaw.trim().toLowerCase());
     // Agents v2 Фаза B2 (2026-05-30) — PRM step-scorer (shadow).
     const parseBoolDefaultFalse = (raw: string | undefined): boolean => {
@@ -2066,6 +2223,16 @@ export class TypedConfigService {
       webhookMaxRetries: this.get('TRACKER_WEBHOOK_MAX_RETRIES'),
       webhookRetryBackoffInitialMs: this.get(
         'TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS',
+      ),
+      // Ф3 agent-chain-overhaul (2026-06-07): порог авто-создания Issue из
+      // триажа встречи — admin-editable крутилка (resolveSync: cacheMap →
+      // default). Дефолт 0.75 под живую речь (реальные confidence LLM 35–75%);
+      // раньше hardcoded 0.92 → 100% задач застревали в ручном триаже.
+      // Жёсткие гейты (source=meeting + assignee + project) остаются страховкой.
+      autoAcceptConfidenceThreshold: this.resolveSync<number>(
+        'tracker.autoAcceptConfidenceThreshold',
+        undefined,
+        0.75,
       ),
     } as const;
   }

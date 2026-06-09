@@ -98,6 +98,18 @@ function parseShareDays(raw: string): number[] {
 }
 
 /**
+ * Парсит CSV-список расширений (например `'pdf,docx,csv'`) в массив строк.
+ * Используется для `documents.acceptedFormats` (ТЗ-4 Ф6) — храним `string[]`
+ * напрямую (Json), чтобы геттер `cfg.documentLimits()` получал готовый массив.
+ */
+function parseFormats(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+}
+
+/**
  * upsert одной AdminSetting. Если admin её уже редактировал (updatedBy != null),
  * то перезаписываем ТОЛЬКО метаданные (category/section/severity/description),
  * сохраняя value — это правило `safe-seed-rules` для admin-edited.
@@ -273,17 +285,34 @@ function buildSettings(): SettingSeed[] {
     // Ф1 (knowledge-access) — расширенная привязка автора на ВСЕ типы знания.
     // Дефолт TRUE — who-ось должна быть непуста и для не-reasoning фактов.
     ['knowledge.subjectAttributionAllTypes', envBool('KNOWLEDGE_SUBJECT_ATTRIBUTION_ALL_TYPES', true), 'high', 'Привязка автора (subject) на ВСЕ типы знания, не только reasoning (false = только reasoning-семейство)'],
-    // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — поэтапная раскатка единой
-    // видимой задачи из встречи. Дефолт FALSE — текущее поведение (Task создаётся,
-    // потребители читают Task). true = из встречи рождается только tracker Issue;
-    // пользовательский Task для action-items не создаётся, потребители читают Issue.
-    ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', false), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
+    // ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2 — единая видимая задача из
+    // встречи. Ship-On (2026-06-08): дефолт TRUE — из встречи рождается только
+    // tracker Issue; пользовательский Task для action-items не создаётся,
+    // потребители читают Issue. false = legacy (Task создаётся, потребители читают Task).
+    ['knowledge.meetingTasksToTrackerOnly', envBool('KNOWLEDGE_MEETING_TASKS_TO_TRACKER_ONLY', true), 'high', 'Единая видимая задача из встречи: true = только tracker Issue (Task не создаётся), false = текущее поведение (Task)'],
+    // Ф1 idea direct-path (2026-06-08) — материализация идей напрямую из блока
+    // встречи (signalType='idea'), идемпотентно по sourceBlockId. Дефолт TRUE —
+    // Идея не должна зависеть на 100% от 2-го LLM-вызова Specialist 3.6.
+    ['knowledge.ideaDirectPathEnabled', envBool('KNOWLEDGE_IDEA_DIRECT_PATH_ENABLED', true), 'high', 'Idea direct-path — материализация идей напрямую из блока встречи (kill-switch, дефолт включён)'],
     // МТЗ «разблокировка конвейера» Ф5 — kill-switch записи в граф Apache AGE
     // (false = только Postgres, Cypher-вызовы no-op). Дефолт TRUE — граф критичен.
     ['graph.ageEnabled', envBool('GRAPH_AGE_ENABLED', true), 'high', 'Kill-switch записи в граф AGE (false = только Postgres)'],
   ];
   for (const [key, value, severity, description] of knowledge) {
     out.push({ key, value, category: 'ai', section: 'knowledge-core', severity, description });
+  }
+
+  // ── Дедуп задач встречи (meetings.*) — Ф5 Р2 (2026-06-08). ──────────────
+  // РИСКОВО (может скрыть задачу) → дефолт FALSE (data-affecting). Non-lossy:
+  // удаляется только fast-черновик при совпадении с canonical-задачей.
+  // taskDedupeThreshold — KNN cosine-порог уверенного слияния (серая зона
+  // [порог-0.07, порог) → LLM-арбитр task-dedupe).
+  const meetingsSettings: Array<[string, unknown, Severity, string]> = [
+    ['meetings.taskDedupeEnabled', envBool('MEETINGS_TASK_DEDUPE_ENABLED', false), 'high', 'Семантический дедуп задач встречи: при ON fast-черновик удаляется, если дублирует canonical-задачу той же встречи (дефолт выключено)'],
+    ['meetings.taskDedupeThreshold', envFloat('MEETINGS_TASK_DEDUPE_THRESHOLD', 0.85), 'medium', 'Порог cosine-сходства заголовков для уверенного слияния fast-черновика в canonical (серая зона ниже порога — через LLM-арбитра)'],
+  ];
+  for (const [key, value, severity, description] of meetingsSettings) {
+    out.push({ key, value, category: 'ai', section: 'meetings', severity, description });
   }
 
   // ── Эмбеддинги (embeddings.*) — 8.
@@ -301,24 +330,59 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'ai', section: 'embeddings', severity, description });
   }
 
-  // ── AI feature flags (aiFeatures.*) — 4. Фаза 4 миграции call-sites.
+  // ── AI feature flags (aiFeatures.*) — 5. Фаза 4 миграции call-sites.
   const aiFeatures: Array<[string, unknown, Severity, string]> = [
     ['aiFeatures.includeRoomChat', envBool('INCLUDE_ROOM_CHAT_IN_AI', true), 'medium', 'Включать room-chat в AI-анализ'],
     ['aiFeatures.transcriptCleaningLlmRefine', envBool('TRANSCRIPT_CLEANING_LLM_REFINE_ENABLED', true), 'medium', 'LLM-refine в transcript-clean (уровень 2)'],
     ['aiFeatures.behaviorMetricsLlmRefine', envBool('BEHAVIOR_METRICS_LLM_REFINE_ENABLED', false), 'medium', 'LLM-refine в behavior-metrics (Фаза B)'],
     ['aiFeatures.promptInjectionGuardEnabled', envBool('PROMPT_INJECTION_GUARD_ENABLED', true), 'high', 'Защита от prompt-injection в customPrompt (F1)'],
+    // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — legacy summary-агент (MiniMax,
+    // 0% кэш). Дефолт ВКЛ — обратимо; false = −1 LLM-вызов, сводка из summaryFast.
+    ['aiFeatures.summaryAgentEnabled', envBool('SUMMARY_AGENT_ENABLED', true), 'medium', 'Legacy summary-агент в analyze.worker (false = сводка только из summaryFast / meeting-report-fast)'],
   ];
   for (const [key, value, severity, description] of aiFeatures) {
     out.push({ key, value, category: 'ai', section: 'features', severity, description });
   }
 
+  // ── LLM cache-smoke (llm.*) — Ф6 Часть 3 (2026-06-08). Наблюдаемость доли
+  // prompt-cache хитов по DeepSeek. Только лог/метрика, ничего не блокирует.
+  const llm: Array<[string, unknown, Severity, string]> = [
+    ['llm.cacheSmokeEnabled', envBool('LLM_CACHE_SMOKE_ENABLED', true), 'low', 'Включает smoke-проверку доли prompt-cache хитов DeepSeek в provider-smoke cron (только лог/метрика)'],
+    ['llm.cacheHitRatioWarnThreshold', envFloat('LLM_CACHE_HIT_RATIO_WARN_THRESHOLD', 0.6), 'low', 'Порог доли cache-хитов по DeepSeek (0..1): ниже — WARN в логи (возможно taskType ушёл на некэширующий провайдер)'],
+  ];
+  for (const [key, value, severity, description] of llm) {
+    out.push({ key, value, category: 'ai', section: 'features', severity, description });
+  }
+
+  // ── Trekker: авто-триаж задач из встреч (tracker.*) — Ф3 agent-chain-overhaul.
+  const tracker: Array<[string, unknown, Severity, string]> = [
+    ['tracker.autoAcceptConfidenceThreshold', envFloat('AUTO_ACCEPT_CONFIDENCE_THRESHOLD', 0.75), 'high', 'Порог авто-создания Issue из триажа встречи (confidence LLM 0..1). Дефолт 0.75 под живую речь; жёсткие гейты source=meeting+assignee+project остаются страховкой.'],
+  ];
+  for (const [key, value, severity, description] of tracker) {
+    out.push({ key, value, category: 'integrations', section: 'tracker', severity, description });
+  }
+
+  // ── Goals: авто-привязка тем к целям (goals.*) — Ф4.2 agent-chain-overhaul.
+  const goals: Array<[string, unknown, Severity, string]> = [
+    ['goals.themeAutolinkMinWeight', envFloat('GOAL_THEME_AUTOLINK_MIN_WEIGHT', 0.15), 'medium', 'Порог веса авто-привязки темы к цели (провенанс/co-mention)'],
+    ['goals.themeAutolinkLlmEnabled', envBool('GOAL_THEME_AUTOLINK_LLM_ENABLED', false), 'medium', 'Вкл LLM-дозор для серой зоны авто-привязки тем к целям'],
+    // Ф4.1 agent-chain-overhaul — LLM-арбитр привязки задач встречи к AI-цели.
+    // DEFAULT OFF: новый арбитр, риск мис-атрибуции, golden нет. Non-destructive.
+    ['goals.goalTaskLinkEnabled', envBool('GOAL_TASK_LINK_ENABLED', false), 'medium', 'Вкл LLM-привязку задач встречи к AI-цели (ставит Issue.goalId только где пусто). Риск мис-атрибуции — по умолчанию выключено'],
+  ];
+  for (const [key, value, severity, description] of goals) {
+    out.push({ key, value, category: 'ai', section: 'goals', severity, description });
+  }
+
   // ── Feature-flags (feature.*) — продуктовые тумблеры.
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
-  // Default OFF: фича включается super_admin'ом из админки после готовности UI.
+  // Ship-On (2026-06-08): дефолт TRUE. Риск галлюцинации схемы смягчён
+  // human-gate — Кора показывает превью схемы, пользователь подтверждает
+  // создание таблицы; кривое молча не создаётся. Откат — AdminSetting → false.
   const features: Array<[string, unknown, Severity, string]> = [
     [
       'feature.tables_text_to_schema',
-      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', false),
+      envBool('FEATURE_TABLES_TEXT_TO_SCHEMA', true),
       'medium',
       'Создание Smart-таблиц по текстовому описанию (Text-to-Schema)',
     ],
@@ -458,11 +522,21 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'security', severity, description });
   }
 
-  // ── Documents (documents.*) — 3.
+  // ── Documents (documents.*) — 5. (ТЗ-4 Ф6: +maxFilesPerUpload +acceptedFormats)
   const documents: Array<[string, unknown, Severity, string]> = [
     ['documents.parseTimeoutMs', envInt('DOCUMENT_PARSE_TIMEOUT_MS', 30000), 'medium', 'Таймаут парсинга документа (мс)'],
-    ['documents.maxSizeMb', envInt('DOCUMENT_MAX_SIZE_MB', 50), 'medium', 'Максимальный размер документа (МБ)'],
+    ['documents.maxSizeMb', envInt('DOCUMENT_MAX_SIZE_MB', 50), 'medium', 'Максимальный размер одного документа (МБ)'],
     ['documents.inlineThresholdMb', envInt('DOCUMENT_INLINE_THRESHOLD_MB', 5), 'medium', 'Порог inline-загрузки документа (МБ)'],
+    // ТЗ-4 Ф3/Ф6 — multipart-загрузка нескольких файлов.
+    ['documents.maxFilesPerUpload', envInt('DOCUMENT_MAX_FILES_PER_UPLOAD', 20), 'medium', 'Максимум файлов в одной операции загрузки'],
+    [
+      'documents.acceptedFormats',
+      parseFormats(env('DOCUMENT_ACCEPTED_FORMATS', 'pdf,docx,xlsx,pptx,md,txt,html,rtf,odt,csv')),
+      'medium',
+      'Белый список расширений документов, принимаемых при загрузке',
+    ],
+    // ТЗ-4 Ф7 — массовый импорт ZIP-архива.
+    ['documents.maxZipSizeMb', envInt('DOCUMENT_MAX_ZIP_SIZE_MB', 200), 'medium', 'Максимальный размер ZIP-архива при массовом импорте (МБ)'],
   ];
   for (const [key, value, severity, description] of documents) {
     out.push({ key, value, category: 'content', section: 'documents', severity, description });

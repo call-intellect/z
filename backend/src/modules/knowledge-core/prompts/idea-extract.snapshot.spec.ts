@@ -17,8 +17,16 @@ import {
 } from './idea-extract.prompt';
 
 describe('idea-extract — snapshot сборки промта', () => {
-  it('system prompt стабилен (CONFIDENCE_CALIBRATION + EDGE_CASE_POLICY в конце)', () => {
+  it('system prompt стабилен (CONFIDENCE_CALIBRATION + EDGE_CASE_POLICY + ASR_NOTE в конце)', () => {
     expect(IDEA_EXTRACT_SYSTEM_PROMPT).toMatchSnapshot('system');
+  });
+
+  // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
+  // извлекающим промптам (восстановление искажённых ASR чисел/имён по контексту).
+  it('system содержит ASR-ноту (withAsrNote)', () => {
+    expect(IDEA_EXTRACT_SYSTEM_PROMPT).toContain(
+      'автоматического распознавания речи',
+    );
   });
 
   it('user prompt стабилен для feature_request «Экспорт отчёта в PDF»', () => {

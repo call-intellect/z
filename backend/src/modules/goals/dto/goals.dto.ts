@@ -87,6 +87,17 @@ export const AddThemesSchema = z.object({
 });
 export type AddThemesDto = z.infer<typeof AddThemesSchema>;
 
+/**
+ * ТЗ-2 Ф6.A (daily-value-dashboards) — body для PATCH /goals/:id/priority.
+ * MoSCoW-приоритет цели (совпадает с enum GoalPriority); null = снять приоритет.
+ */
+export const SetGoalPrioritySchema = z
+  .object({
+    priority: z.enum(['must', 'should', 'could', 'wont']).nullable(),
+  })
+  .strict();
+export type SetGoalPriorityDto = z.infer<typeof SetGoalPrioritySchema>;
+
 // ─────────────────────── Goals OKR v2 — supersede ──────────────────────
 
 /**

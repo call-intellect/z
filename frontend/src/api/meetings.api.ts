@@ -1,4 +1,5 @@
 import { apiClient } from './api-client';
+import { ApiError } from './api-error';
 import type {
   AccessApi,
   MeetingApi,
@@ -174,6 +175,81 @@ export type AudioTracksApiResponse = {
   tracks: AudioTrackApi[];
 };
 
+// ─────────────── Загрузка готовой записи (ТЗ-5 Ф5) ───────────────
+
+/** Тело POST /meetings/upload — заявка на загрузку готовой записи. */
+export type CreateUploadApiRequest = {
+  type: MeetingType;
+  title: string;
+  customPrompt?: string | null;
+  fileName: string;
+  contentType: string;
+  /** Размер файла в байтах (бэк не принимает больше 2 ГБ). */
+  sizeBytes: number;
+  /** Подсказка о количестве говорящих (опционально). */
+  numSpeakersHint?: number | null;
+};
+
+/** Ответ POST /meetings/upload — координаты прямой загрузки в S3. */
+export type CreateUploadApiResponse = {
+  meetingId: string;
+  uploadUrl: string;
+  uploadKey: string;
+  expiresAt: string;
+};
+
+/** Способ подписи говорящего (DTO бэка, не переводить — это идентификаторы). */
+export type SpeakerAssignmentApi =
+  | 'unassigned'
+  | 'employee'
+  | 'external'
+  | 'excluded'
+  | 'merged';
+
+/** Один говорящий из расшифровки загруженной записи. */
+export type UploadSpeakerApi = {
+  label: string;
+  displayLabel: string;
+  turnsCount: number;
+  speakingSeconds: number;
+  sampleText: string;
+  assignment: SpeakerAssignmentApi;
+  personId?: string | null;
+  externalName?: string | null;
+  externalCompany?: string | null;
+  externalPosition?: string | null;
+  mergedIntoLabel?: string | null;
+};
+
+export type SpeakersApiResponse = {
+  speakers: UploadSpeakerApi[];
+  turns: TranscriptTurn[];
+};
+
+/** Тело PUT /meetings/:id/speakers — черновик подписей. */
+export type PutSpeakersApiRequest = {
+  assignments: Array<{
+    label: string;
+    assignment: SpeakerAssignmentApi;
+    personId?: string | null;
+    externalName?: string | null;
+    externalCompany?: string | null;
+    externalPosition?: string | null;
+    mergedIntoLabel?: string | null;
+  }>;
+};
+
+export type PutSpeakersApiResponse = {
+  speakers: UploadSpeakerApi[];
+};
+
+/** Ответ GET /meetings/:id/upload/playback — источник для плеера. */
+export type UploadPlaybackApiResponse = {
+  kind: 'video' | 'audio';
+  url: string;
+  expiresAt: string;
+};
+
 // ─────────────────── helpers ──────────────────
 
 function buildListQuery(opts: ListMeetingsApiRequest): string {
@@ -203,6 +279,74 @@ function buildListQuery(opts: ListMeetingsApiRequest): string {
   if (opts.cardId) params.set('cardId', opts.cardId);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+/**
+ * Прямая загрузка файла в S3 по presigned-URL — В ОБХОД apiClient (он
+ * JSON-only и не даёт прогресса). Используем XHR ради события `upload.progress`.
+ *
+ * ВАЖНО: заголовок `Content-Type` обязан совпадать с тем `contentType`, что был
+ * передан в `createUpload` — иначе S3 отвергнет подпись. Никаких auth-куки /
+ * X-Org-Id сюда слать нельзя — это запрос напрямую в хранилище.
+ */
+export function uploadFileToPresignedUrl(opts: {
+  url: string;
+  file: File | Blob;
+  contentType: string;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { url, file, contentType, onProgress, signal } = opts;
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url, true);
+    xhr.setRequestHeader('Content-Type', contentType);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(e.total > 0 ? e.loaded / e.total : 0);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1);
+        resolve();
+      } else {
+        reject(
+          new ApiError({
+            code: 'upload_put_failed',
+            message: `Хранилище отклонило загрузку (код ${xhr.status}).`,
+          }),
+        );
+      }
+    };
+    xhr.onerror = () =>
+      reject(
+        new ApiError({
+          code: 'upload_network_error',
+          message: 'Не удалось загрузить файл. Проверьте подключение.',
+        }),
+      );
+    xhr.onabort = () =>
+      reject(
+        new ApiError({ code: 'upload_aborted', message: 'Загрузка отменена.' }),
+      );
+
+    if (signal) {
+      if (signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+    }
+
+    xhr.send(file);
+  });
+}
+
+/** Заголовок X-Org-Id для per-call (на случай admin cross-org / надёжности). */
+function orgHeader(orgId: string): { headers: Record<string, string> } {
+  return { headers: { 'X-Org-Id': orgId } };
 }
 
 // ─────────────────── api ──────────────────
@@ -360,5 +504,60 @@ export const meetingsApi = {
   audioTracks: (id: string) =>
     apiClient.get<AudioTracksApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/recording/audio-tracks`,
+    ),
+
+  // ─────────── Загрузка готовой записи (ТЗ-5 Ф5) ───────────
+
+  /**
+   * Заявка на загрузку готовой записи. Возвращает presigned-URL, в который
+   * файл потом кладётся напрямую через `uploadFileToPresignedUrl`.
+   */
+  createUpload: (orgId: string, body: CreateUploadApiRequest) =>
+    apiClient.post<CreateUploadApiResponse>(
+      '/api/v1/meetings/upload',
+      body,
+      orgHeader(orgId),
+    ),
+
+  /** Сигнал «файл залит» — бэк запускает распознавание речи. */
+  completeUpload: (orgId: string, id: string) =>
+    apiClient.post<{ status: string }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/upload/complete`,
+      undefined,
+      orgHeader(orgId),
+    ),
+
+  /** Говорящие + расшифровка для экрана подписи. */
+  getSpeakers: (orgId: string, id: string) =>
+    apiClient.get<SpeakersApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/speakers`,
+      orgHeader(orgId),
+    ),
+
+  /** Сохранить черновик подписей говорящих. */
+  putSpeakers: (
+    orgId: string,
+    id: string,
+    assignments: PutSpeakersApiRequest['assignments'],
+  ) =>
+    apiClient.put<PutSpeakersApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/speakers`,
+      { assignments },
+      orgHeader(orgId),
+    ),
+
+  /** Подтвердить подписи — запустить AI-отчёт. */
+  confirmSpeakers: (orgId: string, id: string) =>
+    apiClient.post<{ status: string }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/speakers/confirm`,
+      undefined,
+      orgHeader(orgId),
+    ),
+
+  /** Источник для плеера (видео или аудио). */
+  getPlayback: (orgId: string, id: string) =>
+    apiClient.get<UploadPlaybackApiResponse>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/upload/playback`,
+      orgHeader(orgId),
     ),
 };

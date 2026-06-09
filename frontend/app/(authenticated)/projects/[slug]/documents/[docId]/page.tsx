@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ProjectDocumentEditorClient } from './ProjectDocumentEditorClient';
 
 export const metadata: Metadata = {
-  title: 'Документ — Кора',
+  title: 'Документ',
 };
 
 export default async function ProjectDocumentEditorPage({

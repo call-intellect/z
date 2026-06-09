@@ -10,13 +10,15 @@ import {
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBody,
   ApiConsumes,
@@ -44,10 +46,12 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
+import { DocumentImportService } from './document-import.service';
 import { DocumentsService } from './documents.service';
 import {
   CreateTextDumpSchema,
@@ -55,19 +59,37 @@ import {
   type DocumentDetailDto,
   type DocumentDto,
   type DocumentExtractedEntitiesDto,
+  type DocumentImportDto,
+  ImportConfluenceBodySchema,
+  type ImportConfluenceBodyDto,
+  type ImportConfluenceResultDto,
+  ImportZipBodySchema,
+  type ImportZipBodyDto,
+  type ImportZipResultDto,
   ListDocumentsQuerySchema,
   type ListDocumentsQuery,
+  SetAttributionBodySchema,
+  type SetAttributionBodyDto,
   toDecisionProvenance,
   toDocumentDto,
+  toDocumentImportDto,
   toIdeaBlockSummaryDto,
   toMetricProvenance,
   toPolicyProvenance,
   toProcessProvenance,
   toRegulationProvenance,
   toToolProvenance,
+  UploadDocumentBodySchema,
+  type UploadDocumentBodyDto,
+  type UploadDocumentResultDto,
   UploadDocumentQuerySchema,
   type UploadDocumentQuery,
 } from './dto/documents.dto';
+
+/** Максимум файлов, который multer примет в одном multipart-запросе. Жёсткий
+ *  потолок «на трубе»; реальный per-Org лимит ниже — `documents.maxFilesPerUpload`
+ *  (AdminSetting, ТЗ-4 Ф6), проверяется в сервисе. */
+const UPLOAD_FILES_MAX_COUNT = 50;
 
 /**
  * `DocumentsController` (Фаза 0b knowledge-core).
@@ -90,52 +112,96 @@ import {
 export class DocumentsController {
   constructor(
     @Inject(DocumentsService) private readonly documents: DocumentsService,
+    @Inject(DocumentImportService)
+    private readonly imports: DocumentImportService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Загрузить документ (PDF/DOCX/MD/TXT)' })
+  @ApiOperation({
+    summary:
+      'Загрузить документ(ы) (PDF/DOCX/XLSX/PPTX/MD/TXT/HTML/RTF/ODT/CSV). Поле `files` (несколько) или `file` (один, обратная совместимость).',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Несколько файлов (ТЗ-4 Ф3)',
+        },
         file: {
           type: 'string',
           format: 'binary',
+          description: 'Один файл (обратная совместимость)',
+        },
+        attachedRoleId: { type: 'string', description: 'Привязка к должности' },
+        attachedThemeId: { type: 'string', description: 'Привязка к теме графа' },
+        attachedProjectId: { type: 'string', description: 'Привязка к проекту' },
+        docType: {
+          type: 'string',
+          enum: [
+            'regulation',
+            'policy',
+            'instruction',
+            'process',
+            'job_description',
+            'other',
+          ],
+          description: 'Смысловой тип документа',
         },
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  // FileFieldsInterceptor принимает оба поля — `files[]` (новое) и `file` (legacy).
+  // Сливаем их в один список в обработчике; одиночный `file` остаётся рабочим.
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'files', maxCount: UPLOAD_FILES_MAX_COUNT },
+      { name: 'file', maxCount: 1 },
+    ]),
+  )
   async upload(
-    @UploadedFile() file: MulterFile | undefined,
+    @UploadedFiles()
+    uploaded: { files?: MulterFile[]; file?: MulterFile[] } | undefined,
     @Query(new ZodValidationPipe(UploadDocumentQuerySchema))
     query: UploadDocumentQuery,
+    @Body(new ZodValidationPipe(UploadDocumentBodySchema))
+    body: UploadDocumentBodyDto,
     @CurrentUser() user: CurrentUserPayload,
     @CurrentOrg() tenantId: string | undefined,
-  ): Promise<{ id: string; status: string }> {
+  ): Promise<UploadDocumentResultDto> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    if (!file) {
+
+    const rawFiles = [...(uploaded?.files ?? []), ...(uploaded?.file ?? [])];
+    if (rawFiles.length === 0) {
       throw new BadRequestException({
         ok: false,
         error: { code: 'file_required', message: 'Файл обязателен' },
       });
     }
     const person = await this.requirePerson(t, user.id);
-    return this.documents.upload({
+
+    // Атрибуция: body имеет приоритет над query (query.attachedRoleId — legacy).
+    return this.documents.uploadMany({
       tenantId: t,
       uploaderPersonId: person.id,
-      file: {
-        buffer: file.buffer,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-      },
-      attachedRoleId: query.attachedRoleId,
+      files: rawFiles.map((f) => ({
+        buffer: f.buffer,
+        originalName: f.originalname,
+        mimeType: f.mimetype,
+        size: f.size,
+      })),
+      attachedRoleId: body.attachedRoleId ?? query.attachedRoleId,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
     });
   }
 
@@ -159,6 +225,114 @@ export class DocumentsController {
     });
   }
 
+  @Post('import-zip')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Массовый импорт документов из ZIP-архива (ТЗ-4 Ф7/Ф8). Поле `file` = .zip; поддержанные внутри файлы станут отдельными документами. `source=notion` — экспорт Notion (имена страниц чистятся от 32-hex id).',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'ZIP-архив' },
+        source: {
+          type: 'string',
+          enum: ['upload_zip', 'notion'],
+          description:
+            'Источник архива: `upload_zip` (обычный, по умолчанию) или `notion` (экспорт Notion).',
+        },
+        attachedThemeId: { type: 'string', description: 'Привязка к теме графа (для всех файлов)' },
+        attachedProjectId: { type: 'string', description: 'Привязка к проекту (для всех файлов)' },
+        docType: {
+          type: 'string',
+          enum: [
+            'regulation',
+            'policy',
+            'instruction',
+            'process',
+            'job_description',
+            'other',
+          ],
+          description: 'Смысловой тип документа (для всех файлов)',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async importZip(
+    @UploadedFile() file: MulterFile | undefined,
+    @Body(new ZodValidationPipe(ImportZipBodySchema))
+    body: ImportZipBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ImportZipResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    if (!file) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'file_required', message: 'Архив обязателен' },
+      });
+    }
+    const person = await this.requirePerson(t, user.id);
+
+    const { importId } = await this.imports.createBatch({
+      tenantId: t,
+      createdById: person.id,
+      zip: { buffer: file.buffer, size: file.size },
+      source: body.source,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
+    });
+
+    await this.coreQueue.enqueueDocumentImport({ tenantId: t, importId });
+    return { importId };
+  }
+
+  @Post('import-confluence')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      'Импорт страниц пространства Confluence Cloud (ТЗ-4 Ф9). JSON-тело с подключением; страницы пространства станут отдельными документами. API-токен шифруется и НЕ хранится в БД.',
+  })
+  async importConfluence(
+    @Body(new ZodValidationPipe(ImportConfluenceBodySchema))
+    body: ImportConfluenceBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ImportConfluenceResultDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    const person = await this.requirePerson(t, user.id);
+
+    const { importId } = await this.imports.createConfluenceImport({
+      tenantId: t,
+      createdById: person.id,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+      docType: body.docType,
+    });
+
+    // Токен шифруем перед попаданием в job-payload (Redis) — открытым он там
+    // не оседает; воркер расшифрует его прямо перед вызовом Confluence.
+    const encryptedToken = this.imports.encryptConfluenceToken(body.apiToken);
+    await this.coreQueue.enqueueDocumentImport({
+      tenantId: t,
+      importId,
+      confluence: {
+        baseUrl: body.baseUrl,
+        email: body.email,
+        spaceKey: body.spaceKey,
+        encryptedToken,
+      },
+    });
+    return { importId };
+  }
+
   @Get()
   @ApiOperation({ summary: 'Список документов Org' })
   async list(
@@ -176,6 +350,50 @@ export class DocumentsController {
       attachedRoleId: q.attachedRoleId,
     });
     return { items: items.map(toDocumentDto), total };
+  }
+
+  @Get('imports/:id')
+  @ApiOperation({
+    summary:
+      'Статус batch-импорта (ТЗ-4 Волна 2). Прогресс {doneFiles}/{totalFiles} + errorLog. owner/admin, tenant-scoped.',
+  })
+  async getImportStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DocumentImportDto> {
+    const t = this.requireTenant(tenantId);
+    // Импорт инициирует и наблюдает тот, кто может писать документы (owner/admin).
+    await this.requireWrite(user.id, t);
+    const row = await this.documents.getImportStatus({
+      tenantId: t,
+      importId: id,
+    });
+    return toDocumentImportDto(row);
+  }
+
+  @Patch(':id/attribution')
+  @ApiOperation({
+    summary:
+      'Установить/изменить смысловую атрибуцию документа (тип/тема/проект) и принять подсказку Коры (ТЗ-4 Волна 2). owner/admin, tenant-scoped. Проецирует привязку в граф для блоков документа.',
+  })
+  async setAttribution(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetAttributionBodySchema))
+    body: SetAttributionBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<DocumentDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    const updated = await this.documents.setAttribution({
+      tenantId: t,
+      documentId: id,
+      docType: body.docType,
+      attachedThemeId: body.attachedThemeId,
+      attachedProjectId: body.attachedProjectId,
+    });
+    return toDocumentDto(updated);
   }
 
   @Get(':id')

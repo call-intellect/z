@@ -267,3 +267,95 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 Golden-харнесс на инфре `combat-harness` (без Nest, prod-guard): `backend/scripts/fixtures/agent-golden/*.json` (4 фикстуры) + `backend/scripts/_lib/agent-scoring.ts` (метрики полноты/точности/дублей) + runner `backend/scripts/agent-quality-harness.ts`. Меряет качество извлечения задач/сущностей против эталона — инструмент для регрессий, не часть прод-пайплайна.
 
 [[../index|← index]]
+
+## Оверхол цепочки агентов — наблюдаемость + recall + авто-привязка (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-07-agent-chain-overhaul.md`](../../plans/tz/2026-06-07-agent-chain-overhaul.md) (8 фаз) + точечный ТЗ D ([`plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md`](../../plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md)). Ветка `feature/retest2-agent-chain-overhaul`. Модули/контроллеры — [[../02_architecture/module-map]] §«Оверхол цепочки агентов»; cron'ы — [[workers-queues]].
+
+### Ф0a/Ф0b — наблюдаемость графа + trace специалистов
+- **`GraphMaterializationService`** + REST `GET /api/v1/platform/graph/materialization?meetingId=` (SuperAdmin, `GraphDiagnosticsController`) + `diag graph --meeting <id>` — on-demand сверка, доехали ли извлечённые блоки/сущности встречи до графа/проекций. Фоновый `GraphMaterializationVerifyCron` (`@Cron` 30 мин, per-Org) считает расхождение → метрика `kc_materialization_gap_total{type}`.
+- **Trace специалистов слоя 3** — диспетчер `core.specialist-routing` оборачивает специалистов в pipeline-контекст `KNOWLEDGE_GRAPH` с `traceId=mtg_<id>` (раньше `block_<id>` → невидимы в цепочке встречи `diag chain`) + логи created/skipped/merged у decisions/ideas/goals.
+
+### Ф1/Ф2 — recall Решений/Идей + ASR-нота (code-промпты)
+- **`block-ingest.prompt`** дополнен русскими маркерами decision/idea + дизамбигуация (защита `commitment`/`plan_item` от ложного срабатывания) — поднимает recall Решений/Идей. Golden-фикстуры `growth-funnel` закоммичены; прогон ДО/ПОСЛЕ на живом LLM отложен (golden-предусловие, см. реестр «не-сделано»).
+- **`withAsrNote`** добавлен на **10 извлекающих промптов** (расширение ТЗ-4 Ф2 C1) — инструктирует LLM восстанавливать числа/имена по контексту (компенсация ошибок ASR). Cache-friendly (стабильный SYSTEM). Это **code-промпты** (prompt registry с code-fallback) — едут с деплоем кода, отдельной seed-операции не требуют.
+
+### Ф4.2 — авто-привязка Goal↔Theme
+- **`GoalThemeLinkerService`** + `GoalThemeLinkerCron` (`@Cron` 30 мин) + on-event из специалиста `3-14-goals` — детерминированная привязка Goal↔Theme по провенансу (общие `sourceBlockIds`) + co-mention; пишет `GoalTheme(source='ai')`. Метрика `goal_theme_autolink_total{method}`. Тумблеры `AdminSetting.goals.themeAutolinkMinWeight` / `goals.themeAutolinkLlmEnabled`. LLM-арбитр Goal↔Task (Ф4.1) отложен (golden-предусловие).
+
+### Ф5 — консолидация summary
+- **`pickPrimarySummary`** (`summaryFast ?? summaryV2 ?? summary`) у всех потребителей — единая точка выбора актуального summary встречи. Флаг summary-агента `aiFeatures.summaryAgentEnabled` (ENV `SUMMARY_AGENT_ENABLED` + AdminSetting, дефолт TRUE; при OFF потребители падают на `summaryV2 ?? summary`).
+
+### Ф6 — кэш-маршруты
+- Patch `patch-llm-routes-report-chain-deepseek.ts` — `summary` / `report-by-type` / `tasks` → DeepSeek (кэш-дружелюбная цепочка). Зарегистрирован в `apply-prod-deploy.ts` STEPS. Решение Б (shared-prefix транскрипта, router-wide) и калибровка Части 3 (smoke cache-hit WARN) — отдельным ТЗ (см. реестр «не-сделано»).
+
+### ТЗ D — поведение/длительность при пустых пословных таймингах ASR
+- **`merge.worker`** при пустых `words` даёт псевдо-слову длительность дорожки (`track.durationSeconds*1000`) → длительность/поведение участников **ненулевые**. **`behavior-metrics.worker`** определяет `wordTimingsAvailable` → помечает метрики `lowConfidence`. Контракт — `vox.types`. Реальные пословные тайминги от Vox по-прежнему пусты (submit-флаг/смена модели отложены — нужен прод-ответ Vox, см. реестр «не-сделано»).
+
+### Ф3 — порог авто-Issue
+- `tracker.autoAcceptConfidenceThreshold` (AdminSetting, дефолт **0.75**, был мёртвый hardcoded 0.92) — порог авто-принятия Issue из встречи. См. [[admin]] §AdminSetting.
+
+[[../index|← index]]
+
+## Остаток цепочки агентов без golden — новые арбитры + direct-path (2026-06-08)
+
+**Источник:** [`plans/tz/2026-06-08-agent-chain-remaining-no-golden.md`](../../plans/tz/2026-06-08-agent-chain-remaining-no-golden.md). Ветка `feature/retest2-agent-chain-overhaul` (коммиты `7430162e..accdfe7b`). Сервисы/cron — [[workers-queues]] и [[../02_architecture/module-map]] §«Остаток цепочки агентов».
+
+### Новые taskType (оба cheap, `deepseek-v4-flash`)
+
+| taskType | Что делает | Цепочка | Флаг | Метрика |
+|---|---|---|---|---|
+| `task-dedupe` | семантический дедуп задач встречи: embedding-KNN-кандидаты + LLM-арбитр **серой зоны** (одна задача в двух формулировках) → удаляет fast-черновики-дубли | `deepseek-v4-flash` (cheap) | `meetings.taskDedupeEnabled` (default **OFF**), порог `meetings.taskDedupeThreshold` (0.85) | `z_task_dedupe_total{result}` |
+| `goal-task-link` | привязка AI-цели встречи к её задачам: LLM-арбитр «какая задача относится к этой цели» → пишет `Issue.goalId` (non-destructive) | `deepseek-v4-flash` (cheap) | `goals.goalTaskLinkEnabled` (default **OFF**) | `z_goal_task_link_total{result}` |
+
+Оба маршрута засеиваются `seed-llm-task-routes-task-dedupe.ts` / `seed-llm-task-routes-goal-task-link.ts` (зарегистрированы в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`). Без маршрута вызов при включении флага упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — поэтому маршрут заведён заранее, до флипа флага. **Оба флага OFF по умолчанию** (data-affecting: дедуп удаляет Task-черновики, link пишет `Issue.goalId`) — владелец включает после прод-наблюдения.
+
+- `task-dedupe` вызывается из `tasks-extract.worker` + `meeting-report-fast.worker` (сервис `MeetingTaskDedupeService`, modules/meetings).
+- `goal-task-link` вызывается из cron `GoalTaskLinkerCron` (@Cron 30m) + on-event из специалиста `3-14-goals` (сервис `GoalTaskLinkerService`, modules/knowledge-core).
+
+### Idea direct-path в block-ingest (без LLM)
+
+- **Детерминированная материализация Idea** из блоков `signalType='idea'` в `block-ingest.worker` (без отдельного LLM-вызова — recall идей без плодёжа). Дедуп по `sourceBlockId` (guard в специалисте `3-6-ideas`, чтобы LLM-специалист не задублировал материализованные идеи). Флаг `knowledge.ideaDirectPathEnabled` (default **ON**); OFF → идеи только через LLM-специалиста (старое поведение).
+
+### Ф2 — hardening экстракторов (code-промпты, без seed)
+
+ASR-нота `withAsrNote` / калибровка уверенности / анти-галлюцинация имён / `meetingDateIso` добавлены на `meeting-report-fast` + `block-ingest`; ASR/калибровка — на `block-distill` / `theme-classify` / `axis-classify` / `knowledge-clone-extract` / `chapters-v2` / `goal-hierarchy-link` / `entity-merge-arbiter`. C8: `entity-merge` SYSTEM приведён к коду («5→1»). C3: булевы гейты `isDecision` / `isIdea` на decision/idea extract + разрешён пустой результат (анти-плодёж). Всё — **code-промпты** (prompt registry с code-fallback, prompt-caching-friendly: стабильный SYSTEM), едут с деплоем кода, отдельной seed-операции не требуют.
+
+### Ф6 — smoke cache-hit-ratio
+
+- Метрики `z_llm_calls_total{provider}` (знаменатель) + `z_llm_cache_hit_ratio_below_threshold{provider}` (gauge). `BusinessMetricsService.getLlmCacheHitRatio` считает долю кэш-хитов; `provider-smoke-test.cron.checkCacheHitRatio` пишет WARN, если доля кэша DeepSeek ниже порога (видимость, что правки SYSTEM ломают prompt-caching). Флаги `llm.cacheSmokeEnabled` (default **true**) + `llm.cacheHitRatioWarnThreshold` (0.6).
+
+**Миграций БД НЕТ, новых ENV НЕТ** — все флаги через `resolveSync` (AdminSetting с code-fallback).
+
+[[../index|← index]]
+
+## Качество клона сотрудника — verify-гейт (2026-06-08)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф3 (D). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Полная карта изменений клона — [[skill-and-clone]] §«Доработки 2026-06-08»; cron — [[workers-queues]]; enum — [[../02_architecture/data-model]] §SkillTraitStatus.
+
+### Новый taskType `skill-trait-verify`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `skill-trait-verify` | grounding-проверка свежей черты профиля: сверяет формулировку trait'а с цитатами-источниками. Grounded → черта `active`, иначе → `held`. **FAIL-OPEN:** ошибка LLM → `active` (сбой не блокирует профиль). | `deepseek-v4-flash` (cheap) → fallback по DEFAULT-цепочке | `skill_trait_verify_v1` (cache-friendly: стабильный SYSTEM, цитаты в конце USER) |
+
+- Вызывается из `Specialist37Service.verifyPendingTraits()` ночным cron'ом **`SkillTraitVerifyCron` `@Cron('30 3 * * *')`** (03:30) — обрабатывает черты в статусе `SkillTraitStatus.pending_verification` (черта в этом статусе **не попадает в persona**, пока не станет `active`).
+- Маршрут засеивается в `seed-llm-task-routes-skill-and-clone.ts` (вместе с остальными skill/clone-роутами).
+
+## Загрузка/импорт документов — AI-подсказка привязки (ТЗ-4 Ф10, 2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
+
+### Новый taskType `document-attribution-suggest`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `document-attribution-suggest` | по тексту загруженного документа предлагает **смысловой тип** (`DocumentType`) + **тему** графа → пишет в `Document.suggestedDocType`/`suggestedThemeId`. **Human-in-the-loop:** подсказка не применяется сама — пользователь принимает её через `PATCH /documents/:id/attribution`. | `deepseek-v4-flash` (cheap) | `document-attribution-suggest.prompt.ts` (cache-friendly: стабильный SYSTEM, текст документа в конце USER) |
+
+- Сервис `DocumentAttributionService` (`backend/src/modules/documents/`), флаг `documents.ai_attribution.enabled` (kill-switch).
+- Маршрут засеивается в `seed-llm-task-routes-default.ts` (уже в `apply-prod-deploy.ts` STEPS, идемпотентно).
+- **Без новой очереди** — подсказка считается синхронно при загрузке/по запросу (не отдельный BullMQ-job).
+
+> ⚠ Загрузка встречи (ТЗ-5) использует существующий ASR-стек (Vox-диаризация в `meeting-upload-transcribe.worker`), **новых chat-LLM taskType не вводит** — анализ загруженной встречи после подписи говорящих идёт по обычному meeting-пайплайну (`core.meeting-analyze-v2` и т.д.).
+
+[[../index|← index]]

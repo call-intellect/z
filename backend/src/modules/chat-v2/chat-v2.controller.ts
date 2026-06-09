@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -28,6 +29,13 @@ import { RbacService } from '../rbac/rbac.service';
 
 import { ChatV2OrchestrationService } from './chat-v2.service';
 import {
+  ChatV2FeedbackBodySchema,
+  ChatV2UsageStatsQuerySchema,
+  type ChatV2FeedbackBody,
+  type ChatV2UsageStatsDto,
+  type ChatV2UsageStatsQuery,
+} from './dto/chat-v2-feedback.dto';
+import {
   ListChatV2ConversationsQuerySchema,
   PinChatV2ConversationBodySchema,
   PostChatV2MessageBodySchema,
@@ -35,6 +43,7 @@ import {
   type PinChatV2ConversationBodyDto,
   type PostChatV2MessageBodyDto,
 } from './dto/chat-v2.dto';
+import { ChatV2FeedbackService } from './services/chat-v2-feedback.service';
 import { ChatV2ConversationsService } from './services/conversations.service';
 
 /**
@@ -61,6 +70,8 @@ export class ChatV2Controller {
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(CacheInvalidationService)
     private readonly cacheInvalidation: CacheInvalidationService,
+    @Inject(ChatV2FeedbackService)
+    private readonly feedback: ChatV2FeedbackService,
   ) {}
 
   // ──────────────────────────── messages ──────────────────────────────
@@ -129,6 +140,102 @@ export class ChatV2Controller {
     });
     await this.requireWriteOwn(user.id, t);
     return this.cacheInvalidation.invalidateUser(t, conv.userId);
+  }
+
+  // ──────────────────────── feedback (TZ-1 Ф5) ────────────────────────
+
+  /**
+   * TZ-1 Фаза 5 (daily-value-engine) — оценить ответ ассистента (палец
+   * вверх/вниз). Upsert по (messageId, userId) с проверкой владения беседой.
+   * Channel-agnostic: вызывается и из web, и из Telegram/in_app адаптеров —
+   * НЕ web-only (нет @PublicDemo / web-гейта).
+   */
+  @Post('messages/:id/feedback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Оценить ответ ассистента (помог: вверх/вниз)' })
+  async setFeedback(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ChatV2FeedbackBodySchema))
+    body: ChatV2FeedbackBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ messageId: string; helpful: 'up' | 'down' }> {
+    const t = this.requireTenant(tenantId);
+    return this.feedback.setFeedback({
+      tenantId: t,
+      userId: user.id,
+      messageId: id,
+      helpful: body.helpful,
+      comment: body.comment,
+    });
+  }
+
+  /**
+   * TZ-1 Фаза 5 — снять оценку ответа. Проверка владения беседой.
+   */
+  @Delete('messages/:id/feedback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Снять оценку ответа ассистента' })
+  async clearFeedback(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ messageId: string; cleared: boolean }> {
+    const t = this.requireTenant(tenantId);
+    return this.feedback.clearFeedback({
+      tenantId: t,
+      userId: user.id,
+      messageId: id,
+    });
+  }
+
+  /**
+   * TZ-1 Фаза 5 — метрика чата за окно (несущая часть value-recap).
+   * `scope='self'` (default) — мои диалоги (любой пользователь);
+   * `scope='org'` — по всей Org (требует owner/coo).
+   * helped-rate скрыт при rated<min; answeredWithCitation — grounding-proxy.
+   */
+  @Get('usage-stats')
+  @ApiOperation({
+    summary:
+      'Метрика чата за окно (asked/answered/grounding-proxy/helped-rate). scope self|org',
+  })
+  async usageStats(
+    @Query(new ZodValidationPipe(ChatV2UsageStatsQuerySchema))
+    q: ChatV2UsageStatsQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ChatV2UsageStatsDto> {
+    const t = this.requireTenant(tenantId);
+    if (q.scope === 'org') {
+      const allowed = await this.rbac.canViewOperationsDashboard(user.id, t);
+      if (!allowed) {
+        throw new ForbiddenException({
+          ok: false,
+          error: {
+            code: 'forbidden_role',
+            message: 'Org-метрика чата доступна только owner/coo',
+          },
+        });
+      }
+    }
+    const to = q.to ? new Date(`${q.to}T23:59:59.999Z`) : new Date();
+    const from = q.from
+      ? new Date(`${q.from}T00:00:00.000Z`)
+      : new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
+    const stats = await this.feedback.getChatUsageStats({
+      tenantId: t,
+      from,
+      to,
+      scope: q.scope,
+      userId: q.scope === 'self' ? user.id : null,
+    });
+    return {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      scope: q.scope,
+      ...stats,
+    };
   }
 
   // ──────────────────────────── conversations ────────────────────────

@@ -38,10 +38,13 @@ export interface ParseResult {
  *   - `DocumentIngestAdapter` (BullMQ-job `document.uploaded`) — основной путь.
  *   - Будущие e-mail вложения / IMAP / Telegram attachments (Фаза γ).
  *
- * Поддерживает `pdf`, `docx`, `markdown`, `text`. `other` → `BadRequestException`.
+ * Поддерживает `pdf`, `docx`, `markdown`, `text`, а также (ТЗ-4 Ф2)
+ * `xlsx` (ExcelJS), `csv`, `pptx`, `rtf`, `odt`, `html` (officeparser).
+ * `other` → `BadRequestException`.
  *
  * Архитектурные решения:
- *   - Внешние библиотеки (`pdf-parse`, `mammoth`, `marked`) подгружаются через
+ *   - Внешние библиотеки (`pdf-parse`, `mammoth`, `marked`, `exceljs`,
+ *     `officeparser`) подгружаются через
  *     `await import(...)` — это убирает их из cold-start'а Nest и позволяет
  *     приложению подняться даже если для текущей задачи парсер документов не
  *     нужен. Кроме того, `pdf-parse` имеет известные особенности с
@@ -90,6 +93,18 @@ export class DocumentParserService {
             text: toStringUtf8(input.content),
             metadata: { extractedAt: new Date() },
           };
+        case 'xlsx':
+          return this.parseXlsx(toBuffer(input.content));
+        case 'csv':
+          return this.parseCsv(input.content);
+        case 'pptx':
+          return this.parseViaOfficeParser(toBuffer(input.content), 'pptx');
+        case 'rtf':
+          return this.parseViaOfficeParser(toBuffer(input.content), 'rtf');
+        case 'odt':
+          return this.parseViaOfficeParser(toBuffer(input.content), 'odt');
+        case 'html':
+          return this.parseHtml(input.content);
         case 'other':
         default:
           throw new BadRequestException({
@@ -257,6 +272,228 @@ export class DocumentParserService {
       );
     }
   }
+
+  /**
+   * Парсинг Excel-таблицы (.xlsx) через `exceljs` (ТЗ-4 Ф2).
+   *
+   * НЕ используем `xlsx`/SheetJS (известная CVE, см. ТЗ). ExcelJS уже стоит
+   * в проекте (рендер отчётов). Обходим все листы и строки, собираем текст
+   * ячеек; листы разделяем строкой-заголовком с именем листа — так LLM/embedding
+   * видит структуру «лист → строки».
+   */
+  private async parseXlsx(buffer: Buffer): Promise<ParseResult> {
+    try {
+      const mod = (await import('exceljs')) as unknown as {
+        Workbook?: new () => ExcelWorkbookLike;
+        default?: { Workbook?: new () => ExcelWorkbookLike };
+      };
+      const WorkbookCtor = mod.Workbook ?? mod.default?.Workbook;
+      if (!WorkbookCtor) {
+        throw new DocumentParseFailedError('exceljs не предоставил Workbook');
+      }
+      const wb = new WorkbookCtor();
+      // ExcelJS принимает Buffer напрямую (поверх buffer.buffer как ArrayBuffer).
+      await wb.xlsx.load(buffer);
+
+      const lines: string[] = [];
+      wb.eachSheet((worksheet) => {
+        const sheetName =
+          typeof worksheet.name === 'string' && worksheet.name.length > 0
+            ? worksheet.name
+            : `Лист ${worksheet.id ?? ''}`.trim();
+        lines.push(`# ${sheetName}`);
+        worksheet.eachRow((row) => {
+          const cells: string[] = [];
+          // includeEmpty:false по умолчанию — пробегаем только заполненные.
+          row.eachCell((cell) => {
+            const value = cellToText(cell.value);
+            if (value.length > 0) cells.push(value);
+          });
+          if (cells.length > 0) lines.push(cells.join('\t'));
+        });
+      });
+
+      return {
+        text: lines.join('\n').trim(),
+        metadata: { extractedAt: new Date() },
+      };
+    } catch (err) {
+      if (err instanceof DocumentParseFailedError) throw err;
+      throw new DocumentParseFailedError(
+        err instanceof Error ? err.message : String(err),
+        err,
+      );
+    }
+  }
+
+  /**
+   * CSV (ТЗ-4 Ф2). officeparser умеет CSV (с `fileType: 'csv'`), но это
+   * простой текстовый формат — если парсер споткнётся, безопасно отдаём сырой
+   * UTF-8 (CSV самодостаточен как plain text для embedding'а/extract'а).
+   */
+  private async parseCsv(content: Buffer | string): Promise<ParseResult> {
+    const raw = toStringUtf8(content);
+    try {
+      const text = await runOfficeParser(toBuffer(content), 'csv');
+      const trimmed = text.trim();
+      return {
+        text: trimmed.length > 0 ? trimmed : raw.trim(),
+        metadata: { extractedAt: new Date() },
+      };
+    } catch (err) {
+      this.logger.debug(
+        `officeparser упал на CSV (${err instanceof Error ? err.message : String(err)}) — fallback на сырой UTF-8`,
+      );
+      return {
+        text: raw.trim(),
+        metadata: { extractedAt: new Date() },
+      };
+    }
+  }
+
+  /**
+   * Бинарные office-форматы (.pptx, .rtf, .odt) через `officeparser` (ТЗ-4 Ф2).
+   * Эти форматы не синтезировать руками — отдаём как есть в parseOffice.
+   */
+  private async parseViaOfficeParser(
+    buffer: Buffer,
+    fileType: OfficeParserFileType,
+  ): Promise<ParseResult> {
+    try {
+      const text = await runOfficeParser(buffer, fileType);
+      return {
+        text: text.trim(),
+        metadata: { extractedAt: new Date() },
+      };
+    } catch (err) {
+      if (err instanceof DocumentParseFailedError) throw err;
+      throw new DocumentParseFailedError(
+        err instanceof Error ? err.message : String(err),
+        err,
+      );
+    }
+  }
+
+  /**
+   * HTML-страница (выгрузка из вики/Confluence/Notion). Сначала officeparser
+   * (он чистит разметку умнее), при пустом/ошибочном результате — fallback на
+   * наш `stripHtmlTags` поверх сырого HTML.
+   */
+  private async parseHtml(content: Buffer | string): Promise<ParseResult> {
+    const raw = toStringUtf8(content);
+    try {
+      const text = await runOfficeParser(toBuffer(content), 'html');
+      const trimmed = text.trim();
+      if (trimmed.length > 0) {
+        return { text: trimmed, metadata: { extractedAt: new Date() } };
+      }
+    } catch (err) {
+      this.logger.debug(
+        `officeparser упал на HTML (${err instanceof Error ? err.message : String(err)}) — fallback на stripHtmlTags`,
+      );
+    }
+    return {
+      text: stripHtmlTags(raw),
+      metadata: { extractedAt: new Date() },
+    };
+  }
+}
+
+// ─────────────────────────── officeparser bridge ───────────────────────
+
+/**
+ * Поддерживаемые `officeparser` форматы, которые маршрутизирует наш switch.
+ * Для бинарных (.pptx/.rtf/.odt) `fileType` опционален (автодетект по сигнатуре),
+ * для текстовых (.csv/.html) — обязателен (см. Context7: IMPROPER_BUFFERS без хинта).
+ */
+type OfficeParserFileType = 'pptx' | 'rtf' | 'odt' | 'csv' | 'html';
+
+/** Минимальный AST-контракт officeparser, который нам нужен (`toText()`). */
+interface OfficeParserAstLike {
+  toText: () => string;
+}
+
+/**
+ * Единая обёртка над `officeparser.parseOffice(...)` (v7.x, проверено
+ * эмпирически на 7.2.1: `parseOffice(buffer, { fileType }) → AST`, `ast.toText()`
+ * синхронно отдаёт plain text). Вынесена в модульную функцию, чтобы юнит-тесты
+ * могли подменить пакет через `vi.mock('officeparser')`.
+ *
+ * Для текстовых форматов (csv/html) `fileType` обязателен — без него v7 кидает
+ * `IMPROPER_BUFFERS`. Для бинарных тоже передаём хинт — это безопасно и быстрее.
+ */
+async function runOfficeParser(
+  buffer: Buffer,
+  fileType: OfficeParserFileType,
+): Promise<string> {
+  const mod = (await import('officeparser')) as unknown as {
+    parseOffice?: (
+      file: Buffer,
+      config?: { fileType?: string },
+    ) => Promise<OfficeParserAstLike>;
+    default?: {
+      parseOffice?: (
+        file: Buffer,
+        config?: { fileType?: string },
+      ) => Promise<OfficeParserAstLike>;
+    };
+  };
+  const parseOffice = mod.parseOffice ?? mod.default?.parseOffice;
+  if (typeof parseOffice !== 'function') {
+    throw new DocumentParseFailedError('officeparser не предоставил parseOffice');
+  }
+  const ast = await parseOffice(buffer, { fileType });
+  return typeof ast?.toText === 'function' ? ast.toText() : '';
+}
+
+/** Тип ячейки ExcelJS, который нам нужен (`value`). Не тянем полный тип либы. */
+type ExcelCellLike = { value: unknown };
+type ExcelRowLike = { eachCell: (cb: (cell: ExcelCellLike) => void) => void };
+interface ExcelWorksheetLike {
+  name?: string;
+  id?: number;
+  eachRow: (cb: (row: ExcelRowLike) => void) => void;
+}
+interface ExcelWorkbookLike {
+  xlsx: { load: (data: Buffer) => Promise<unknown> };
+  eachSheet: (cb: (worksheet: ExcelWorksheetLike) => void) => void;
+}
+
+/**
+ * Приводит значение ячейки ExcelJS к строке. ExcelJS возвращает разные формы:
+ * примитивы, `{ richText: [...] }`, `{ text, hyperlink }`, `{ formula, result }`,
+ * `{ error }`, `Date`. Берём человекочитаемый текст; неизвестное — JSON/String.
+ */
+function cellToText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    if (Array.isArray(v.richText)) {
+      return v.richText
+        .map((part) =>
+          part && typeof part === 'object' && 'text' in part
+            ? String((part as { text?: unknown }).text ?? '')
+            : '',
+        )
+        .join('')
+        .trim();
+    }
+    if (typeof v.text === 'string') return v.text.trim();
+    if ('result' in v) return cellToText(v.result);
+    if ('formula' in v) return `=${String(v.formula)}`;
+    if ('error' in v) return String(v.error);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 // ─────────────────────────── helpers ───────────────────────────────────

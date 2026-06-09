@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { CloneChatClient } from './CloneChatClient';
 
 export const metadata: Metadata = {
-  title: 'Диалог с клоном — Кора',
+  title: 'Диалог с клоном',
 };
 
 /**

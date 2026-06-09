@@ -200,3 +200,21 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 - `GET /api/v1/me/clone-access` — что мне выдано (для `useMyCloneAccess` хука; грейсфул на 404).
 - `GET /api/v1/clones/conversations?cloneType&cloneRefId` — мои диалоги с клоном. Cursor-pagination (cursor — UUID, **не cuid** — ловушка из исходной ТЗ). Маппинг на `ChatV2Conversation(scope='card')` — отдельной модели `CloneConversation` в проекте нет, диалог это «обёртка над chat-v2».
 - Маршруты `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]`, `/admin/clones` — см. [[frontend-pages]] §«Clones — маркетплейс».
+
+## Доработки 2026-06-08 — качество клона сотрудника (8 фаз)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon` (коммиты `dbf9b0d4`, `8446e89a`, `fc8901fe`, `3376fae1`, `2b59c8da`, `4c28bea1`). Цель — устранить системные искажения в построении профиля и persona. Схема (новый enum) — [[../02_architecture/data-model]] §SkillTraitStatus; новый taskType/cron — [[ai-jobs]], [[workers-queues]]; chatbox-атрибуция по говорящему — [[knowledge-clone]].
+
+| Фаза | Что изменилось | Файл/механизм |
+|---|---|---|
+| **Ф2 (B+C) — confidence из дат + атомарность** | `mergeIntoExisting` пересчитывает confidence трейта из числа **разных дат** блоков-источников (по `createdAt`: ≥4 разных дат → high, ≥2 → medium), берёт **MAX** с текущим (не понижает при merge). `statement` + `embedding` обновляются **вместе в одной транзакции** (либо оба, либо ни одного — нет рассинхрона текста и вектора). | `specialist-3-7-skill` merge-сервис |
+| **Ф3 (D) — verify-гейт (grounding)** | Новая черта создаётся в статусе `pending_verification` (`createNewTraitRaw`), **в persona НЕ попадает** до проверки. Ночной `Specialist37Service.verifyPendingTraits()` (LLM `skill-trait-verify`) grounding'ом сверяет формулировку с цитатами: grounded → `active`, иначе → `held`. **FAIL-OPEN:** ошибка LLM → `active` (не блокируем профиль из-за сбоя). Enum-член `SkillTraitStatus.pending_verification` (миграция `20260608120000_add_skill_trait_pending_verification`), cron `SkillTraitVerifyCron @Cron('30 3 * * *')`. | `verifyPendingTraits`, новый taskType+промпт `skill_trait_verify_v1` (primary `deepseek-v4-flash`) |
+| **Ф4 (E) — split-floor (порог появления)** | Минимум наблюдений вынесен в два тумблера через `getDynamic`: `knowledge.skillProfileMinObservations` (fallback — текущий `minObservations`) и `knowledge.skillClusterMinObservations` (fallback 3). Клон формируется на разрежённых данных, профиль появляется раньше. | AdminSetting |
+| **Ф5 (F) — арбитраж мёртвой зоны merge** | `ARBITRATION_FLOOR=0.78`: кандидаты на слияние в полосе `[0.78, 0.85)` («band») **судятся LLM-арбитром** (`skill-trait-merge`), а не форсятся как новая черта. Бакет (band/clear) передаётся в USER-шаблон арбитра. | merge-сервис |
+| **Ф6 (G) — clone-respond без понижения анти-дипфейка** | Режим `judgmental` **больше не понижает** анти-дипфейк-порог: оба режима (`factual`/`judgmental`) держат `cloneTopicMinBlocks=2` и cosine ≥ 0.70. `parseCitations` парсит `[DECISION:id]` наравне с `[BLOCK:id]`. **SYSTEM-промпт не тронут** (prompt-cache сохранён). | `ClonesService` |
+| **Ф7 (H) — дедуп черт при сборке role-persona** | `executable-persona-build.service.ts buildForRole`: `dedupeTraitsByConcept` схлопывает черты одного `conceptId` от N сотрудников в одного представителя (max `observationCount`, при равенстве — выше `confidence`). Раньше одна и та же черта от трёх человек попадала в role-persona трижды. | `buildForRole` |
+| **Ф1 (A)** | chatbox-атрибуция по говорящему — см. [[knowledge-clone]] §«Атрибуция по говорящему». | — |
+
+**Класс-фикс decay (Ф2).** Шаг затухания `runDecay` приведён к **одной ступени за проход** (medium→low выполняется ДО high→medium, иначе свежий high за один прогон проваливался сразу в low). Тот же двойной-шаг исправлен и в `skill-profile-recalibrate.cron.ts` — это был один баг-класс в двух местах (см. [[../02_architecture/code-pitfalls]] §«Decay двойной шаг»).
+
+**Тесты:** knowledge-core + clones + chatbox — 530 тестов зелёные.

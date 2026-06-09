@@ -28,6 +28,9 @@ export const MEETING_STATUSES = [
   // Терминальный сбой ТОЛЬКО AI-ветки (транскрибация/отчёт) — запись при этом
   // в порядке (Recording.status=ready, есть видео). НЕ прячет плеер.
   'ai_failed',
+  // Загруженная запись распознана — ждём, пока человек подпишет говорящих
+  // (ТЗ-5 Ф5). До подтверждения AI-отчёт не запускается.
+  'awaiting_speakers',
 ] as const;
 export type MeetingStatus = typeof MEETING_STATUSES[number];
 

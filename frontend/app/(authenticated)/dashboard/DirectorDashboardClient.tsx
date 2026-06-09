@@ -9,10 +9,8 @@ import {
   AlertCircle,
   ArrowRight,
   Brain,
-  Compass,
   HelpCircle,
   LayoutDashboard,
-  Lightbulb,
   Loader2,
   MessageCircle,
   RefreshCcw,
@@ -76,13 +74,17 @@ import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
+import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { GoalsTreeView } from '../goals/GoalsTreeView';
-import { GoalsPulseWidget } from './widgets/GoalsPulseWidget';
+import { ChatUsageWidget } from './widgets/ChatUsageWidget';
+import { GoalVectorVerdictWidget } from './widgets/GoalVectorVerdictWidget';
+import { IdeasTopWidget } from './widgets/IdeasTopWidget';
 import { InsightsTopWidget } from './widgets/InsightsTopWidget';
 import { IntroWizardWidget } from './widgets/IntroWizardWidget';
 import { QualityScoreWidget } from './widgets/QualityScoreWidget';
-import { StrategicAlignmentWidget } from './widgets/StrategicAlignmentWidget';
 import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
+import { ValueStripWidget } from './widgets/ValueStripWidget';
+import { WhatWeLearnedWidget } from './widgets/WhatWeLearnedWidget';
 
 /**
  * Дашборд директора (knowledge-core, Фаза 8).
@@ -276,6 +278,9 @@ export function DirectorDashboardClient() {
   };
 
   return (
+    // Современный фон страницы (одобренный редизайн) — применяется всегда,
+    // независимо от флага `mainReworkEnabled`.
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
       {/* Б.8 — снят sticky, чтобы не конфликтовать с sticky Hero (top-0 z-20).
           Header теперь обычный, скроллится за Hero. */}
@@ -297,6 +302,23 @@ export function DirectorDashboardClient() {
           >
             <Activity size={14} strokeWidth={1.75} className="shrink-0" />
             <span>Операционная сводка</span>
+          </Link>
+          {/* ТЗ-2 Ф6 — pill-ссылки на портфель целей и витрину «Что сделала Кора». */}
+          <Link
+            href="/dashboard/portfolio"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            aria-label="Открыть портфель целей"
+          >
+            <Target size={14} strokeWidth={1.75} className="shrink-0" />
+            <span>Портфель целей</span>
+          </Link>
+          <Link
+            href="/dashboard/value-recap"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
+            aria-label="Открыть витрину «Что сделала Кора»"
+          >
+            <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
+            <span>Что сделала Кора</span>
           </Link>
           <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
           <Button
@@ -331,81 +353,177 @@ export function DirectorDashboardClient() {
         </div>
       )}
 
-      {/* === STICKY HERO (3 зоны: 3 KPI · AI-сводка · Топ-1 риск) ===
-          Фаза Б.2 ТЗ `2026-06-01-dashboard-main-tabs-restructure.md`. */}
-      <div className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-br from-bg-base via-bg-base to-accent/5 px-4 pb-3 pt-3 backdrop-blur md:pt-4">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {/* Зона 1: 3 KPI с MiniSparkline. */}
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:col-span-1">
-            <KpiHero
-              label="Настроение"
-              value={data?.kpiSentimentIndex?.value ?? 0}
-              numericValue={data?.kpiSentimentIndex?.value ?? 0}
-              sparkline={data?.kpiSentimentIndex?.sparkline}
-              trend={data?.kpiSentimentIndex?.trend}
-              threshold={{ green: 30, yellow: 0 }}
-              href="/dashboard/operations"
-            />
-            <KpiHero
-              label="Обещания"
-              value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
-              numericValue={data?.kpiCommitmentReliability?.value ?? 0}
-              format={(n) => `${Math.round(n)}%`}
-              sparkline={data?.kpiCommitmentReliability?.sparkline}
-              delta={data?.kpiCommitmentReliability?.delta}
-              deltaLabel="за 14 дней"
-              threshold={{ green: 80, yellow: 60 }}
-              href="/me?tab=promises"
-            />
-            <KpiHero
-              label="Висящие решения"
-              value={data?.kpiHangingDecisions?.value ?? 0}
-              numericValue={data?.kpiHangingDecisions?.value ?? 0}
-              sparkline={data?.kpiHangingDecisions?.sparkline}
-              threshold={{ green: 2, yellow: 5, inverted: true }}
-              href="/decisions?status=hanging"
-            />
-          </div>
+      {data?.mainReworkEnabled === false ? (
+        <>
+          {/* === LEGACY STICKY HERO (kill-switch rollback target) ===
+              3 зоны: 3 KPI · AI-сводка · Топ-1 риск + отдельный Компас.
+              Фаза Б.2 ТЗ `2026-06-01-dashboard-main-tabs-restructure.md`. */}
+          <div className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-br from-bg-base via-bg-base to-accent/5 px-4 pb-3 pt-3 backdrop-blur md:pt-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              {/* Зона 1: 3 KPI с MiniSparkline. */}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:col-span-1">
+                <KpiHero
+                  label="Настроение"
+                  value={data?.kpiSentimentIndex?.value ?? 0}
+                  numericValue={data?.kpiSentimentIndex?.value ?? 0}
+                  sparkline={data?.kpiSentimentIndex?.sparkline}
+                  trend={data?.kpiSentimentIndex?.trend}
+                  threshold={{ green: 30, yellow: 0 }}
+                  href="/dashboard/operations"
+                />
+                <KpiHero
+                  label="Обещания"
+                  value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
+                  numericValue={data?.kpiCommitmentReliability?.value ?? 0}
+                  format={(n) => `${Math.round(n)}%`}
+                  sparkline={data?.kpiCommitmentReliability?.sparkline}
+                  delta={data?.kpiCommitmentReliability?.delta}
+                  deltaLabel="за 14 дней"
+                  threshold={{ green: 80, yellow: 60 }}
+                  href="/me?tab=promises"
+                />
+                <KpiHero
+                  label="Висящие решения"
+                  value={data?.kpiHangingDecisions?.value ?? 0}
+                  numericValue={data?.kpiHangingDecisions?.value ?? 0}
+                  sparkline={data?.kpiHangingDecisions?.sparkline}
+                  threshold={{ green: 2, yellow: 5, inverted: true }}
+                  href="/decisions?status=hanging"
+                />
+              </div>
 
-          {/* Зона 2: AI-сводка. */}
-          <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
-            <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
-              <Sparkles size={12} aria-hidden />
-              <span>AI-сводка</span>
+              {/* Зона 2: AI-сводка. */}
+              <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
+                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+                  <Sparkles size={12} aria-hidden />
+                  <span>Сводка Коры</span>
+                </div>
+                {data?.narrativeSummary ? (
+                  <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
+                ) : (
+                  <p className="text-xs text-fg-tertiary">Сводка Коры появится после первой встречи или анализа знаний.</p>
+                )}
+              </div>
+
+              {/* Зона 3: Топ-1 риск. */}
+              <TopRiskCard
+                risk={
+                  pulse?.irreversibleDecisions?.decisions?.[0]
+                    ? {
+                        id: pulse.irreversibleDecisions.decisions[0].decisionId,
+                        title: pulse.irreversibleDecisions.decisions[0].statement,
+                        subtitle: null,
+                      }
+                    : null
+                }
+                totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
+                isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
+                onPaywallTrigger={showPaywallModal}
+              />
             </div>
-            {data?.narrativeSummary ? (
-              <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
-            ) : (
-              <p className="text-xs text-fg-tertiary">AI-сводка появится после первой встречи или анализа знаний.</p>
-            )}
           </div>
 
-          {/* Зона 3: Топ-1 риск. */}
-          <TopRiskCard
-            risk={
-              pulse?.irreversibleDecisions?.decisions?.[0]
-                ? {
-                    id: pulse.irreversibleDecisions.decisions[0].decisionId,
-                    title: pulse.irreversibleDecisions.decisions[0].statement,
-                    subtitle: null,
-                  }
-                : null
-            }
-            totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
-            isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
-            onPaywallTrigger={showPaywallModal}
-          />
-        </div>
-      </div>
+          {/* === ТЗ-B: Компас «Вектор движения» — под Hero, выше Структуры (R9) === */}
+          <div className="mb-6">
+            <CompassWidget
+              data={pulse?.goalVector ?? null}
+              loading={pulseLoading}
+              error={pulseError}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* FIRST-SCREEN-7: Польза · Настроение · Обещания · Висящие решения · Компас · AI-сводка · Top-1 риск */}
+          <div className="mb-6 space-y-4">
+            {/* 1. Польза — ValueStrip + ChatUsage (единая величина «Польза»).
+                data может быть null до первой загрузки — фолбэк до нулей. */}
+            <ValueStripWidget
+              data={
+                data?.valueStrip ?? {
+                  meetingsProtocoled: 0,
+                  tasksExtracted: 0,
+                  decisionsExtracted: 0,
+                  questionsAnsweredByMemory: 0,
+                  commitmentsKept: 0,
+                }
+              }
+            />
+            <ChatUsageWidget />
 
-      {/* === ТЗ-B: Компас «Вектор движения» — под Hero, выше Структуры (R9) === */}
-      <div className="mb-6">
-        <CompassWidget
-          data={pulse?.goalVector ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-      </div>
+            {/* 2–4. Настроение · Обещания · Висящие решения. */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <KpiHero
+                label="Настроение"
+                value={data?.kpiSentimentIndex?.value ?? 0}
+                numericValue={data?.kpiSentimentIndex?.value ?? 0}
+                sparkline={data?.kpiSentimentIndex?.sparkline}
+                trend={data?.kpiSentimentIndex?.trend}
+                threshold={{ green: 30, yellow: 0 }}
+                href="/dashboard/operations"
+              />
+              <KpiHero
+                label="Обещания"
+                value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
+                numericValue={data?.kpiCommitmentReliability?.value ?? 0}
+                format={(n) => `${Math.round(n)}%`}
+                sparkline={data?.kpiCommitmentReliability?.sparkline}
+                delta={data?.kpiCommitmentReliability?.delta}
+                deltaLabel="за 14 дней"
+                threshold={{ green: 80, yellow: 60 }}
+                href="/me?tab=promises"
+              />
+              <KpiHero
+                label="Висящие решения"
+                value={data?.kpiHangingDecisions?.value ?? 0}
+                numericValue={data?.kpiHangingDecisions?.value ?? 0}
+                sparkline={data?.kpiHangingDecisions?.sparkline}
+                threshold={{ green: 2, yellow: 5, inverted: true }}
+                href="/decisions?status=hanging"
+              />
+            </div>
+
+            {/* 5–7. Компас (факт) · AI-сводка · Top-1 риск. */}
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              {/* 5. Компас (факт) — единый вердикт вектора к цели. */}
+              <GoalVectorVerdictWidget
+                goalsTree={data?.goalsTree ?? null}
+                strategicAlignment={data?.strategicAlignment ?? null}
+                goalsPulse={data?.goalsPulse ?? null}
+              />
+
+              {/* 6. AI-сводка. */}
+              <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
+                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+                  <Sparkles size={12} aria-hidden />
+                  <span>Сводка Коры</span>
+                </div>
+                {data?.narrativeSummary ? (
+                  <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
+                ) : (
+                  <p className="text-xs text-fg-tertiary">Сводка Коры появится после первой встречи или анализа знаний.</p>
+                )}
+              </div>
+
+              {/* 7. Top-1 риск. */}
+              <TopRiskCard
+                risk={
+                  pulse?.irreversibleDecisions?.decisions?.[0]
+                    ? {
+                        id: pulse.irreversibleDecisions.decisions[0].decisionId,
+                        title: pulse.irreversibleDecisions.decisions[0].statement,
+                        subtitle: null,
+                      }
+                    : null
+                }
+                totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
+                isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
+                onPaywallTrigger={showPaywallModal}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* === Узкая sticky-полоса под Hero: структура + «Спросите Кору» === */}
       <div className="sticky top-[var(--hero-h,200px)] z-10 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 bg-bg-base/95 px-4 py-2 backdrop-blur">
@@ -482,6 +600,7 @@ export function DirectorDashboardClient() {
         )}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -538,24 +657,17 @@ function OverviewTab({ data, pulse, loading, pulseLoading }: TabContentProps) {
   }
   return (
     <StaggerSection delayMs={0}>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <DigestCard
-          title="Темы недели"
-          items={themes.slice(0, 3).map((t) => ({ id: t.id, label: t.name }))}
-          href="/themes"
-          emptyLabel="Новых тем пока нет"
-        />
-        <DigestCard
-          title="Сигналы недели"
-          items={signals.slice(0, 3).map((s) => ({ id: s.id, label: s.name }))}
-          href="/insights"
-          emptyLabel="Новых сигналов пока нет"
-        />
-        <DigestCard
-          title="Решения недели"
-          items={decisions.map((d) => ({ id: d.decisionId, label: d.statement }))}
-          href="/decisions"
-          emptyLabel="Свежих решений пока нет"
+      <div className="mb-6">
+        <WhatWeLearnedWidget
+          themes={data?.newThemes ?? []}
+          signals={data?.newSignals ?? []}
+          decisions={
+            pulse?.irreversibleDecisions.decisions.map((d) => ({
+              id: d.decisionId,
+              statement: d.statement,
+              decidedAt: d.decidedAt,
+            })) ?? []
+          }
         />
       </div>
       <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
@@ -584,7 +696,7 @@ function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
             pageSize={5}
             liveUpdate
             drillDownHref="/me/notifications"
-            title="Вопросы AI команде"
+            title="Вопросы Коры команде"
             emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
           />
         </div>
@@ -606,7 +718,6 @@ function KnowledgeTab({
   loading,
   pulseLoading,
   pulseError,
-  periodLabel,
 }: TabContentProps) {
   const themes = data?.newThemes ?? [];
   const entities = data?.hotEntities ?? [];
@@ -624,48 +735,53 @@ function KnowledgeTab({
       <TabEmptyState
         tabLabel="Знания"
         icon={Brain}
-        hint="Раздел заполнится после первой встречи или загрузки документов — AI извлечёт темы и сущности."
+        hint="Раздел заполнится после первой встречи или загрузки документов — Кора извлечёт темы и сущности."
       />
     );
   }
   return (
     <StaggerSection delayMs={0}>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <RecurringTopicsWidget
-            data={pulse?.recurringTopics ?? null}
-            loading={pulseLoading}
-            error={pulseError}
+      {/* Видимое ядро: повторяющиеся темы · открытые вопросы · скорость знаний. */}
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <RecurringTopicsWidget
+          data={pulse?.recurringTopics ?? null}
+          loading={pulseLoading}
+          error={pulseError}
+        />
+        <OpenQuestionsWidget
+          loading={loading}
+          questions={data?.openQuestions ?? []}
+        />
+        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
+      </div>
+
+      {/* Drill-down: остальные срезы знаний свёрнуты по умолчанию. */}
+      <details className="group mb-6 rounded-2xl border border-border-subtle/60 bg-bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium text-fg-secondary transition-colors hover:text-fg-primary">
+          <span>Подробнее: сигналы, темы, сущности, идеи</span>
+          <ArrowRight
+            size={16}
+            className="shrink-0 transition-transform group-open:rotate-90"
+            aria-hidden
           />
-        </div>
-        <div className="lg:col-span-2">
+        </summary>
+        <div className="grid grid-cols-1 gap-4 p-4 pt-0 lg:grid-cols-2">
           <BottleneckHeatmapWidget
             data={pulse?.bottlenecks ?? null}
             loading={pulseLoading}
             error={pulseError}
           />
+          <SignalCountersWidget
+            loading={loading}
+            counters={data?.signalCounters ?? null}
+          />
+          <ActiveThemesWidget loading={loading} themes={data?.activeThemes ?? []} />
+          <HotEntitiesWidget loading={loading} entities={data?.hotEntities ?? []} />
+          <InsightsTopWidget />
+          <IdeasTopWidget />
         </div>
-      </div>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <WhatLearnedWidget
-          loading={loading}
-          newThemes={data?.newThemes ?? []}
-          newSignals={data?.newSignals ?? []}
-          periodLabel={periodLabel ?? 'неделю'}
-        />
-        <SignalCountersWidget
-          loading={loading}
-          counters={data?.signalCounters ?? null}
-        />
-        <ActiveThemesWidget loading={loading} themes={data?.activeThemes ?? []} />
-        <HotEntitiesWidget loading={loading} entities={data?.hotEntities ?? []} />
-        <OpenQuestionsWidget
-          loading={loading}
-          questions={data?.openQuestions ?? []}
-        />
-        <InsightsTopWidget />
-        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
-      </div>
+      </details>
+
       <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
     </StaggerSection>
   );
@@ -697,25 +813,14 @@ function GoalsTab({
   }
   return (
     <StaggerSection delayMs={0}>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card>
-            <CardContent className="flex h-full items-center gap-3 p-4 text-sm text-fg-secondary">
-              <Compass size={18} className="shrink-0 text-accent" aria-hidden />
-              <span>
-                «Вектор движения» теперь в шапке главной — над вкладками. Здесь
-                остаются встречи и решения.
-              </span>
-            </CardContent>
-          </Card>
-        </div>
-        <div className="lg:col-span-1">
-          <LowRoiMeetingsWidget
-            meetings={pulse?.lowRoiMeetings.meetings ?? []}
-            loading={pulseLoading}
-            error={pulseError}
-          />
-        </div>
+      {/* «Вектор к цели» теперь на первом экране главной (Р2 — объединён в
+          GoalVectorVerdictWidget). Здесь остаются встречи и решения. */}
+      <div className="mb-6">
+        <LowRoiMeetingsWidget
+          meetings={pulse?.lowRoiMeetings.meetings ?? []}
+          loading={pulseLoading}
+          error={pulseError}
+        />
       </div>
       <div className="mb-6">
         <IrreversibleDecisionsAlert
@@ -723,12 +828,7 @@ function GoalsTab({
           alertCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
         />
       </div>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <StrategicAlignmentWidget
-          data={data?.strategicAlignment}
-          loading={loading}
-        />
-        <GoalsPulseWidget data={data?.goalsPulse} loading={loading} />
+      <div className="mb-6">
         <QualityScoreWidget />
       </div>
       {data?.goalsTree && data.goalsTree.length > 0 && (
@@ -763,44 +863,6 @@ function TabBottomLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function DigestCard({
-  title,
-  items,
-  href,
-  emptyLabel,
-}: {
-  title: string;
-  items: ReadonlyArray<{ id?: string; label?: string | null }>;
-  href: string;
-  emptyLabel: string;
-}) {
-  return (
-    <div className="flex h-full flex-col gap-2 rounded-2xl border border-border-subtle/60 bg-bg-card p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-secondary">
-        {title}
-      </h3>
-      {items.length === 0 ? (
-        <p className="text-xs text-fg-tertiary">{emptyLabel}</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {items.map((it, i) => (
-            <li key={it.id ?? i} className="line-clamp-2 text-sm text-fg-primary">
-              {it.label || '—'}
-            </li>
-          ))}
-        </ul>
-      )}
-      <Link
-        href={href}
-        className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-accent-fg hover:underline"
-      >
-        Открыть
-        <ArrowRight size={12} />
-      </Link>
-    </div>
-  );
-}
-
 // ─── Period switch ──────────────────────────────────────────────────────────
 
 function PeriodSwitch({
@@ -832,117 +894,6 @@ function PeriodSwitch({
         </button>
       ))}
     </div>
-  );
-}
-
-// ─── Widget: «Что узнали за период» ─────────────────────────────────────────
-
-function WhatLearnedWidget({
-  loading,
-  newThemes,
-  newSignals,
-  periodLabel,
-}: {
-  loading: boolean;
-  newThemes: DirectorDashboardThemeDomain[];
-  newSignals: DirectorDashboardSignalDomain[];
-  periodLabel: string;
-}) {
-  return (
-    <Card className="lg:col-span-2">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Lightbulb size={16} className="text-accent" />
-          Что узнали за {periodLabel}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-              Новые темы
-            </h3>
-            {loading && <SkeletonList />}
-            {!loading && newThemes.length === 0 && (
-              <EmptyHint text="Пока недостаточно данных. Появятся, как только AI-кластеризатор обработает новые блоки." />
-            )}
-            {!loading &&
-              newThemes.length > 0 &&
-              newThemes.slice(0, 10).map((t) => (
-                <Link
-                  key={t.id}
-                  href={`/themes/${encodeURIComponent(t.id)}`}
-                  className="block rounded-md p-2 text-sm hover:bg-bg-overlay"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium text-fg-primary">
-                      {t.name}
-                    </span>
-                    {t.dynamic === 'growing' && (
-                      <span aria-label="растёт" title="Растёт">
-                        📈
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-fg-tertiary">
-                    {t.branch && (
-                      <span>{THEME_BRANCH_LABELS[t.branch as ThemeBranch]}</span>
-                    )}
-                    <span>· {t.blocksCount} блоков</span>
-                  </div>
-                </Link>
-              ))}
-          </div>
-          <div>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-tertiary">
-              Новые сигналы
-            </h3>
-            {loading && <SkeletonList />}
-            {!loading && newSignals.length === 0 && (
-              <EmptyHint text="Сигналов высокой важности за период не зафиксировано." />
-            )}
-            {!loading &&
-              newSignals.length > 0 &&
-              newSignals.slice(0, 10).map((s) => {
-                const linkable = s.evidenceMeetingId !== null;
-                const inner = (
-                  <div className="rounded-md p-2 text-sm hover:bg-bg-overlay">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-[10px]">
-                        {signalTypeLabel(s.signalType)}
-                      </Badge>
-                      <span className="truncate text-fg-primary">{s.name}</span>
-                    </div>
-                    {s.criticalQuestion && (
-                      <p className="mt-1 line-clamp-2 text-xs text-fg-tertiary">
-                        {s.criticalQuestion}
-                      </p>
-                    )}
-                  </div>
-                );
-                if (!linkable) {
-                  return (
-                    <div key={s.id} className="opacity-90">
-                      {inner}
-                    </div>
-                  );
-                }
-                return (
-                  <Link
-                    key={s.id}
-                    href={`/meetings/${encodeURIComponent(
-                      s.evidenceMeetingId!,
-                    )}/result?block=${encodeURIComponent(s.id)}`}
-                    className="block"
-                  >
-                    {inner}
-                  </Link>
-                );
-              })}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

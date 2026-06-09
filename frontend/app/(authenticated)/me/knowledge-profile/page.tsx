@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { KnowledgeProfileClient } from './KnowledgeProfileClient';
 
 export const metadata: Metadata = {
-  title: 'Что Кора знает обо мне — Кора',
+  title: 'Что Кора знает обо мне',
 };
 
 /**

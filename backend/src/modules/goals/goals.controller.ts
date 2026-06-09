@@ -33,6 +33,7 @@ import {
   CreateGoalSchema,
   CreateKeyResultSchema,
   ListGoalsQuerySchema,
+  SetGoalPrioritySchema,
   SupersedeGoalSchema,
   UpdateGoalSchema,
   UpdateKeyResultSchema,
@@ -44,6 +45,7 @@ import {
   type GoalKeyResultDto,
   type GoalListItemDto,
   type ListGoalsQuery,
+  type SetGoalPriorityDto,
   type SupersedeGoalDto,
   type UpdateGoalDto,
   type UpdateKeyResultDto,
@@ -134,6 +136,28 @@ export class GoalsController {
       userId: user.id,
       goalId: id,
       body,
+    });
+  }
+
+  @Patch(':id/priority')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'ТЗ-2 Ф6.A — проставить MoSCoW-приоритет цели (must/should/could/wont или null)',
+  })
+  async setPriority(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetGoalPrioritySchema)) body: SetGoalPriorityDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ id: string; priority: 'must' | 'should' | 'could' | 'wont' | null }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.goals.setPriority({
+      tenantId: t,
+      userId: user.id,
+      goalId: id,
+      priority: body.priority,
     });
   }
 

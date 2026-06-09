@@ -12,11 +12,13 @@
  */
 
 import {
+  withAsrNote,
   withConfidenceCalibration,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
-export const REGULATION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
+export const REGULATION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withEdgeCasePolicy(
   withConfidenceCalibration(
     [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором упомянут регламент / процесс / политика компании.',
@@ -31,6 +33,7 @@ export const REGULATION_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
     '',
     'Если блок описывает шаг процесса, верни kind="process" и заполни поле processStepHint.',
     ].join('\n'),
+  ),
   ),
 );
 

@@ -1494,3 +1494,121 @@ enum SourceType { meeting chat phone_call bot email web_form external conversati
 - **`MeetingTypeConfig.defaultClosedGroupKind String? @db.VarChar(20)`** — admin-editable дефолт закрытости по типу встречи. null = открыто; `interview`→'personal' (засидено: bootstrap-sync + патч `patch-meeting-type-closed-defaults.ts`).
 
 [[../index|← index]]
+
+## `SkillTraitStatus += pending_verification` (качество клона, TZ#2 Ф3, 2026-06-08)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-clone-quality-improvements.md`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф3 (D). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Миграция **`20260608120000_add_skill_trait_pending_verification`** (рукописная — добавляет значение в enum при отсутствии dev-БД). Полная карта изменений клона — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-08».
+
+Enum `SkillTraitStatus` (`schema.prisma:7300`) получил новый член:
+
+```prisma
+enum SkillTraitStatus {
+  active
+  superseded_by
+  archived
+  misleading
+  pending_verification   // новое: черта создана, ждёт grounding-проверки (skill-trait-verify); в persona НЕ попадает, пока не станет active
+}
+```
+
+- `createNewTraitRaw` создаёт черту в **`pending_verification`** (а не сразу `active`); persona берёт только `active`-черты.
+- Ночной `SkillTraitVerifyCron @Cron('30 3 * * *')` → `Specialist37Service.verifyPendingTraits()` (LLM `skill-trait-verify`) переводит grounded → `active`, негрунд → `held`; FAIL-OPEN на ошибке LLM → `active`. См. [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
+
+### TZ-1 Фаза 0 — дневной бюджет уведомлений + кампания привязки канала (2026-06-08)
+
+Миграция `20260608130000_notification_budget_and_binding` (всё аддитивно). Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` Фаза 0.
+
+**Новая модель `NotificationBudgetLedger`** (`@@map("notification_budget_ledger")`) — дневной бюджет push-уведомлений на одного `Person`'а в его локальном дне:
+- `tenantId` + `personId` + `dateLocal VarChar(10)` (YYYY-MM-DD локальной TZ), `@@unique([tenantId, personId, dateLocal])`, `@@index([tenantId, dateLocal])`.
+- `sentCount Int @default(0)` — потрачено push за день; `lastSentAt DateTime?`; `byTrigger Json` — разбивка по eventType.
+- FK на `Org` и `Person` (onDelete: Cascade).
+- Учёт — атомарный `upsert + conditional increment` в транзакции (`NotificationBudgetService.tryConsume`, race-safe).
+
+**Расширения:**
+- `Notification += priorityTier Int? @default(2)` — приоритет для бюджета: `1` = критично (обходит бюджет + тихие часы), `2` = обычное.
+- `Person += channelBindingCampaignState String? @db.VarChar(20)` (NULL→`invited`→`reminded`→`bound`) + `channelBindingInvitedAt DateTime?` — состояние кампании привязки Telegram-канала.
+
+**Логика бюджета** (`NotificationBudgetService`, модуль `conversational`): после выбора каналов в `sendNotification` push-доставки (всё кроме in_app) проходят `tryConsume`; in_app доставляется всегда (видимость). Блокировки: `budget_exceeded` (sentCount ≥ лимит), `quiet_hours` (локальное окно), `opted_out` (per-trigger отписка из `ChannelBinding(in_app).preferences`). `critical`/`priorityTier===1` байпасят бюджет и тихие часы. Тумблеры — AdminSetting `notifications.daily_budget.per_person`(5)/`quiet_hours.start`(22)/`.end`(8)/`daily_budget.enabled`(ON)/`binding_campaign.enabled`(ON).
+
+**`checkin.prompt`** добавлен в `EVENT_TYPE_CHANNEL_POLICY` (`['telegram_bot','max_bot','in_app']`) — раньше падал на DEFAULT `['in_app']` и не доходил до Telegram. `ChannelBindingCampaignCron @Cron('0 9 * * *')` (модуль operations) рассылает приглашения/напоминания сотрудникам без verified-привязки. Эндпоинты: `GET /api/v1/dashboard/operations/binding-coverage`, `PATCH /api/v1/me/notification-preferences`. Метрики: `notification_budget_consumed_total{trigger}`, `notification_budget_blocked_total{reason}`, `notification_deferred_to_digest_total`, `channel_binding_coverage_ratio` (gauge), `channel_binding_campaign_invited_total`, `checkin_prompt_delivered_total{channel}`.
+
+### TZ-1 Фаза 2 — движок рядового: «Твой день» + помощник «кто знает X» (2026-06-08)
+
+Миграция `20260608150000_personal_daily_brief` (аддитивная). Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` Фаза 2.
+
+**Новая модель `PersonalDailyBrief`** (`@@map("personal_daily_brief")`) — идемпотентный снимок персонального дневного брифа per-person/день:
+- `tenantId` + `personId` + `dateLocal VarChar(10)`, `@@unique([tenantId, personId, dateLocal])`, `@@index([tenantId, dateLocal])`.
+- `payloadJson Json` (контракт `PersonalDailyBriefPayload`: myTasks/myPromises/myBlockers/promisedToMe + hint + knowsWho + counts), `deliveredAt DateTime?` (push), `openedAt DateTime?` (клик) — единый паттерн «доставлено vs открыто».
+- FK на `Org` и `Person` (onDelete: Cascade).
+
+**Сервисы** (модуль operations): `PersonalDailyBriefService.buildFor` синтезирует бриф из `Issue`(assignee через IssueAssignee.userId)/`Task`(assigneeUserId) due today/overdue + `IdeaBlock(commitment, commitmentAuthorPersonId=я)` (мои обещания) + открытые блокеры автора (`signalType∈{blocker,knowledge_gap}`) + `IdeaBlock(commitment, commitmentRecipientPersonId=я)` (тебе обещали) + 1 LLM-подсказка (`personal-brief-hint`, code-fallback). Дедуп — чистые `dedupBriefItems`/`dropPromisesThatBecameTasks` (обещание-ставшее-задачей считается один раз, sourceBlockId-ключ). `KnowsWhoService.findExpertsForBlocker` — pgvector cosine KNN по `person_knowledge_category_embeddings` (повтор canonical-пути `Specialist32CardHandler`), исключает автора, порог `knows_who.min_confidence`, чистый ранкинг `rankExperts`. Embeddings (text-embedding-3-small) через @Global `KnowledgeEmbeddingService` — НЕ chat-LLM.
+
+**Cron** `PersonalDailyBriefCron @Cron('0 * * * *')` (модуль operations): утреннее окно по `Person.timezone` (`operations.personal_daily_brief.morning_hour`, default 9) → buildFor → upsert → push (`proactive.notification`, priorityTier 2, через бюджет Ф0) → markDelivered. Идемпотентно по unique + проверке deliveredAt.
+
+**Эндпоинты (self-scope, Р8):** `GET /api/v1/me/daily-brief?date=`, `POST /api/v1/me/daily-brief/:id/opened`, `GET /api/v1/me/knows-who?blockId=|q=`. personId резолвится сервером из сессии (`CommitmentsService.resolveSelfPerson`), не из query.
+
+**Тумблеры (AdminSetting):** `operations.personal_daily_brief.enabled`(ON)/`.morning_hour`(9)/`operations.knows_who.enabled`(ON)/`knows_who.min_confidence`(0.5). **LLM:** `personal-brief-hint` (triple-reg, primary deepseek-v4-flash). **Метрики:** `personal_daily_brief_built_total`, `personal_daily_brief_delivered_total{channel}`, `personal_daily_brief_opened_total`, `knows_who_match_total{found}`.
+
+### TZ-1 Фаза 4 — улучшения и знания: лента идей · re-check инсайтов · знание-под-риском · capacity · онбординг (2026-06-08, BACKEND-ONLY)
+
+**Новая модель `KnowledgeAtRiskSnapshot`** (`@@map("knowledge_at_risk_snapshot")`) — еженедельный снимок «знание-под-риском × уход человека»: `categoryName`, `soleExpertPersonId String?` (FK→`persons`, SetNull), `busFactorLevel String @db.VarChar(16)`, `personRiskLevel String? @db.VarChar(16)`, `combinedSeverity String @db.VarChar(16)`, `snapshotAt`. Индекс `@@index([tenantId, combinedSeverity, snapshotAt])`. Back-relations: `Org.knowledgeAtRiskSnapshots`, `Person.knowledgeAtRiskSnapshots(@relation "KnowledgeAtRiskSoleExpert")`. Миграция `20260608170000_knowledge_at_risk`.
+
+**Без новых полей в существующих моделях.** `Insight.mitigationPlan` (String?) формализован как JSON-контракт `MitigationPlan` (steps+ownerPersonId+deadline) **без миграции** — helper'ы `parseMitigationPlan`/`serializeMitigationPlan`/`mitigationPlanToText` в `insights/dto/mitigation-plan.contract.ts` (legacy free-text → parse даёт null). `PersonalDailyBriefPayload` += опц. `insightCoOccurrence` (Ф4.B «ты не один», без миграции — payloadJson).
+
+**Сервисы/cron (модуль operations + ideas + knowledge-core):**
+- **Ф4.A лента идей:** `IdeasService.getTop` (ре-ранк `weight`+свежесть `lastDiscussedAt`+связь `goalId`, чистый `rerankIdeas`/`scoreIdea`) → `GET /ideas/top` (owner/admin/coo). `IdeaStatusAutoAdvanceService` (@OnEvent `tracker.event_occurred`, тип `issue.status_changed_to_done`): связь задача↔идея через **общую цель** (`Issue.goalId === Idea.goalId`) → авто-морфинг статуса (`nextIdeaStatusOnTaskClose`: captured→…→shipped; in_progress→shipped) через `Specialist36Service.changeStatus` (он эмитит `idea.status_changed`). Policy `idea.status_changed` расширена `['in_app','telegram_bot']`. На `shipped` → recognition `idea_shipped` автору (reuse `core.recognition-formulate`, агрегируется whoShined). Секция «Идеи недели» в недельном COO-дайджесте.
+- **Ф4.B re-check инсайтов:** в `insight-clusterer.cron` — `recheckMitigatedForOrg`: `Insight(status='mitigated')` со свежими блоками-повторами старше `insight.recheck_days` → возврат в `active` (чистая `shouldReactivateInsight`).
+- **Ф4.C знание-под-риском:** `KnowledgeAtRiskService.computeForTenant` (пересечение `KnowledgeRiskSnapshot(riskLevel='critical')` соло-эксперт × его `Person.riskFlagsJson`/`engagementScore`, чистые `computeCombinedSeverity`/`derivePersonRiskLevel`) + `KnowledgeAtRiskCron @Cron('0 5 * * 1')` → push **только руководителю** (глава отдела / fallback owner-admin; носителю — ничего, этика). `GET /dashboard/operations/knowledge-at-risk`.
+- **Ф4.D capacity:** `TeamCapacityService.aggregate` (group `Appointment.loadPercent` by department, avg/max, чистая `classifyCapacity` по `team_capacity.{overload,underload}_percent`) → `GET /dashboard/operations/team-capacity` (empty-state, если loadPercent нигде не заполнен).
+- **Ф4.E онбординг:** `OnboardingRampService.listForTenant` (окно по `Person.createdAt`, первый артефакт `IdeaBlockEntity(role=subject)` / вопрос `ChatV2Message(role=user)`, чистая `isOnboardingStalled` по `onboarding.silent_days`) + `OnboardingRampCron @Cron('0 7 * * *')` → push руководителю + новичку. `GET /dashboard/operations/onboarding-ramp`.
+
+**Тумблеры (AdminSetting, все kill-switch ON):** `ideas.feed.enabled`/`.rerank.{weight,freshness,goal_link}`/`.freshness_days`, `insight.recheck_days`/`insights.recheck.enabled`, `operations.knowledge_at_risk.enabled`, `team_capacity.{overload,underload}_percent`/`operations.team_capacity.enabled`, `onboarding.silent_days`/`operations.onboarding_ramp.enabled`. **Без новых chat-LLM.** **Метрики:** `ideas_top_served_total`, `idea_status_auto_advanced_total{to}`, `idea_status_changed_notified_total`, `insight_rechecked_total{reactivated}`, `knowledge_at_risk_total{severity}`, `team_capacity_overload_total`, `onboarding_ramp_stalled_total`. Seed `seed-admin-setting-knowledge-improvement-agents.ts` (в STEPS).
+
+## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
+
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+
+### Здоровье портфеля целей (S2.6 / ТЗ-2 Ф6, миграция `20260608190000_goal_priority_moscow`)
+
+- **Новый enum `GoalPriority`** (`schema.prisma:879`): `must` / `should` / `could` / `wont` (MoSCoW).
+- **`Goal += priority GoalPriority?`** (`schema.prisma:4285`) — приоритет цели, задаётся `PATCH /goals/:id/priority`.
+- **Новая модель `PortfolioHealthSnapshot`** (`schema.prisma:4321`, `@@map("portfolio_health_snapshot")`) — дневной снимок здоровья портфеля целей per-Org:
+  - `tenantId` + `dateLocal VarChar(10)` (YYYY-MM-DD МСК), `@@unique([tenantId, dateLocal])`, `@@index([tenantId, snapshotAt(sort: Desc)])`.
+  - `healthScore Int` (0..100, интегральный балл), `byStatusJson Json` (разрез по `progressStatus`), `byPriorityJson Json` (разрез по MoSCoW: count/achievedCount/achievedPercent), `goalsCount Int`, `snapshotAt`.
+  - FK на `Org` (onDelete: Cascade). Пишется cron'ом `PortfolioHealthSnapshotCron @Cron('0 5 * * 1')` (пн 05:00). См. [[../01_projects/director-dashboard]].
+
+### Документы: форматы + смысловой тип + привязки + хэш (S3.1 ТЗ-4 Ф1, миграция `20260608200000_documents_formats_type_attribution`)
+
+- **`enum DocumentKind`** (`schema.prisma:919` область) расширен: `+ xlsx` (ExcelJS) / `+ pptx` / `+ html` / `+ rtf` / `+ odt` / `+ csv` (officeparser). Раньше было pdf/docx/markdown/text/other.
+- **Новый enum `DocumentType`** (`schema.prisma:919`) — смысловой тип («что это по сути», в отличие от `DocumentKind` = формат файла): `regulation` / `policy` / `instruction` / `process` / `job_description` / `other`.
+- **`Document` расширён** (`schema.prisma:5002`+):
+  - `docType DocumentType?` (вручную при загрузке), `suggestedDocType DocumentType?` + `suggestedThemeId String?` (предложено LLM `document-attribution-suggest`).
+  - `attachedThemeId String?` (FK `Theme` "DocumentTheme", SetNull) + `attachedProjectId String?` (FK `Project` "DocumentProject", SetNull) — явная привязка (пробрасывается в граф).
+  - `contentHash String?` — sha256 содержимого для дедупа загрузок (`@@index([tenantId, contentHash])`).
+  - `importBatchId String?` — связь с `DocumentImport` (`@@index([importBatchId])`).
+  - Новые индексы `@@index([tenantId, docType])`, `@@index([tenantId, attachedThemeId])`.
+
+### Массовый импорт документов (S3.2 ТЗ-4 Ф7–Ф9, миграция `20260608210000_document_import`)
+
+- **Новый enum `DocumentImportSource`** (`schema.prisma:940`): `upload_zip` / `notion` / `confluence`.
+- **Новый enum `DocumentImportStatus`** (`schema.prisma:947`): `pending` / `processing` / `completed` / `failed`.
+- **Новая модель `DocumentImport`** (`schema.prisma:5063`, `@@map("document_import")`) — batch-импорт:
+  - `tenantId` + `source` + `status (default pending)`, `totalFiles`/`doneFiles`/`failedFiles Int`, `errorLog Json?` (`[{file,error}]`), `createdById` (= `Person.id`).
+  - batch-атрибуция всем созданным Document'ам: `attachedThemeId?` / `attachedProjectId?` / `docType DocumentType?`.
+  - архив: `zipS3Key VarChar(500)?` ИЛИ `zipInline Bytes?` (+`zipSize Int`).
+  - FK на `Org` (Cascade), `@@index([tenantId, status])`. Обрабатывается воркером очереди `core.document-import`.
+
+### Загрузка встречи + диаризация (S3.3 ТЗ-5, миграция `20260608220000_meeting_upload_diarization`)
+
+- **Новый enum `MeetingSource`** (`schema.prisma:98`): `livekit` (дефолт) / `upload`.
+- **Новый enum `UploadSpeakerAssignment`** (`schema.prisma:108`): `unassigned` / `employee` / `external` / `excluded`.
+- **`MeetingStatus += awaiting_speakers`** (`schema.prisma:84`) — гейт: диаризация прошла, ждём ручной разметки говорящих ПЕРЕД анализом (вставлен BEFORE `ai_processing`).
+- **`Meeting` расширён** (`schema.prisma:1359`): `source MeetingSource @default(livekit)`, `uploadNumSpeakersHint Int?` (подсказка числа говорящих от пользователя), новый `@@index([tenantId, source, createdAt])`.
+- **`Person` расширён** (`schema.prisma:4762`): `company String? @db.VarChar(200)`, `jobTitle String? @db.VarChar(200)` — заполняются для внешних участников при подписи говорящих.
+- **Новая модель `MeetingUploadSpeaker`** (`schema.prisma:1382`, `@@map("meeting_upload_speaker")`) — диаризованный говорящий загруженной встречи:
+  - `meetingId` (FK `Meeting`, Cascade) + `label` + `displayLabel`, `turnsCount`/`speakingSeconds Int`, `sampleText Text`.
+  - `assignment UploadSpeakerAssignment @default(unassigned)`, `personId String?` (FK `Person`, SetNull) ИЛИ внешний `externalName`/`externalCompany`/`externalPosition VarChar(200)`.
+  - `mergedIntoLabel String?` — слияние двух дорожек в одного человека (без удаления записи, сохраняет провенанс), `participantId String?`.
+  - `@@unique([meetingId, label])`, `@@index([meetingId])`.
+
+[[../index|← index]]

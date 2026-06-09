@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ThemeDetailClient } from './ThemeDetailClient';
 
 export const metadata: Metadata = {
-  title: 'AI-тема',
+  title: 'Тема',
 };
 
 export default async function ThemeDetailPage({

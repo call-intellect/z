@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AcceptInvitationClient } from './AcceptInvitationClient';
 
 export const metadata: Metadata = {
-  title: 'Приглашение в организацию — Кора',
+  title: 'Приглашение в организацию',
 };
 
 export default async function AcceptInvitationPage({

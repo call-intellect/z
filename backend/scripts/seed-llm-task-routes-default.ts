@@ -312,6 +312,76 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
+  // ТОЛЬКО финальная формулировка подсказки (агрегация — SQL/TS, без LLM) →
+  // дешёвая задача, primary deepseek-v4-flash. Без ₽-оценок (Р6).
+  {
+    taskType: 'customer-risk-digest',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
+  // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день».
+  // ТОЛЬКО «1 подсказка дня» (бриф структурный, «кто знает X» — embeddings) →
+  // дешёвая задача, primary deepseek-v4-flash. Без выдуманных фактов/₽.
+  {
+    taskType: 'personal-brief-hint',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
+  // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
+  // ТОЛЬКО финальный абзац-сводка (кластеризация/статусы/импакт — SQL/TS +
+  // embeddings) → дешёвая задача, primary deepseek-v4-flash. Без выдуманных ₽.
+  {
+    taskType: 'blocker-synthesis-summary',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap summary)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+  // ТОЛЬКО человекочитаемая сводка поверх посчитанных твёрдых цифр (счётчики/
+  // дельта — SQL/TS, без LLM) → дешёвая задача, primary deepseek-v4-flash.
+  // Без выдуманных рублей; soft-цифры помечаются «оценка» (Р6).
+  {
+    taskType: 'value-recap-narrative',
+    group: 'knowledge-core',
+    playbookSection: '§11 generalPurpose (cheap summary)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
+  // ТЗ-4 Ф10 (manual-document-upload) — document-attribution-suggest.
+  // Дешёвый классификатор атрибуции документа (docType + тема) → primary
+  // deepseek-v4-flash (как theme-classify/table-*). JSON object, человек
+  // подтверждает (авто-применения нет, Р3). За kill-switch
+  // `documents.ai_attribution.enabled` (DEFAULT ON), но маршрут должен
+  // существовать, иначе при первом вызове он поедет по аварийному
+  // DEFAULT_FALLBACK_CHAIN.
+  {
+    taskType: 'document-attribution-suggest',
+    group: 'knowledge-core',
+    playbookSection: '§11 classifier (cheap attribution hint)',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+      { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
+    ],
+  },
 
   // ─── Competitor-parity (Фазы B/C/D/E) ───
   // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним

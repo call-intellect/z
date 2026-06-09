@@ -115,6 +115,19 @@ export interface DailyDigestPersonStruggledApi {
   link: string;
 }
 
+/**
+ * ТЗ-2 Ф3 — хронический (повторяющийся) блокер за сутки.
+ * Зеркалит runtime-поле `chronicBlockers` из backend (committed 95dd16ae).
+ */
+export interface DailyDigestChronicBlockerApi {
+  id: string;
+  representativeText: string;
+  status: 'new' | 'recurring' | 'resolved';
+  daysOpen: number;
+  linkedInsightId: string | null;
+  responsiblePersonId: string | null;
+}
+
 export interface DailyDigestApi {
   id: string;
   tenantId: string;
@@ -132,6 +145,8 @@ export interface DailyDigestApi {
   urgentItems: DailyDigestUrgentItemApi[];
   whoShined: DailyDigestPersonShinedApi[];
   whoStruggled: DailyDigestPersonStruggledApi[];
+  // ТЗ-2 Ф3 — хронические блокеры (runtime-вычислены на backend).
+  chronicBlockers: DailyDigestChronicBlockerApi[];
 }
 
 /** Обёртка-helper: ловит digest_not_found и превращает в `null`. */

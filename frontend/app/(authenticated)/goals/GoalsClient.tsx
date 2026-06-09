@@ -44,6 +44,7 @@ import {
   type GoalStatus,
 } from '@/domain/goal';
 import { GoalsTreeView } from './GoalsTreeView';
+import { GlassCard, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -124,15 +125,18 @@ export function GoalsClient() {
 
   if (!currentOrgId) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-6 py-8">
-        <p className="text-sm text-fg-tertiary">
-          Не определена организация. Перейдите на главную.
-        </p>
+      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+        <div className="mx-auto w-full max-w-6xl px-6 py-8">
+          <p className="text-sm text-fg-tertiary">
+            Не определена организация. Перейдите на главную.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div className="flex-1 min-w-[240px]">
@@ -141,7 +145,7 @@ export function GoalsClient() {
             Цели компании
           </h1>
           <p className="mt-1 text-sm text-fg-tertiary">
-            AI оценивает движение компании к каждой цели по связанным темам и
+            Кора оценивает движение компании к каждой цели по связанным темам и
             свежим сигналам. Раз в сутки — суточный пересчёт.
           </p>
         </div>
@@ -266,6 +270,7 @@ export function GoalsClient() {
         />
       )}
     </div>
+    </div>
   );
 }
 
@@ -273,7 +278,7 @@ export function GoalsClient() {
 
 function EmptyState({ isOwner }: { isOwner: boolean }) {
   return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed border-border-subtle px-6 py-16 text-center">
+    <GlassCard className="flex flex-col items-center px-6 py-16 text-center">
       <Target
         size={42}
         strokeWidth={1.5}
@@ -285,7 +290,7 @@ function EmptyState({ isOwner }: { isOwner: boolean }) {
           ? 'Цели компании не заданы. Owner может создать первую цель — это включит еженедельный мониторинг движения компании к стратегии.'
           : 'Цели компании не заданы. Только владелец Org может создавать цели.'}
       </p>
-    </div>
+    </GlassCard>
   );
 }
 
@@ -318,7 +323,8 @@ function GoalCard({
   const verdictChip = movementVerdictChipClasses(verdict.tone);
 
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-bg-elevated p-4 transition-colors hover:border-accent/60">
+    <li className="contents">
+      <GlassCard className="flex h-full flex-col gap-3 p-4 transition-colors hover:border-accent/60">
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/goals/${encodeURIComponent(goal.id)}`}
@@ -448,6 +454,7 @@ function GoalCard({
           </Button>
         )}
       </div>
+      </GlassCard>
     </li>
   );
 }

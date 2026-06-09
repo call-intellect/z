@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../services/json-extract.util';
 import { LlmRouterService } from '../services/llm-router.service';
 import type { DialogTurn } from '../services/prompts/common';
 
@@ -181,26 +182,33 @@ export class MeetingSpeakerAnalyzerWorker {
 
         const truncated = speakerText.slice(0, MeetingSpeakerAnalyzerWorker.MAX_TEXT_CHARS);
 
-        const out = await this.llm.call({
-          taskType: 'meeting-speaker-analyzer',
-          tenantId: mpb.tenantId,
-          systemPrompt: SYSTEM_PROMPT,
-          userMessage: truncated,
-          sourceRef: { type: 'meeting_participant_behavior', id: mpb.id },
-          maxTokens: 400,
-          responseFormat: {
-            type: 'json_schema',
-            name: 'SpeakerTextAnalysis',
-            schema: RESPONSE_SCHEMA as unknown as Record<string, unknown>,
-            strict: true,
-          },
-        });
-
-        const parsed = this.safeParse(out.text);
+        let parsed: ParsedSentiment | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const out = await this.llm.call({
+            taskType: 'meeting-speaker-analyzer',
+            tenantId: mpb.tenantId,
+            systemPrompt: SYSTEM_PROMPT,
+            userMessage: truncated,
+            sourceRef: { type: 'meeting_participant_behavior', id: mpb.id },
+            maxTokens: 400,
+            responseFormat: {
+              type: 'json_schema',
+              name: 'SpeakerTextAnalysis',
+              schema: RESPONSE_SCHEMA as unknown as Record<string, unknown>,
+              strict: true,
+            },
+            validate: (text) => this.safeParse(text) !== null,
+          });
+          parsed = this.safeParse(out.text);
+          if (parsed) break;
+          this.logger.warn(
+            `meeting-speaker-analyzer mpb ${mpb.id}: невалидный JSON LLM — повтор (attempt ${attempt})`,
+          );
+        }
         if (!parsed) {
           errors++;
           this.logger.warn(
-            `meeting-speaker-analyzer mpb ${mpb.id}: невалидный JSON от LLM`,
+            `meeting-speaker-analyzer mpb ${mpb.id}: невалидный JSON от LLM (2 попытки)`,
           );
           continue;
         }
@@ -269,25 +277,21 @@ export class MeetingSpeakerAnalyzerWorker {
    * структура не соответствует ожидаемой.
    */
   private safeParse(raw: string): ParsedSentiment | null {
-    try {
-      const obj = JSON.parse(raw) as unknown;
-      if (!obj || typeof obj !== 'object') return null;
-      const o = obj as Record<string, unknown>;
-      const topics = Array.isArray(o.topics)
-        ? o.topics.filter((s): s is string => typeof s === 'string')
+    const obj = tryParseJson(raw);
+    if (!obj || typeof obj !== 'object') return null;
+    const o = obj as Record<string, unknown>;
+    const topics = Array.isArray(o.topics)
+      ? o.topics.filter((s): s is string => typeof s === 'string')
+      : null;
+    const ts = o.textSentiment;
+    const textSentiment =
+      ts === 'positive' || ts === 'neutral' || ts === 'negative' ? ts : null;
+    const conf = o.confidence;
+    const confidence =
+      typeof conf === 'number' && Number.isFinite(conf) && conf >= 0 && conf <= 1
+        ? conf
         : null;
-      const ts = o.textSentiment;
-      const textSentiment =
-        ts === 'positive' || ts === 'neutral' || ts === 'negative' ? ts : null;
-      const conf = o.confidence;
-      const confidence =
-        typeof conf === 'number' && Number.isFinite(conf) && conf >= 0 && conf <= 1
-          ? conf
-          : null;
-      if (!topics || !textSentiment || confidence === null) return null;
-      return { topics, textSentiment, confidence };
-    } catch {
-      return null;
-    }
+    if (!topics || !textSentiment || confidence === null) return null;
+    return { topics, textSentiment, confidence };
   }
 }

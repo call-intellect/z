@@ -172,6 +172,7 @@ export type LlmTaskType =
   //   (persona prompt + subgraph context + question → текст + citations).
   | 'skill-trait-detect'
   | 'skill-trait-merge'
+  | 'skill-trait-verify' // grounding-проверка черты клона перед персоной
   | 'executable-persona-compile'
   | 'clone-respond'
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
@@ -274,6 +275,30 @@ export type LlmTaskType =
   //   агрегата за вчерашние сутки. Один вызов в день на Org. Та же цепочка
   //   провайдеров, что и у operations-weekly-digest.
   | 'operations-daily-digest'
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
+  // 'customer-risk-digest' — ТОЛЬКО финальная человекочитаемая формулировка
+  //   подсказки по клиенту под риском (агрегация — чистый SQL/TS, без LLM).
+  //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на клиента под
+  //   риском в день. Без ₽-оценок (Р6).
+  | 'customer-risk-digest'
+  // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день».
+  // 'personal-brief-hint' — ТОЛЬКО «1 подсказка дня» в персональном брифе
+  //   (сам бриф структурный SQL+шаблон; «кто знает X» — embeddings, не chat-LLM).
+  //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на сотрудника в
+  //   день. Без выдуманных фактов/₽.
+  | 'personal-brief-hint'
+  // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
+  // 'blocker-synthesis-summary' — ТОЛЬКО финальный абзац-сводка по
+  //   синтезированным блокерам Org за день (кластеризация/статусы/импакт —
+  //   чистый SQL/TS + embeddings, без LLM). Дешёвая задача → primary
+  //   deepseek-v4-flash. Один вызов на Org в день. Без выдуманных фактов/₽.
+  | 'blocker-synthesis-summary'
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
+  // 'value-recap-narrative' — ТОЛЬКО человекочитаемая сводка ПОВЕРХ уже
+  //   посчитанных твёрдых цифр (счётчики/дельта — чистый SQL/TS, без LLM).
+  //   Дешёвая задача → primary deepseek-v4-flash. Один вызов на Org в месяц.
+  //   Без выдуманных рублей; soft-цифры помечаются «оценка» (Р6).
+  | 'value-recap-narrative'
   // SBA β-8.2 — Promise Keeper («Хранитель обещаний»).
   // 'commitment-extract-dates' — извлечь срок и адресата из текста обещания
   //   (вызов из block-ingest для уточнения если основной prompt не справился).
@@ -516,7 +541,30 @@ export type LlmTaskType =
   | 'goal-hierarchy-link'
   | 'goals-pulse-summarize'
   // ChatBox integration (ТЗ 2026-06-05, Фаза 5) — LLM-summary сессии чата.
-  | 'chatbox-summary';
+  | 'chatbox-summary'
+  // Ф5 Р2 (2026-06-08) — task-dedupe: семантический арбитр совпадения двух
+  // задач встречи (action items). KNN-«серая зона»: один вызов на пару
+  // (fast-черновик, canonical-задача), вердикт same|different. РИСКОВО (может
+  // скрыть задачу) → за флагом DEFAULT OFF; при сомнении → 'different'.
+  // Дешёвый арбитр: primary deepseek-v4-flash; secondary gpt-5.4-mini;
+  // tertiary ollama qwen3.5:9b. Cache-friendly: SYSTEM статичен, две задачи в USER.
+  | 'task-dedupe'
+  // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link: батч-арбитр
+  // авто-привязки задач встречи к AI-цели. Один вызов на цель: цель + список
+  // ungoaled-задач встречи → по каждой { develops, confidence }. Non-destructive
+  // (ставит Issue.goalId только где null). РИСКОВО (мис-атрибуция) → за флагом
+  // goals.goalTaskLinkEnabled DEFAULT OFF; при сомнении develops=false. Дешёвый:
+  // primary deepseek-v4-flash. Cache-friendly: SYSTEM статичен, цель+задачи в USER.
+  | 'goal-task-link'
+  // ТЗ-4 Ф10 (manual-document-upload) — document-attribution-suggest: подсказка
+  // атрибуции загруженного документа (смысловой тип docType + тема графа). Один
+  // вызов на документ без явной атрибуции (docType=null И attachedThemeId=null):
+  // первые ~2000 символов parsedText + список тем Org → { docType, themeId|null,
+  // confidence }. Результат пишется в Document.suggested* (человек подтверждает,
+  // авто-применения НЕТ — Р3). Дешёвый классификатор: primary deepseek-v4-flash.
+  // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
+  // переменное (текст + темы) в КОНЦЕ user.
+  | 'document-attribution-suggest';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -590,6 +638,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',
+  'skill-trait-verify',
   'executable-persona-compile',
   'clone-respond',
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2
@@ -623,6 +672,14 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'operations-weekly-digest',
   // SBA β-8.3 — ежедневный отчёт COO
   'operations-daily-digest',
+  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском
+  'customer-risk-digest',
+  // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день»
+  'personal-brief-hint',
+  // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров
+  'blocker-synthesis-summary',
+  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap
+  'value-recap-narrative',
   // SBA β-8.2 — Promise Keeper
   'commitment-extract-dates',
   'commitment-extract-status',
@@ -706,6 +763,14 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // тоже не был зарегистрирован.
   'experiment-extract',
   'experiment-summarize-lessons',
+  // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
+  'task-dedupe',
+  // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link (авто-привязка
+  // задач встречи к AI-цели, DEFAULT OFF).
+  'goal-task-link',
+  // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
+  // темы для загруженного документа без явной атрибуции; human-in-the-loop).
+  'document-attribution-suggest',
 ] as const;
 
 /**

@@ -199,9 +199,21 @@ related_projects:
 - **Visibility** (personal/shared/public) у видов уже была реализована (база Smart-tables).
 - **Тесты**: backend `table-semantic-filter.service.spec` (cache hit/miss, валидатор, мусор-JSON) + `validateFilters` unit — 94 tables-теста; frontend `applyFilters` — 11 тестов.
 
+## Качество агента таблиц — детерминированные пост-пассы R1–R4 (ТЗ [2026-06-08](../../plans/tz/2026-06-08-smart-tables-import-agent-quality.md), коммит `e84d8ace`)
+
+**Источник:** ТЗ [`plans/tz/2026-06-08-smart-tables-import-agent-quality.md`](../../plans/tz/2026-06-08-smart-tables-import-agent-quality.md) + анализ-приёмка [`plans/analysis/2026-06-08-smart-tables-live-test-and-agent-quality.md`](../../plans/analysis/2026-06-08-smart-tables-live-test-and-agent-quality.md). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`. Все правки — внутри `backend/src/modules/tables/services/table-agent.service.ts` (без БД/ENV/seed, ship-on без флагов). Цель — поднять качество Document-to-Table (импорт Excel/CSV) и text-to-schema без новых LLM-вызовов: четыре детерминированных пост-пасса поверх 3-pass LLM-pipeline.
+
+- **R1 — retry первого pass'а (DRAFT).** `runThreePassPipeline` повторяет DRAFT-вызов при пустом/битом ответе LLM: `getDraftMaxAttempts` (AdminSetting, fallback 3 попытки) с backoff 300мс. Закрыл hard-fail импортов (~10% → ~1–2%) — раньше один сбой DRAFT валил весь импорт.
+- **R2 — `completeSelectOptions`.** Достраивает опции select/status из реальных данных колонки (union значений), потолок 30 distinct, сравнение case-insensitive (без учёта регистра); цвет каждой опции — round-robin по палитре. Раньше select-колонка приходила с пустым списком опций.
+- **R3 — Jaccard-dedup схем.** `findSimilarTables` дедуплицирует таблицы по пересечению имён колонок (`colJaccard` + `getJaccardThreshold`, порог 0.6) — cosine-эмбеддинг стал **опциональным**, dedup работает и без embeddings (раньше падал, если эмбеддинги недоступны).
+- **R4 — `reconcileTypesWithData`.** Type-guard по сэмплу строк: тип date/number/currency/percent понижается до `text`, если в данных <50% валидных значений; `text` повышается до `longtext` при длинном контенте. Парсер чисел `parseNumericLoose` вынесен в `services/_num.util.ts` (переиспользуется R4 и проверками типов).
+- **Тесты:** 109 tables-тестов зелёные.
+
 ## Итог
 
 **Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/tz/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
+
+> **Флаг `feature.tables_text_to_schema` — включён дефолтом (ship-on, ТЗ [2026-06-08-enable-shipped-features-by-default](../../plans/tz/2026-06-08-enable-shipped-features-by-default.md), коммит `bb7701dc`).** Раньше был default off «до прохождения Eval»; по правилу Ship-On готовая фича выкатывается включённой (seed-дефолт `true` + патч `patch-enable-shipped-flags.ts`). Eval Text-to-Schema (Фаза 1.5) остаётся инструментом регрессий, а не блокером выката.
 
 ## Долг / далее
 

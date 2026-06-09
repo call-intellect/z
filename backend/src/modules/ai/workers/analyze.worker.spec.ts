@@ -26,6 +26,13 @@ interface BuildArgs {
    */
   promptInjectionGuardEnabled?: boolean;
   /**
+   * ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — флаг legacy summary-агента.
+   * По умолчанию undefined (cfg-mock не содержит ключа → воркер трактует как
+   * вкл, runSummary зовётся как раньше). Передай `false`, чтобы проверить, что
+   * runSummary НЕ зовётся и summary пишется пустым.
+   */
+  summaryAgentEnabled?: boolean;
+  /**
    * Ф7 МТЗ — кастомный impl для `MeetingIngestAdapter.ingestMeeting`. По
    * умолчанию noop, возвращающий null (как раньше). Передай функцию, которая
    * бросает, чтобы проверить видимый провал моста (failureReason + метрика).
@@ -161,6 +168,11 @@ function buildWorker(args: BuildArgs): {
     ai: {},
     aiFeatures: {
       promptInjectionGuardEnabled: args.promptInjectionGuardEnabled ?? true,
+      // Р6: ключ присутствует только если тест явно его задал — иначе воркер
+      // трактует отсутствие как «вкл» (дефолт, обратно совместимо).
+      ...(args.summaryAgentEnabled !== undefined
+        ? { summaryAgentEnabled: args.summaryAgentEnabled }
+        : {}),
     },
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
@@ -405,6 +417,62 @@ describe('AnalyzeWorker.process', () => {
 
       // Метрику не инкрементировали (sanitize не запускался).
       expect(incPromptInjectionAttempt).not.toHaveBeenCalled();
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — флаг legacy summary-агента.
+  // ──────────────────────────────────────────────────────────────────────
+  describe('summary-агент за флагом (Р6)', () => {
+    it('флаг false → runSummary НЕ зовётся (нет summary-LLM-call), summary="" записан', async () => {
+      const llmComplete = vi.fn();
+      // type=custdev + customPrompt → без флага было бы 2 LLM-call'а (summary +
+      // custom). С флагом false summary-вызов уходит → остаётся 1 (custom).
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт'));
+
+      const { worker, aiResultUpdate, transitionStatus } = buildWorker({
+        type: 'custdev',
+        customPrompt: 'Сделай краткий отчёт',
+        llmComplete,
+        summaryAgentEnabled: false,
+      });
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      // Только 1 LLM-вызов (custom) — summary НЕ обращался к LLM.
+      expect(llmComplete).toHaveBeenCalledTimes(1);
+
+      // Был update с summary='' (summary-стадия записала пустую строку).
+      const calls = aiResultUpdate.mock.calls.map((c) => c[0]?.data ?? c[0]);
+      const summaryUpd = calls.find(
+        (d: Record<string, unknown> | undefined) =>
+          d?.['summary'] === '' && d?.['modelUsed'] === undefined,
+      );
+      expect(summaryUpd).toBeDefined();
+
+      // Пайплайн дошёл до ai_ready.
+      expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+    });
+
+    it('флаг по умолчанию (отсутствует в cfg) → runSummary зовётся как раньше', async () => {
+      const llmComplete = vi.fn();
+      // summary + custom = 2 LLM-call'а (текущее дефолтное поведение).
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('# Отчёт'));
+
+      const { worker } = buildWorker({
+        type: 'custdev',
+        customPrompt: 'Сделай краткий отчёт',
+        llmComplete,
+        // summaryAgentEnabled не передан → ключа нет в cfg.aiFeatures.
+      });
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      // summary + custom = 2 вызова (summary-агент работает).
+      expect(llmComplete).toHaveBeenCalledTimes(2);
     });
   });
 

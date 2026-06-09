@@ -85,6 +85,17 @@ export const CORE_QUEUE_NAMES = {
    */
   DUMP_CREATED: 'core.dump-created',
   /**
+   * Document-import (ТЗ-4 Ф7 — массовый импорт ZIP): consumer —
+   * `DocumentImportWorker`. По `{ importId }` достаёт сохранённый ZIP (inline в
+   * `DocumentImport`-метаданных или S3 — см. `DocumentImportService`),
+   * распаковывает через `fflate.unzipSync`, для каждой поддерживаемой записи
+   * создаёт `Document` (re-use `DocumentsService.uploadMany` логики: dedup по
+   * contentHash + enqueue `core.document-uploaded`), несёт batch-атрибуцию и
+   * `importBatchId`. Неподдержанные/битые записи — в `errorLog`, `failedFiles++`.
+   * jobId = `docimport_<importId>` — идемпотентно (status-guard в воркере).
+   */
+  DOCUMENT_IMPORT: 'core.document-import',
+  /**
    * SBA α-3 — RouterService.dispatch публикует jobs в эту очередь после
    * persist'а IdeaBlock'а. `jobName` = имя специалиста (`3-1-regulations`,
    * `3-3-decisions`, …, `3-14-goals`, `3-13-sprint-helper`).
@@ -321,6 +332,35 @@ export interface DumpCreatedJobData {
   uploaderPersonId: string;
   /** Готовый текст дампа — без парсинга. */
   content: string;
+}
+
+/**
+ * Payload для job'а `core.document-import` (ТЗ-4 Ф7/Ф8/Ф9). Минимальный —
+ * `importId` + `tenantId`. Воркер сам подтянет `DocumentImport` из БД,
+ * проверит status (idempotency-guard) и достанет ZIP-байты (для ZIP/Notion).
+ *
+ * ТЗ-4 Ф9 (Confluence): API-токен НЕ хранится в БД. Он шифруется через
+ * `CryptoService.encrypt` и кладётся в `confluence.encryptedToken` ЭТОГО
+ * payload'а (BullMQ-payload лежит в Redis — шифрование не даёт токену осесть
+ * там в открытом виде; воркер расшифровывает его перед вызовом клиента). Поля
+ * присутствуют только для source=confluence-импортов; для ZIP/Notion — undefined.
+ */
+export interface DocumentImportJobData {
+  importId: string;
+  tenantId: string;
+  /** Проброс traceId цепочки (для сшивки логов). */
+  traceId?: string;
+  /**
+   * ТЗ-4 Ф9 — параметры подключения к Confluence (только для source=confluence).
+   * `encryptedToken` — `CryptoService.encrypt(apiToken)` (формат `gcm:v1:...`),
+   * расшифровывается воркером непосредственно перед `ConfluenceClient`.
+   */
+  confluence?: {
+    baseUrl: string;
+    email: string;
+    spaceKey: string;
+    encryptedToken: string;
+  };
 }
 
 /**

@@ -151,3 +151,81 @@ describe('SegmentBuilderService — speakerParticipantId (Фаза 1)', () => {
     expect(segs[0]!.speakerParticipantId).toBeUndefined();
   });
 });
+
+/**
+ * Фикс cross-attribution chatbox — chatbox-payload (transcript.turns с
+ * authorPersonId) строит per-message сегменты, несущие authorPersonId;
+ * meeting-payload (turns без authorPersonId) — сегменты БЕЗ этого поля.
+ */
+describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () => {
+  const makeSvc = (maxTokens = 2000) =>
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('chatbox turns с authorPersonId → сегменты несут его (string для менеджера, null для клиента)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'chatbox_chat_session',
+      fullText: 'Клиент: вопрос\nМенеджер: ответ',
+      transcript: {
+        turns: [
+          {
+            speaker: 'Клиент [A]',
+            text: 'вопрос',
+            startSec: 0,
+            endSec: 0.9,
+            speakerParticipantId: null,
+            authorPersonId: null,
+          },
+          {
+            speaker: 'Менеджер [N]',
+            text: 'ответ',
+            startSec: 1,
+            endSec: 1.9,
+            speakerParticipantId: null,
+            authorPersonId: 'p-manager',
+          },
+        ],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(2);
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
+    ).toBe(true);
+    expect(segments[0]!.authorPersonId).toBeNull();
+    expect(segments[1]!.authorPersonId).toBe('p-manager');
+  });
+
+  it('meeting turns (без authorPersonId) → сегменты БЕЗ поля authorPersonId (undefined, не null)', () => {
+    const svc = makeSvc();
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [
+          {
+            speaker: 'Алиса',
+            text: 'Привет',
+            startSec: 0,
+            endSec: 1,
+            speakerParticipantId: 'p1',
+          },
+        ],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    // REGRESSION-GUARD: поле отсутствует у meeting-сегментов (segHasAuthor=false).
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
+    ).toBe(false);
+    expect(segments[0]!.authorPersonId).toBeUndefined();
+  });
+});

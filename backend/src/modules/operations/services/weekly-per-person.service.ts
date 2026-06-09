@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config';
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { reliabilityOrLowData } from '../../dashboard/services/commitment-reliability.service';
+import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type {
   WeeklyPerPersonDto,
   WeeklyPersonRowDto,
@@ -28,9 +32,12 @@ import type {
 const CACHE_TTL_SECONDS = 5 * 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TOP_N = 5;
+/** Code-fallback для `reliability.min_denominator` (см. AdminSetting). */
+const DEFAULT_MIN_DENOMINATOR = 3;
 
 /** Минимальная проекция IdeaBlock-обещания для раскладки по автору. */
 interface CommitmentRow {
+  id: string;
   commitmentAuthorPersonId: string | null;
   commitmentStatus: string | null;
   commitmentDueDate: Date | null;
@@ -46,8 +53,17 @@ interface PersonAcc {
   promisesKept: number;
   promisesBroken: number;
   promisesOverdue: number;
+  /** ТЗ-2 Ф4 — обещания «без ответа» (commitmentStatus='asked'). */
+  promisesNoAnswer: number;
   tasksDone: number;
   checkInsCompleted: number;
+  /**
+   * ТЗ-2 Ф4 — множество blockId обещаний, УЖЕ учтённых за этого человека.
+   * Используется как dedup-гард: закрытая задача, порождённая одним из этих
+   * блоков (`Task.evidenceBlockIds` ⊇ blockId), НЕ инкрементит tasksDone —
+   * иначе «обещание, ставшее задачей» раздувает delivery.
+   */
+  countedCommitmentBlockIds: Set<string>;
 }
 
 export interface WeeklyPerPersonArgs {
@@ -66,6 +82,9 @@ export class WeeklyPerPersonService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   /**
@@ -92,6 +111,14 @@ export class WeeklyPerPersonService {
       return cached;
     }
 
+    // ТЗ-2 Ф4 — минимальный знаменатель reliability читаем ОДИН раз на compute()
+    // (не per-row), передаём вниз в расчёт. Ниже него reliabilityPercent=null.
+    const minDenom = await this.cfg.getDynamic<number>(
+      'reliability.min_denominator',
+      'RELIABILITY_MIN_DENOMINATOR',
+      DEFAULT_MIN_DENOMINATOR,
+    );
+
     const dto = await this.computeFromDb(
       tenantId,
       weekStart,
@@ -102,6 +129,7 @@ export class WeeklyPerPersonService {
       offset,
       sort,
       now,
+      minDenom,
     );
 
     await this.tryWriteCache(cacheKey, dto);
@@ -122,8 +150,11 @@ export class WeeklyPerPersonService {
     offset: number,
     sort: 'reliability' | 'risk',
     now: Date,
+    minDenom: number,
   ): Promise<WeeklyPerPersonDto> {
-    // 3. Обещания по автору — одна выборка за неделю.
+    // 3. Обещания по автору — одна выборка за неделю. `id` нужен для dedup-гарда
+    //    задач (см. ниже): закрытая задача, порождённая учтённым блоком-обещанием,
+    //    не должна повторно считаться в tasksDone.
     const commitmentRows = (await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -132,6 +163,7 @@ export class WeeklyPerPersonService {
         commitmentDueDate: { gte: weekStartDate, lte: weekEndDate },
       },
       select: {
+        id: true,
         commitmentAuthorPersonId: true,
         commitmentStatus: true,
         commitmentDueDate: true,
@@ -146,12 +178,18 @@ export class WeeklyPerPersonService {
       if (!personId) continue;
       const acc = this.ensureAcc(accByPerson, personId);
       acc.promisesGiven += 1;
+      acc.countedCommitmentBlockIds.add(row.id);
       const status = row.commitmentStatus;
       if (status === 'fulfilled') {
         acc.promisesKept += 1;
       } else if (status === 'missed') {
         acc.promisesBroken += 1;
       } else if (status === 'open' || status === 'asked') {
+        if (status === 'asked') {
+          // ТЗ-2 Ф4 — «без ответа»: probe ушёл, человек не подтвердил/не
+          // отверг. Считаем В ДОПОЛНЕНИЕ к overdue-логике ниже.
+          acc.promisesNoAnswer += 1;
+        }
         const dueMs = row.commitmentDueDate?.getTime();
         if (dueMs !== undefined && dueMs < nowMs) {
           acc.promisesOverdue += 1;
@@ -196,14 +234,23 @@ export class WeeklyPerPersonService {
           assigneeUserId: { in: authorUserIds },
           updatedAt: { gte: weekStartDate, lte: weekEndDate },
         },
-        select: { assigneeUserId: true },
+        // ТЗ-2 Ф4 — evidenceBlockIds: какие IdeaBlock'и породили задачу. Нужны
+        // для dedup-гарда против двойного счёта «обещание → задача».
+        select: { assigneeUserId: true, evidenceBlockIds: true },
       });
+      // dedup-множество уже зачтённых taskId — этот же таск не считаем дважды
+      // (findMany не вернёт дубль, но гард делает счётчик заведомо защищённым).
       for (const t of doneTasks) {
         if (!t.assigneeUserId) continue;
         const personId = userIdToPersonId.get(t.assigneeUserId);
         if (!personId) continue;
         const acc = accByPerson.get(personId);
-        if (acc) acc.tasksDone += 1;
+        if (!acc) continue;
+        // Если задача порождена одним из УЖЕ учтённых блоков-обещаний этого
+        // человека — это «обещание, ставшее задачей»: пропускаем, чтобы не
+        // раздувать delivery двойным счётом одного артефакта.
+        if (this.taskFromCountedCommitment(t.evidenceBlockIds, acc)) continue;
+        acc.tasksDone += 1;
       }
     }
 
@@ -244,9 +291,20 @@ export class WeeklyPerPersonService {
     // 8. Полное множество строк (все люди с активностью за неделю — у всех в
     //    accByPerson есть ≥1 обещание; задачи/чек-ины привязаны только к ним).
     const allRows: WeeklyPersonRowDto[] = [...accByPerson.values()].map((acc) =>
-      this.buildRow(acc, deptNameById),
+      this.buildRow(acc, deptNameById, minDenom),
     );
     const total = allRows.length;
+
+    // ТЗ-2 Ф4 — метрики: суммарные «без ответа» за compute + факт отдачи
+    // (per-tenant top-100 bucket, cardinality-safe).
+    const noAnswerTotal = allRows.reduce(
+      (sum, r) => sum + r.promisesNoAnswer,
+      0,
+    );
+    this.metrics.recordWeeklyPerPersonCompute({
+      tenantTop: tenantTopOf(tenantId),
+      noAnswerTotal,
+    });
 
     // 9. topReliable / topRisk — от ПОЛНОГО множества.
     const topReliable = this.sortByReliability([...allRows]).slice(0, TOP_N);
@@ -283,17 +341,38 @@ export class WeeklyPerPersonService {
         promisesKept: 0,
         promisesBroken: 0,
         promisesOverdue: 0,
+        promisesNoAnswer: 0,
         tasksDone: 0,
         checkInsCompleted: 0,
+        countedCommitmentBlockIds: new Set<string>(),
       };
       map.set(personId, acc);
     }
     return acc;
   }
 
+  /**
+   * ТЗ-2 Ф4 — dedup-гард: возвращает true, если закрытая задача порождена
+   * хотя бы одним блоком-обещанием, уже учтённым за этого человека
+   * (`Task.evidenceBlockIds` ∩ `acc.countedCommitmentBlockIds` ≠ ∅).
+   */
+  private taskFromCountedCommitment(
+    evidenceBlockIds: string[] | null | undefined,
+    acc: PersonAcc,
+  ): boolean {
+    if (!Array.isArray(evidenceBlockIds) || evidenceBlockIds.length === 0) {
+      return false;
+    }
+    for (const blockId of evidenceBlockIds) {
+      if (acc.countedCommitmentBlockIds.has(blockId)) return true;
+    }
+    return false;
+  }
+
   private buildRow(
     acc: PersonAcc,
     deptNameById: Map<string, string>,
+    minDenom: number,
   ): WeeklyPersonRowDto {
     return {
       personId: acc.personId,
@@ -306,20 +385,22 @@ export class WeeklyPerPersonService {
       promisesKept: acc.promisesKept,
       promisesBroken: acc.promisesBroken,
       promisesOverdue: acc.promisesOverdue,
-      reliabilityPercent: this.calcReliability(acc),
+      promisesNoAnswer: acc.promisesNoAnswer,
+      reliabilityPercent: this.calcReliability(acc, minDenom),
       tasksDone: acc.tasksDone,
       checkInsCompleted: acc.checkInsCompleted,
     };
   }
 
   /**
-   * kept / max(1, kept+broken+overdue) * 100, округление до целого.
-   * R8: если знаменатель=0 → null (не делим на ноль, не возвращаем 0).
+   * kept / (kept+broken+overdue) * 100, округление до целого.
+   * ТЗ-2 Ф4: переиспользуем `reliabilityOrLowData` — null, если знаменатель=0
+   * ИЛИ меньше `minDenom` («мало данных»: 1/1=100% при крошечном знаменателе
+   * вводит в заблуждение). Раньше null был только при знаменателе=0.
    */
-  private calcReliability(acc: PersonAcc): number | null {
+  private calcReliability(acc: PersonAcc, minDenom: number): number | null {
     const denom = acc.promisesKept + acc.promisesBroken + acc.promisesOverdue;
-    if (denom === 0) return null;
-    return Math.round((acc.promisesKept / Math.max(1, denom)) * 100);
+    return reliabilityOrLowData(acc.promisesKept, denom, minDenom);
   }
 
   /**

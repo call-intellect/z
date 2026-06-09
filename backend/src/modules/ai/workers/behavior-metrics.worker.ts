@@ -100,7 +100,10 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
 
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: { transcript: true, participants: true },
+      include: {
+        transcript: { include: { tracks: { select: { words: true } } } },
+        participants: true,
+      },
     });
     if (!meeting) {
       this.logger.warn({ meetingId }, 'behavior-metrics: meeting не найден — пропуск');
@@ -145,6 +148,12 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       isGuest: p.role === 'guest',
     }));
 
+    // Если ни у одной дорожки нет пословных таймингов — поведение посчитано
+    // по длительности дорожек (приблизительно) → помечаем lowConfidence.
+    const wordTimingsAvailable = (meeting.transcript?.tracks ?? []).some(
+      (t) => Array.isArray(t.words) && (t.words as unknown[]).length > 0,
+    );
+
     // 3. Расчёт.
     const base = this.calculator.calculate({
       meetingId,
@@ -152,6 +161,7 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       totalDurationMs,
       diarization: segments,
       participants,
+      wordTimingsAvailable,
       // confidence из merged.json (если когда-нибудь появится) — пока undefined.
       // Калькулятор сам fallback'нёт на 1.0.
     });

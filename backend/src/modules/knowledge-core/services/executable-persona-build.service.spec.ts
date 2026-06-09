@@ -178,4 +178,189 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
       }),
     );
   });
+
+  it('Ф7 (H) — схлопывает черты с одинаковым conceptId (3 носителя → 1 черта)', async () => {
+    const createSpy = vi.fn(async (q: { data: Record<string, unknown> }) => ({
+      id: 'p-1',
+      ...q.data,
+      status: q.data.status,
+    }));
+    const updateManySpy = vi.fn(async () => ({ count: 0 }));
+
+    const prisma = {
+      personRole: {
+        findMany: vi.fn(async () => [
+          { personId: 'person-A' },
+          { personId: 'person-B' },
+          { personId: 'person-C' },
+        ]),
+      },
+      skillProfile: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'sp-A',
+            person: { name: 'A', relationship: 'employee' },
+            traits: [
+              // общий концепт — представитель с max observationCount (3)
+              {
+                id: 'shared-A',
+                category: 'cat',
+                statement: 's',
+                confidence: 'medium',
+                observationCount: 3,
+                conceptId: 'concept-1',
+              },
+              // уникальная черта A (свой conceptId)
+              {
+                id: 'uniq-A',
+                category: 'cat',
+                statement: 's',
+                confidence: 'high',
+                observationCount: 1,
+                conceptId: 'concept-A',
+              },
+            ],
+          },
+          {
+            id: 'sp-B',
+            person: { name: 'B', relationship: 'employee' },
+            traits: [
+              {
+                id: 'shared-B',
+                category: 'cat',
+                statement: 's',
+                confidence: 'high',
+                observationCount: 1,
+                conceptId: 'concept-1',
+              },
+              // уникальная черта B без conceptId (не схлопывается)
+              {
+                id: 'uniq-B',
+                category: 'cat',
+                statement: 's',
+                confidence: 'low',
+                observationCount: 1,
+                conceptId: null,
+              },
+            ],
+          },
+          {
+            id: 'sp-C',
+            person: { name: 'C', relationship: 'employee' },
+            traits: [
+              {
+                id: 'shared-C',
+                category: 'cat',
+                statement: 's',
+                confidence: 'low',
+                observationCount: 2,
+                conceptId: 'concept-1',
+              },
+              {
+                id: 'uniq-C',
+                category: 'cat',
+                statement: 's',
+                confidence: 'high',
+                observationCount: 4,
+                conceptId: 'concept-C',
+              },
+            ],
+          },
+        ]),
+      },
+      role: {
+        findUnique: vi.fn(async () => ({ name: 'Маркетолог' })),
+      },
+      executablePersona: {
+        findFirst: vi.fn(async () => ({ version: 1 })),
+        updateMany: updateManySpy,
+        create: createSpy,
+      },
+      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+        cb({
+          executablePersona: {
+            updateMany: updateManySpy,
+            create: createSpy,
+          },
+        }),
+      ),
+    } as unknown as PrismaService;
+
+    const cfg = {
+      persona: { minTraits: 3, roleAggMinPersons: 1 },
+      aiFeatures: { promptInjectionGuardEnabled: false },
+    } as unknown as TypedConfigService;
+
+    const llm = {
+      call: vi.fn(async () => ({
+        text: 'A'.repeat(200),
+        modelUsed: 'mock',
+        tier: 'primary',
+        inputTokens: 10,
+        outputTokens: 20,
+      })),
+    } as unknown as LlmRouterService;
+
+    const metrics = {
+      observePersonaBuildDuration: vi.fn(),
+      incCoreSpecialistCards: vi.fn(),
+      incExecutablePersonaSnapshot: vi.fn(),
+      setExecutablePersonaSnapshotLag: vi.fn(),
+      incCoreSpecialistLlmTokens: vi.fn(),
+    } as unknown as BusinessMetricsService;
+
+    const dataClassPolicy = {
+      derive: vi.fn(() => ({
+        dataClass: 'internal' as const,
+        subjectPersonId: null,
+        audit: {},
+      })),
+      compareWithLegacy: vi.fn(),
+    } as unknown as DataClassPolicyService;
+
+    const svc = new ExecutablePersonaBuildService(
+      prisma,
+      cfg,
+      llm,
+      metrics,
+      dataClassPolicy,
+    );
+
+    (prisma as unknown as { org: unknown }).org = {
+      findUnique: vi.fn(async () => null),
+    };
+
+    const result = await svc.buildForRole({
+      tenantId: 't-1',
+      roleId: 'role-1',
+      triggerReason: 'manual',
+    });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(1);
+
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[]; builtFromTraitsCount: number } },
+    ])[0];
+    const includedIds = createArg.data.includedTraitIds;
+
+    // concept-1 представлен РОВНО одной чертой — представитель shared-A
+    // (max observationCount=3 среди shared-A/B/C).
+    const sharedIds = includedIds.filter((id) =>
+      id.startsWith('shared-'),
+    );
+    expect(sharedIds).toEqual(['shared-A']);
+
+    // Все остальные (разные conceptId + null) — на месте.
+    expect(includedIds).toContain('uniq-A');
+    expect(includedIds).toContain('uniq-B'); // conceptId=null, не схлопнут
+    expect(includedIds).toContain('uniq-C');
+
+    // Итог: 1 (shared) + 3 (uniq) = 4 черты, без дублей по concept-1.
+    expect(includedIds).toHaveLength(4);
+    expect(createArg.data.builtFromTraitsCount).toBe(4);
+
+    // В compile уходит дедуплицированный список (длина traits = 4).
+    expect(llm.call).toHaveBeenCalledTimes(1);
+  });
 });

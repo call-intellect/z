@@ -358,7 +358,7 @@ function RollupCard({
     <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
       <div className="mb-3 flex items-center gap-2">
         <Sparkles size={16} className="text-accent" />
-        <h3 className="text-sm font-medium">AI-сводка по карточке</h3>
+        <h3 className="text-sm font-medium">Сводка по карточке</h3>
         {summaryUpdatedAt && (
           <span className="ml-auto text-xs text-fg-tertiary">
             {new Intl.DateTimeFormat('ru-RU', {

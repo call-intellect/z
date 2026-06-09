@@ -26,6 +26,7 @@ import { DataClassPolicyService } from '../knowledge-core/services/dataclass-pol
 
 import { ChannelRegistry } from './channel-registry';
 import { ConversationalLinkCodeService } from './link-code.service';
+import { NotificationBudgetService } from './notification-budget.service';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
 import type {
   ConversationalJson,
@@ -77,6 +78,12 @@ export interface SendNotificationInput {
    * `recipientPersonId === subjectPersonId` ИЛИ recipient — owner/super_admin.
    */
   subjectPersonId?: string | null;
+  /**
+   * TZ-1 Фаза 0 (daily-value-engine) — приоритет для дневного бюджета push:
+   * `1` = критично/важно (обходит бюджет и тихие часы), `2` = обычное
+   * (учитывается в лимите). По умолчанию `2`.
+   */
+  priorityTier?: number;
 }
 
 /** Per-event-type default-политика выбора каналов. */
@@ -84,7 +91,11 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
-  'idea.status_changed': ['in_app'],
+  // TZ-1 Фаза 4.A (daily-value-engine) — смена статуса идеи. Раньше только
+  // in_app → автор/supporter узнавал лишь зайдя в кабинет. Теперь добавлен
+  // telegram_bot (мгновенный пинг), in_app — fallback. Доставка push режется
+  // дневным бюджетом Ф0 (priorityTier по умолчанию 2).
+  'idea.status_changed': ['in_app', 'telegram_bot'],
   // SBA α-5: ответ chat-v2 — приоритет тому же каналу, где задан вопрос.
   // Если originChannelBindingId задан в sendChatReply, он перебивает policy.
   'chat.answer': ['in_app', 'telegram_bot', 'max_bot', 'email_smtp'],
@@ -102,6 +113,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // Goals OKR v2 Фаза 4: еженедельный пульс целей (пн утром). Те же каналы,
   // что и недельная сводка COO — email уместен, in_app fallback.
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
+  // TZ-1 Фаза 5 (daily-value-engine): месячная витрина value-recap (1-е число).
+  // push-first владельцу/COO — те же каналы, что недельная сводка (email
+  // уместен для разбора, бот для мгновенного пинга, in_app fallback).
+  'operations.monthly_recap': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   // T8 (2026-05-24): @-упоминание в комментарии задачи. in-app (бейдж в UI)
   // обязателен; telegram/max — для мгновенных пушей. Email скучен — оставляем
   // как fallback в дайджест-режиме (не в этом event-type'е).
@@ -123,6 +138,11 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // Telegram-бот (мгновенный пинг с персональной ссылкой) приоритетен;
   // каскад на email_smtp/in_app — если нет verified telegram-binding.
   'meeting.invite': ['telegram_bot', 'email_smtp', 'in_app'],
+  // TZ-1 Фаза 0 (daily-value-engine) — morning/evening чек-ин prompt. Раньше
+  // checkin.prompt не было в policy → падал на DEFAULT_POLICY=['in_app'] и
+  // не доходил до Telegram. Теперь бот-каналы приоритетны (мгновенный пинг),
+  // in_app — fallback. Это включает доставку дневного чек-ина в Telegram.
+  'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];
@@ -169,6 +189,12 @@ export class ConversationalService {
     private readonly linkCode: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений.
+    // Optional: тесты, не инжектящие budget, продолжают работать (push не
+    // ограничивается, как до фичи).
+    @Optional()
+    @Inject(NotificationBudgetService)
+    private readonly budget?: NotificationBudgetService,
     // W4.3 — outbound gating через единую политику. Optional: тесты, не
     // инжектящие policy, продолжают работать (легаси-фильтр по effectiveMax).
     @Optional()
@@ -209,6 +235,8 @@ export class ConversationalService {
         contextBlockId: input.contextBlockId ?? null,
         contextCardId: input.contextCardId ?? null,
         expiresAt,
+        // TZ-1 Фаза 0 (daily-value-engine) — приоритет для дневного бюджета.
+        priorityTier: input.priorityTier ?? 2,
         responseStatus:
           input.eventType === 'probe.question' ? 'pending' : null,
       },
@@ -260,8 +288,39 @@ export class ConversationalService {
       return { ...notification, status: 'failed' };
     }
 
+    // 3.5. TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений.
+    // Разделяем выбранные binding'и на in_app (видимость — доставляем всегда)
+    // и push (Telegram/MAX/email — учитывается в дневном лимите). Если push'ей
+    // нет — бюджет не трогаем. Если есть и budget.tryConsume вернул allowed=false
+    // → отбрасываем push-доставки (in_app уже покрывает видимость, ничего не
+    // теряется молча). critical/priorityTier===1 байпасят бюджет внутри сервиса.
+    let toDeliver = selected;
+    const pushBindings = selected.filter(
+      (s) => s.binding.channel.kind !== 'in_app',
+    );
+    if (this.budget && pushBindings.length > 0) {
+      const consume = await this.budget.tryConsume({
+        tenantId: input.tenantId,
+        recipientUserId: input.recipientUserId,
+        eventType: input.eventType,
+        priorityTier: input.priorityTier ?? 2,
+        critical: input.critical === true,
+      });
+      if (!consume.allowed) {
+        // Оставляем только in_app — push откладываем (метрики инкрементит
+        // сам NotificationBudgetService).
+        toDeliver = selected.filter(
+          (s) => s.binding.channel.kind === 'in_app',
+        );
+        this.logger.log(
+          `sendNotification: push отложен бюджетом (reason=${consume.reason ?? 'unknown'}) ` +
+            `user=${input.recipientUserId} eventType=${input.eventType}; in_app доставлен`,
+        );
+      }
+    }
+
     // 4. Создаём NotificationDelivery + enqueue.
-    for (const { binding } of selected) {
+    for (const { binding } of toDeliver) {
       const delivery = await this.prisma.notificationDelivery.create({
         data: {
           notificationId: notification.id,
@@ -273,6 +332,10 @@ export class ConversationalService {
         kind: binding.channel.kind,
         status: 'queued',
       });
+      // TZ-1 Фаза 0 — отдельная метрика доставки дневного чек-ина по каналам.
+      if (input.eventType === 'checkin.prompt') {
+        this.metrics.incCheckinPromptDelivered({ channel: binding.channel.kind });
+      }
     }
 
     this.metrics.incConversationalNotification({
@@ -281,7 +344,7 @@ export class ConversationalService {
     });
 
     this.logger.log(
-      `sendNotification: id=${notification.id} user=${input.recipientUserId} eventType=${input.eventType} channels=[${selected.map((s) => s.binding.channel.kind).join(',')}]`,
+      `sendNotification: id=${notification.id} user=${input.recipientUserId} eventType=${input.eventType} channels=[${toDeliver.map((s) => s.binding.channel.kind).join(',')}]`,
     );
     return notification;
   }

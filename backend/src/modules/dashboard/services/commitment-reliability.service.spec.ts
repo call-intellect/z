@@ -17,10 +17,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
-import { CommitmentReliabilityService } from './commitment-reliability.service';
+import {
+  CommitmentReliabilityService,
+  reliabilityOrLowData,
+} from './commitment-reliability.service';
 
 const NOW = new Date('2026-05-30T12:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -40,6 +44,8 @@ function buildService(opts: {
   cacheValue?: string | null;
   cacheGetError?: Error;
   cacheSetError?: Error;
+  /** AdminSetting reliability.min_denominator (default 3). */
+  minDenominator?: number;
 } = {}): {
   service: CommitmentReliabilityService;
   prisma: { ideaBlock: { findMany: ReturnType<typeof vi.fn> } };
@@ -61,9 +67,14 @@ function buildService(opts: {
     client: { get: redisGet, set: redisSet },
   } as unknown as RedisService;
 
+  const cfg = {
+    getDynamic: vi.fn(async () => opts.minDenominator ?? 3),
+  } as unknown as TypedConfigService;
+
   const service = new CommitmentReliabilityService(
     prisma as unknown as PrismaService,
     redis,
+    cfg,
   );
 
   return { service, prisma, redisGet, redisSet };
@@ -503,5 +514,53 @@ describe('CommitmentReliabilityService', () => {
       expect(call.where.commitmentAuthorPersonId).toBe('p-1');
       expect(call.where.commitmentRecipientPersonId).toBeUndefined();
     });
+  });
+
+  describe('ТЗ-1 Ф3.D.2 — «мало данных» (reliabilityLowData)', () => {
+    it('крошечный знаменатель (1 fulfilled < min 3) → reliabilityLowData=true', async () => {
+      // Одно выполненное обещание в текущем окне: 1/1 = 100% — но это врёт.
+      const { service } = buildService({
+        minDenominator: 3,
+        rows: [{ commitmentStatus: 'fulfilled', commitmentDueDate: daysFromNow(-2) }],
+      });
+      const dto = await service.computeReliability(
+        { tenantId: 't-1', scope: 'company' },
+        NOW,
+      );
+      expect(dto.reliabilityPercent).toBe(100);
+      expect(dto.reliabilityLowData).toBe(true);
+    });
+
+    it('знаменатель >= min → reliabilityLowData=false', async () => {
+      const { service } = buildService({
+        minDenominator: 3,
+        rows: [
+          { commitmentStatus: 'fulfilled', commitmentDueDate: daysFromNow(-2) },
+          { commitmentStatus: 'fulfilled', commitmentDueDate: daysFromNow(-3) },
+          { commitmentStatus: 'missed', commitmentDueDate: daysFromNow(-4) },
+        ],
+      });
+      const dto = await service.computeReliability(
+        { tenantId: 't-1', scope: 'company' },
+        NOW,
+      );
+      expect(dto.reliabilityLowData).toBe(false);
+    });
+  });
+});
+
+describe('reliabilityOrLowData (ТЗ-1 Ф3.D.2 — чистая функция)', () => {
+  it('denom < minDenom → null (мало данных)', () => {
+    expect(reliabilityOrLowData(1, 1, 3)).toBeNull();
+    expect(reliabilityOrLowData(2, 2, 3)).toBeNull();
+  });
+  it('denom <= 0 → null', () => {
+    expect(reliabilityOrLowData(0, 0, 3)).toBeNull();
+    expect(reliabilityOrLowData(0, -1, 3)).toBeNull();
+  });
+  it('denom >= minDenom → процент round(kept/denom*100)', () => {
+    expect(reliabilityOrLowData(3, 3, 3)).toBe(100);
+    expect(reliabilityOrLowData(2, 4, 3)).toBe(50);
+    expect(reliabilityOrLowData(1, 3, 3)).toBe(33);
   });
 });

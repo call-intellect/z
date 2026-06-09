@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DashboardRouter } from './DashboardRouter';
 
 export const metadata: Metadata = {
-  title: 'Главная — Кора',
+  title: 'Главная',
 };
 
 /**

@@ -16,7 +16,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { buildEntityGroups } from './documents.api';
+import {
+  ACCEPTED_DOCUMENT_EXTENSIONS,
+  buildEntityGroups,
+  documentKindLabel,
+  documentTypeLabel,
+} from './documents.api';
 
 function emptyRaw() {
   return {
@@ -113,5 +118,48 @@ describe('buildEntityGroups', () => {
 
   it('все секции пустые → []', () => {
     expect(buildEntityGroups(emptyRaw())).toEqual([]);
+  });
+});
+
+describe('documentKindLabel (формат файла, Bug-1)', () => {
+  it('маппит форматы в RU-метки', () => {
+    expect(documentKindLabel('pdf')).toBe('PDF');
+    expect(documentKindLabel('docx')).toBe('Word');
+    expect(documentKindLabel('xlsx')).toBe('Excel');
+    expect(documentKindLabel('pptx')).toBe('PowerPoint');
+    expect(documentKindLabel('markdown')).toBe('Markdown');
+    expect(documentKindLabel('text')).toBe('текст');
+    expect(documentKindLabel('html')).toBe('HTML');
+    expect(documentKindLabel('rtf')).toBe('RTF');
+    expect(documentKindLabel('odt')).toBe('ODT');
+    expect(documentKindLabel('csv')).toBe('CSV');
+    expect(documentKindLabel('other')).toBe('другое');
+  });
+});
+
+describe('documentTypeLabel (смысл документа)', () => {
+  it('маппит смысловые типы в RU-метки', () => {
+    expect(documentTypeLabel('regulation')).toBe('Регламент');
+    expect(documentTypeLabel('policy')).toBe('Политика');
+    expect(documentTypeLabel('instruction')).toBe('Инструкция');
+    expect(documentTypeLabel('process')).toBe('Процесс');
+    expect(documentTypeLabel('job_description')).toBe('Должностная инструкция');
+    expect(documentTypeLabel('other')).toBe('другое');
+  });
+
+  it('null → «—» (тип не задан)', () => {
+    expect(documentTypeLabel(null)).toBe('—');
+  });
+});
+
+describe('ACCEPTED_DOCUMENT_EXTENSIONS (Bug-2)', () => {
+  it('не содержит бинарный .doc', () => {
+    expect(ACCEPTED_DOCUMENT_EXTENSIONS).not.toContain('.doc');
+  });
+
+  it('содержит ключевые форматы ТЗ-4', () => {
+    for (const ext of ['.pdf', '.docx', '.xlsx', '.pptx', '.csv']) {
+      expect(ACCEPTED_DOCUMENT_EXTENSIONS).toContain(ext);
+    }
   });
 });

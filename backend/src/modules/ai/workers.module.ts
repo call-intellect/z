@@ -9,6 +9,11 @@ import { CurationModule } from '../curation/curation.module';
 // ai_ready) и в Specialist33DecisionsWorker (для enqueueDecisionHygiene
 // после processBlock).
 import { DashboardModule } from '../dashboard/dashboard.module';
+// ТЗ-4 Ф7 — DocumentImportWorker инжектит DocumentImportService из
+// DocumentsModule (он экспортируется). Воркер очереди `core.document-import`
+// крутится in-process.
+import { DocumentImportWorker } from '../documents/document-import.worker';
+import { DocumentsModule } from '../documents/documents.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
@@ -22,6 +27,9 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
+import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
+import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
 import { IdeaClustererCron } from '../knowledge-core/workers/idea-clusterer.cron';
 import { InsightClustererCron } from '../knowledge-core/workers/insight-clusterer.cron';
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
@@ -37,6 +45,7 @@ import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
 import { SkillTraitConceptNormalizerCron } from '../knowledge-core/workers/skill-trait-concept-normalizer.cron';
+import { SkillTraitVerifyCron } from '../knowledge-core/workers/skill-trait-verify.cron';
 import { Specialist31RegulationsWorker } from '../knowledge-core/workers/specialist-3-1-regulations.worker';
 import { Specialist314GoalsWorker } from '../knowledge-core/workers/specialist-3-14-goals.worker';
 import { Specialist32KnowledgeCloneWorker } from '../knowledge-core/workers/specialist-3-2-knowledge-clone.worker';
@@ -52,6 +61,13 @@ import { SprintHelperWorker } from '../knowledge-core/workers/sprint-helper.work
 import { StrategicAlignmentCron } from '../knowledge-core/workers/strategic-alignment.cron';
 import { StrategicAlignmentWorker } from '../knowledge-core/workers/strategic-alignment.worker';
 import { ThemeClustererCron } from '../knowledge-core/workers/theme-clusterer.cron';
+// ТЗ-5 Ф2 — MeetingUploadIngestWorker (ручная загрузка встреч). Инжектит
+// MeetingUploadsQueueService из @Global MeetingUploadsModule (enqueue upload-transcribe).
+import { MeetingUploadIngestWorker } from '../meeting-uploads/workers/meeting-upload-ingest.worker';
+// ТЗ-5 Ф3 — MeetingUploadTranscribeWorker (диаризация загруженной встречи).
+// Инжектит VoxService (локальный провайдер этого модуля) + S3/Meetings/Prisma
+// из @Global-модулей; ставит встречу в awaiting_speakers БЕЗ анализа (гейт Ф4).
+import { MeetingUploadTranscribeWorker } from '../meeting-uploads/workers/meeting-upload-transcribe.worker';
 // SBA β-8 — PersonalRelationBuilderWorker.
 import { PersonalRelationBuilderWorker } from '../operations/workers/personal-relation-builder.worker';
 import { ProcessesModule } from '../processes/processes.module';
@@ -127,6 +143,9 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // ChatboxModule (он экспортируется). Воркер очереди `chatbox.sync`
     // крутится in-process.
     ChatboxModule,
+    // ТЗ-4 Ф7 — DocumentImportWorker инжектит DocumentImportService из
+    // DocumentsModule (экспортируется). Воркер очереди `core.document-import`.
+    DocumentsModule,
   ],
   providers: [
     // worker-only сервисы (нет @Global-дома).
@@ -162,6 +181,18 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // composite MP4 (ffmpeg -movflags +faststart). Consumer `recording.faststart`,
     // producer — webhook egress_ended(composite) при RECORDING_FASTSTART_ENABLED.
     FaststartWorker,
+    // ТЗ-5 Ф2 — ingest-воркер ручной загрузки встреч. Consumer
+    // `meeting.upload-ingest`: ffprobe → нормализация аудио (mono 16к opus) +
+    // faststart нативного видео; Recording(ready); FSM до recording_ready;
+    // enqueue meeting.upload-transcribe (воркер очереди transcribe — Ф3).
+    // Concurrency=1 (ffmpeg тяжёлый), идемпотентен (FSM-guard + фикс. jobId).
+    MeetingUploadIngestWorker,
+    // ТЗ-5 Ф3 — transcribe-воркер ручной загрузки встреч. Consumer
+    // `meeting.upload-transcribe`: Vox(diarization) → Transcript.turns +
+    // MeetingUploadSpeaker[]; FSM до awaiting_speakers. ГЕЙТ: анализ НЕ ставит
+    // (после ручной разметки спикеров — Ф4 — встреча уходит в ai_processing).
+    // Concurrency=1, идемпотентен (FSM-guard + фикс. jobId + upsert).
+    MeetingUploadTranscribeWorker,
 
     // knowledge-core воркеры/cron'ы.
     BlockIngestWorker,
@@ -170,6 +201,24 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     EntityResolverCronService,
     BlockLinkerWorker,
     EntityGraphBuilderCron,
+    // Agent-chain overhaul Фаза 0a (2026-06-07) — cron `*/30 * * * *`:
+    // догоночная наблюдаемость материализации графа. READ-ONLY: по недавним
+    // встречам (24ч) считает расхождения (блоки decision/idea есть, записи нет)
+    // → метрика kc_materialization_gap_total + WARN-лог. GraphMaterializationService
+    // берётся из @Global KnowledgeCoreModule.
+    GraphMaterializationVerifyCron,
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
+    // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
+    // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых
+    // strategic-alignment.worker делал ранний return. GoalThemeLinkerService
+    // берётся из @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
+    GoalThemeLinkerCron,
+    // Agent-chain overhaul Фаза 4.1 (2026-06-08) — cron каждые 30 мин:
+    // догоночная LLM-привязка задач встречи к свежим AI-целям (createdAt>=now-7д).
+    // За флагом goals.goalTaskLinkEnabled (DEFAULT OFF) — линкер сам no-op при
+    // выключенном флаге / отсутствии ungoaled-задач. Non-destructive. Сервис из
+    // @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
+    GoalTaskLinkerCron,
     ReframingCron,
     ThemeClustererCron,
     CardRollupV2Worker,
@@ -237,6 +286,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     SkillProfileRebuildWorker,
     // SBA γ-1 — cron `0 5 * * *`: daily decay confidence + archive старых traits.
     SkillProfileRecalibrateCron,
+    // Ф3(D) clone-quality-improvements (2026-06-08) — cron `30 3 * * *`:
+    // grounding-проверка pending_verification черт перед персоной
+    // (grounded → active; иначе pending; fail-open promote при ошибке LLM).
+    SkillTraitVerifyCron,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — cron `0 3 * * *`:
     // нормализация Смысловых блоков навыка (slияние близких SkillTraitConcept,
     // архивация без активных traits старше N месяцев). За час до decay-cron.
@@ -281,6 +334,10 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // Фаза 0b knowledge-core: ingest-адаптеры документов и дампов.
     DocumentIngestAdapter,
     TextIngestAdapter,
+    // ТЗ-4 Ф7 — consumer `core.document-import`. По importId распаковывает ZIP
+    // и создаёт Document'ы (re-use DocumentsService.createOne + dedup + enqueue
+    // core.document-uploaded). Идемпотентно (status-guard в processImport).
+    DocumentImportWorker,
 
     // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.4 §2.6) —
     // Specialist 3-13: consumer `core.specialist-routing` jobName='3-13-sprint-helper'

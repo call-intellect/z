@@ -258,6 +258,14 @@ const RecordingReliabilitySchema = z.object({
    * создаёт нагрузку на LiveKit API (защищено идемпотентностью).
    */
   RECORDING_COMPOSITE_RECONCILE_ENABLED: zBool(true),
+  /**
+   * Ручная загрузка встреч (ТЗ-5 meeting-upload-diarization, Ф6). Аварийный
+   * рубильник на `POST /meetings/upload`: при `false` создание загруженной
+   * встречи отклоняется кодом `UPLOAD_DISABLED` (диаризация/анализ уже принятых
+   * загрузок не трогаются). Дефолт ON (Ship-On). Также переопределяется
+   * AdminSetting-ключом `meeting_upload.enabled` (ENV — fallback под этот ключ).
+   */
+  MEETING_UPLOAD_ENABLED: zBool(true),
 });
 
 /** Базовые лимиты MVP. */
@@ -381,6 +389,15 @@ const AiFeatureFlagsSchema = z.object({
    * флаг убираем — поведение становится дефолтом.
    */
   PROMPT_INJECTION_GUARD_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-07 agent-chain-overhaul, Фаза 5 / Р6 — флаг legacy summary-агента
+   * (`analyze.worker` runSummary, MiniMax, 0% кэш). При `true` (default) агент
+   * работает как раньше — обратимо. Каноническая сводка идёт из
+   * meeting-report-fast (`summaryFast`); все потребители читают её через
+   * `pickPrimarySummary`. После подтверждения покрытия `summaryFast` флаг можно
+   * выставить `false` — `−1` LLM-вызов MiniMax (ops-решение).
+   */
+  SUMMARY_AGENT_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */

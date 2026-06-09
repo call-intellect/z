@@ -12,6 +12,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AdminCacheService } from '../../admin/services/admin-cache.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -30,13 +32,18 @@ function buildService(opts: {
   getCount: ReturnType<typeof vi.fn>;
 } {
   // Все запросы к БД пустые → tenant считается empty → sample-story ветка.
+  // ТЗ-2 Ф1 — fetchValueStrip добавил meeting/task/decision/ideaBlock.count.
   const prisma = {
     theme: { findMany: vi.fn(async () => []) },
     ideaBlock: {
       findMany: vi.fn(async () => []),
       groupBy: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
     },
-    goal: { findMany: vi.fn(async () => []) },
+    goal: { findMany: vi.fn(async () => []), groupBy: vi.fn(async () => []) },
+    meeting: { count: vi.fn(async () => 0) },
+    task: { count: vi.fn(async () => 0) },
+    decision: { count: vi.fn(async () => 0) },
     $queryRaw: vi.fn(async () => []),
   } as unknown as PrismaService;
 
@@ -72,6 +79,18 @@ function buildService(opts: {
     }));
   const pendingActions = { getCount } as unknown as PendingActionsService;
 
+  // ТЗ-2 Ф1 — getDynamic возвращает code-fallback (флаг ON по умолчанию).
+  const config = {
+    getDynamic: vi.fn(
+      async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def,
+    ),
+  } as unknown as TypedConfigService;
+  // ТЗ-2 Ф1 — метрики «Полосы пользы» (no-op в тесте).
+  const metrics = {
+    incDashboardValueStripServed: vi.fn(),
+    setDashboardMainFirstScreenWidgetCount: vi.fn(),
+  } as unknown as BusinessMetricsService;
+
   const service = new DirectorDashboardService(
     prisma,
     cache,
@@ -81,6 +100,8 @@ function buildService(opts: {
     commitSvc,
     hangingSvc,
     pendingActions,
+    config,
+    metrics,
   );
 
   return { service, getCount };

@@ -477,7 +477,7 @@ function HrResumeSection({ data }: { data: PersonPulse }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles size={16} className="text-accent" />
-          AI-резюме для HR
+          Резюме Коры для HR
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -495,7 +495,7 @@ function HrResumeSection({ data }: { data: PersonPulse }) {
           </ul>
         ) : (
           <p className="text-sm text-fg-tertiary">
-            Пока без AI-рекомендаций. Они появятся после первого недельного
+            Пока без рекомендаций Коры. Они появятся после первого недельного
             прогона HR-Recommender или когда наберётся достаточно сигналов
             (встречи, чек-ины, обещания).
           </p>
@@ -1048,7 +1048,7 @@ function PersonProbeQuestionsSection({
         setError(
           e instanceof ApiError
             ? e.message
-            : 'Не удалось загрузить вопросы AI',
+            : 'Не удалось загрузить вопросы Коры',
         );
       } finally {
         if (alive) setLoading(false);
@@ -1065,12 +1065,12 @@ function PersonProbeQuestionsSection({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <MessageCircle size={16} className="text-accent" />
-            Вопросы AI этому человеку
+            Вопросы Коры этому человеку
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-fg-tertiary">
-            Этот человек ещё не зарегистрирован — вопросы AI отправляются
+            Этот человек ещё не зарегистрирован — вопросы Коры отправляются
             только зарегистрированным пользователям.
           </p>
         </CardContent>
@@ -1083,7 +1083,7 @@ function PersonProbeQuestionsSection({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MessageCircle size={16} className="text-accent" />
-          Вопросы AI этому человеку
+          Вопросы Коры этому человеку
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -1097,7 +1097,7 @@ function PersonProbeQuestionsSection({
           <p className="text-sm text-chip-danger-fg">{error}</p>
         ) : items.length === 0 ? (
           <p className="text-sm text-fg-tertiary">
-            У этого человека ещё не было вопросов AI. Они появятся, когда
+            У этого человека ещё не было вопросов Коры. Они появятся, когда
             помощник захочет уточнить что-то у этого сотрудника.
           </p>
         ) : (

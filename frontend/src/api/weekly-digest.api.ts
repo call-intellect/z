@@ -22,6 +22,14 @@ export interface WeeklyDigestMetricsApi {
     kind: string;
     dynamicLabel: string;
   }>;
+  // ТЗ-2 Ф3 — топ-идеи недели (производятся backend).
+  topIdeas?: Array<{
+    ideaId: string;
+    statement: string;
+    status: string;
+    weight: number;
+    supporterCount: number;
+  }>;
   goals: {
     completed: number;
     failed: number;
@@ -74,6 +82,16 @@ export interface WeeklyForecastItemApi {
   confidence: 'low' | 'medium';
 }
 
+/**
+ * ТЗ-2 Ф3 — дельта секции «текущая неделя vs предыдущая».
+ * `previous`/`delta` равны null, когда сравнивать не с чем.
+ */
+export interface WeeklyDeltaApi {
+  current: number;
+  previous: number | null;
+  delta: number | null;
+}
+
 export interface WeeklyOperationsDigestApi {
   id: string;
   tenantId: string;
@@ -88,6 +106,12 @@ export interface WeeklyOperationsDigestApi {
   kpiDeltas: WeeklyKpiDeltaApi[];
   teamDynamics: WeeklyTeamDynamicsRowApi[];
   forecast: WeeklyForecastItemApi[];
+  // ТЗ-2 Ф3 — дельты по разделам (блокеры / сигналы / идеи) неделя к неделе.
+  sectionDeltas: {
+    blockers: WeeklyDeltaApi;
+    insights: WeeklyDeltaApi;
+    ideas: WeeklyDeltaApi;
+  };
 }
 
 export const weeklyDigestApi = {

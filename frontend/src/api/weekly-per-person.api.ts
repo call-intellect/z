@@ -22,7 +22,13 @@ export interface WeeklyPersonRowApi {
   promisesKept: number;
   promisesBroken: number;
   promisesOverdue: number;
-  /** kept / max(1, kept+broken+overdue) * 100; null если знаменатель=0. */
+  /** Обещания со статусом «спросили», на которые ещё нет ответа. */
+  promisesNoAnswer: number;
+  /**
+   * kept / (kept+broken+overdue) * 100. null в ДВУХ случаях: знаменатель=0
+   * (обещаний нет) ИЛИ знаменатель меньше минимума (по умолчанию 3 — «мало
+   * данных»). Чтобы отличить эти случаи, фронт сам считает знаменатель.
+   */
   reliabilityPercent: number | null;
   /** Закрытые задачи за неделю. */
   tasksDone: number;

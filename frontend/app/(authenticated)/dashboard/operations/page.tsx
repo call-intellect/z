@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { OperationsDashboardClient } from './OperationsDashboardClient';
 
 export const metadata: Metadata = {
-  title: 'Операции — Кора',
+  title: 'Операции',
 };
 
 /**

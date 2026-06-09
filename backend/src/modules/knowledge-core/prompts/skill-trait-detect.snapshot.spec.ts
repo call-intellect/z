@@ -18,8 +18,16 @@ import {
 } from './skill-trait-detect.prompt';
 
 describe('skill-trait-detect — snapshot сборки промта', () => {
-  it('system prompt стабилен (жёсткие правила формулировок + EDGE_CASE_POLICY)', () => {
+  it('system prompt стабилен (жёсткие правила формулировок + EDGE_CASE_POLICY + ASR_NOTE)', () => {
     expect(SKILL_TRAIT_DETECT_SYSTEM_PROMPT).toMatchSnapshot('system');
+  });
+
+  // C1 agent-chain-overhaul (2026-06-07) — ASR-нота применена ко ВСЕМ
+  // извлекающим промптам (восстановление искажённых ASR чисел/имён по контексту).
+  it('system содержит ASR-ноту (withAsrNote)', () => {
+    expect(SKILL_TRAIT_DETECT_SYSTEM_PROMPT).toContain(
+      'автоматического распознавания речи',
+    );
   });
 
   it('user prompt стабилен для 3 reasoning-цитат Сергея', () => {

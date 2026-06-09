@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { pickPrimarySummary } from '../utils/pick-primary-summary';
 
 import { LlmRouterService } from './llm-router.service';
 import {
@@ -62,13 +63,18 @@ export class CardRollupService {
       orderBy: { createdAt: 'desc' },
       take: CARD_ROLLUP_MAX_RECENT_MEETINGS,
       include: {
-        aiResult: { select: { summary: true } },
+        // Р6: каноническая сводка = summaryFast ?? summaryV2 ?? summary —
+        // тянем все три поля, иначе pickPrimarySummary молча упадёт на legacy.
+        aiResult: {
+          select: { summaryFast: true, summaryV2: true, summary: true },
+        },
       },
     });
 
-    // Берём только встречи с непустым summary, переворачиваем — от старых к новым.
+    // Берём только встречи с непустой канонической сводкой, переворачиваем —
+    // от старых к новым.
     const eligible = meetings
-      .filter((m) => (m.aiResult?.summary ?? '').trim().length > 0)
+      .filter((m) => (m.aiResult ? pickPrimarySummary(m.aiResult).length > 0 : false))
       .reverse();
 
     if (eligible.length === 0) {
@@ -87,7 +93,7 @@ export class CardRollupService {
       date: m.createdAt.toISOString().slice(0, 10),
       type: String(m.type),
       title: m.title,
-      summary: (m.aiResult?.summary ?? '').trim(),
+      summary: m.aiResult ? pickPrimarySummary(m.aiResult) : '',
     }));
 
     const systemPrompt = buildCardRollupSystemPrompt(card.kind);

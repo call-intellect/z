@@ -29,6 +29,9 @@ export interface ChatV2Citation {
   startMs: number;
   endMs: number;
   snippet: string;
+  /** ТЗ-4 Ф11 — если блок из загруженного документа, ссылка на него. */
+  documentId?: string;
+  documentName?: string;
 }
 
 export interface ChatV2Message {
@@ -104,6 +107,8 @@ export function toChatV2Citation(dto: ChatV2CitationApi): ChatV2Citation {
     startMs: dto.startMs,
     endMs: dto.endMs,
     snippet: dto.snippet,
+    documentId: dto.documentId,
+    documentName: dto.documentName,
   };
 }
 

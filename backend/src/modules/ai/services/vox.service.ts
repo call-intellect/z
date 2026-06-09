@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { LogService } from '../../logging/log.service';
 
 import {
+  type VoxDiarizedSegment,
   type VoxPollOptions,
   type VoxResult,
   VoxError,
@@ -91,6 +92,12 @@ export class VoxService {
         form.append('model', model);
         form.append('punctuationMode', punctuationMode);
         form.append('diarizationEnabled', diarizationEnabled ? 'true' : 'false');
+        // ТЗ-5 Ф3 — диаризация одного смешанного аудио (upload-путь). Поля
+        // пробрасываются ТОЛЬКО когда заданы → per-track вызовы (без opts)
+        // отправляют тот же multipart, что и раньше (поведение не меняется).
+        if (opts.speakerMode !== undefined) form.append('speakerMode', opts.speakerMode);
+        if (opts.numSpeakers !== undefined) form.append('numSpeakers', String(opts.numSpeakers));
+        if (opts.maxSpeakers !== undefined) form.append('maxSpeakers', String(opts.maxSpeakers));
         // language не поддерживается текущей версией Vox API (400: property language should not exist)
 
         this.logger.debug({ attempt: attempt + 1, url }, 'Vox submit: POST запрос');
@@ -238,6 +245,21 @@ export class VoxService {
             Array.isArray(segs) && segs[0] && typeof segs[0] === 'object'
               ? Object.keys(segs[0] as object)
               : [];
+          // PII-safe форма extendedResult / taskParams: ТОЛЬКО типы и ключи,
+          // НЕ значения (там может быть текст транскрипта = PII). По ключам
+          // extendedResult видно, есть ли там words/word_timestamps (исход б);
+          // по ключам taskParams — реальные имена принятых submit-параметров
+          // (имя возможного word-timing флага, без угадывания).
+          const extRaw = ro.extendedResult;
+          const extObj =
+            extRaw && typeof extRaw === 'object' && !Array.isArray(extRaw)
+              ? (extRaw as Record<string, unknown>)
+              : null;
+          const taskParamsRaw = ro.taskParams;
+          const taskParamsObj =
+            taskParamsRaw && typeof taskParamsRaw === 'object' && !Array.isArray(taskParamsRaw)
+              ? (taskParamsRaw as Record<string, unknown>)
+              : null;
           this.dbLog(
             'WARN',
             'vox.no_words',
@@ -251,6 +273,14 @@ export class VoxService {
               hasSegments: Array.isArray(segs),
               segmentsCount: Array.isArray(segs) ? segs.length : 0,
               firstSegmentKeys,
+              extendedResultType:
+                extRaw === null || extRaw === undefined
+                  ? 'absent'
+                  : Array.isArray(extRaw)
+                    ? `array(${extRaw.length})`
+                    : typeof extRaw,
+              extendedResultKeys: extObj ? Object.keys(extObj) : [],
+              taskParamsKeys: taskParamsObj ? Object.keys(taskParamsObj) : [],
             },
           );
         }
@@ -259,6 +289,8 @@ export class VoxService {
           transcriptText: result.transcriptText,
           durationSeconds: result.durationSeconds,
           ...(result.words ? { words: result.words } : {}),
+          // ТЗ-5 Ф3 — сегменты диаризации (только при diarizationEnabled:true).
+          ...(result.segments ? { segments: result.segments } : {}),
         };
       }
       if (result.status === 'FAILED') {
@@ -308,6 +340,7 @@ function parseVoxResult(raw: unknown): {
   transcriptText: string;
   durationSeconds: number;
   words?: Array<{ word: string; startMs: number; endMs: number }>;
+  segments?: VoxDiarizedSegment[];
   errorMessage?: string;
 } {
   const obj = (raw ?? {}) as Record<string, unknown>;
@@ -315,6 +348,10 @@ function parseVoxResult(raw: unknown): {
   // Vox может отдавать текст под разными ключами / вложенно в `result`.
   // Покрываем известные варианты, иначе молча получаем пустой транскрипт.
   const nested = (obj.result ?? obj.data ?? {}) as Record<string, unknown>;
+  // Третий источник: `extendedResult` (top-level ключ Vox, модель v3_e2e_rnnt).
+  // Может быть объектом ИЛИ JSON-строкой. Аддитивно — приоритет у уже работающих
+  // источников (obj / result / data); extended только в конце каждой цепочки.
+  const extended = asRecord(obj.extendedResult);
   const transcriptText =
     firstString(
       obj.transcriptText,
@@ -324,9 +361,18 @@ function parseVoxResult(raw: unknown): {
       nested.transcriptText,
       nested.transcript_text,
       nested.text,
+      extended.transcriptText,
+      extended.transcript_text,
+      extended.text,
     ) ?? '';
   const durationRaw =
-    obj.durationSeconds ?? obj.duration_seconds ?? nested.durationSeconds ?? nested.duration_seconds ?? 0;
+    obj.durationSeconds ??
+    obj.duration_seconds ??
+    nested.durationSeconds ??
+    nested.duration_seconds ??
+    extended.durationSeconds ??
+    extended.duration_seconds ??
+    0;
   const durationSeconds =
     typeof durationRaw === 'number'
       ? durationRaw
@@ -363,14 +409,19 @@ function parseVoxResult(raw: unknown): {
       );
 
   const flatWordsRaw =
-    obj.words ?? obj.wordsTimestamps ?? nested.words ?? nested.wordsTimestamps;
+    obj.words ??
+    obj.wordsTimestamps ??
+    nested.words ??
+    nested.wordsTimestamps ??
+    extended.words ??
+    extended.wordsTimestamps;
   let words = Array.isArray(flatWordsRaw) ? mapWords(flatWordsRaw) : undefined;
 
   // S5-02 (ТЗ 2026-06-06): многие ASR кладут пословные тайминги в
   // segments[].words (Whisper/Google/Deepgram-стиль). Если плоских words нет —
   // собираем из сегментов (top-level или в result/data). Единицы те же (numericMs).
   if (!words || words.length === 0) {
-    const segmentsRaw = (obj.segments ?? nested.segments ?? []) as unknown[];
+    const segmentsRaw = (obj.segments ?? nested.segments ?? extended.segments ?? []) as unknown[];
     if (Array.isArray(segmentsRaw) && segmentsRaw.length > 0) {
       const segWords: unknown[] = [];
       for (const seg of segmentsRaw) {
@@ -384,13 +435,81 @@ function parseVoxResult(raw: unknown): {
     }
   }
 
+  // ТЗ-5 Ф3 (upload-диаризация) — сегменты диаризации. Vox с
+  // `diarizationEnabled:true` кладёт `extendedResult.segments[]` (Ф0 smoke):
+  // `{ start, end, speaker, speaker_id, text }`, где start/end — СЕКУНДЫ
+  // (float). Парсим АДДИТИВНО: per-track путь (живой конвейер) сюда не
+  // попадает (diarizationEnabled:false → segments отсутствуют), а word-level
+  // парсинг выше использует `segments[].words` независимо.
+  const diarizedSegmentsRaw =
+    extended.segments ?? obj.segments ?? nested.segments;
+  const segments = Array.isArray(diarizedSegmentsRaw)
+    ? mapDiarizedSegments(diarizedSegmentsRaw)
+    : undefined;
+
   return {
     status,
     transcriptText,
     durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
     ...(words && words.length > 0 ? { words } : {}),
+    ...(segments && segments.length > 0 ? { segments } : {}),
     ...(errorMessage !== undefined ? { errorMessage } : {}),
   };
+}
+
+/**
+ * Маппит сырые сегменты диаризации Vox → `VoxDiarizedSegment[]` (ТЗ-5 Ф3).
+ * Контракт сегмента: `{ start, end, speaker, speaker_id, text }`, где
+ * `start`/`end` — СЕКУНДЫ (float). Сегмент без текста/без говорящего/без
+ * валидных таймингов пропускается. Не путать с word-timing-сегментами
+ * (`segments[].words`) — у тех нет `speaker_id` и текста реплики.
+ */
+function mapDiarizedSegments(arr: unknown[]): VoxDiarizedSegment[] {
+  return arr
+    .map((s): VoxDiarizedSegment | null => {
+      if (!s || typeof s !== 'object') return null;
+      const so = s as Record<string, unknown>;
+      const speakerIdRaw = so.speaker_id ?? so.speakerId;
+      const speakerId =
+        typeof speakerIdRaw === 'number'
+          ? speakerIdRaw
+          : typeof speakerIdRaw === 'string' && speakerIdRaw !== ''
+            ? Number(speakerIdRaw)
+            : null;
+      const text = typeof so.text === 'string' ? so.text : '';
+      const speaker = typeof so.speaker === 'string' ? so.speaker : '';
+      const startSec = numericSec(so.start ?? so.startSec);
+      const endSec = numericSec(so.end ?? so.endSec);
+      // Диаризованный сегмент обязан иметь speaker_id и текст — иначе это не
+      // он (например, word-timing-сегмент Whisper-стиля). Пропускаем.
+      if (
+        speakerId === null ||
+        !Number.isFinite(speakerId) ||
+        startSec === null ||
+        endSec === null ||
+        (text === '' && speaker === '')
+      ) {
+        return null;
+      }
+      return {
+        startSec,
+        endSec,
+        speaker: speaker || `SPEAKER ${speakerId}`,
+        speakerId,
+        text,
+      };
+    })
+    .filter((x): x is VoxDiarizedSegment => x !== null);
+}
+
+/** Число секунд (float). Принимает number или числовую строку, иначе null. */
+function numericSec(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string' && v !== '') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 /** Первое непустое строковое значение из переданных кандидатов. */
@@ -408,4 +527,25 @@ function numericMs(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/**
+ * Нормализует значение к объекту-записи. Принимает либо готовый объект,
+ * либо JSON-строку (Vox может класть `extendedResult` сериализованным).
+ * Массивы и не-JSON-строки → пустая запись. Используется для третьего
+ * источника таймингов — `extendedResult` (top-level ключ ответа Vox).
+ */
+function asRecord(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (typeof v === 'string' && v.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // not JSON — ignore
+    }
+  }
+  return {};
 }

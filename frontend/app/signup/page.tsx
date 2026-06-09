@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { SignupForm } from './SignupForm';
 
 export const metadata: Metadata = {
-  title: 'Регистрация — Кора',
+  title: 'Регистрация',
   description: 'Создайте аккаунт Кора, чтобы получать AI-отчёты по своим встречам.',
 };
 

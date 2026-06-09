@@ -159,7 +159,10 @@ describe('TableAgentService', () => {
     expect(out.properties[0]?.isPrimary).toBe(true);
   });
 
-  it('(e) невалидный JSON на pass-1 -> BadRequestException', async () => {
+  it('(e) невалидный JSON на pass-1 -> BadRequestException (R1: 3 ретрая при cfg=undefined)', async () => {
+    // Мок отдаёт невалидный текст только первый раз; последующие вызовы вернут
+    // undefined → callJson вернёт null → итог BadRequestException, но DRAFT
+    // вызван 3 раза (table.agent.draft_max_attempts def=3, cfg отсутствует).
     call.mockResolvedValueOnce({
       text: 'это не json вовсе',
       modelUsed: 'deepseek:deepseek-v4-pro',
@@ -175,8 +178,46 @@ describe('TableAgentService', () => {
         userPrompt: 'что-то',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // Только pass-1 был вызван (фейл до architect/entity).
-    expect(call).toHaveBeenCalledTimes(1);
+    // DRAFT ретраится 3 раза (architect/entity не вызываются — фейл до них).
+    expect(call).toHaveBeenCalledTimes(3);
+  });
+
+  it('(R1) happy-retry: DRAFT падает один раз, со второй попытки — успех', async () => {
+    const draft = {
+      name: 'Клиенты',
+      entitySync: null,
+      properties: [{ name: 'Название', type: 'text', isPrimary: true }],
+    };
+    call
+      // 1-я попытка DRAFT: невалидный JSON → null → ретрай
+      .mockResolvedValueOnce({
+        text: 'не json',
+        modelUsed: 'deepseek:deepseek-v4-pro',
+        inputTokens: 1,
+        outputTokens: 1,
+        cachedTokens: 0,
+        durationMs: 1,
+      })
+      // 2-я попытка DRAFT: валидно
+      .mockResolvedValueOnce(reply(draft))
+      // architect
+      .mockResolvedValueOnce(reply(draft))
+      // entity-check
+      .mockResolvedValueOnce(reply(draft));
+
+    const out = await svc.inferSchemaFromText({
+      tenantId: TENANT,
+      userPrompt: 'таблица клиентов',
+    });
+
+    expect(out.name).toBe('Клиенты');
+    // DRAFT (table-infer-schema) вызван дважды.
+    const draftCalls = call.mock.calls.filter(
+      (c) => c[0]?.taskType === 'table-infer-schema',
+    );
+    expect(draftCalls).toHaveLength(2);
+    // Всего 4 вызова: draft-fail, draft-ok, architect, entity.
+    expect(call).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -237,6 +278,224 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       // Ровно одна isPrimary.
       expect(out.properties.filter((p) => p.isPrimary)).toHaveLength(1);
       expect(out.properties[0]?.isPrimary).toBe(true);
+    });
+
+    it('(R4) misfire date: LLM навязал Результат:date, данные — текст → text', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Встречи',
+        entitySync: null,
+        properties: [
+          { name: 'Формулировка', type: 'text', isPrimary: true },
+          { name: 'Результат', type: 'date', isPrimary: false },
+        ],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Формулировка', 'Результат'],
+        sampleRows: [
+          ['Вопрос 1', 'Конверсия выросла на 18 процентов'],
+          ['Вопрос 2', 'Договорились о встрече'],
+          ['Вопрос 3', 'Клиент отказался'],
+        ],
+      });
+
+      const result = out.properties.find((p) => p.name === 'Результат');
+      expect(result?.type).toBe('text');
+    });
+
+    it('(R4) не ломает валидное: даты остаются date, суммы — currency', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Сделки',
+        entitySync: null,
+        properties: [
+          { name: 'Дата', type: 'date', isPrimary: true },
+          { name: 'Сумма', type: 'currency', isPrimary: false },
+        ],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Дата', 'Сумма'],
+        sampleRows: [
+          ['2026-05-28', '450000'],
+          ['2026-06-01', '1200000'],
+          ['2026-06-05', '300000'],
+        ],
+      });
+
+      expect(out.properties.find((p) => p.name === 'Дата')?.type).toBe('date');
+      expect(out.properties.find((p) => p.name === 'Сумма')?.type).toBe(
+        'currency',
+      );
+    });
+
+    it('(R4) longtext upgrade: длинные значения text (≥50% >80 симв) → longtext', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Заметки',
+        entitySync: null,
+        properties: [{ name: 'Текст', type: 'text', isPrimary: true }],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const long = 'А'.repeat(120);
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Текст'],
+        sampleRows: [[long], [long], ['короткое']],
+      });
+
+      expect(out.properties[0]?.type).toBe('longtext');
+    });
+
+    it('(R2) дополняет options select-колонки значением «Отказ» из данных', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Воронка',
+        entitySync: null,
+        properties: [
+          { name: 'Клиент', type: 'text', isPrimary: true },
+          {
+            name: 'Стадия',
+            type: 'selectSingle',
+            isPrimary: false,
+            // LLM выдал только «Лид» (без «Переговоры» и «Отказ»).
+            config: {
+              options: [{ id: 'opt-1', name: 'Лид', color: 'info' }],
+            },
+          },
+        ],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Клиент', 'Стадия'],
+        sampleRows: [
+          ['A', 'Лид'],
+          ['B', 'Переговоры'],
+          ['C', 'Отказ'],
+        ],
+      });
+
+      const stage = out.properties.find((p) => p.name === 'Стадия');
+      const opts = (stage?.config?.options ?? []) as Array<{
+        id: string;
+        name: string;
+        color: string;
+      }>;
+      const refusal = opts.find((o) => o.name === 'Отказ');
+      expect(refusal).toBeDefined();
+      expect(refusal?.id).toMatch(/^opt-\d+$/);
+      expect(['info', 'warning', 'success', 'danger', 'neutral']).toContain(
+        refusal?.color,
+      );
+      // Исходная опция LLM НЕ переименована / не перекрашена.
+      const lead = opts.find((o) => o.name === 'Лид');
+      expect(lead).toEqual({ id: 'opt-1', name: 'Лид', color: 'info' });
+    });
+
+    it('(R2) потолок 30: 31 distinct → options не дополняются', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Справочник',
+        entitySync: null,
+        properties: [
+          {
+            name: 'Код',
+            type: 'selectSingle',
+            isPrimary: true,
+            config: { options: [{ id: 'opt-1', name: 'X', color: 'info' }] },
+          },
+        ],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const rows = Array.from({ length: 31 }, (_v, i) => [`код-${i}`]);
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Код'],
+        sampleRows: rows,
+      });
+
+      const opts = (out.properties[0]?.config?.options ?? []) as unknown[];
+      // Не выросло: осталась исходная единственная опция LLM.
+      expect(opts).toHaveLength(1);
+    });
+
+    it('(R2) case-insensitive: «Лид» и «лид » → одна опция, не дубль', async () => {
+      const call = vi.fn();
+      const llm = { call } as unknown as LlmRouterService;
+      const prisma = {} as unknown as PrismaService;
+      const svc = new TableAgentService(llm, prisma);
+
+      const schema = {
+        name: 'Воронка',
+        entitySync: null,
+        properties: [
+          {
+            name: 'Стадия',
+            type: 'selectSingle',
+            isPrimary: true,
+            config: { options: [] },
+          },
+        ],
+      };
+      call
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema))
+        .mockResolvedValueOnce(reply(schema));
+
+      const out = await svc.inferSchemaFromTabular({
+        tenantId: TENANT,
+        headers: ['Стадия'],
+        sampleRows: [['Лид'], ['лид ']],
+      });
+
+      const opts = (out.properties[0]?.config?.options ?? []) as Array<{
+        name: string;
+      }>;
+      expect(opts).toHaveLength(1);
     });
   });
 
@@ -334,10 +593,45 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       expect(out).toEqual([]);
     });
 
-    it('без embeddings (Optional не внедрён) → []', async () => {
+    it('(R3) без embeddings: Jaccard всё равно работает (идентичные колонки → кандидат)', async () => {
+      const prisma = {
+        table: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'tbl-9',
+              name: 'Клиенты (копия)',
+              properties: [{ name: 'Название' }],
+            },
+          ]),
+        },
+      } as unknown as PrismaService;
       const svc = new TableAgentService(
         {} as unknown as LlmRouterService,
-        {} as unknown as PrismaService,
+        prisma,
+      );
+      const out = await svc.findSimilarTables({
+        tenantId: TENANT,
+        schema: {
+          name: 'Клиенты',
+          description: null,
+          icon: null,
+          entitySync: null,
+          properties: [{ name: 'Название', type: 'text', isPrimary: true }],
+        },
+      });
+      // jaccard = 1.0 ≥ fallback 0.6 → кандидат найден без embeddings.
+      expect(out).toHaveLength(1);
+      expect(out[0]?.tableId).toBe('tbl-9');
+      expect(out[0]?.cosine).toBeCloseTo(1, 5);
+    });
+
+    it('(R3) без embeddings + нет таблиц → []', async () => {
+      const prisma = {
+        table: { findMany: vi.fn().mockResolvedValue([]) },
+      } as unknown as PrismaService;
+      const svc = new TableAgentService(
+        {} as unknown as LlmRouterService,
+        prisma,
       );
       const out = await svc.findSimilarTables({
         tenantId: TENANT,
@@ -350,6 +644,169 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
         },
       });
       expect(out).toEqual([]);
+    });
+
+    it('(R3) Jaccard-сигнал: идентичные колонки + низкий cosine → кандидат', async () => {
+      const embed = vi.fn();
+      const embeddings = { embed } as unknown as {
+        embed: (texts: string[]) => Promise<number[][]>;
+      };
+      // Ортогональные вектора → cosine 0, но колонки совпадают полностью.
+      embed.mockResolvedValueOnce([
+        [1, 0, 0],
+        [0, 1, 0],
+      ]);
+      const prisma = {
+        table: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'tbl-ideas',
+              name: 'Идеи и бэклог',
+              properties: [
+                { name: 'Формулировка' },
+                { name: 'Источник' },
+                { name: 'Приоритет' },
+                { name: 'Ответственный' },
+                { name: 'Статус' },
+              ],
+            },
+          ]),
+        },
+      } as unknown as PrismaService;
+      // cfg отвечает дефолтом на любой ключ: dedup_threshold→0.85, jaccard→0.6.
+      const cfg = {
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
+          Promise.resolve(def),
+        ),
+      } as unknown as TypedConfigService;
+
+      const svc = new TableAgentService(
+        {} as unknown as LlmRouterService,
+        prisma,
+        embeddings as never,
+        cfg,
+      );
+
+      const out = await svc.findSimilarTables({
+        tenantId: TENANT,
+        schema: {
+          name: 'Запросы и пожелания',
+          description: null,
+          icon: null,
+          entitySync: null,
+          properties: [
+            { name: 'Формулировка', type: 'text', isPrimary: true },
+            { name: 'Источник', type: 'text', isPrimary: false },
+            { name: 'Приоритет', type: 'text', isPrimary: false },
+            { name: 'Ответственный', type: 'text', isPrimary: false },
+            { name: 'Статус', type: 'status', isPrimary: false },
+          ],
+        },
+      });
+
+      expect(out).toHaveLength(1);
+      expect(out[0]?.name).toBe('Идеи и бэклог');
+      // score = max(cosine≈0, jaccard=1.0) = 1.0.
+      expect(out[0]?.cosine).toBeCloseTo(1, 5);
+    });
+
+    it('(R3) истинно-негатив: непохожие колонки + низкий cosine → []', async () => {
+      const embed = vi.fn();
+      const embeddings = { embed } as unknown as {
+        embed: (texts: string[]) => Promise<number[][]>;
+      };
+      embed.mockResolvedValueOnce([
+        [1, 0, 0],
+        [0, 1, 0],
+      ]);
+      const prisma = {
+        table: {
+          findMany: vi.fn().mockResolvedValue([
+            { id: 'tbl-x', name: 'Риски', properties: [{ name: 'Описание' }] },
+          ]),
+        },
+      } as unknown as PrismaService;
+      const cfg = {
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
+          Promise.resolve(def),
+        ),
+      } as unknown as TypedConfigService;
+
+      const svc = new TableAgentService(
+        {} as unknown as LlmRouterService,
+        prisma,
+        embeddings as never,
+        cfg,
+      );
+
+      const out = await svc.findSimilarTables({
+        tenantId: TENANT,
+        schema: {
+          name: 'Клиенты',
+          description: null,
+          icon: null,
+          entitySync: null,
+          properties: [{ name: 'Название', type: 'text', isPrimary: true }],
+        },
+      });
+
+      // jaccard = 0 (нет общих колонок), cosine = 0 → нет кандидата.
+      expect(out).toEqual([]);
+    });
+
+    it('(R3) высокий cosine (≥0.85) при низком Jaccard → кандидат остаётся', async () => {
+      const embed = vi.fn();
+      const embeddings = { embed } as unknown as {
+        embed: (texts: string[]) => Promise<number[][]>;
+      };
+      // Почти одинаковые вектора → cosine ≥ 0.85.
+      embed.mockResolvedValueOnce([
+        [1, 0, 0],
+        [0.99, 0.01, 0],
+      ]);
+      const prisma = {
+        table: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'tbl-sem',
+              name: 'Похожая по смыслу',
+              // Колонки полностью другие → jaccard = 0.
+              properties: [{ name: 'Описание' }, { name: 'Комментарий' }],
+            },
+          ]),
+        },
+      } as unknown as PrismaService;
+      const cfg = {
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
+          Promise.resolve(def),
+        ),
+      } as unknown as TypedConfigService;
+
+      const svc = new TableAgentService(
+        {} as unknown as LlmRouterService,
+        prisma,
+        embeddings as never,
+        cfg,
+      );
+
+      const out = await svc.findSimilarTables({
+        tenantId: TENANT,
+        schema: {
+          name: 'Клиенты',
+          description: null,
+          icon: null,
+          entitySync: null,
+          properties: [
+            { name: 'Название', type: 'text', isPrimary: true },
+            { name: 'Сумма', type: 'currency', isPrimary: false },
+          ],
+        },
+      });
+
+      expect(out).toHaveLength(1);
+      expect(out[0]?.tableId).toBe('tbl-sem');
+      // Прошёл по cosine (≥0.85), хотя jaccard = 0.
+      expect(out[0]?.cosine).toBeGreaterThanOrEqual(0.85);
     });
   });
 

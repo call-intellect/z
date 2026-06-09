@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 import { BearerAuthGuard, RequireScope } from '../api-keys/bearer-auth.guard';
 import { CurrentApiUserId } from '../api-keys/current-api-key.decorator';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
@@ -90,6 +91,12 @@ export class MeetingsPublicController {
         ok: false,
         error: { code: 'meeting_not_found', message: 'Meeting not found' },
       });
+    }
+    // Р6: внешний контракт отдаёт каноническую сводку (summaryFast ?? summaryV2
+    // ?? summary). После отключения legacy summary-агента поле summary в БД может
+    // быть пустым — подменяем его на канон, чтобы клиенты не получали ''.
+    if (meeting.aiResult) {
+      meeting.aiResult.summary = pickPrimarySummary(meeting.aiResult);
     }
     return meeting;
   }

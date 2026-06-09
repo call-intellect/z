@@ -26,8 +26,10 @@ import {
   Sparkles,
   Tag as TagIcon,
   Trash2,
+  Upload,
   UserPlus,
   Users,
+  UserSquare2,
   X,
 } from 'lucide-react';
 
@@ -39,7 +41,9 @@ import {
   meetingSummaryFromApi,
   meetingDurationSeconds,
   isJoinableStatus,
+  MEETING_TYPE_LABEL_RU,
 } from '@/domain/meeting';
+import { pickPrimarySummary } from '@/domain/ai-result';
 import { tagFromApi, type TagDomain } from '@/domain/tag';
 import { pickPrimaryTasks } from '@/domain/task';
 import { useIsMobile } from '@/hooks/useMediaQuery';
@@ -66,6 +70,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -78,18 +83,6 @@ import { copyToClipboard } from '@/lib/copy-to-clipboard';
 
 import { fmtDurationCompact } from '@/ui/components/meeting-result-v2/format-utils';
 
-const MEETING_TYPE_LABEL: Record<MeetingType, string> = {
-  team: 'Team sync',
-  standup: 'Standup',
-  plan_fact: 'План-факт',
-  project: 'Проект',
-  sales: 'Sales',
-  custdev: 'Custdev',
-  partner: 'Партнёр',
-  interview: 'Интервью',
-  customer_success: 'Customer Success',
-};
-
 const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
   scheduled: 'Запланирована',
   active: 'Идёт',
@@ -98,11 +91,13 @@ const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
   recording_ready: 'Запись готова',
   transcription_processing: 'Транскрипция',
   transcription_ready: 'Транскрипция готова',
-  ai_processing: 'AI-обработка',
+  ai_processing: 'Готовим отчёт',
   ai_ready: 'Готово',
   failed: 'Ошибка',
   // Запись в порядке, упала только AI-ветка (транскрибация/отчёт).
   ai_failed: 'Отчёт не готов',
+  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
+  awaiting_speakers: 'Подпишите говорящих',
 };
 
 type Group = 'today' | 'week' | 'earlier';
@@ -302,12 +297,28 @@ export function MeetingsJournalReal() {
             <h1 className="text-xl font-semibold tracking-tight">Мои встречи</h1>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{data?.total ?? items.length}</Badge>
-              <Button asChild size="sm">
-                <Link href="/meetings/create">
-                  <Plus size={13} />
-                  Новая
-                </Link>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus size={13} />
+                    Новая
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem
+                    onSelect={() => router.push('/meetings/create')}
+                  >
+                    <Plus size={14} />
+                    Создать встречу
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => router.push('/meetings/upload')}
+                  >
+                    <Upload size={14} />
+                    Загрузить запись
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -378,7 +389,7 @@ export function MeetingsJournalReal() {
                 Встреч пока нет
               </div>
               <div className="mt-1 max-w-xs text-xs text-fg-secondary">
-                Создайте первую встречу, чтобы появилась запись и AI-отчёт.
+                Создайте первую встречу, чтобы появилась запись и отчёт.
               </div>
               <Button asChild className="mt-4" size="sm">
                 <Link href="/meetings/create">Создать встречу</Link>
@@ -464,7 +475,7 @@ function MeetingRowCard({
   const durSec = meetingDurationSeconds(item);
   const durMs = durSec ? durSec * 1000 : null;
   const date = item.startedAt ?? item.createdAt;
-  const typeLabel = MEETING_TYPE_LABEL[item.type] ?? item.type;
+  const typeLabel = MEETING_TYPE_LABEL_RU[item.type] ?? item.type;
   const joinable = isJoinableStatus(item.status);
   const isProcessing =
     item.status === 'recording_processing' ||
@@ -473,6 +484,8 @@ function MeetingRowCard({
   const isFailed = item.status === 'failed';
   // Запись есть, но AI-отчёт не сформирован — мягкий «warning», не «danger».
   const isAiFailed = item.status === 'ai_failed';
+  // Загруженная запись распознана — ждём подписи говорящих (ТЗ-5 Ф5).
+  const isAwaitingSpeakers = item.status === 'awaiting_speakers';
 
   return (
     <div
@@ -518,8 +531,14 @@ function MeetingRowCard({
         )}
         {isAiFailed && (
           <span
-            aria-label="AI-отчёт не готов"
+            aria-label="Отчёт не готов"
             className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+          />
+        )}
+        {isAwaitingSpeakers && (
+          <span
+            aria-label="Нужно подписать говорящих"
+            className="mt-1 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-warning"
           />
         )}
       </div>
@@ -560,6 +579,21 @@ function MeetingRowCard({
             }}
           >
             <Copy size={12} /> Скопировать ссылку
+          </Button>
+        </div>
+      )}
+      {isAwaitingSpeakers && (
+        <div className="flex flex-wrap items-center gap-2 pl-6 pt-1">
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 border-chip-warning-fg/40 px-2 text-xs text-chip-warning-fg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link href={`/meetings/${item.id}/speakers`}>
+              <UserSquare2 size={12} /> Подписать говорящих →
+            </Link>
           </Button>
         </div>
       )}
@@ -642,7 +676,7 @@ function FilterChips({
               onSelect={(e) => e.preventDefault()}
               onCheckedChange={() => onToggleType(t)}
             >
-              {MEETING_TYPE_LABEL[t]}
+              {MEETING_TYPE_LABEL_RU[t]}
             </DropdownMenuCheckboxItem>
           ))}
         </DropdownMenuContent>
@@ -964,7 +998,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
-  const summary = aiResult?.summary ?? null;
+  // Р6: единый селектор канонической сводки (summaryFast ?? summaryV2 ?? summary),
+  // чтобы превью журнала совпадало со страницей результата (конец «дубля сводок»).
+  const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
   // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
   // а НЕ из устаревшего пустого aiResult.tasks. pickPrimaryTasks объединяет fast+main.
   const tasks = pickPrimaryTasks(taskRows);
@@ -976,7 +1012,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
         ? recording.durationSeconds * 1000
         : null;
 
-  const typeLabel = MEETING_TYPE_LABEL[meeting.type as MeetingType] ?? meeting.type;
+  const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const isProcessing =
     meeting.status === 'recording_processing' ||
     meeting.status === 'transcription_processing' ||
@@ -1065,9 +1101,9 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                 </section>
               ) : (
                 <section>
-                  <SectionHeader title="Summary" />
+                  <SectionHeader title="Краткое содержание" />
                   <div className="rounded-lg border border-border-subtle bg-bg-card p-5 text-sm text-fg-tertiary">
-                    AI ещё не сформировал краткое содержание.
+                    Кора ещё не сформировала краткое содержание.
                   </div>
                 </section>
               )}
@@ -1181,7 +1217,7 @@ function DetailProcessing() {
       <div className="mb-4 grid h-12 w-12 place-items-center rounded-full bg-accent-muted">
         <Sparkles size={20} className="animate-pulse text-accent" strokeWidth={1.5} />
       </div>
-      <div className="text-base font-medium text-fg-primary">AI обрабатывает запись</div>
+      <div className="text-base font-medium text-fg-primary">Кора обрабатывает запись</div>
       <div className="mt-1 max-w-sm text-sm text-fg-secondary">
         Транскрипция и анализ занимают 2–4 минуты.
       </div>
@@ -1199,7 +1235,7 @@ function DetailFailed() {
         Не удалось обработать запись
       </div>
       <div className="mt-1 max-w-sm text-sm text-fg-secondary">
-        AI-pipeline упал. Откройте полную страницу и нажмите «Регенерировать».
+        Обработка прервалась. Откройте полную страницу и нажмите «Регенерировать».
       </div>
     </div>
   );

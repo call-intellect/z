@@ -3,6 +3,7 @@
  *
  * Проверяем чистые функции:
  *   - reliabilityLabel: null → «—»; 80 → «80%»; округление 79.6 → «80%»;
+ *   - reliabilityDisplay: percent / low_data («мало данных») / none («—»);
  *   - weeklyPersonRowFromApi: passthrough полей + reliabilityLabel;
  *   - weeklyPerPersonFromApi: маппинг всех трёх массивов + защита от undefined;
  *   - pluralRu: классические русские склонения по числу.
@@ -15,6 +16,7 @@ import type {
 } from '@/api/weekly-per-person.api';
 import {
   pluralRu,
+  reliabilityDisplay,
   reliabilityLabel,
   weeklyPerPersonFromApi,
   weeklyPersonRowFromApi,
@@ -28,6 +30,7 @@ const baseRow: WeeklyPersonRowApi = {
   promisesKept: 4,
   promisesBroken: 1,
   promisesOverdue: 0,
+  promisesNoAnswer: 0,
   reliabilityPercent: 80,
   tasksDone: 3,
   checkInsCompleted: 5,
@@ -46,6 +49,43 @@ describe('reliabilityLabel', () => {
     expect(reliabilityLabel(79.6)).toBe('80%');
     expect(reliabilityLabel(0)).toBe('0%');
     expect(reliabilityLabel(100)).toBe('100%');
+  });
+});
+
+describe('reliabilityDisplay', () => {
+  it('процент есть → {kind:percent, label:«NN%»}', () => {
+    expect(reliabilityDisplay({ ...baseRow })).toEqual({
+      kind: 'percent',
+      label: '80%',
+    });
+  });
+
+  it('процента нет, но обещания были → {kind:low_data, «мало данных»}', () => {
+    // reliabilityPercent=null (denom < min), но kept+broken+overdue=5 > 0.
+    expect(
+      reliabilityDisplay({
+        ...baseRow,
+        reliabilityPercent: null,
+      }),
+    ).toEqual({ kind: 'low_data', label: 'мало данных' });
+  });
+
+  it('процента нет и обещаний нет → {kind:none, «—»}', () => {
+    expect(
+      reliabilityDisplay({
+        ...baseRow,
+        reliabilityPercent: null,
+        promisesKept: 0,
+        promisesBroken: 0,
+        promisesOverdue: 0,
+      }),
+    ).toEqual({ kind: 'none', label: '—' });
+  });
+
+  it('процент округляется до целого', () => {
+    expect(reliabilityDisplay({ ...baseRow, reliabilityPercent: 79.6 })).toEqual(
+      { kind: 'percent', label: '80%' },
+    );
   });
 });
 

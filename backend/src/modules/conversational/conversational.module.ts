@@ -29,6 +29,7 @@ import { ChannelRegistry } from './channel-registry';
 import { ConversationalController } from './conversational.controller';
 import { ConversationalService } from './conversational.service';
 import { ConversationalLinkCodeService } from './link-code.service';
+import { NotificationBudgetService } from './notification-budget.service';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
 import { ConversationalSendWorker } from './queue/conversational-send.worker';
 import type { InboundMessage } from './types/channel.types';
@@ -148,6 +149,10 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
     ConversationalLinkCodeService,
     ConversationalQueueService,
     ConversationalService,
+    // TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений.
+    // Инжектится в ConversationalService.sendNotification. НЕ импортирует
+    // ConversationalService (без циклической зависимости DI).
+    NotificationBudgetService,
     ConversationalSendWorker,
     ConversationalIngestAdapter,
     InAppChannelAdapter,
@@ -188,6 +193,8 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
     ConversationalService,
     ConversationalIngestAdapter,
     ChannelRegistry,
+    // TZ-1 Фаза 0 — экспортируем для unit-тестов / повторного использования.
+    NotificationBudgetService,
     // β-9 Phase 4 — нужен AdminTelegramBotService (валидация токена через
     // getMe, перенастройка webhook через setWebhook).
     TelegramApiClient,

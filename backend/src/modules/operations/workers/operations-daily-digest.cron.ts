@@ -232,7 +232,22 @@ export class OperationsDailyDigestCron {
       args.shortSummary ??
       'Готов ежедневный отчёт за вчера. Откройте «Ежедневный отчёт» в панели операций.';
     // Telegram-лимит ~4096 симв; усекаем shortSummary до 2000 безопасно.
-    const safeBody = body.length > 2000 ? body.slice(0, 1999) + '…' : body;
+    let safeBody = body.length > 2000 ? body.slice(0, 1999) + '…' : body;
+    // TZ-1 Ф1 — секция «Клиенты под риском» (best-effort, не валит дайджест).
+    try {
+      const customersLine = await this.digestService.buildCustomersAtRiskLine({
+        tenantId: args.tenantId,
+      });
+      if (customersLine) safeBody = `${safeBody}${customersLine}`;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'operations-daily-digest.cron: секция «Клиенты под риском» упала — пропускаю',
+      );
+    }
     const actionUrl = `/dashboard/operations/daily?date=${args.dateLocal}`;
 
     let sent = 0;

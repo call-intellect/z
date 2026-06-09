@@ -166,4 +166,20 @@ export const goalsApi = {
       body,
       { headers: orgHeaders(orgId) },
     ),
+
+  // ── ТЗ-2 Ф6.A — MoSCoW-приоритет цели (owner/admin only) ──
+  /**
+   * `PATCH /api/v1/goals/:id/priority` — задать/снять MoSCoW-приоритет цели.
+   * `priority=null` снимает приоритет. Доступ: owner/admin.
+   */
+  setPriority: (
+    orgId: string,
+    goalId: string,
+    priority: 'must' | 'should' | 'could' | 'wont' | null,
+  ) =>
+    apiClient.patch<{ id: string; priority: 'must' | 'should' | 'could' | 'wont' | null }>(
+      `/api/v1/goals/${encodeURIComponent(goalId)}/priority`,
+      { priority },
+      { headers: orgHeaders(orgId) },
+    ),
 };

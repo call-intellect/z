@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RoleSkillProfileClient } from './RoleSkillProfileClient';
 
 export const metadata: Metadata = {
-  title: 'Навыковый профиль роли — Кора',
+  title: 'Навыковый профиль роли',
 };
 
 /**

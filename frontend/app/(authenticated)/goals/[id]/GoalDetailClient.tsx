@@ -462,7 +462,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
                   >
                     {CONFIDENCE_LEVEL_LABELS[confLevel]}
                   </span>
-                  <span>AI-индикатор движения, точность ±10 пунктов.</span>
+                  <span>Оценка движения Корой, точность ±10 пунктов.</span>
                 </p>
               </div>
             </div>
@@ -552,7 +552,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
             </div>
             {goal.themes.length === 0 ? (
               <p className="text-sm text-fg-tertiary">
-                Нет связанных тем. Подключите хотя бы одну — иначе AI не
+                Нет связанных тем. Подключите хотя бы одну — иначе Кора не
                 сможет оценить движение.
               </p>
             ) : (
@@ -1604,7 +1604,7 @@ function AddThemesDialog({
           </div>
           <p className="text-[11px] text-fg-tertiary">
             Выбрано: {selected.size}. После сохранения запустите «Пересчитать
-            сейчас», чтобы AI учёл новые темы.
+            сейчас», чтобы Кора учла новые темы.
           </p>
         </div>
         <DialogFooter>

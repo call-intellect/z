@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AdminCacheService } from '../../admin/services/admin-cache.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
-
 import type { PendingActionsService } from '../../pending-actions/services/pending-actions.service';
 
 import type { CommitmentReliabilityService } from './commitment-reliability.service';
@@ -44,6 +45,8 @@ function makeService(prismaOver: {
     {} as unknown as CommitmentReliabilityService,
     {} as unknown as HangingDecisionsService,
     {} as unknown as PendingActionsService,
+    {} as unknown as TypedConfigService,
+    {} as unknown as BusinessMetricsService,
   );
 }
 

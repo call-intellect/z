@@ -1,0 +1,165 @@
+import { z } from 'zod';
+
+import type { KnowsWhoExpert } from '../services/knows-who.service';
+import type {
+  BriefItem,
+  BriefKnowsWhoHint,
+  PersonalDailyBriefPayload,
+} from '../services/personal-daily-brief.synth';
+
+/**
+ * TZ-1 Фаза 2 (daily-value-engine) — DTO «Твой день» + «кто знает X».
+ *
+ * Self-эндпоинты `/api/v1/me/daily-brief`, `/api/v1/me/knows-who`. Только
+ * self-scope (по Person.userId) — операционные данные не открываем (Р8).
+ */
+
+// ──────────────────────────── daily-brief ───────────────────────────
+
+/** Query для `GET /me/daily-brief?date=YYYY-MM-DD`. date опционально. */
+export const DailyBriefQuerySchema = z
+  .object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'date должен быть YYYY-MM-DD')
+      .optional(),
+  })
+  .strict();
+
+export type DailyBriefQuery = z.infer<typeof DailyBriefQuerySchema>;
+
+/** Один пункт брифа (DomainModel из payloadJson). */
+export interface DailyBriefItemDto {
+  kind: BriefItem['kind'];
+  title: string;
+  dueDateIso: string | null;
+  overdue: boolean;
+  counterpartyName: string | null;
+}
+
+export interface DailyBriefKnowsWhoDto {
+  blockId: string;
+  blockerText: string;
+  expertPersonId: string;
+  expertName: string;
+  confidence: number;
+}
+
+export interface DailyBriefDto {
+  /** null — брифа за этот день ещё нет (cron не построил / не утро). */
+  id: string | null;
+  dateLocal: string;
+  myTasks: DailyBriefItemDto[];
+  myPromises: DailyBriefItemDto[];
+  myBlockers: DailyBriefItemDto[];
+  promisedToMe: DailyBriefItemDto[];
+  hint: string;
+  knowsWho: DailyBriefKnowsWhoDto | null;
+  counts: {
+    tasks: number;
+    promises: number;
+    blockers: number;
+    promisedToMe: number;
+  };
+  deliveredAt: string | null;
+  openedAt: string | null;
+}
+
+function mapItem(i: BriefItem): DailyBriefItemDto {
+  return {
+    kind: i.kind,
+    title: i.title,
+    dueDateIso: i.dueDateIso,
+    overdue: i.overdue,
+    counterpartyName: i.counterpartyName ?? null,
+  };
+}
+
+function mapKnowsWho(k: BriefKnowsWhoHint | null): DailyBriefKnowsWhoDto | null {
+  if (!k) return null;
+  return {
+    blockId: k.blockId,
+    blockerText: k.blockerText,
+    expertPersonId: k.expertPersonId,
+    expertName: k.expertName,
+    confidence: k.confidence,
+  };
+}
+
+/** Маппер payload → DTO (один источник правды для контроллера). */
+export function toDailyBriefDto(args: {
+  id: string | null;
+  payload: PersonalDailyBriefPayload;
+  deliveredAt: string | null;
+  openedAt: string | null;
+}): DailyBriefDto {
+  const p = args.payload;
+  return {
+    id: args.id,
+    dateLocal: p.dateLocal,
+    myTasks: p.myTasks.map(mapItem),
+    myPromises: p.myPromises.map(mapItem),
+    myBlockers: p.myBlockers.map(mapItem),
+    promisedToMe: p.promisedToMe.map(mapItem),
+    hint: p.hint,
+    knowsWho: mapKnowsWho(p.knowsWho),
+    counts: p.counts,
+    deliveredAt: args.deliveredAt,
+    openedAt: args.openedAt,
+  };
+}
+
+/** Пустой бриф (когда cron ещё не построил снимок за дату). */
+export function emptyDailyBriefDto(dateLocal: string): DailyBriefDto {
+  return {
+    id: null,
+    dateLocal,
+    myTasks: [],
+    myPromises: [],
+    myBlockers: [],
+    promisedToMe: [],
+    hint: '',
+    knowsWho: null,
+    counts: { tasks: 0, promises: 0, blockers: 0, promisedToMe: 0 },
+    deliveredAt: null,
+    openedAt: null,
+  };
+}
+
+// ──────────────────────────── knows-who ─────────────────────────────
+
+/** Query для `GET /me/knows-who?blockId=|q=`. Ровно один из blockId/q. */
+export const KnowsWhoQuerySchema = z
+  .object({
+    blockId: z.string().min(1).max(80).optional(),
+    q: z.string().min(1).max(500).optional(),
+    limit: z.coerce.number().int().min(1).max(10).optional().default(3),
+  })
+  .strict()
+  .refine((v) => Boolean(v.blockId) || Boolean(v.q), {
+    message: 'Нужен либо blockId, либо q',
+  });
+
+export type KnowsWhoQuery = z.infer<typeof KnowsWhoQuerySchema>;
+
+export interface KnowsWhoExpertDto {
+  personId: string;
+  name: string;
+  confidence: number;
+  topCategories: string[];
+}
+
+export interface KnowsWhoListDto {
+  experts: KnowsWhoExpertDto[];
+}
+
+export function toKnowsWhoListDto(experts: KnowsWhoExpert[]): KnowsWhoListDto {
+  return {
+    experts: experts.map((e) => ({
+      personId: e.personId,
+      name: e.name,
+      confidence: e.confidence,
+      topCategories: e.topCategories,
+    })),
+  };
+}

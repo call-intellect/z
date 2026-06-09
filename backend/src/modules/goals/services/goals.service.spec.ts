@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AuditLogService } from '../../audit/audit-log.service';
 import type { CoreQueueService } from '../../core-queue/core-queue.service';
@@ -43,17 +44,20 @@ function makeService(prismaStub: PrismaStub): {
   svc: GoalsService;
   prisma: PrismaStub;
   audit: { log: Fn };
+  metrics: { incPortfolioPrioritySet: Fn };
 } {
   const audit = { log: vi.fn(async () => undefined) };
+  const metrics = { incPortfolioPrioritySet: vi.fn() };
   const svc = new GoalsService(
     prismaStub as unknown as PrismaService,
     audit as unknown as AuditLogService,
     {} as unknown as CoreQueueService,
     {} as unknown as QuotaService,
     {} as unknown as TypedConfigService,
+    metrics as unknown as BusinessMetricsService,
     {} as unknown as StrategicAlignmentIssuesService,
   );
-  return { svc, prisma: prismaStub, audit };
+  return { svc, prisma: prismaStub, audit, metrics };
 }
 
 function baseGoalRow(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -385,5 +389,91 @@ describe('GoalsService — ownerPersonId (ТЗ-F)', () => {
     expect(arg.data).toEqual(
       expect.objectContaining({ ownerPerson: { disconnect: true } }),
     );
+  });
+});
+
+// ─────────────────── ТЗ-2 Ф6.A — setPriority (MoSCoW) ───────────────────
+describe('GoalsService.setPriority', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('проставляет приоритет цели своего tenant + эмитит метрику', async () => {
+    const updateFn = vi.fn(async () => ({ id: 'g1', priority: 'must' }));
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => ({ id: 'g1', tenantId: 't1' })),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: updateFn,
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc, metrics, audit } = makeService(prisma);
+    const res = await svc.setPriority({
+      tenantId: 't1',
+      userId: 'u1',
+      goalId: 'g1',
+      priority: 'must',
+    });
+
+    expect(res).toEqual({ id: 'g1', priority: 'must' });
+    const arg = firstArg<{ where: { id: string }; data: Record<string, unknown> }>(
+      updateFn,
+    );
+    expect(arg.where.id).toBe('g1');
+    expect(arg.data.priority).toBe('must');
+    expect(metrics.incPortfolioPrioritySet).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: 'must' }),
+    );
+    expect(audit.log).toHaveBeenCalled();
+  });
+
+  it('priority=null снимает приоритет (метрика priority=none)', async () => {
+    const updateFn = vi.fn(async () => ({ id: 'g1', priority: null }));
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => ({ id: 'g1', tenantId: 't1' })),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: updateFn,
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc, metrics } = makeService(prisma);
+    const res = await svc.setPriority({
+      tenantId: 't1',
+      userId: 'u1',
+      goalId: 'g1',
+      priority: null,
+    });
+    expect(res.priority).toBeNull();
+    expect(metrics.incPortfolioPrioritySet).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: 'none' }),
+    );
+  });
+
+  it('цель чужого tenant → NotFound, update не вызывается', async () => {
+    const updateFn = vi.fn();
+    const prisma: PrismaStub = {
+      goal: {
+        findUnique: vi.fn(async () => ({ id: 'g1', tenantId: 'OTHER' })),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: updateFn,
+      },
+      goalAlignmentSnapshot: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(),
+    };
+    const { svc } = makeService(prisma);
+    await expect(
+      svc.setPriority({
+        tenantId: 't1',
+        userId: 'u1',
+        goalId: 'g1',
+        priority: 'should',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(updateFn).not.toHaveBeenCalled();
   });
 });

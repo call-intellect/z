@@ -54,3 +54,66 @@ describe('BusinessMetricsService — llm_cost_unpriced_total', () => {
     expect(await readUnpriced('openai', 'b')).toBe(1);
   });
 });
+
+/**
+ * Ф6 Часть 3 — getLlmCacheHitRatio: hits/total/ratio по подстроке провайдера.
+ */
+describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
+  let service: BusinessMetricsService;
+
+  beforeEach(() => {
+    register.clear();
+    service = new BusinessMetricsService();
+    service.onModuleInit();
+  });
+
+  afterEach(() => {
+    register.clear();
+  });
+
+  it('считает ratio = hits / total по провайдерам с подстрокой deepseek', async () => {
+    // 100 вызовов deepseek-pro + 100 deepseek-flash = 200 total;
+    // 120 cache_hit (по двум deepseek-провайдерам) → ratio 0.6.
+    for (let i = 0; i < 100; i++) {
+      service.incLlmCall({ provider: 'deepseek-pro' });
+      service.incLlmCall({ provider: 'deepseek-flash' });
+    }
+    for (let i = 0; i < 70; i++) {
+      service.incLlmCacheHit({
+        provider: 'deepseek-pro',
+        model: 'm',
+        taskType: 't',
+      });
+    }
+    for (let i = 0; i < 50; i++) {
+      service.incLlmCacheHit({
+        provider: 'deepseek-flash',
+        model: 'm',
+        taskType: 't',
+      });
+    }
+    // посторонний провайдер — не должен попасть в выборку
+    for (let i = 0; i < 30; i++) {
+      service.incLlmCall({ provider: 'openai' });
+    }
+
+    const snap = await service.getLlmCacheHitRatio('deepseek');
+    expect(snap.hits).toBe(120);
+    expect(snap.total).toBe(200);
+    expect(snap.ratio).toBeCloseTo(0.6, 5);
+  });
+
+  it('total < minTotal → ratio === null (мало данных)', async () => {
+    service.incLlmCall({ provider: 'deepseek-pro' });
+    service.incLlmCacheHit({
+      provider: 'deepseek-pro',
+      model: 'm',
+      taskType: 't',
+    });
+
+    const snap = await service.getLlmCacheHitRatio('deepseek');
+    expect(snap.total).toBe(1);
+    expect(snap.hits).toBe(1);
+    expect(snap.ratio).toBeNull();
+  });
+});

@@ -368,6 +368,92 @@ export class Specialist35Service {
     }
   }
 
+  /**
+   * TZ-1 Фаза 3.A (daily-value-engine) — мост «хронический блокер → Insight».
+   *
+   * Вызывается из `BlockerSynthesisService`, когда кластер блокеров стал
+   * `recurring` и держится ≥ N дней. Переиспользует существующую модель Insight
+   * (kind='internal', статус active) вместо плодёжа отдельной сущности.
+   *
+   * Идемпотентность: если `existingInsightId` передан и Insight ещё активен —
+   * просто дополняем `sourceBlockIds` и `lastObservedAt` (не создаём дубль).
+   * Иначе создаём новый Insight. Возвращает id Insight'а (для `linkedInsightId`)
+   * или null при сбое (best-effort — не валим cron).
+   */
+  async bridgeRecurringBlocker(args: {
+    tenantId: string;
+    statement: string;
+    sourceBlockIds: string[];
+    /** Уже связанный Insight (из BlockerSynthesis.linkedInsightId), если есть. */
+    existingInsightId?: string | null;
+    /** severity по бизнес-удару кластера. */
+    severity?: InsightSeverity;
+  }): Promise<string | null> {
+    try {
+      const severity: InsightSeverity = args.severity ?? 'medium';
+      const blockIds = Array.from(
+        new Set(args.sourceBlockIds.filter((s) => typeof s === 'string' && s)),
+      ).slice(0, 50);
+
+      // 1. Если уже привязан активный Insight — дополняем, не дублируем.
+      if (args.existingInsightId) {
+        const existing = await this.prisma.insight.findUnique({
+          where: { id: args.existingInsightId },
+          select: { id: true, tenantId: true, status: true, sourceBlockIds: true },
+        });
+        if (
+          existing &&
+          existing.tenantId === args.tenantId &&
+          existing.status !== 'archived'
+        ) {
+          const merged = Array.from(
+            new Set([...existing.sourceBlockIds, ...blockIds]),
+          ).slice(0, 100);
+          await this.prisma.insight.update({
+            where: { id: existing.id },
+            data: {
+              sourceBlockIds: { set: merged },
+              lastObservedAt: new Date(),
+              status: existing.status === 'mitigated' ? 'active' : existing.status,
+            },
+          });
+          return existing.id;
+        }
+      }
+
+      // 2. Создаём новый Insight (статус active, kind='blocker').
+      const created = await this.prisma.insight.create({
+        data: {
+          tenantId: args.tenantId,
+          kind: 'blocker',
+          statement: args.statement.slice(0, 2_000),
+          severity,
+          sourceBlockIds: blockIds,
+          causeCategory: 'process_gap',
+          confidence: new Prisma.Decimal(0.6),
+          dataClass: 'internal',
+          firstObservedAt: new Date(),
+          lastObservedAt: new Date(),
+          dynamicLabel: 'stable',
+          frequencyScore: new Prisma.Decimal(0),
+          dynamicScore: new Prisma.Decimal(0),
+          status: 'active',
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-5.bridgeRecurringBlocker: упал — пропускаю мост',
+      );
+      return null;
+    }
+  }
+
   // ─────────────────────────── KNN-кластеризация ───────────────────────────
 
   private async findMatchingInsight(args: {

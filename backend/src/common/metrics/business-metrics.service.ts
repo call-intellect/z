@@ -113,6 +113,11 @@ export class BusinessMetricsService implements OnModuleInit {
   //                    tool_choice в редких случаях).
   private promptInvalidResponseTotal!: Counter<'task_type' | 'model' | 'reason'>;
 
+  // ── Query Understanding Волна 1 (ТЗ 2026-06-10 query-understanding-tier0-tier1) ──
+  private queryPlanExtractionTotal!: Counter<'result'>;
+  private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
+  private queryPlanEmptyPoolTotal!: Counter<'result'>;
+
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
   // одинаковым display name >1 (или LLM вернул userId не из списка
@@ -1266,6 +1271,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_invalid_response_total',
       help: 'Невалидный ответ LLM (ТЗ 2026-05-24 §9 F6): не парсится JSON / не проходит Zod-схему / отсутствует ожидаемый tool_use. Накапливается на каждый retry, не только финальный fail.',
       labelNames: ['task_type', 'model', 'reason'] as const,
+    });
+
+    this.queryPlanExtractionTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_extraction_total',
+      help: 'Query Understanding Волна 1 — извлечение структуры запроса (dialog-extract-plan). result="applied" план применён (фильтр); "failopen" низкий confidence/невалидный JSON/LLM упал → смысловой путь без фильтра.',
+      labelNames: ['result'] as const,
+    });
+    this.queryPlanRetrievalFilteredTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_retrieval_filtered_total',
+      help: 'Query Understanding Волна 1 — chat-v2 retrieval: filtered="yes" применён структурный recall-safe фильтр (полный скан), "no" обычный смысловой путь.',
+      labelNames: ['filtered'] as const,
+    });
+    this.queryPlanEmptyPoolTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_empty_pool_total',
+      help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
+      labelNames: ['result'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -3847,6 +3868,19 @@ export class BusinessMetricsService implements OnModuleInit {
       model: args.model,
       reason: args.reason,
     });
+  }
+
+  /** Query Understanding Волна 1 — результат извлечения плана запроса. */
+  incQueryPlanExtraction(args: { result: 'applied' | 'failopen' }): void {
+    this.queryPlanExtractionTotal.inc({ result: args.result });
+  }
+  /** Query Understanding Волна 1 — применён ли структурный фильтр в retrieval. */
+  incQueryPlanRetrievalFiltered(args: { filtered: 'yes' | 'no' }): void {
+    this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
+  }
+  /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incQueryPlanEmptyPool(args: { result: 'empty' }): void {
+    this.queryPlanEmptyPoolTotal.inc({ result: args.result });
   }
 
   /**

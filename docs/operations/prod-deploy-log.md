@@ -1952,6 +1952,24 @@ docker compose run --rm smoke
 
 ---
 
+### 🧭 2026-06-10 — Query Understanding Волна 1 (понимание структуры запроса + recall-safe фильтр chat-v2)
+
+> Контракт: `plans/tz/2026-06-10-query-understanding-tier0-tier1.md` (Tier 0 + Tier 1).
+>
+> **Зачем для прода:** разговорный AI-чат начинает понимать структуру запроса (время/тип/сущность/тема/«я») и применять её как recall-safe структурный фильтр поверх графа — вместо чистого смыслового top-K. «Что решали по маркетингу на этой неделе» больше не возвращает решение трёхмесячной давности по другому отделу. **Новых обязательных ENV нет** (kill-switch — code-default ON). **Миграции БД нет.**
+
+- **Шаг 1 — ENV / kill-switch** — `QUERY_PLAN_EXTRACTION_ENABLED` (bool, **default true**, kill-switch ON) — извлечение структуры запроса (dialog-extract-plan) + структурный фильтр chat-v2. OFF (`=false` в `.env` + рестарт) → чат работает как раньше (чистый смысловой top-K). ENV-fallback опционален (code-default ON).
+- **Шаг 7 — Seed** — `docker compose exec backend bun run scripts/seed-llm-task-routes-dialog-extract-plan.ts` — маршрут `dialog-extract-plan` на `deepseek-v4-flash` (Query Understanding Волна 1, Р9); идемпотентен; **уже в `apply-prod-deploy.ts` STEPS** (`--mode update` его покрывает): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый taskType `dialog-extract-plan` виден в `/admin/ai-models` (primary deepseek-v4-flash) и отвечает.
+  - Флагманский запрос «что решали по маркетингу на этой неделе» фильтрует: `curl -s localhost:3000/metrics | grep z_query_plan_retrieval_filtered_total` — `{filtered="yes"}` растёт.
+  - Пустое окно (заведомо «нет данных» период) → честный ответ «в памяти нет» (метрика `z_query_plan_empty_pool_total{result="empty"}` растёт), а не правдоподобное неверное число.
+  - Метрики присутствуют: `curl -s localhost:3000/metrics | grep -E 'z_query_plan_extraction_total|z_query_plan_retrieval_filtered_total|z_query_plan_empty_pool_total'`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ## 🚀 Полный чек-лист обновления (Сценарий A: данные сохраняем)
 
 > Стандартный workflow обновления работающего прода. Если БД жалко потерять — это твой путь.

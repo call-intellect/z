@@ -193,6 +193,9 @@ export class DialogService {
           userId: input.userId,
           plan,
         });
+        this.metrics.incQueryPlanExtraction({
+          result: plan.applied ? 'applied' : 'failopen',
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(

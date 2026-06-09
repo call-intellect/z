@@ -120,6 +120,7 @@ function makeService(opts: {
 
   const metrics = {
     observeDialogProcessingDuration: vi.fn(),
+    incQueryPlanExtraction: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const service = new DialogService(

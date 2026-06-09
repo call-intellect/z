@@ -359,3 +359,19 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 > ⚠ Загрузка встречи (ТЗ-5) использует существующий ASR-стек (Vox-диаризация в `meeting-upload-transcribe.worker`), **новых chat-LLM taskType не вводит** — анализ загруженной встречи после подписи говорящих идёт по обычному meeting-пайплайну (`core.meeting-analyze-v2` и т.д.).
 
 [[../index|← index]]
+
+## Понимание структуры запроса в чате — `dialog-extract-plan` (Query Understanding Волна 1, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0). Карта фичи — [[chat-v2]] §«Query Understanding Волна 1»; архитектура retrieval — [[../02_architecture/knowledge-core]] §«Структурный фильтр retrieval».
+
+### Новый taskType `dialog-extract-plan`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `dialog-extract-plan` | **один** LLM-вызов извлекает СТРУКТУРУ вопроса к AI-чату (период как символический токен + `signalTypes` + `themeBranches` + `entityHints` + «я»/`personScope` + `aggregation` + `needsAction` + `activeNow`) → `QueryPlanFilters`. Период затем резолвится **детерминированно** (без LLM, `period-resolver.ts`). **FAIL-OPEN:** ошибка LLM / битый JSON / confidence < 0.6 → пустой план, поиск без фильтра (как раньше). | `deepseek-v4-flash` (cheap, Р9) → fallback по DEFAULT-цепочке | `extract-plan.prompt.ts` (cache-friendly: стабильный SYSTEM + injection-guard, вопрос пользователя в конце USER за data-маркерами) |
+
+- Сервис `QueryPlanExtractorService` (`backend/src/modules/dialog-layer/services/`), вызывается из `DialogService.process`; результат проброшен в retrieval (см. [[chat-v2]]).
+- Маршрут засеивается `backend/scripts/seed-llm-task-routes-dialog-extract-plan.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентно).
+- Флаг `QUERY_PLAN_EXTRACTION_ENABLED` (kill-switch, ON). **Без новой очереди** — извлечение синхронно в пути чат-запроса, не отдельный BullMQ-job.
+
+[[../index|← index]]

@@ -348,6 +348,11 @@ export class ChatV2Service {
         ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<string, unknown>)
         : undefined;
 
+    // Query Understanding Волна 1 — применён ли структурный recall-safe фильтр.
+    this.metrics.incQueryPlanRetrievalFiltered({
+      filtered: input.structuralFilters ? 'yes' : 'no',
+    });
+
     // 1) Retrieval blockId'ов под scope.
     //
     // SBA α-5 dialog-layer:
@@ -427,6 +432,11 @@ export class ChatV2Service {
           ? `По заданным условиям (${desc}) в памяти ничего не нашлось.`
           : 'По заданным условиям в памяти ничего не нашлось.'
         : 'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.';
+      // Query Understanding Волна 1 — применённый структурный фильтр дал пустой
+      // пул (misroute-proxy): честный ответ «в памяти нет».
+      if (input.structuralFilters) {
+        this.metrics.incQueryPlanEmptyPool({ result: 'empty' });
+      }
       return {
         message,
         citations: [],

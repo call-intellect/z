@@ -268,7 +268,7 @@ Acceptance:
 Acceptance: запрос с заведомо пустым окном → ответ содержит «не нашлось»/«в памяти нет», `citations=[]`, LLM-вызов не сделан (метрика/лог).
 Закрывает: R10.
 
-### Фаза 5 — Тесты, observability, smoke, prod-deploy `[ ]`
+### Фаза 5 — Тесты, observability, smoke, prod-deploy `[x]`
 Входит: метрики (router decision applied/fail-open; filtered vs unfiltered retrieval; misroute-proxy — доля `applied=true` с пустым pool); строка в `feature-flags.md`; обновление `prod-deploy-log.md` (Шаг 1 — новая ENV; Шаг 12 — smoke нового taskType + Swagger/route); ручной smoke флагманских запросов.
 Acceptance (флагманский набор, ручной + e2e где возможно):
 - «Что мы решали по маркетингу на этой неделе?» → фильтр `{decision; marketing; [пн..вс]}`, в ответе только блоки этой недели по теме marketing с типом decision, либо «в памяти нет».
@@ -302,7 +302,14 @@ Acceptance (флагманский набор, ручной + e2e где воз�
 - Рефлексия в `05_история/`.
 
 ## Итог
-_(заполнит tz-orchestrator по завершении: реализовано целиком / остаток.)_
+**Реализовано целиком (Ф1–Ф5), 2026-06-09.** Все 5 фаз закрыты, R1–R14 покрыты кодом+тестами.
+- Ф1 `150786bd` — Tier 0: `dialog-extract-plan` taskType (union+массив+seed deepseek-v4-flash), `QueryPlanExtractorService`, детерминированный `resolvePeriod` (Europe/Moscow), флаг `QUERY_PLAN_EXTRACTION_ENABLED` (kill-switch ON), cache-friendly промпт.
+- Ф2 `a3be674b` — проброс `StructuralRetrievalFilters` Dialog→Synthesis→ChatV2→Retrieval; резолв entityHints→entityIds, personScope→Person.entityId; `activeNow`→bitemporalActiveOnly (источник R12).
+- Ф3 `51ec0ff7` — `rankByStructuralFilter`: recall-safe полный скан, `ORDER BY score DESC` (НЕ HNSW); предикаты date/signalType/entity/themeBranch/bitemporal; граф пропускается при фильтре; нефильтрованный путь байт-в-байт (R9).
+- Ф4 `929308d9` — честное «По заданным условиям (…) в памяти ничего не нашлось» при пустом пуле (R10); `describeStructuralFilters`.
+- Ф5 — 3 метрики (`z_query_plan_extraction_total`/`_retrieval_filtered_total`/`_empty_pool_total`); `feature-flags.md`+`prod-deploy-log.md`; second-brain (chat-v2/knowledge-core/ai-jobs); рефлексия.
+
+**Остаток (честно):** ручной flagman-smoke флагманских запросов на боевом кабинете НЕ прогонялся (нужен явный owner-go на прод-доступ; покрыто unit/интеграц-логикой, прод-прогон — при выкате по `prod-deploy-log.md` Шаг 12). Реальное SQL-исключение out-of-window блоков проверяется на проде/integration (unit доказывает корректность предикатов и параметров). Слияние classify+extract-plan в один вызов — fast-follow (отмечено в TZ), не делалось чтобы не ломать classify-кэш.
 
 ---
 

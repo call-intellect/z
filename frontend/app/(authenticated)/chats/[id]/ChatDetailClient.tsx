@@ -87,6 +87,12 @@ export function ChatDetailClient({ chatId }: { chatId: string }) {
 }
 
 function ChatDetailContent({ chatId }: { chatId: string }) {
+  // Тумблер AI-анализа org — чтобы не врать «обработка…», когда анализ выключен.
+  const integrationSwr = useSWR(['chatbox-integration-mini'], () =>
+    chatboxApi.getIntegration(),
+  );
+  const analysisEnabled = integrationSwr.data?.analysisEnabled ?? false;
+
   const chatSwr = useSWR(
     ['chatbox-chat', chatId],
     async () => {
@@ -94,14 +100,15 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       return mapChatDetail(api);
     },
     {
-      // Живой прогресс: поллим, пока хоть одна сессия в обработке.
-      refreshInterval: (data) =>
-        data?.sessions.some(
-          (s) =>
-            s.analysisStatus === 'pending' || s.analysisStatus === 'analyzing',
-        )
-          ? 4000
-          : 0,
+      // Живой прогресс: поллим, пока реально что-то обрабатывается —
+      // есть 'analyzing', либо анализ ВКЛючён и есть 'pending' (крон подхватит).
+      refreshInterval: (data) => {
+        const ss = data?.sessions ?? [];
+        if (ss.some((s) => s.analysisStatus === 'analyzing')) return 3000;
+        if (analysisEnabled && ss.some((s) => s.analysisStatus === 'pending'))
+          return 5000;
+        return 0;
+      },
     },
   );
 
@@ -214,6 +221,30 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     }
   }, [draft, submitting, chatId, scrollToBottom]);
 
+  const [analyzing, setAnalyzing] = useState(false);
+  const handleAnalyze = useCallback(async () => {
+    setAnalyzing(true);
+    try {
+      const res = await chatboxApi.analyzeChat(chatId);
+      toast.success(
+        res.enqueued > 0
+          ? `Анализ запущен: ${res.enqueued} сессий`
+          : 'Нет закрытых сессий для анализа',
+      );
+      // Мост до момента, когда воркер пометит сессии 'analyzing' (тогда поллинг
+      // chatSwr подхватит прогресс сам).
+      void chatSwr.mutate();
+      setTimeout(() => void chatSwr.mutate(), 2500);
+      setTimeout(() => void chatSwr.mutate(), 6000);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : 'Не удалось запустить анализ',
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [chatId, chatSwr]);
+
   // --- Состояния загрузки/ошибок детали ---
   if (chatSwr.isLoading && !chatSwr.data && !chatSwr.error) {
     return (
@@ -314,7 +345,12 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       </header>
 
       {/* AI-анализ диалога (summary сессий + прогресс) */}
-      <AnalysisPanel sessions={chat.sessions} />
+      <AnalysisPanel
+        sessions={chat.sessions}
+        analysisEnabled={analysisEnabled}
+        analyzing={analyzing}
+        onAnalyze={() => void handleAnalyze()}
+      />
 
       {/* Лента сообщений — свой скролл; вверх подгружаем older (Telegram-style) */}
       <div
@@ -429,33 +465,57 @@ function sessionPeriod(s: ChatboxSessionView): string {
   return from || to || '';
 }
 
-function SessionStatusBadge({ status }: { status: string }) {
+function SessionStatusBadge({
+  status,
+  analysisEnabled,
+}: {
+  status: string;
+  analysisEnabled: boolean;
+}) {
+  const pendingIdle = status === 'pending' && !analysisEnabled;
+  const label = pendingIdle ? 'Не анализир.' : chatboxAnalysisStatusLabel(status);
   const cls =
     status === 'done'
       ? 'bg-success/10 text-success'
       : status === 'failed'
         ? 'bg-danger/10 text-danger'
-        : 'bg-bg-card text-fg-secondary';
+        : status === 'analyzing'
+          ? 'bg-info/10 text-info'
+          : 'bg-bg-card text-fg-secondary';
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-      {chatboxAnalysisStatusLabel(status)}
+      {label}
     </span>
   );
 }
 
-function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
+function AnalysisPanel({
+  sessions,
+  analysisEnabled,
+  analyzing,
+  onAnalyze,
+}: {
+  sessions: ChatboxSessionView[];
+  analysisEnabled: boolean;
+  analyzing: boolean;
+  onAnalyze: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const total = sessions.length;
   const done = sessions.filter((s) => s.analysisStatus === 'done').length;
-  const inProgress = sessions.some(
-    (s) => s.analysisStatus === 'pending' || s.analysisStatus === 'analyzing',
-  );
+  // Реально обрабатывается, только если есть 'analyzing' либо анализ ВКЛ и есть pending.
+  const processing =
+    sessions.some((s) => s.analysisStatus === 'analyzing') ||
+    (analysisEnabled && sessions.some((s) => s.analysisStatus === 'pending'));
+  const unanalyzed = sessions.filter(
+    (s) => s.analysisStatus === 'pending' || s.analysisStatus === 'failed',
+  ).length;
 
   if (total === 0) {
     return (
       <div className="mb-4 flex items-center gap-1.5 rounded-lg border border-border-subtle bg-bg-card p-3 text-xs text-fg-tertiary">
-        <Sparkles size={14} /> AI-анализ: сессий пока нет (анализ ещё не
-        запускался — включите его в настройках интеграции).
+        <Sparkles size={14} /> AI-анализ: закрытых сессий пока нет (чат ещё
+        активен — резюме строится по завершённым сессиям).
       </div>
     );
   }
@@ -476,10 +536,15 @@ function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
         <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary">
           {done}/{total} готово
         </span>
-        {inProgress && (
+        {processing ? (
           <span className="flex items-center gap-1 text-xs text-fg-tertiary">
             <Loader2 size={12} className="animate-spin" /> обработка…
           </span>
+        ) : (
+          !analysisEnabled &&
+          unanalyzed > 0 && (
+            <span className="text-xs text-fg-tertiary">анализ выключен</span>
+          )
         )}
         <ChevronDown
           size={16}
@@ -491,6 +556,31 @@ function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
 
       {open && (
         <div className="max-h-[40vh] space-y-3 overflow-y-auto border-t border-border-subtle p-4">
+          {/* Ручной запуск анализа */}
+          {unanalyzed > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border-subtle bg-bg-overlay p-3">
+              <span className="text-xs text-fg-secondary">
+                {unanalyzed} сессий без анализа.
+                {!analysisEnabled &&
+                  ' Авто-анализ выключен — запустите вручную или включите тумблер в настройках.'}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onAnalyze}
+                disabled={analyzing || processing}
+                className="gap-1"
+              >
+                {analyzing ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                Запустить анализ
+              </Button>
+            </div>
+          )}
+
           {ordered.map((s) => (
             <div
               key={s.id}
@@ -500,7 +590,10 @@ function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
                 <span className="text-xs font-semibold text-fg-primary">
                   Сессия #{s.seq}
                 </span>
-                <SessionStatusBadge status={s.analysisStatus} />
+                <SessionStatusBadge
+                  status={s.analysisStatus}
+                  analysisEnabled={analysisEnabled}
+                />
                 <span className="text-xs text-fg-tertiary">
                   {sessionPeriod(s)}
                 </span>
@@ -512,10 +605,14 @@ function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
               ) : (
                 <p className="text-xs text-fg-tertiary">
                   {s.analysisStatus === 'failed'
-                    ? 'Анализ не удался — будет повторён.'
-                    : s.analysisStatus === 'done'
-                      ? 'Резюме пустое.'
-                      : 'В обработке…'}
+                    ? 'Анализ не удался — повторите запуск.'
+                    : s.analysisStatus === 'analyzing'
+                      ? 'Анализируется…'
+                      : s.analysisStatus === 'done'
+                        ? 'Резюме пустое.'
+                        : analysisEnabled
+                          ? 'В очереди на анализ…'
+                          : 'Не анализировалось.'}
                 </p>
               )}
             </div>

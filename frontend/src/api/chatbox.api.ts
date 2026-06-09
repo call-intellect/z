@@ -229,6 +229,13 @@ export const chatboxApi = {
       { text },
     ),
 
+  // Ручной запуск AI-анализа по чату (закрытые pending-сессии).
+  analyzeChat: (id: string) =>
+    apiClient.post<{ ok: true; enqueued: number }>(
+      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/analyze',
+      {},
+    ),
+
   // --- Менеджеры → сотрудники (Фаза 9) ---
 
   listMembers: () =>

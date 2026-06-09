@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
+import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import type {
   ChatboxChatsListQueryDto,
   ChatboxMessagesQueryDto,
@@ -35,7 +36,49 @@ export class ChatboxChatsService {
     @Inject(ChatboxApiClient) private readonly client: ChatboxApiClient,
     @Inject(ChatboxIntegrationService)
     private readonly integration: ChatboxIntegrationService,
+    @Inject(ChatboxAnalyzeQueueService)
+    private readonly analyzeQueue: ChatboxAnalyzeQueueService,
   ) {}
+
+  /**
+   * Ручной запуск AI-анализа по чату: ставит в очередь все закрытые сессии
+   * этого чата со статусом `pending`. Явное действие владельца — поэтому НЕ
+   * гейтится `analysisEnabled` (тумблер гейтит только авто-крон).
+   */
+  async analyzeChat(
+    tenantId: string,
+    chatDbId: string,
+  ): Promise<{ enqueued: number }> {
+    const chat = await this.prisma.chatboxChat.findFirst({
+      where: { id: chatDbId, tenantId },
+      select: { id: true },
+    });
+    if (!chat) throw this.chatNotFound();
+
+    const sessions = await this.prisma.chatboxChatSession.findMany({
+      where: {
+        tenantId,
+        chatId: chatDbId,
+        analysisStatus: 'pending',
+        endedAt: { not: null },
+      },
+      select: { id: true },
+    });
+
+    let enqueued = 0;
+    for (const s of sessions) {
+      try {
+        await this.analyzeQueue.enqueue(tenantId, s.id);
+        enqueued += 1;
+      } catch (err) {
+        this.logger.warn(
+          { sessionId: s.id, err: err instanceof Error ? err.message : String(err) },
+          'analyzeChat: не удалось поставить job — пропуск',
+        );
+      }
+    }
+    return { enqueued };
+  }
 
   // ─────────────────────────── list ─────────────────────────────────
 

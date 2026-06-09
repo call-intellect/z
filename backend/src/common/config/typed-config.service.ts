@@ -1688,6 +1688,7 @@ export class TypedConfigService {
       contextualizerConfidenceMin: this.get('CONTEXTUALIZER_CONFIDENCE_MIN'),
       summarizerMessageThreshold: this.get('SUMMARIZER_MESSAGE_THRESHOLD'),
       multiQueryExpansionEnabled: this.get('MULTI_QUERY_EXPANSION_ENABLED'),
+      queryPlanExtractionEnabled: this.get('QUERY_PLAN_EXTRACTION_ENABLED'),
       summarizerCron: this.get('DIALOG_SUMMARIZER_CRON'),
       summarizerKeepLast: this.get('DIALOG_SUMMARIZER_KEEP_LAST'),
       summarizerStalenessHours: this.get('DIALOG_SUMMARIZER_STALENESS_HOURS'),

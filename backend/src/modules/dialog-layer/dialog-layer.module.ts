@@ -7,6 +7,7 @@ import { ContextualizerService } from './services/contextualizer.service';
 import { DialogService } from './services/dialog.service';
 import { MultiQueryExpansionService } from './services/multi-query-expansion.service';
 import { QueryClassifierService } from './services/query-classifier.service';
+import { QueryPlanExtractorService } from './services/query-plan-extractor.service';
 import { RetrievalCacheService } from './services/retrieval-cache.service';
 import { ConversationSummarizerCron } from './workers/conversation-summarizer.cron';
 
@@ -32,6 +33,7 @@ import { ConversationSummarizerCron } from './workers/conversation-summarizer.cr
     ContextualizerService,
     ConfidenceEstimatorService,
     QueryClassifierService,
+    QueryPlanExtractorService,
     MultiQueryExpansionService,
     AnswerCacheService,
     RetrievalCacheService,
@@ -49,6 +51,9 @@ import { ConversationSummarizerCron } from './workers/conversation-summarizer.cr
     // DialogService.process() — у них нет conversationId и нет нужды
     // в контекстуализации.
     QueryClassifierService,
+    // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — извлекатель плана
+    // запроса; экспорт нужен chat-v2 / retrieval (Ф2) для recall-safe фильтра.
+    QueryPlanExtractorService,
   ],
 })
 export class DialogLayerModule {}

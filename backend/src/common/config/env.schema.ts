@@ -1321,6 +1321,11 @@ const DialogLayerSchema = z.object({
   CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
   SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
   MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — kill-switch извлечения
+  // плана запроса (QueryPlanExtractorService). ON: chat-v2 понимает структуру
+  // вопроса (период/типы/темы/сущности/«я»). Аварийный рубильник — OFF при
+  // инциденте отключает извлечение, retrieval работает как раньше.
+  QUERY_PLAN_EXTRACTION_ENABLED: zBool(true),
   DIALOG_SUMMARIZER_CRON: z.string().min(1).default('*/30 * * * *'),
   DIALOG_SUMMARIZER_KEEP_LAST: z.coerce.number().int().positive().default(6),
   DIALOG_SUMMARIZER_STALENESS_HOURS: z.coerce.number().int().positive().default(12),

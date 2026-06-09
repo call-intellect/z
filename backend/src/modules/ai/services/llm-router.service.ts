@@ -194,6 +194,10 @@ export type LlmTaskType =
   | 'dialog-classify'
   | 'dialog-multi-query'
   | 'dialog-summarize'
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — извлечение плана
+  // запроса (период/типы сигналов/ветки тем/сущности/«я»/агрегация) для
+  // recall-safe фильтрации chat-v2. Дешёвый, частый — primary flash (Р9).
+  | 'dialog-extract-plan'
   // ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — multi-query
   // расширение для клонов: на входе вопрос к клону, на выходе 3 формулировки
   // (точная / ситуационный аналог / общий принцип) для retrieval по
@@ -649,6 +653,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'dialog-classify',
   'dialog-multi-query',
   'dialog-summarize',
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0)
+  'dialog-extract-plan',
   // SBA α-7 wave 2
   'process-template-extract',
   // SBA α-3 wave 3

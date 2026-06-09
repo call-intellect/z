@@ -98,6 +98,8 @@ const STEPS: Step[] = [
     'tracker-phase3', 'tracker-phase3-c', 'tracker-phase4-telegram',
     'feedback-cluster', 'clone-v2', 'specialists-combined',
     'dialog-layer', 'temporal', 'kie-grsai-ab',
+    // Query Understanding Волна 1 — extract-plan route (deepseek-v4-flash primary, Р9)
+    'dialog-extract-plan',
     // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
     'sprints',
     // Agents v2 (2026-05-30) — Фаза 0.1 probe-response-classify;

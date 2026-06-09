@@ -42,6 +42,12 @@ export interface RetrievalInput {
   /** Ф4 — Prisma-фрагмент доступа (buildAccessWhere). Применяется к pool-запросам.
    *  undefined/{} = без фильтра (off/shadow). Только при enforce передаётся непустой. */
   accessWhere?: Record<string, unknown>;
+  /** Support-desk Ф2 — закрытый контур (support): ПОЗИТИВНЫЙ pre-filter,
+   *  безусловный — независим от KNOWLEDGE_ACCESS_ENFORCEMENT (R-INV-1).
+   *  Если задан — пул ретрива ограничивается блоками, у которых есть
+   *  `IdeaBlockAccess` в этой группе (`blockAccess.some.groupId`), ДО
+   *  ранжирования. undefined = поведение byte-identical сегодняшнему. */
+  contourGroupId?: string;
   /** Query Understanding Волна 1 (Ф3 consume) — структурные recall-safe фильтры.
    *  Ф2 только переносит эти поля; SQL-фильтрацию реализует Ф3. */
   dateFrom?: Date | null;
@@ -301,6 +307,7 @@ export class ChatV2RetrievalService {
             extraLimit: input.graphHops * 5,
             validAt: input.validAt ?? null,
             accessWhere: input.accessWhere,
+            contourGroupId: input.contourGroupId,
           })
         : [];
 
@@ -335,11 +342,24 @@ export class ChatV2RetrievalService {
   private async collectPool(input: RetrievalInput): Promise<string[]> {
     const { tenantId, scope, scopeId } = input;
     const accessWhere = input.accessWhere;
+    // Support-desk Ф2 (R-INV-1) — позитивный pre-filter закрытого контура.
+    // БЕЗУСЛОВНЫЙ: не зависит от accessWhere/KNOWLEDGE_ACCESS_ENFORCEMENT.
+    // `buildAccessWhere` возвращает форму `{ AND: [...] }` (верхний ключ `AND`),
+    // а здесь верхний ключ `blockAccess` — коллизии нет, оба спредятся рядом.
+    // contourGroupId не задан → `{}` (поведение byte-identical сегодняшнему).
+    const contourWhere: Record<string, unknown> = input.contourGroupId
+      ? { blockAccess: { some: { groupId: input.contourGroupId } } }
+      : {};
     if (scope === 'org') {
       // Для org pool — все canonical-блоки тенанта. Дальше rankByCosineOrRecency
       // обрежет до limit'а через ORDER BY embedding<->qvec.
       const rows = await this.prisma.ideaBlock.findMany({
-        where: { tenantId, status: 'canonical', ...(accessWhere ?? {}) },
+        where: {
+          tenantId,
+          status: 'canonical',
+          ...(accessWhere ?? {}),
+          ...contourWhere,
+        },
         select: { id: true },
         // Лимит pool'а: 5000 — защита от org с десятками тысяч блоков.
         // Дальнейший ранжирующий SQL уже идёт по этому подмножеству.
@@ -357,16 +377,16 @@ export class ChatV2RetrievalService {
     }
 
     if (scope === 'meeting') {
-      return this.poolByMeeting(tenantId, scopeId, accessWhere);
+      return this.poolByMeeting(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'card') {
-      return this.poolByCard(tenantId, scopeId, accessWhere);
+      return this.poolByCard(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'theme') {
-      return this.poolByTheme(tenantId, scopeId, accessWhere);
+      return this.poolByTheme(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'entity') {
-      return this.poolByEntity(tenantId, scopeId, accessWhere);
+      return this.poolByEntity(tenantId, scopeId, accessWhere, contourWhere);
     }
     const _exhaustive: never = scope;
     throw new Error(`chat-v2 retrieval: unknown scope ${String(_exhaustive)}`);
@@ -381,6 +401,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     meetingId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: {
@@ -394,7 +415,12 @@ export class ChatV2RetrievalService {
     const evRows = await this.prisma.ideaBlockEvidence.findMany({
       where: {
         rawEventId: { in: rawEvents.map((r) => r.id) },
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -413,6 +439,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     cardId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
@@ -445,7 +472,12 @@ export class ChatV2RetrievalService {
             sourceType: 'meeting',
             sourceExternalId: { in: meetingIds },
           },
-          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+          block: {
+            status: 'canonical',
+            tenantId,
+            ...(accessWhere ?? {}),
+            ...(contourWhere ?? {}),
+          },
         },
         select: { blockId: true },
         take: 1000,
@@ -461,7 +493,12 @@ export class ChatV2RetrievalService {
       const entRows = await this.prisma.ideaBlockEntity.findMany({
         where: {
           entityId: { in: candidateEntityIds },
-          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+          block: {
+            status: 'canonical',
+            tenantId,
+            ...(accessWhere ?? {}),
+            ...(contourWhere ?? {}),
+          },
         },
         select: { blockId: true },
         take: 1000,
@@ -480,12 +517,18 @@ export class ChatV2RetrievalService {
     tenantId: string,
     themeId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rows = await this.prisma.themeIdeaBlock.findMany({
       where: {
         themeId,
         theme: { tenantId, status: 'active' },
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -501,6 +544,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     entityId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     // Проверим, что Entity принадлежит тенанту.
     const ent = await this.prisma.entity.findUnique({
@@ -512,7 +556,12 @@ export class ChatV2RetrievalService {
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         entityId,
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -690,6 +739,9 @@ export class ChatV2RetrievalService {
     extraLimit: number;
     validAt: Date | null;
     accessWhere?: Record<string, unknown>;
+    /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
+     *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
+    contourGroupId?: string;
   }): Promise<RankedBlockId[]> {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
@@ -770,6 +822,10 @@ export class ChatV2RetrievalService {
         status: 'canonical',
         ...(validAt ? { createdAt: { lte: validAt } } : {}),
         ...(args.accessWhere ?? {}),
+        // R-INV-1 — закрытый контур применяется и к граф-соседям (безусловно).
+        ...(args.contourGroupId
+          ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+          : {}),
       },
       select: { id: true },
     });

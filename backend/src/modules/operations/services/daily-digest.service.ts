@@ -16,6 +16,7 @@ import type {
   DailyDigestPersonStruggledDto,
   DailyDigestCustomerAtRiskDto,
   DailyDigestChronicBlockerDto,
+  DailyDigestTrendPointDto,
 } from '../dto/daily-digest.dto';
 import {
   DAILY_DIGEST_PROMPT_VERSION,
@@ -29,6 +30,36 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 import { BlockerSynthesisService } from './blocker-synthesis.service';
 import { CustomerRiskRadarService } from './customer-risk-radar.service';
+
+/**
+ * Ф1b редизайна дашбордов — чистый маппер persisted-снимков daily-дайджеста
+ * в трендовые точки. Принимает строки в порядке DESC по `dateLocal`
+ * (как их отдаёт `findMany orderBy desc`) и возвращает точки в порядке
+ * old→new (через `.reverse()`). `metricsJson` парсится безопасно: любые
+ * отсутствующие/невалидные поля деградируют в 0 (точка не падает).
+ */
+export function mapDailyDigestRowsToTrend(
+  rowsDesc: Array<{ dateLocal: string; metricsJson: unknown }>,
+): DailyDigestTrendPointDto[] {
+  return rowsDesc
+    .map((r) => {
+      const m = (r.metricsJson ?? {}) as Record<string, any>;
+      const goals = (m.goals ?? {}) as Record<string, any>;
+      return {
+        dateLocal: r.dateLocal,
+        totalCheckIns: Number(m.totalCheckIns ?? 0),
+        greenShare: Number(m.greenShare ?? 0),
+        redShare: Number(m.redShare ?? 0),
+        blockers: Array.isArray(m.newBlockers) ? m.newBlockers.length : 0,
+        overdueCommitments: Array.isArray(m.overdueCommitments)
+          ? m.overdueCommitments.length
+          : 0,
+        goalsCompleted: Number(goals.completed ?? 0),
+        goalsFailed: Number(goals.failed ?? 0),
+      };
+    })
+    .reverse();
+}
 
 /**
  * SBA β-8.3 — DailyDigestService.
@@ -528,6 +559,31 @@ export class DailyDigestService {
     return { metrics, sources };
   }
 
+  /**
+   * Ф1b — исторический тренд daily-дайджеста из уже persisted-снимков.
+   * Берём до `days` последних строк за дату ≤ текущей (`lte`), сортируем
+   * DESC по `dateLocal` (строки YYYY-MM-DD лексикографически сортируемы),
+   * затем чистый маппер разворачивает их в old→new. Best-effort: любая
+   * ошибка БД → пустой тренд (не ломаем выдачу дайджеста).
+   */
+  private async buildDailyTrend(
+    tenantId: string,
+    dateLocal: string,
+    days = 14,
+  ): Promise<DailyDigestTrendPointDto[]> {
+    try {
+      const rows = await this.prisma.dailyOperationsDigest.findMany({
+        where: { tenantId, dateLocal: { lte: dateLocal } },
+        orderBy: { dateLocal: 'desc' },
+        take: days,
+        select: { dateLocal: true, metricsJson: true },
+      });
+      return mapDailyDigestRowsToTrend(rows);
+    } catch {
+      return [];
+    }
+  }
+
   /** Преобразование Prisma-row в DTO.
    *
    *  Pulse Wave 2 §2.1: 4 расширенных секции (eventsToday/urgentItems/
@@ -569,6 +625,8 @@ export class DailyDigestService {
       customersAtRisk: [],
       // ТЗ-2 Ф3 — реально заполняется enrichDto() → computeRuntimeSections().
       chronicBlockers: [],
+      // Ф1b — реально заполняется enrichDto() → buildDailyTrend().
+      trend: [],
     };
   }
 
@@ -586,7 +644,10 @@ export class DailyDigestService {
         tenantId: dto.tenantId,
         dateLocal: dto.dateLocal,
       });
-      return { ...dto, ...sections };
+      // Ф1b — исторический тренд кладём в тот же ответ (один вызов фронта).
+      // buildDailyTrend сам глотает ошибку → [], так что enrich не падает.
+      const trend = await this.buildDailyTrend(dto.tenantId, dto.dateLocal);
+      return { ...dto, ...sections, trend };
     } catch (err) {
       this.logger.warn(
         {

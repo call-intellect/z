@@ -13,6 +13,7 @@ import type {
   DailyDigestPersonShinedApi,
   DailyDigestPersonStruggledApi,
   DailyDigestSourcesApi,
+  DailyDigestTrendPointApi,
   DailyDigestUrgentItemApi,
 } from '@/api/operations-daily-digest.api';
 
@@ -68,6 +69,8 @@ export interface DailyDigestDomain {
   whoStruggled: DailyDigestPersonStruggledDomain[];
   // ТЗ-2 Ф3 — хронические блокеры.
   chronicBlockers: DailyDigestChronicBlockerDomain[];
+  // Ф1b — исторический тренд (identity-маппинг из API-типа), old→new.
+  trend: DailyDigestTrendPointApi[];
 }
 
 export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
@@ -88,5 +91,6 @@ export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
     whoShined: dto.whoShined ?? [],
     whoStruggled: dto.whoStruggled ?? [],
     chronicBlockers: dto.chronicBlockers ?? [],
+    trend: dto.trend ?? [],
   };
 }

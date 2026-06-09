@@ -2,11 +2,15 @@
  * Support desk Ф3 (TZ 2026-06-09 support-desk-clone-and-closed-contour) —
  * Seed AdminSetting для порога critic-проверки черновика клона.
  *
- * Регистрирует ключ:
+ * Регистрирует ключи:
  *   - `support_critic_min_groundedness` (number, default 0.6) — минимальная
  *     обоснованность (groundedness = подтверждённые блоками утверждения /
  *     всего утверждений) черновика клона, ниже которой исход критика —
  *     `clarify`/`escalate`, а не `answer` (R-INV-5).
+ *   - `support_promote_min_csat` (number, default 4) — минимальная оценка
+ *     клиента (CSAT 1..5), при которой принятые/исправленные ответы клона
+ *     промоутятся в закрытый контур памяти (гейт качества обучающей петли,
+ *     R-INV-2).
  *
  * Крутилка идёт в AdminSetting, не в ENV и не в код
  * (feedback_admin_settings_not_env_or_code) — super_admin правит через UI.
@@ -47,6 +51,15 @@ const SEEDS: SettingSeed[] = [
     severity: 'medium',
     description:
       'Минимальная обоснованность (groundedness) черновика клона поддержки, ниже которой исход критика — clarify/escalate, а не answer (R-INV-5). 0..1.',
+  },
+  {
+    key: 'support_promote_min_csat',
+    value: 4,
+    category: 'support',
+    section: 'learning',
+    severity: 'medium',
+    description:
+      'Минимальная оценка клиента (CSAT 1..5), при которой принятые/исправленные ответы клона поддержки промоутятся в закрытый контур памяти (гейт качества обучающей петли, R-INV-2).',
   },
 ];
 

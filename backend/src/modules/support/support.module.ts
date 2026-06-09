@@ -13,7 +13,9 @@ import { SupportAnswerCriticService } from './services/support-answer-critic.ser
 import { SupportCloneService } from './services/support-clone.service';
 import { SupportContourService } from './services/support-contour.service';
 import { SupportDeskService } from './services/support-desk.service';
+import { SupportEditClassifyService } from './services/support-edit-classify.service';
 import { SupportIntakeService } from './services/support-intake.service';
+import { SupportLearningService } from './services/support-learning.service';
 import { SupportSlaService } from './services/support-sla.service';
 
 /**
@@ -55,6 +57,10 @@ import { SupportSlaService } from './services/support-sla.service';
     // (KnowledgeCoreModule) и LlmRouterService (AiModule) — без явных imports.
     SupportAnswerCriticService,
     SupportCloneService,
+    // Ф3 — обучающая петля: классификатор типа правки + accept/reject/edit
+    // → SupportDraftOutcome + LlmPreferenceSample + CSAT-гейт промоута в контур.
+    SupportEditClassifyService,
+    SupportLearningService,
   ],
   exports: [SupportAccessService],
 })

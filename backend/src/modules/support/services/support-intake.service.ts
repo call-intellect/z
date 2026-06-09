@@ -14,6 +14,7 @@ import { ActivityRecorderService } from '../../tracker/services/activity-recorde
 import type { CreateTicketDto } from '../dto/create-ticket.dto';
 
 import { SupportAccessService } from './support-access.service';
+import { SupportLearningService } from './support-learning.service';
 import { SupportSlaService } from './support-sla.service';
 
 /** Идентификатор Support-проекта (systemGenerated) в вендор-Org. */
@@ -68,6 +69,8 @@ export class SupportIntakeService {
     private readonly conversational: ConversationalService,
     @Inject(ActivityRecorderService)
     private readonly activity: ActivityRecorderService,
+    @Inject(SupportLearningService)
+    private readonly learning: SupportLearningService,
   ) {}
 
   /**
@@ -326,6 +329,21 @@ export class SupportIntakeService {
         ratedByUserId: callerUserId,
       },
     });
+
+    // Гейт качества Ф3: при достаточном CSAT промоутим принятые/исправленные
+    // ответы клона в контур (best-effort, не валит оценку).
+    try {
+      await this.learning.maybePromote(issue.id);
+    } catch (err) {
+      this.logger.warn(
+        {
+          ticketId: issue.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'rateTicket: maybePromote упал — оценка сохранена, продолжаю',
+      );
+    }
+
     return { ok: true };
   }
 

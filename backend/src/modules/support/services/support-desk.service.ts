@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -11,6 +12,7 @@ import { ActivityRecorderService } from '../../tracker/services/activity-recorde
 import type { DeskListQueryDto } from '../dto/desk-list-query.dto';
 
 import { SupportAccessService } from './support-access.service';
+import { SupportLearningService } from './support-learning.service';
 
 /** Максимум тикетов в одной странице очереди (Ф1 — без keyset-cursor). */
 const DESK_PAGE_SIZE = 50;
@@ -85,12 +87,16 @@ export interface DeskTicketDetail {
  */
 @Injectable()
 export class SupportDeskService {
+  private readonly logger = new Logger(SupportDeskService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SupportAccessService)
     private readonly access: SupportAccessService,
     @Inject(ActivityRecorderService)
     private readonly activity: ActivityRecorderService,
+    @Inject(SupportLearningService)
+    private readonly learning: SupportLearningService,
   ) {}
 
   /** Очередь тикетов вендор-деска по выбранному view. */
@@ -243,6 +249,23 @@ export class SupportDeskService {
         tx,
       });
     });
+
+    // Учебный сигнал Ф3: если ответ собран из правки черновика клона —
+    // зафиксировать исход `edited` (best-effort, не валит сам ответ).
+    if (fromDraftCommentId) {
+      try {
+        await this.learning.recordEdit(fromDraftCommentId, message, userId);
+      } catch (err) {
+        this.logger.warn(
+          {
+            fromDraftCommentId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'reply: recordEdit упал — ответ уже отправлен, продолжаю',
+        );
+      }
+    }
+
     return { ok: true, commentId };
   }
 

@@ -31,6 +31,7 @@ import {
 import { SupportAccessGuard } from '../guards/support-access.guard';
 import { SupportCloneService } from '../services/support-clone.service';
 import { SupportDeskService } from '../services/support-desk.service';
+import { SupportLearningService } from '../services/support-learning.service';
 
 /**
  * REST `/api/v1/support/desk/*` — сторона сотрудника поддержки.
@@ -47,6 +48,8 @@ export class SupportDeskController {
   constructor(
     @Inject(SupportDeskService) private readonly desk: SupportDeskService,
     @Inject(SupportCloneService) private readonly clone: SupportCloneService,
+    @Inject(SupportLearningService)
+    private readonly learning: SupportLearningService,
   ) {}
 
   @Get('meta')
@@ -94,6 +97,30 @@ export class SupportDeskController {
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ draftCommentId: string }> {
     return this.clone.generateDraft(id, user.id);
+  }
+
+  @Post('drafts/:commentId/accept')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Принять черновик клона как есть (ответить клиенту, Ф3)',
+  })
+  async acceptDraft(
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    return this.learning.accept(commentId, user.id);
+  }
+
+  @Post('drafts/:commentId/reject')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Отклонить черновик клона (учебный сигнал, без ответа, Ф3)',
+  })
+  async rejectDraft(
+    @Param('commentId') commentId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    return this.learning.reject(commentId, user.id);
   }
 
   @Post('tickets/:id/note')

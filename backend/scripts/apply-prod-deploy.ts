@@ -88,7 +88,7 @@ const STEPS: Step[] = [
   // (параметр владельца). Идемпотентны.
   { phase: 'seed-base', script: 'scripts/seed-support-project.ts', hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id' },
   { phase: 'seed-base', script: 'scripts/seed-support-contour-group.ts', hint: 'закрытый контур поддержки KnowledgeGroup(kind=support) (TZ support-desk); no-op без support.vendor_org_id' },
-  { phase: 'seed-base', script: 'scripts/seed-admin-setting-support.ts', hint: 'support_critic_min_groundedness=0.6 (TZ support-desk Ф3 critic-порог R-INV-5)' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-support.ts', hint: 'support_critic_min_groundedness=0.6 (R-INV-5) + support_promote_min_csat=4 (TZ support-desk Ф3 гейт промоута R-INV-2)' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[

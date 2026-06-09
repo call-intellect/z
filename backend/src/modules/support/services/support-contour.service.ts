@@ -163,55 +163,20 @@ export class SupportContourService {
           skipped++;
           continue;
         }
-        const hash = createHash('sha256')
-          .update(`${question}\n${answer}`)
-          .digest('hex');
-        const externalSource = `support-seed:${hash}`;
 
-        const existing = await this.prisma.ideaBlock.findFirst({
-          where: {
-            tenantId: vendorOrgId,
-            externalSource,
-            blockAccess: { some: { groupId } },
-          },
-          select: { id: true },
+        const result = await this.createContourBlock({
+          vendorOrgId,
+          groupId,
+          question,
+          answer,
+          confidence: 1.0,
+          provenance: 'support-seed',
         });
-        if (existing) {
+        if (result.created) {
+          created++;
+        } else {
           skipped++;
-          continue;
         }
-
-        const block = await this.prisma.ideaBlock.create({
-          data: {
-            tenantId: vendorOrgId,
-            externalSource,
-            name: question.slice(0, 500),
-            criticalQuestion: question,
-            trustedAnswer: answer,
-            signalType: 'expertise',
-            status: 'canonical',
-            dataClass: 'internal',
-            confidence: 1.0,
-          },
-          select: { id: true },
-        });
-
-        // Эмбеддинг — best-effort: при отказе провайдера блок остаётся без
-        // вектора (ранжируется по recency). Не валим засев.
-        const vec = await this.embeddings.embedQuery(`${question} ${answer}`);
-        if (vec && vec.length > 0) {
-          await this.prisma.$executeRawUnsafe(
-            'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
-            `[${vec.join(',')}]`,
-            block.id,
-          );
-        }
-
-        await this.prisma.ideaBlockAccess.create({
-          data: { blockId: block.id, groupId, via: 'closed' },
-        });
-
-        created++;
       } catch (err) {
         this.logger.warn(
           {
@@ -230,7 +195,118 @@ export class SupportContourService {
     return { created, skipped };
   }
 
+  // ─────────────────────────── промоут (R-INV-2) ──────────────────────────
+
+  /**
+   * Промоут принятой/исправленной пары «вопрос→ответ» в контур (Ф3 обучающая
+   * петля). Та же логика создания блока, что и `seedContour`, НО:
+   *   - `confidence=0.7` (ниже человеческого 1.0 — R-INV-2: машинно-выученное
+   *     знание весит меньше засеянного человеком);
+   *   - провенанс `clone-accepted:<hash>` (отличаем промоут от ручного засева).
+   *
+   * Идемпотентно по хэшу пары: повторный промоут той же пары → `promoted:false`.
+   * Контур должен быть инициализирован (иначе BadRequest).
+   */
+  async promoteAnswer(
+    question: string,
+    answer: string,
+  ): Promise<{ promoted: boolean; blockId?: string }> {
+    const { vendorOrgId, groupId } = await this.resolveContour();
+
+    const q = question.trim();
+    const a = answer.trim();
+    if (q.length === 0 || a.length === 0) {
+      return { promoted: false };
+    }
+
+    const result = await this.createContourBlock({
+      vendorOrgId,
+      groupId,
+      question: q,
+      answer: a,
+      confidence: 0.7,
+      provenance: 'clone-accepted',
+    });
+    return result.created
+      ? { promoted: true, blockId: result.blockId }
+      : { promoted: false };
+  }
+
   // ─────────────────────────── helpers ───────────────────────────────────
+
+  /**
+   * Общий создатель блока контура (используется засевом и промоутом). Один
+   * `IdeaBlock(status='canonical', signalType='expertise')` + best-effort
+   * embedding (raw SQL) + `IdeaBlockAccess(via='closed')`.
+   *
+   * Идемпотентность по хэшу `sha256(question\nanswer)` в
+   * `IdeaBlock.externalSource = '<provenance>:<hash>'`. Уже существует в
+   * support-группе → `{ created:false }` (caller считает skipped/not-promoted).
+   *
+   * Параметризовано:
+   *   - `confidence` — 1.0 для засева (человек), 0.7 для промоута (машина);
+   *   - `provenance` — 'support-seed' | 'clone-accepted' (префикс externalSource).
+   */
+  private async createContourBlock(args: {
+    vendorOrgId: string;
+    groupId: string;
+    question: string;
+    answer: string;
+    confidence: number;
+    provenance: 'support-seed' | 'clone-accepted';
+  }): Promise<{ created: boolean; blockId?: string }> {
+    const { vendorOrgId, groupId, question, answer, confidence, provenance } =
+      args;
+
+    const hash = createHash('sha256')
+      .update(`${question}\n${answer}`)
+      .digest('hex');
+    const externalSource = `${provenance}:${hash}`;
+
+    const existing = await this.prisma.ideaBlock.findFirst({
+      where: {
+        tenantId: vendorOrgId,
+        externalSource,
+        blockAccess: { some: { groupId } },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return { created: false };
+    }
+
+    const block = await this.prisma.ideaBlock.create({
+      data: {
+        tenantId: vendorOrgId,
+        externalSource,
+        name: question.slice(0, 500),
+        criticalQuestion: question,
+        trustedAnswer: answer,
+        signalType: 'expertise',
+        status: 'canonical',
+        dataClass: 'internal',
+        confidence,
+      },
+      select: { id: true },
+    });
+
+    // Эмбеддинг — best-effort: при отказе провайдера блок остаётся без
+    // вектора (ранжируется по recency). Не валим создание.
+    const vec = await this.embeddings.embedQuery(`${question} ${answer}`);
+    if (vec && vec.length > 0) {
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE "IdeaBlock" SET embedding = $1::vector(1536) WHERE id = $2',
+        `[${vec.join(',')}]`,
+        block.id,
+      );
+    }
+
+    await this.prisma.ideaBlockAccess.create({
+      data: { blockId: block.id, groupId, via: 'closed' },
+    });
+
+    return { created: true, blockId: block.id };
+  }
 
   /**
    * Резолвит вендор-Org + группу контура (оба обязательны). vendorOrgId нет →

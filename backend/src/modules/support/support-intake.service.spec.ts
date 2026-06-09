@@ -8,6 +8,7 @@ import type { ActivityRecorderService } from '../tracker/services/activity-recor
 
 import type { SupportAccessService } from './services/support-access.service';
 import { SupportIntakeService } from './services/support-intake.service';
+import type { SupportLearningService } from './services/support-learning.service';
 import type { SupportSlaService } from './services/support-sla.service';
 
 const VENDOR_ORG = 'vendor-org-1';
@@ -45,17 +46,26 @@ function makeActivity(): ActivityRecorderService {
   return { record: vi.fn(async () => 'act-1') } as unknown as ActivityRecorderService;
 }
 
+function makeLearning(): SupportLearningService {
+  return {
+    maybePromote: vi.fn(async () => ({ promoted: 0 })),
+    recordEdit: vi.fn(async () => undefined),
+  } as unknown as SupportLearningService;
+}
+
 describe('SupportIntakeService', () => {
   let access: SupportAccessService;
   let sla: SupportSlaService;
   let conversational: ConversationalService;
   let activity: ActivityRecorderService;
+  let learning: SupportLearningService;
 
   beforeEach(() => {
     access = makeAccess();
     sla = makeSla();
     conversational = makeConversational();
     activity = makeActivity();
+    learning = makeLearning();
   });
 
   it('createTicket при SUPPORT_DESK_ENABLED=false → ServiceUnavailable SUPPORT_DESK_DISABLED', async () => {
@@ -66,6 +76,7 @@ describe('SupportIntakeService', () => {
       sla,
       conversational,
       activity,
+      learning,
     );
     await expect(
       svc.createTicket(CALLER, 'org-A', { subject: 's', message: 'm' }),
@@ -118,6 +129,7 @@ describe('SupportIntakeService', () => {
       sla,
       conversational,
       activity,
+      learning,
     );
     const res = await svc.createTicket(CALLER, 'org-A', {
       subject: 'Не работает кнопка',
@@ -185,6 +197,7 @@ describe('SupportIntakeService', () => {
       sla,
       conversational,
       activity,
+      learning,
     );
     const res = await svc.getMyTicket(CALLER, 'issue-1');
     expect(res.messages).toHaveLength(1);

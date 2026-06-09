@@ -242,7 +242,7 @@ Acceptance:
 - `bun run typecheck && bun run build` зелёные.
 Закрывает: R1, R2, R3, R4, R5 (helper), R11, R13, R14.
 
-### Фаза 2 — Проброс QueryPlan через оркестрацию `[ ]`
+### Фаза 2 — Проброс QueryPlan через оркестрацию `[x]`
 Картография: `chat-v2/chat-v2.service.ts:79-127` (orchestration ask), `chat-v2/services/synthesis.service.ts:35-64,194-207`, `knowledge-core/services/chat-v2.service.ts:44-88,247-311` (ChatV2Input + fetchCandidates вызов :288), `chat-v2-retrieval.service.ts:25-45` (RetrievalInput, К-4), `dialog-layer/services/dialog.service.ts:48-65,173-188` (DialogProcessResult).
 Входит: добавить `queryPlan?: QueryPlanResult` в `DialogProcessResult`; вызвать `QueryPlanExtractorService` внутри `DialogService.process` (после classify, под флагом, fail-open); протащить `filters` в `SynthesisInput` → `ChatV2Input` → `RetrievalInput` (К-4). Резолв `entityHints[] → entityIds[]` (по `Entity.canonicalName` в tenant) — здесь.
 НЕ входит: применение фильтра в SQL (Ф3).

@@ -4,6 +4,7 @@ import type { ChatV2Mode, ChatV2Scope } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
 import { ClonesService } from '../../clones/services/clones.service';
+import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
 import { RetrievalCacheService } from '../../dialog-layer/services/retrieval-cache.service';
 import {
   ChatV2Service as KnowledgeCoreChatV2Service,
@@ -52,6 +53,8 @@ export interface SynthesisInput {
   queries?: ReadonlyArray<string>;
   /** SBA α-5 dialog-layer — temporal queries. */
   validAt?: Date | null;
+  /** Query Understanding Волна 1 — резолвнутые структурные фильтры (Ф3 consume). */
+  structuralFilters?: StructuralRetrievalFilters | null;
   /** SBA α-5 dialog-layer — сжатая старая часть диалога. */
   conversationSummary?: string | null;
   /** SBA α-5 dialog-layer — intent (для metrics / mode-prompt routing). */
@@ -201,6 +204,7 @@ export class SynthesisService {
       conversationSummary: input.conversationSummary ?? null,
       queries: input.queries ?? undefined,
       validAt: input.validAt ?? null,
+      structuralFilters: input.structuralFilters ?? null,
       intent: input.intent ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,

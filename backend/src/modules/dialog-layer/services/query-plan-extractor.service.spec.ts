@@ -61,6 +61,7 @@ describe('QueryPlanExtractorService', () => {
       personScope: false,
       aggregation: false,
       needsAction: false,
+      activeNow: false,
       confidence: 0.9,
     });
     const { service, llm } = makeService(() =>
@@ -121,6 +122,7 @@ describe('QueryPlanExtractorService', () => {
       personScope: false,
       aggregation: false,
       needsAction: false,
+      activeNow: false,
       confidence: 0.4,
     });
     const { service } = makeService(() => Promise.resolve(llmResult(json)));
@@ -145,6 +147,7 @@ describe('QueryPlanExtractorService', () => {
       personScope: false,
       aggregation: false,
       needsAction: false,
+      activeNow: false,
       confidence: 0.9,
     });
     const { service } = makeService(() => Promise.resolve(llmResult(json)));
@@ -153,6 +156,28 @@ describe('QueryPlanExtractorService', () => {
 
     expect(res.applied).toBe(true);
     expect(res.filters.signalTypes).toEqual(['decision']);
+  });
+
+  it('activeNow round-trips: применяет план только из activeNow без других осей', async () => {
+    const json = JSON.stringify({
+      periodExpr: 'none',
+      periodDays: null,
+      signalTypes: [],
+      themeBranches: [],
+      entityHints: [],
+      personScope: false,
+      aggregation: false,
+      needsAction: false,
+      activeNow: true,
+      confidence: 0.9,
+    });
+    const { service } = makeService(() => Promise.resolve(llmResult(json)));
+
+    const res = await service.extract(makeInput());
+
+    // activeNow=true сам по себе делает план применимым (hasAnyFilter).
+    expect(res.applied).toBe(true);
+    expect(res.filters.activeNow).toBe(true);
   });
 
   it('resolveSelfPersonId возвращает id без мутации', async () => {

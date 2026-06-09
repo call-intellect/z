@@ -114,6 +114,13 @@ true, если просят действие: «предложи», «что д�
 «как поступить». Иначе false.
 
 ──────────────────────────────────────────────────────────────────
+ОСЬ 8 — activeNow (текущее/действующее состояние сейчас)
+
+true, если пользователь спрашивает про ТЕКУЩЕЕ/действующее состояние
+сейчас: «сейчас», «на данный момент», «актуальные», «действующие»,
+«текущие». Иначе false.
+
+──────────────────────────────────────────────────────────────────
 confidence — твоя уверенность в извлечённом плане, число 0..1.
   • 0.9-1.0 — оси явные, фразы однозначные.
   • 0.6-0.89 — уверен, но одна из осей под вопросом.
@@ -125,7 +132,7 @@ confidence — твоя уверенность в извлечённом пла�
 Отвечай СТРОГО в JSON, без markdown-блоков, без префиксов, без
 пояснений. Все поля обязательны:
 
-{"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"confidence":<0..1>}`;
+{"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"activeNow":<bool>,"confidence":<0..1>}`;
 
 /**
  * Полный список значений SignalType (зеркало enum в schema.prisma /
@@ -254,6 +261,7 @@ export const EXTRACT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
     personScope: { type: 'boolean' },
     aggregation: { type: 'boolean' },
     needsAction: { type: 'boolean' },
+    activeNow: { type: 'boolean' },
     confidence: {
       type: 'number',
       minimum: 0,
@@ -269,6 +277,7 @@ export const EXTRACT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
     'personScope',
     'aggregation',
     'needsAction',
+    'activeNow',
     'confidence',
   ],
   additionalProperties: false,

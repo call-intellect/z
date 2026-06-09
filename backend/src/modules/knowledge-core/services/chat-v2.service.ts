@@ -13,6 +13,7 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -69,6 +70,11 @@ export interface ChatV2Input {
    * `IdeaBlock.createdAt <= validAt` (см. ChatV2RetrievalService).
    */
   validAt?: Date | null;
+  /**
+   * Query Understanding Волна 1 — резолвнутые структурные recall-safe фильтры.
+   * Ф2 только переносит до RetrievalInput; SQL-фильтрацию делает Ф3.
+   */
+  structuralFilters?: StructuralRetrievalFilters | null;
   /**
    * SBA α-5 dialog-layer — заранее посчитанные blockIds (RetrievalCache hit).
    * Если задан — retrieval НЕ запускается, сразу loadContextBlocks.
@@ -294,6 +300,13 @@ export class ChatV2Service {
           graphHops,
           validAt: input.validAt ?? null,
           accessWhere,
+          // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
+          dateFrom: input.structuralFilters?.dateFrom ?? null,
+          dateTo: input.structuralFilters?.dateTo ?? null,
+          signalTypes: input.structuralFilters?.signalTypes,
+          entityIds: input.structuralFilters?.entityIds,
+          themeBranches: input.structuralFilters?.themeBranches,
+          bitemporalActiveOnly: input.structuralFilters?.bitemporalActiveOnly ?? false,
         });
         // Приоритет первой query (originalOrStandalone): её score
         // повышается за счёт rank-boost'а.

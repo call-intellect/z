@@ -42,6 +42,14 @@ export interface RetrievalInput {
   /** Ф4 — Prisma-фрагмент доступа (buildAccessWhere). Применяется к pool-запросам.
    *  undefined/{} = без фильтра (off/shadow). Только при enforce передаётся непустой. */
   accessWhere?: Record<string, unknown>;
+  /** Query Understanding Волна 1 (Ф3 consume) — структурные recall-safe фильтры.
+   *  Ф2 только переносит эти поля; SQL-фильтрацию реализует Ф3. */
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+  signalTypes?: string[];
+  entityIds?: string[];
+  themeBranches?: string[];
+  bitemporalActiveOnly?: boolean;
 }
 
 export interface RankedBlockId {

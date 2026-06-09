@@ -44,6 +44,27 @@ export interface QueryPlanFilters {
   personScope: boolean;
   aggregation: boolean;
   needsAction: boolean;
+  /**
+   * true, если вопрос про ТЕКУЩЕЕ/действующее состояние «сейчас» («сейчас»,
+   * «актуальные», «действующие»). Ф3 превратит это в bitemporal-фильтр
+   * «только активное на момент запроса».
+   */
+  activeNow: boolean;
+}
+
+/**
+ * Query Understanding Волна 1 (Ф2) — резолвнутые структурные фильтры для
+ * recall-safe ретрива. В отличие от `QueryPlanFilters` (entityHints — строки),
+ * здесь entityIds уже резолвнуты в Entity.id, а activeNow → bitemporalActiveOnly.
+ * Ф3 потребляет это в SQL-фильтре retrieval; Ф2 только переносит.
+ */
+export interface StructuralRetrievalFilters {
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  signalTypes: string[];
+  entityIds: string[];
+  themeBranches: string[];
+  bitemporalActiveOnly: boolean;
 }
 
 export interface QueryPlanResult {
@@ -84,6 +105,7 @@ interface RawPlan {
   personScope?: unknown;
   aggregation?: unknown;
   needsAction?: unknown;
+  activeNow?: unknown;
   confidence?: unknown;
 }
 
@@ -180,6 +202,7 @@ export class QueryPlanExtractorService {
     const personScope = this.coerceBool(parsed.personScope);
     const aggregation = this.coerceBool(parsed.aggregation);
     const needsAction = this.coerceBool(parsed.needsAction);
+    const activeNow = this.coerceBool(parsed.activeNow);
     const confidence = this.coerceConfidence(parsed.confidence);
 
     const period = resolvePeriod(
@@ -194,7 +217,8 @@ export class QueryPlanExtractorService {
       signalTypes.length > 0 ||
       themeBranches.length > 0 ||
       entityHints.length > 0 ||
-      personScope;
+      personScope ||
+      activeNow;
 
     const applied = hasAnyFilter && confidence >= QUERY_PLAN_MIN_CONFIDENCE;
     const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -220,6 +244,7 @@ export class QueryPlanExtractorService {
         personScope,
         aggregation,
         needsAction,
+        activeNow,
       },
       confidence,
       applied: true,
@@ -243,6 +268,117 @@ export class QueryPlanExtractorService {
     return person?.id ?? null;
   }
 
+  /**
+   * Query Understanding Волна 1 (Ф2) — резолв сырого плана в структурные
+   * фильтры retrieval. Все Prisma-вызовы НЕ мутирующие (read-only). FAIL-OPEN:
+   * любая ошибка БД → возвращаем null (без фильтра), а не бросаем.
+   *
+   * Возвращает null, если:
+   *   - план не применился (`!plan.applied`), или
+   *   - фильтровать нечем (после резолва entity ничего значимого не осталось).
+   *
+   * Ф2 только переносит результат до RetrievalInput; SQL-фильтрацию делает Ф3.
+   */
+  async resolveStructuralFilters(args: {
+    tenantId: string;
+    userId: string;
+    plan: QueryPlanResult;
+  }): Promise<StructuralRetrievalFilters | null> {
+    const { tenantId, userId, plan } = args;
+    if (!plan.applied) return null;
+
+    try {
+      const entityIds = await this.resolveEntityHints(
+        tenantId,
+        plan.filters.entityHints,
+      );
+
+      if (plan.filters.personScope) {
+        const selfEntityId = await this.resolveSelfEntityId(tenantId, userId);
+        if (selfEntityId && !entityIds.includes(selfEntityId)) {
+          entityIds.push(selfEntityId);
+        }
+      }
+
+      const filters: StructuralRetrievalFilters = {
+        dateFrom: plan.filters.dateFrom,
+        dateTo: plan.filters.dateTo,
+        signalTypes: plan.filters.signalTypes,
+        entityIds,
+        themeBranches: plan.filters.themeBranches,
+        bitemporalActiveOnly: plan.filters.activeNow,
+      };
+
+      const nothingToFilter =
+        !filters.dateFrom &&
+        !filters.dateTo &&
+        filters.signalTypes.length === 0 &&
+        filters.entityIds.length === 0 &&
+        filters.themeBranches.length === 0 &&
+        !filters.bitemporalActiveOnly;
+      if (nothingToFilter) return null;
+
+      return filters;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { tenantId, err: message },
+        'resolveStructuralFilters упал — fail-open (без структурного фильтра)',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Резолв entity-подсказок (имён как написано) в Entity.id. НЕ мутирующий.
+   * Каждую подсказку матчим по canonicalName (case-insensitive) или по
+   * массиву aliases (точное вхождение). Промахи молча пропускаем (не бросаем),
+   * dedupe + cap 10. mergedIntoId=null — берём только «живые» сущности.
+   */
+  private async resolveEntityHints(
+    tenantId: string,
+    hints: string[],
+  ): Promise<string[]> {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const rawHint of hints) {
+      const hint = rawHint.trim();
+      if (!hint) continue;
+      const entity = await this.prisma.entity.findFirst({
+        where: {
+          tenantId,
+          mergedIntoId: null,
+          OR: [
+            { canonicalName: { equals: hint, mode: 'insensitive' } },
+            { aliases: { has: hint } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (!entity) continue;
+      if (seen.has(entity.id)) continue;
+      seen.add(entity.id);
+      out.push(entity.id);
+      if (out.length >= ENTITY_HINT_MAX_COUNT) break;
+    }
+    return out;
+  }
+
+  /**
+   * Резолв «своего» Entity.id по userId (через Person.entityId). НЕ мутирующий.
+   * Используется для personScope-фильтра. null если Person/entityId нет.
+   */
+  private async resolveSelfEntityId(
+    tenantId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const person = await this.prisma.person.findFirst({
+      where: { tenantId, userId, deletedAt: null },
+      select: { entityId: true },
+    });
+    return person?.entityId ?? null;
+  }
+
   // ─────────────────────────── helpers ─────────────────────────────────
 
   private emptyFilters(): QueryPlanFilters {
@@ -255,6 +391,7 @@ export class QueryPlanExtractorService {
       personScope: false,
       aggregation: false,
       needsAction: false,
+      activeNow: false,
     };
   }
 

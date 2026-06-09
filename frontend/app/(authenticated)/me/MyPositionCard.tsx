@@ -12,7 +12,6 @@ import {
   type MyProfileApi,
 } from '@/api/structure.api';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import {
   Command,
   CommandEmpty,
@@ -25,6 +24,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/ui/shadcn/popover';
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+} from '@/ui/components/dashboard/modern';
 
 /**
  * Ф3 (2026-06-05) — карточка «Должность» на странице «Я» (`/me`).
@@ -47,7 +52,9 @@ export function MyPositionCard({
   if (profile === null) {
     return (
       <PositionCardShell>
-        <p className="text-sm text-fg-tertiary">Профиль ещё формируется.</p>
+        <p className="text-sm" style={{ color: CHART.faint }}>
+          Профиль ещё формируется.
+        </p>
       </PositionCardShell>
     );
   }
@@ -55,7 +62,7 @@ export function MyPositionCard({
   if (profile.person === null) {
     return (
       <PositionCardShell>
-        <p className="text-sm text-fg-tertiary">
+        <p className="text-sm" style={{ color: CHART.faint }}>
           Профиль ещё формируется. Должность можно будет назначить позже.
         </p>
       </PositionCardShell>
@@ -75,14 +82,14 @@ export function MyPositionCard({
 
 function PositionCardShell({ children }: { children: React.ReactNode }) {
   return (
-    <Card id="me-card-position" className="mb-6">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <BriefcaseBusiness size={16} /> Должность
+    <div id="me-card-position" className="mb-6 scroll-mt-24">
+      <GlassCard>
+        <CardTitle icon={<BriefcaseBusiness size={16} />} grad={GRAD.violet}>
+          Должность
         </CardTitle>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+        <div className="mt-4">{children}</div>
+      </GlassCard>
+    </div>
   );
 }
 
@@ -161,9 +168,9 @@ function PositionEditor({
   if (currentRole && !editing) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-fg-secondary">
+        <p className="text-sm" style={{ color: CHART.dim }}>
           Текущая должность:{' '}
-          <span className="font-medium text-fg-primary">
+          <span className="font-medium" style={{ color: CHART.text }}>
             {currentRole.name}
           </span>
         </p>
@@ -184,7 +191,7 @@ function PositionEditor({
   return (
     <div className="space-y-2">
       {!currentRole && (
-        <p className="text-sm text-fg-secondary">
+        <p className="text-sm" style={{ color: CHART.dim }}>
           Назначьте себе должность — выберите из списка или создайте новую.
         </p>
       )}

@@ -79,3 +79,13 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Витрина пользы (S2.6, `/dashboard/value-recap`):** экран поверх месячной `ValueRecap` (S1.5) + экспорт слайдов/печать (`GET /dashboard/operations/value-recap/:id/export`, read-only, без отдельного флага).
 - **COO (S2.2) и /me (S2.5)** — см. [[../02_architecture/module-map]] §«Батч 5» и [[frontend-pages]] §«Батч 5».
 - **Визуал (ТЗ-3):** modern-язык (стекло/градиент/объём) применён безусловно (без флага — не меняет данные); светлая тема — за владельцем (в `04_не-сделано`).
+
+## Доводка редизайна до полного стеклянного языка + дата-виз (2026-06-10)
+
+Источник — `plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md` (Ф0–Ф7). Доведены до конца 5 экранов, у которых после Батча 5 остался смешанный вид «новый фон + старые плоские `shadcn`-карточки»: `/dashboard` (ON-ветка), `/dashboard/operations`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`, `/me`. Полная карта экранов — [[frontend-pages]] §«Доводка редизайна дашбордов»; новые контрактные поля бэка (`weeklyInflow`, `digest.trend`) — [[api-layer]] §«Дата-виз поля редизайна дашбордов».
+
+- **Director (`/dashboard`, ON-ветка):** 3 `KpiHero`→`StatCard` (реальный sparkline уже отдавался бэком — доп. бэка не потребовалось), inline AI-сводка→`GlassCard` glow, виджеты табов (`SignalCounters`/`ActiveThemes`/`HotEntities`/`OpenQuestions`)→`GlassCard`. OFF-ветка kill-switch `mainReworkEnabled` **не тронута**.
+- **Operations (`/dashboard/operations`):** новый бэк-ряд `weeklyInflow` (12 недель из `BlockerSynthesis`/`EntityLink conflicted_with`) кормит hero-`AreaTrend` «Операционная нагрузка» + спарклайны `StatCard`.
+- **Daily/Weekly дайджесты:** hero-`AreaTrend`/`BarTrend` строятся из реальной истории persisted-снимков (`digest.trend`, поле в DTO дайджеста, Ф1b) — не выдуманные ряды.
+
+Тема только тёмная (светлая — за владельцем), новых флагов нет (Ship-On), удалён мёртвый `DashboardClient.tsx`.

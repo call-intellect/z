@@ -284,6 +284,18 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 > - `GET /me/promises` теперь **graceful**: при отсутствии `Person` отдаёт `{items:[]}` (а не 500); `POST /me/promises/:blockId/mark` остаётся `403` (нельзя закрывать чужое обещание).
 > - Backfill для существующих владельцев — `backend/scripts/backfill-owner-person.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS).
 
+### Дата-виз поля редизайна дашбордов (2026-06-10)
+
+ТЗ [`plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md`](../../plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md) (Ф1/Ф1b). Доводка редизайна дашбордов под современный язык добавила **трендовые ряды** в три существующих операционных эндпоинта (новые поля, без изменения смысла прежних метрик; реальные данные, не выдумка; конвенция `old→new`, `null` = пустая корзина — как у `sparkline12w`).
+
+| Эндпоинт | Новое поле | Источник | Зачем |
+|---|---|---|---|
+| `GET /api/v1/dashboard/operations/overview` | `weeklyInflow: { blockers: (number\|null)[]; frictions: (number\|null)[] }` (12 недель) | `BlockerSynthesis.createdAt` (блокеры) и `EntityLink(relationType='conflicted_with').createdAt` (трения), in-memory bucket по неделям (паттерн `SentimentIndexService.buildSparkline`) | hero-`AreaTrend` «Операционная нагрузка» + спарклайны `StatCard` на `/dashboard/operations` |
+| `GET /api/v1/dashboard/operations/daily-digest` | `trend: DailyDigestTrendPointDto[]` (≤14 точек) | история persisted-снимков `DailyOperationsDigest.metricsJson` (`totalCheckIns`/`greenShare`/`redShare`/`blockers`/`overdueCommitments`/`goalsCompleted`/`goalsFailed`), мапперы `mapDailyDigestRowsToTrend`/`buildDailyTrend` | hero-`AreaTrend` настроение + нагрузка на `/dashboard/operations/daily` |
+| `GET /api/v1/dashboard/operations/weekly-digest` | `trend: WeeklyDigestTrendPointDto[]` (≤12 точек) | история persisted-снимков `WeeklyOperationsDigest.metricsJson` (`totalCheckIns`/`greenShare`/`redShare`/`goalsCompleted`/`goalsFailed`/`blockers`/`hangingDecisions`), мапперы `mapWeeklyDigestRowsToTrend`/`buildWeeklyTrend` | hero-`AreaTrend`+`BarTrend` на `/dashboard/operations/weekly` |
+
+Ряды строятся в `enrichDto` (один доп. `findMany`, best-effort: ошибка → пустой массив; индексы `@@index([tenantId,dateLocal])`/`@@index([tenantId,weekStart])` уже есть). Пустая история → `trend: []` / 12×`null`, фронт показывает заглушку «Тренд появится за несколько дней». FE-зеркало: `weeklyInflow` и `daily.trend` — слой `api`+`domain` (`operations-dashboard.{api,ts}`, `operations-daily-digest.{api,ts}`); `weekly.trend` — только API-тип (`weekly-digest.api.ts`; domain-слоя у weekly нет). Чистые мапперы покрыты unit-тестами (`bucketizeWeeklyInflow`, `mapDailyDigestRowsToTrend`, `mapWeeklyDigestRowsToTrend`). Схема БД не менялась.
+
 ## Clones (Skill & Persona, γ-1 + v2)
 
 | Метод | Путь | Назначение | Доступ | Фаза |

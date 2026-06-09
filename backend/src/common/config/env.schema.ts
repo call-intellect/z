@@ -1669,6 +1669,13 @@ const BudgetSchema = z.object({
 const TrackerSchema = z.object({
   WEBHOOK_HMAC_PREFIX: z.string().min(1).default('kora_wh_'),
   TRACKER_INGEST_QUEUE: z.string().min(1).default('core.raw-events'),
+  // ── Support desk (TZ 2026-06-09 support-desk-clone Ф1) ───────────────
+  // Аварийный kill-switch вендорской службы поддержки. Дефолт ON (Ship-On):
+  // при false `POST /support/tickets` отдаёт 503 SUPPORT_DESK_DISABLED, а
+  // SLA-cron — no-op. Складка в TrackerSchema, чтобы не удлинять `.merge`
+  // цепочку EnvSchema (TS2589). Читается через `cfg.supportDesk.enabled`
+  // (resolveSync: AdminSetting `support_desk.enabled` → ENV → default).
+  SUPPORT_DESK_ENABLED: zBool(true),
   IDEMPOTENCY_KEY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   TRACKER_WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
   TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS: z.coerce

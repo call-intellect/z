@@ -2825,6 +2825,7 @@ enum KnowledgeGroupKind {
   leadership
   council
   personal
+  support // закрытый контур техподдержки (синглтон per вендор-Org, refId=null) — TZ support-desk
 }
 
 model KnowledgeGroup {
@@ -8896,6 +8897,16 @@ model Issue {
   // RBAC и owner
   createdById String
 
+  // Support desk (TZ 2026-06-09 support-desk) — заполняются ТОЛЬКО для тикетов
+  // поддержки (cross-tenant: клиент из другой Org пишет в вендор-Org).
+  supportCustomerOrgId   String?   /// Org клиента, приславшего обращение
+  supportCustomerUserId  String?   /// User клиента (глобальный User.id)
+  supportCustomerContact String?   @db.VarChar(320) /// email/имя для отображения в деске
+  firstResponseDueAt     DateTime? /// SLA: дедлайн первого ответа
+  resolutionDueAt        DateTime? /// SLA: дедлайн решения
+  firstRespondedAt       DateTime? /// факт первого ответа клиенту
+  slaBreachedAt          DateTime? /// зафиксированное нарушение SLA
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
@@ -8945,6 +8956,9 @@ model Issue {
   @@index([parentId])
   /// Tracker Boards (2026-05-27) — фильтр задач по доске на канбане.
   @@index([boardId])
+  /// Support desk (TZ 2026-06-09) — тикеты конкретного клиента + SLA-сканер.
+  @@index([tenantId, supportCustomerUserId])
+  @@index([tenantId, firstResponseDueAt])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
@@ -9035,6 +9049,12 @@ model IssueComment {
 
   access String @default("internal") // internal | external (гость)
 
+  // Support desk (TZ 2026-06-09) — провенанс + состояние черновика клона.
+  authorType        String   @default("human") /// human | clone | system
+  draftState        String?  /// null=обычный | pending | accepted | edited | rejected (только authorType=clone)
+  cloneConfidence   Decimal? @db.Decimal(4, 3) /// калиброванная уверенность клона
+  groundednessScore Decimal? @db.Decimal(4, 3) /// результат critic (truthful/total)
+
   // Голосовое сообщение
   voiceUrl        String?
   voiceDuration   Int? // секунды
@@ -9056,6 +9076,30 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+}
+
+/// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.
+model SupportSlaPolicy {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique /// вендор-Org
+  firstResponseMins Int      @default(60)
+  resolutionMins    Int      @default(480)
+  businessHoursOnly Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// CSAT/оценка тикета поддержки клиентом. TZ support-desk Ф1 (R-INV-2/R3 — чистый сигнал петле).
+model IssueRating {
+  id            String   @id @default(cuid())
+  tenantId      String
+  issueId       String   @unique
+  score         Int      /// 1..5
+  comment       String?  @db.Text
+  ratedByUserId String?  /// клиент (User.id)
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 /// Вложение к задаче или комментарию.

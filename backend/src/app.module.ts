@@ -125,6 +125,7 @@ import { SkillsModule } from './modules/skills/skills.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { Specialist38HelpfulnessModule } from './modules/specialist-3-8-helpfulness/specialist-3-8-helpfulness.module';
 import { StructureModule } from './modules/structure/structure.module';
+import { SupportModule } from './modules/support/support.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { TasksModule } from './modules/tasks/tasks.module';
@@ -347,6 +348,13 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // ChatBox-интеграция (ТЗ 2026-06-05) — конфиг + API-клиент + выбор воркспейса.
     // Зависит от @Global: Crypto, Rbac, Entitlements, Config.
     ChatboxModule,
+
+    // Служба поддержки (ТЗ 2026-06-09 support-desk-clone, Ф1) — вендорский деск
+    // приёма обращений клиентов (тикет=Issue в вендор-Org) + SLA-cron +
+    // дублирование сотруднику. Зависит от TrackerModule (ActivityRecorder) и
+    // @Global: Prisma, Config, Conversational (sendNotification), Entitlements,
+    // Auth (CookieAuthGuard). Должен идти ПОСЛЕ ConversationalModule.
+    SupportModule,
 
     // AI/knowledge-core воркеры и cron'ы — IN-PROCESS (отдельного worker-процесса
     // больше нет). Должен идти ПОСЛЕ всех @Global-модулей, чьи сервисы инжектят воркеры.

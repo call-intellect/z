@@ -887,6 +887,27 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── support desk (TZ 2026-06-09) ──────────
+  /**
+   * Вендорская служба поддержки (support-desk-clone Ф1).
+   *
+   *   - `enabled` — аварийный kill-switch. Дефолт TRUE (Ship-On). При FALSE
+   *     `SupportIntakeService.createTicket` отдаёт 503 SUPPORT_DESK_DISABLED,
+   *     а `SupportSlaCron` — no-op. Admin-editable (resolveSync: cacheMap →
+   *     ENV `SUPPORT_DESK_ENABLED` → default). Параметр владельца, какая Org —
+   *     вендор-деск, хранится отдельно в AdminSetting `support.vendor_org_id`
+   *     (читается через `getDynamic`, не здесь — это не bool-флаг).
+   */
+  get supportDesk() {
+    return {
+      enabled: this.resolveSync<boolean>(
+        'support_desk.enabled',
+        'SUPPORT_DESK_ENABLED',
+        true,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── KC-Temporal Bitemporal ─────────────
   /**
    * KC-Temporal W1.1 (2026-05-25) — bi-temporal факты, supersede-арбитр.

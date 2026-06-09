@@ -83,6 +83,11 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
+  // ТЗ 2026-06-09 support-desk Ф1 — Support-проект (states+SLA) + закрытый
+  // контур поддержки. Оба no-op без AdminSetting `support.vendor_org_id`
+  // (параметр владельца). Идемпотентны.
+  { phase: 'seed-base', script: 'scripts/seed-support-project.ts', hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id' },
+  { phase: 'seed-base', script: 'scripts/seed-support-contour-group.ts', hint: 'закрытый контур поддержки KnowledgeGroup(kind=support) (TZ support-desk); no-op без support.vendor_org_id' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[

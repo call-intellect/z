@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {
+  ChevronDown,
   ChevronLeft,
   Download,
   FileText,
@@ -9,6 +10,7 @@ import {
   Loader2,
   Mic,
   Send,
+  Sparkles,
   Video,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
@@ -18,12 +20,14 @@ import useSWR from 'swr';
 import { ApiError } from '@/api/api-error';
 import { chatboxApi } from '@/api/chatbox.api';
 import {
+  chatboxAnalysisStatusLabel,
   chatboxChannelTypeBadgeClass,
   chatboxChannelTypeLabel,
   chatboxChatStatusLabel,
   mapChatDetail,
   mapMessage,
   type ChatboxMessageView,
+  type ChatboxSessionView,
 } from '@/domain/chatbox';
 import { TierGate } from '@/ui/components/TierGate';
 import { Button } from '@/ui/shadcn/button';
@@ -83,10 +87,23 @@ export function ChatDetailClient({ chatId }: { chatId: string }) {
 }
 
 function ChatDetailContent({ chatId }: { chatId: string }) {
-  const chatSwr = useSWR(['chatbox-chat', chatId], async () => {
-    const api = await chatboxApi.getChat(chatId);
-    return mapChatDetail(api);
-  });
+  const chatSwr = useSWR(
+    ['chatbox-chat', chatId],
+    async () => {
+      const api = await chatboxApi.getChat(chatId);
+      return mapChatDetail(api);
+    },
+    {
+      // Живой прогресс: поллим, пока хоть одна сессия в обработке.
+      refreshInterval: (data) =>
+        data?.sessions.some(
+          (s) =>
+            s.analysisStatus === 'pending' || s.analysisStatus === 'analyzing',
+        )
+          ? 4000
+          : 0,
+    },
+  );
 
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -296,6 +313,9 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         )}
       </header>
 
+      {/* AI-анализ диалога (summary сессий + прогресс) */}
+      <AnalysisPanel sessions={chat.sessions} />
+
       {/* Лента сообщений — свой скролл; вверх подгружаем older (Telegram-style) */}
       <div
         ref={scrollRef}
@@ -395,6 +415,113 @@ function SessionDivider() {
       <span className="h-px flex-1 bg-border-subtle" />
       <span>Новая сессия</span>
       <span className="h-px flex-1 bg-border-subtle" />
+    </div>
+  );
+}
+
+// ─────────────────────────── AI-анализ диалога ──────────────────────────
+
+function sessionPeriod(s: ChatboxSessionView): string {
+  const f = (d: Date | null): string => (d ? d.toLocaleDateString('ru-RU') : '');
+  const from = f(s.startedAt);
+  const to = f(s.endedAt);
+  if (from && to && from !== to) return `${from} — ${to}`;
+  return from || to || '';
+}
+
+function SessionStatusBadge({ status }: { status: string }) {
+  const cls =
+    status === 'done'
+      ? 'bg-success/10 text-success'
+      : status === 'failed'
+        ? 'bg-danger/10 text-danger'
+        : 'bg-bg-card text-fg-secondary';
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
+      {chatboxAnalysisStatusLabel(status)}
+    </span>
+  );
+}
+
+function AnalysisPanel({ sessions }: { sessions: ChatboxSessionView[] }) {
+  const [open, setOpen] = useState(false);
+  const total = sessions.length;
+  const done = sessions.filter((s) => s.analysisStatus === 'done').length;
+  const inProgress = sessions.some(
+    (s) => s.analysisStatus === 'pending' || s.analysisStatus === 'analyzing',
+  );
+
+  if (total === 0) {
+    return (
+      <div className="mb-4 flex items-center gap-1.5 rounded-lg border border-border-subtle bg-bg-card p-3 text-xs text-fg-tertiary">
+        <Sparkles size={14} /> AI-анализ: сессий пока нет (анализ ещё не
+        запускался — включите его в настройках интеграции).
+      </div>
+    );
+  }
+
+  const ordered = [...sessions].sort((a, b) => b.seq - a.seq);
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-bg-subtle"
+      >
+        <Sparkles size={16} className="text-accent" />
+        <span className="text-sm font-medium text-fg-primary">
+          AI-анализ диалога
+        </span>
+        <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary">
+          {done}/{total} готово
+        </span>
+        {inProgress && (
+          <span className="flex items-center gap-1 text-xs text-fg-tertiary">
+            <Loader2 size={12} className="animate-spin" /> обработка…
+          </span>
+        )}
+        <ChevronDown
+          size={16}
+          className={`ml-auto shrink-0 text-fg-tertiary transition-transform ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div className="max-h-[40vh] space-y-3 overflow-y-auto border-t border-border-subtle p-4">
+          {ordered.map((s) => (
+            <div
+              key={s.id}
+              className="rounded-md border border-border-subtle bg-bg-overlay p-3"
+            >
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-fg-primary">
+                  Сессия #{s.seq}
+                </span>
+                <SessionStatusBadge status={s.analysisStatus} />
+                <span className="text-xs text-fg-tertiary">
+                  {sessionPeriod(s)}
+                </span>
+              </div>
+              {s.summary ? (
+                <p className="whitespace-pre-wrap text-sm text-fg-secondary">
+                  {s.summary}
+                </p>
+              ) : (
+                <p className="text-xs text-fg-tertiary">
+                  {s.analysisStatus === 'failed'
+                    ? 'Анализ не удался — будет повторён.'
+                    : s.analysisStatus === 'done'
+                      ? 'Резюме пустое.'
+                      : 'В обработке…'}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

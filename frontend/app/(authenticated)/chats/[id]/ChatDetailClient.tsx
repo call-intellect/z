@@ -658,10 +658,92 @@ function attachmentOf(
   }
 }
 
+function ImagePreview({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-1 inline-flex items-center gap-1.5 underline"
+      >
+        <ImageIcon size={14} /> [Изображение]
+      </a>
+    );
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mb-1 block"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="Изображение"
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="max-h-64 w-auto max-w-full rounded-md object-cover"
+      />
+    </a>
+  );
+}
+
+/** Рендер медиа сообщения: картинка → превью, голос/аудио/видео → плеер, файл → ссылка. */
+function MessageAttachment({ message }: { message: ChatboxMessageView }) {
+  const ct = message.contentType;
+
+  if (ct === 'IMAGE' && message.imageUrl) {
+    return <ImagePreview url={message.imageUrl} />;
+  }
+  if ((ct === 'VOICE' || ct === 'AUDIO') && message.audioUrl) {
+    return (
+      <audio
+        controls
+        preload="none"
+        src={message.audioUrl}
+        className="mb-1 h-9 w-full max-w-[280px]"
+      />
+    );
+  }
+  if ((ct === 'VIDEO' || ct === 'VIDEO_NOTE') && message.videoUrl) {
+    return (
+      <video
+        controls
+        preload="none"
+        src={message.videoUrl}
+        className="mb-1 max-h-64 w-auto max-w-full rounded-md"
+      />
+    );
+  }
+
+  // FILE / нет url → иконка + ссылка-метка.
+  const att = attachmentOf(message);
+  if (!att) return null;
+  return (
+    <div className="mb-1 flex items-center gap-1.5">
+      <att.icon size={14} />
+      {att.url ? (
+        <a
+          href={att.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          [{att.label}]
+        </a>
+      ) : (
+        <span>[{att.label}]</span>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatboxMessageView }) {
   // Сообщения, отправленные из Коры, всегда менеджерские.
   const isManager = message.isOutboundFromKora || message.senderRole === 'manager';
-  const attachment = attachmentOf(message);
 
   const bubbleClass = isManager
     ? 'bg-accent text-accent-fg'
@@ -695,23 +777,7 @@ function MessageBubble({ message }: { message: ChatboxMessageView }) {
           </span>
         </div>
 
-        {attachment ? (
-          <div className="flex items-center gap-1.5">
-            <attachment.icon size={14} />
-            {attachment.url ? (
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                [{attachment.label}]
-              </a>
-            ) : (
-              <span>[{attachment.label}]</span>
-            )}
-          </div>
-        ) : null}
+        <MessageAttachment message={message} />
 
         {message.text ? (
           <div className="whitespace-pre-wrap break-words">{message.text}</div>

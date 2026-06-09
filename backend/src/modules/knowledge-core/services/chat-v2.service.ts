@@ -154,6 +154,88 @@ interface ContextBlock {
   } | null;
 }
 
+/**
+ * Query Understanding Ф4 (R10) — карта signalType → человекочитаемый русский
+ * термин для честного ответа «в памяти нет по этим условиям». Несколько
+ * исходных типов могут схлопываться в один термин (например, любые задачи).
+ */
+const SIGNAL_TYPE_RU: Record<string, string> = {
+  decision: 'решения',
+  task_created: 'задачи/дела',
+  task_completed: 'задачи/дела',
+  commitment: 'задачи/дела',
+  plan_item: 'задачи/дела',
+  done_item: 'задачи/дела',
+  risk: 'риски',
+  churn_risk: 'риски',
+  blocker: 'блокеры',
+  idea: 'идеи',
+  client_request: 'запросы клиента',
+};
+
+/**
+ * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
+ * термин.
+ */
+const THEME_BRANCH_RU: Record<string, string> = {
+  marketing: 'маркетинг',
+  sales: 'продажи',
+  product: 'продукт',
+  finance: 'финансы',
+  team: 'команда',
+  operations: 'операции',
+  strategy: 'стратегия',
+  clients: 'клиенты',
+  technology: 'технологии',
+  production: 'производство',
+  partnerships: 'партнёрства',
+  legal: 'юридическое',
+};
+
+/** Человекочитаемое описание применённых структурных условий (для честного
+ *  ответа «в памяти нет по этим условиям»). Возвращает '' если описывать нечего. */
+export function describeStructuralFilters(
+  f: {
+    dateFrom: Date | null;
+    dateTo: Date | null;
+    signalTypes: string[];
+    entityIds: string[];
+    themeBranches: string[];
+    bitemporalActiveOnly: boolean;
+  },
+): string {
+  const parts: string[] = [];
+
+  if (f.dateFrom || f.dateTo) {
+    parts.push('период');
+  }
+
+  if (f.signalTypes.length) {
+    const terms = dedupe(f.signalTypes.map((t) => SIGNAL_TYPE_RU[t] ?? t));
+    parts.push(`тип: ${terms.join('/')}`);
+  }
+
+  if (f.themeBranches.length) {
+    const terms = dedupe(f.themeBranches.map((t) => THEME_BRANCH_RU[t] ?? t));
+    parts.push(`тема: ${terms.join('/')}`);
+  }
+
+  if (f.entityIds.length) {
+    parts.push('указанные сущности');
+  }
+
+  if (f.bitemporalActiveOnly) {
+    parts.push('действующие сейчас');
+  }
+
+  return parts.join(', ');
+}
+
+/** Дедупликация с сохранением порядка первого вхождения. */
+function dedupe(items: string[]): string[] {
+  return [...new Set(items)];
+}
+
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
 /**
@@ -334,10 +416,19 @@ export class ChatV2Service {
     );
 
     // 3) Если контекст пуст — отвечаем без LLM.
+    //    Ф4 (R10): если применялся структурный фильтр — отвечаем честно,
+    //    называя условия, а не общим «Недостаточно данных».
     if (contextBlocks.length === 0) {
+      const desc = input.structuralFilters
+        ? describeStructuralFilters(input.structuralFilters)
+        : '';
+      const message = input.structuralFilters
+        ? desc
+          ? `По заданным условиям (${desc}) в памяти ничего не нашлось.`
+          : 'По заданным условиям в памяти ничего не нашлось.'
+        : 'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.';
       return {
-        message:
-          'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.',
+        message,
         citations: [],
         modelUsed: 'none',
         usedBlockIds: [],

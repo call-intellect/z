@@ -176,10 +176,17 @@ LiveKit чистит атрибуты автоматически при disconne
     `GET /api/v1/knowledge/entities/:id`.
   - `prompts/block-ingest.prompt.ts` — JSON Schema, helpers, ENTITY/SIGNAL
     enum'ы.
+  - `services/structured-document-compiler.service.ts` (мастер-ТЗ промптов,
+    Волна 6 A7, 2026-06-10) — единый владелец сборки `contentMd` орг-документа
+    (regulation / process / policy / instruction). `compile()` через router
+    (taskType `compile-org-document`); вызывается из `specialist-3-1-regulations`
+    после `regulation-dedupe` на вердиктах merge/extension. Kill-switch
+    `aiFeatures.docCompilerEnabled`. См. [[../01_projects/ai-jobs]] §«Мастер-ТЗ промптов».
 
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
-  member'ов Org).
+  member'ов Org). **Мастер-ТЗ промптов (2026-06-10):** `RESOURCE_TYPES` +=
+  `instruction` (зеркалит `process`), строки в policy.csv.
 
 - **`backend/scripts/postgres-init.sql`** — pgvector HNSW индексы +
   generated `IdeaBlock.search_tsv` + GIN. Применяется через
@@ -655,6 +662,7 @@ AI-чат компании поверх knowledge-core, с conversation history 
 - `POST /api/v1/regulations/:id/supersede` (owner/admin only) — пометить старую `deprecated`, новая получает `supersedesId`.
 - `POST /api/v1/regulations/:id/confirm` — `lastConfirmedAt = now()`.
 - Z-DTO через `nestjs-zod`, RBAC через existing `regulation`/`process`/`policy` ResourceType. Все ошибки на русском.
+- **Мастер-ТЗ промптов (2026-06-10):** `RegulationKindSchema` += `instruction`. При `kind=instruction` list/get/confirm читают **`prisma.instruction`** (мапперы `instruction → ListItem/Detail`, поле `extractionStatus`); controller RBAC-роутинг на ResourceType `instruction`. Та же `/regulations` поверхность обслуживает 4-ю сущность без отдельного API.
 
 **Frontend:**
 - `frontend/src/api/regulations.api.ts` — API-клиент (list/get/history/supersede/confirm).

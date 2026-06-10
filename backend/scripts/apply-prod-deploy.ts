@@ -352,6 +352,12 @@ const STEPS: Step[] = [
   // (first-class «Инструкция»). Идемпотентен (skip по tenantId+name), dry-run по
   // умолчанию → нужен `--apply`. На чистом старте инструкций нет → skipBootstrap.
   { phase: 'backfill', script: 'scripts/backfill-reclassify-instructions.ts', args: ['--apply'], hint: 'Process scope=role:* → Instruction (A10)', skipBootstrap: true },
+  // 2026-06-10 — слияние дублей Person по email внутри Org (раздел «Команда»:
+  // аккаунтная ⊕ ручная карточка на один email). Дефолт dry-run → нужен --apply.
+  // Идемпотентен (повтор → нет групп >1). По смыслу идёт ДО установки partial
+  // unique index persons_tenant_email_active_uniq (postgres-init self-skip
+  // пропустит индекс, пока дубли есть; индекс встанет на следующем прогоне).
+  { phase: 'backfill', script: 'scripts/backfill-merge-duplicate-persons.ts', args: ['--apply'], hint: 'Слить дубли Person по email (Команда)', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-onboarding-setup-completed.ts',

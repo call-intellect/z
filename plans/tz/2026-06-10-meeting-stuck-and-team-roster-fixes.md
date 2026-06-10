@@ -73,7 +73,7 @@
 **Prod-deploy:** Шаг 5.
 **Риск:** низкий (idempotent + self-skip).
 
-### Ф3 — Prod-merge существующих дублей `Person`
+### Ф3 — Prod-merge существующих дублей `Person` ✅
 **Новый файл:** `backend/scripts/backfill-merge-duplicate-persons.ts` (через `createPrismaClient()` из `_lib/prisma`, без подъёма AppModule).
 **Логика (консервативная, не перетирает admin-данные):**
 1. Активные `Person` (`deletedAt=null`, `email<>''`, опц. `--tenant=`) сгруппировать по `(tenantId, lower(email))`.
@@ -123,7 +123,7 @@ FSM: `scheduled → failed` уже разрешён ([meeting-fsm.ts:29](../../b
 
 ## 4. Прод-операции (после реализации)
 - **Шаг 5** (`postgres-init.sql`): новый partial unique `persons_tenant_email_active_uniq` (self-skip при дублях).
-- **Шаг 8** (`backfill`): `bun run scripts/backfill-merge-duplicate-persons.ts` (сначала `--dry-run`, затем без флага). Регистрируется в `apply-prod-deploy.ts`.
+- **Шаг 8** (`backfill`): `bun run scripts/backfill-merge-duplicate-persons.ts` (сначала без флага = dry-run, затем `--apply`). Регистрируется в `apply-prod-deploy.ts`.
 - Записать оба в `docs/operations/prod-deploy-log.md`.
 - **Инфра (Баг A, вне репо), владельцу:** проверить `infra/livekit/livekit.yaml` (на проде, в .gitignore) → `webhook.urls` = `https://<домен-backend>/webhooks/livekit` (эндпоинт ВНЕ `/api/v1`, [livekit-webhooks.controller.ts:30-39](../../backend/src/modules/webhooks/livekit-webhooks.controller.ts#L30-L39)); `webhook.api_key` = один из `keys`, тот же в backend `.env` `LIVEKIT_WEBHOOK_API_KEY`; reverse-proxy (nginx) должен проксировать путь `/webhooks/` на backend (а не только `/api`); после правки — `docker compose -f infra/livekit/docker-compose.yml up -d livekit`. Проверка: тестовая встреча → `diag trace --meeting <id>` показывает `room_started`. Зависшую `01KTR54GYJ...` — удалить (восстанавливать нечего).
 

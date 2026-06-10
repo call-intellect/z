@@ -133,6 +133,7 @@ function makeService() {
     balance,
     mail as never,
     conversational as never,
+    { assertCanView: vi.fn(async () => ({})) } as never,
   );
 
   return {
@@ -371,6 +372,7 @@ function makeAddInviteesService(args: { meeting?: MeetingRow | null }) {
     {} as unknown as MeetingsBalanceService,
     mail,
     conversational,
+    { assertCanView: vi.fn(async () => ({})) } as never,
   );
 
   return { svc, participantCreate };

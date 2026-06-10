@@ -83,6 +83,7 @@ function makeService(args: {
     // в renameParticipant, но обязательны в конструкторе).
     {} as never,
     {} as never,
+    { assertCanView: vi.fn(async () => ({})) } as never,
   );
 
   return { svc, prisma, repository, metrics, participantFindFirst, participantUpdate };

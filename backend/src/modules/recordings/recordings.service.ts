@@ -14,6 +14,7 @@ import {
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LivekitService } from '../livekit/livekit.service';
+import { MeetingVisibilityService } from '../meetings/meeting-visibility.service';
 import { MeetingsService } from '../meetings/meetings.service';
 
 import { LivekitEgressClient } from './livekit-egress.client';
@@ -75,6 +76,7 @@ export class RecordingsService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(LivekitService) private readonly livekit: LivekitService,
+    @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
   ) {
     // suppress unused-warning: meetings нужен для будущих переходов (см. webhook handler);
     // здесь оставляем как dep для тестируемой связности.
@@ -464,11 +466,7 @@ export class RecordingsService {
     meetingId: string,
     userId: string,
   ): Promise<{ url: string; expiresAt: Date }> {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (!meeting) throw new MeetingNotFoundError(meetingId);
-    if (meeting.ownerId !== userId) {
-      throw new NotAuthorizedError('not_meeting_host');
-    }
+    await this.visibility.assertCanView(meetingId, userId);
     return this.presignComposite(meetingId);
   }
 
@@ -500,9 +498,7 @@ export class RecordingsService {
       expiresAt: string;
     }>
   > {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (!meeting) throw new MeetingNotFoundError(meetingId);
-    if (meeting.ownerId !== userId) throw new NotAuthorizedError('not_meeting_host');
+    await this.visibility.assertCanView(meetingId, userId);
 
     const recording = await this.prisma.recording.findUnique({
       where: { meetingId },

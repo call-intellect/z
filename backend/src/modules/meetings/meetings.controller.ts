@@ -29,6 +29,7 @@ import { RequireSubscription } from '../billing/guards/require-subscription.deco
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 
 import type { AccessInfo } from './domain/meeting.domain';
 import {
@@ -110,13 +111,14 @@ export class MeetingsController {
   async list(
     @Query(new ZodValidationPipe(ListMeetingsQuerySchema)) query: ListMeetingsQuery,
     @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
   ): Promise<{
     items: ReturnType<MeetingsController['mapMeetingSummary']>[];
     page: number;
     limit: number;
     total: number;
   }> {
-    const result = await this.meetings.list(user.id, {
+    const result = await this.meetings.list(user.id, tenantId, {
       page: query.page,
       limit: query.limit,
       query: query.query,
@@ -408,8 +410,10 @@ export class MeetingsController {
     @Param('id') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true; stage: string }> {
-    // Проверка ownership: getForUser кидает NotAuthorizedError для не-хоста.
-    await this.meetings.getForUser(meetingId, user.id);
+    // Host-only: retry-ai перезапускает AI-пайплайн (деньги) — строго владелец.
+    // assertMeetingHost кидает NotAuthorizedError('not_meeting_host') для не-хоста.
+    // (getForUser после ТЗ meeting-visibility Ф3 виден участникам — для гейта НЕ годится.)
+    await this.meetings.assertMeetingHost(meetingId, user.id);
     const result = await this.retry.retry(meetingId, 'user', user.id);
     return { ok: true, stage: result.stage };
   }
@@ -544,6 +548,7 @@ export class MeetingsController {
     startedAt: Date | null;
     endedAt: Date | null;
     createdAt: Date;
+    visibilityScope: string;
   }): {
     id: string;
     title: string;
@@ -552,6 +557,7 @@ export class MeetingsController {
     startedAt: string | null;
     endedAt: string | null;
     createdAt: string;
+    visibilityScope: string;
   } {
     return {
       id: m.id,
@@ -561,6 +567,7 @@ export class MeetingsController {
       startedAt: m.startedAt?.toISOString() ?? null,
       endedAt: m.endedAt?.toISOString() ?? null,
       createdAt: m.createdAt.toISOString(),
+      visibilityScope: m.visibilityScope,
     };
   }
 }

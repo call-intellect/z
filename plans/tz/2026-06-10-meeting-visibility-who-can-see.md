@@ -253,7 +253,8 @@ MEETING_VISIBILITY_ENABLED: z.coerce.boolean().default(true),
 - `bun run typecheck` + `bunx vitest run backend/src/modules/meetings/meeting-visibility.service.spec.ts` зелёные.
 **Закрывает:** R3, R6, R7.
 
-### Ф3 — Бэкенд: подключить `canView` на READ-поверхностях `[ ]`
+### Ф3 — Бэкенд: подключить `canView` на READ-поверхностях `[x]`
+> Реализация: при переводе `getForUser` на `assertCanView` вскрылась эскалация — host-only мутации (`renameParticipant`/`setClosedGroupKind`) и контроллерный `retry-ai` гейтили хоста ЧЕРЕЗ `getForUser`. Добавлен публичный `assertMeetingHost` (явный owner-чек), им закрыты все три места. Регенерация — свой owner-чек, не затронута.
 **Цель:** заменить owner-only READ-проверки на `canView`; список — на `buildListWhere` с tenant-scope; мутации НЕ трогать.
 **Входит (точечно):**
 - `meetings.repository.ts`: `listByOwner` → `listVisibleTo(userId, ctx, tenantId, filters)` — where через `buildListWhere`. Вызвать из `meetings.service.list` (прокинуть tenantId из контроллера).

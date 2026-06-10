@@ -271,6 +271,9 @@ enum SourceType {
   tracker_event
   /// ChatBox-интеграция: сессия клиентского чата → RawEvent → knowledge-core.
   chatbox
+  /// Ежедневный чек-ин сотрудника (план/отчёт) → RawEvent → knowledge-core.
+  /// Мост CheckinIngestService (ТЗ 2026-06-10-daily-checkin-to-graph-bridge).
+  daily_checkin
 }
 
 enum DataClass {

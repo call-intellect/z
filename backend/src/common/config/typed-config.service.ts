@@ -1987,6 +1987,10 @@ export class TypedConfigService {
       ),
       // SBA β-8.1 — добивка панели операционного директора.
       sentimentEnabled: this.get('COO_SENTIMENT_ENABLED') !== false,
+      // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста
+      // чек-ин → knowledge-core (CheckinGraphIngestListener). ON по умолчанию.
+      checkinGraphIngestEnabled:
+        this.get('CHECKIN_GRAPH_INGEST_ENABLED') !== false,
       weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
       weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
       weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),

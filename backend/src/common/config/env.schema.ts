@@ -1489,6 +1489,10 @@ const BetaOpsSchema = z.object({
   //   - COO_WEEKLY_DIGEST_LOCAL_DAY — день недели (0=воскресенье,
   //     1=понедельник, default 1).
   COO_SENTIMENT_ENABLED: zBool(true),
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста чек-ин →
+  // knowledge-core (CheckinIngestService). ON по умолчанию (Ship-On, Р-B5);
+  // рубильник на случай инцидента в block-ingest, действий владельца не требует.
+  CHECKIN_GRAPH_INGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_LOCAL_HOUR: z.coerce
     .number()

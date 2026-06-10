@@ -776,6 +776,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //         'other' — LLM упал/timeout/нет tool_call/update в БД упал.
   // Cardinality: 2 значения reason × ≤101 tenant_top = ≤202 series.
   private cooSentimentFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core.
+  // result ∈ ok (RawEvent создан/идемпотентный возврат) | skipped (completedAt=
+  // null / нет записи / флаг off) | error (исключение моста, best-effort). 3 series.
+  private checkinGraphIngestTotal!: Counter<'result'>;
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
@@ -3097,6 +3101,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_sentiment_failed_total',
       help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина. reason: invalid_element (silent-skip батч-парсером) | other (LLM down / нет tool_call / update упал).',
       labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.checkinGraphIngestTotal = this.getOrCreateCounter({
+      name: 'z_checkin_graph_ingest_total',
+      help: 'ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core. result: ok (RawEvent создан или идемпотентный возврат) | skipped (пустой чек-ин / нет записи / kill-switch off) | error (исключение моста, best-effort).',
+      labelNames: ['result'] as const,
     });
     this.cooWeeklyDigestGeneratedTotal = this.getOrCreateCounter({
       name: 'coo_weekly_digest_generated_total',
@@ -6854,6 +6863,15 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant_top: args.tenantTop,
       reason: args.reason ?? 'other',
     });
+  }
+
+  /**
+   * Counter `z_checkin_graph_ingest_total{result}` — мост чек-ин → граф знаний
+   * (ТЗ 2026-06-10-daily-checkin-to-graph-bridge). result ∈ ok | skipped | error
+   * (best-effort, ошибка моста не ломает создание чек-ина).
+   */
+  incCheckinGraphIngest(args: { result: 'ok' | 'skipped' | 'error' }): void {
+    this.checkinGraphIngestTotal.inc({ result: args.result });
   }
 
   /** Counter `coo_weekly_digest_generated_total{tenant_top}`. */

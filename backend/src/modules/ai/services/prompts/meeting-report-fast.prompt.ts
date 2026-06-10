@@ -113,6 +113,11 @@ export const MeetingReportFastSchema = z
     tasks: z.array(MeetingReportFastTaskSchema),
     summary_markdown: z.string(),
     quality_score: MeetingReportFastQualityScoreSchema,
+    /**
+     * Заметка о полноте/надёжности входного транскрипта (1-2 фразы) или null.
+     * ADDITIVE / optional — обратная совместимость со старыми результатами.
+     */
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -136,7 +141,13 @@ export type MeetingReportFastQualityScore = z.infer<
 export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
   type: 'object',
   additionalProperties: false,
-  required: ['chapters', 'tasks', 'summary_markdown', 'quality_score'],
+  required: [
+    'chapters',
+    'tasks',
+    'summary_markdown',
+    'quality_score',
+    'data_quality',
+  ],
   properties: {
     chapters: {
       type: 'array',
@@ -274,6 +285,11 @@ export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
           items: { type: 'string' },
         },
       },
+    },
+    data_quality: {
+      type: ['string', 'null'],
+      description:
+        'Заметка о полноте/надёжности транскрипта (1-2 фразы): обрывы записи, неразборчивые места, неопределённые/несопоставленные спикеры, ненадёжные числа и имена. null, если транскрипт полный и претензий нет.',
     },
   },
 };
@@ -467,6 +483,10 @@ recommendations: 3-7 действий «как сделать встречу л�
 - critical — серьёзный провал (overall ≤ 40 или явный антипаттерн).
 
 strengths: 2-4 пункта что было хорошо.
+
+═══ Секция 5: data_quality (надёжность входных данных) ═══
+
+1-2 фразы о полноте и надёжности транскрипта: обрывы записи, неразборчивые места, неопределённые или несопоставленные со списком участников спикеры, ненадёжно распознанные числа/имена/термины. Это сигнал для читателя отчёта, насколько можно доверять выводам. Верни null, если транскрипт полный, связный и претензий к качеству нет.
 
 ═══ Имена участников ═══
 

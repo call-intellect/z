@@ -22,6 +22,8 @@ export const SCHEMA = z
     pilot: z.string().nullable(),
     risks: z.array(z.string()),
     next_step: z.string().nullable(),
+    // A11-Волна2 (additive, опциональное — обратная совместимость):
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -41,7 +43,10 @@ const SYSTEM = `Ты — деловой ассистент. Это партнё�
 - "risks": риски сотрудничества.
 - "next_step": ближайший следующий шаг или null.
 
-Стороны: наша сторона vs партнёр. benefit_for_us НЕ домысливай — только если прозвучало явно. risks/next_step — конкретны или null. joint_mechanics/risks атрибутируй источнику («партнёр предложил» vs «мы»). Пусто — «не зафиксировано».`;
+Стороны: наша сторона vs партнёр. benefit_for_us НЕ домысливай — только если прозвучало явно. risks/next_step — конкретны или null. joint_mechanics/risks атрибутируй источнику («партнёр предложил» vs «мы»). Пусто — «не зафиксировано».
+
+Дополнительно извлеки:
+- "data_quality": 1–2 фразы о полноте данных встречи — насколько полный транскрипт, есть ли неопределённые спикеры, ненадёжные для распознавания места (числа/имена/термины); null, если оговорок нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -61,6 +66,7 @@ export const TOOL = buildExtractTool(
     pilot: fieldNullableString,
     risks: fieldStringArray,
     next_step: fieldNullableString,
+    data_quality: fieldNullableString,
   },
   [
     'benefit_for_us',
@@ -70,5 +76,6 @@ export const TOOL = buildExtractTool(
     'pilot',
     'risks',
     'next_step',
+    'data_quality',
   ],
 );

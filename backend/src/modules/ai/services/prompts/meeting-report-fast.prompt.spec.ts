@@ -49,12 +49,13 @@ describe('meeting-report-fast — constants', () => {
     expect(MEETING_REPORT_FAST_TOOL_NAME).toBe('submit_meeting_analysis');
   });
 
-  it('input_schema требует 4 секции', () => {
+  it('input_schema требует 5 секций', () => {
     expect(MEETING_REPORT_FAST_INPUT_SCHEMA.required).toEqual([
       'chapters',
       'tasks',
       'summary_markdown',
       'quality_score',
+      'data_quality',
     ]);
   });
 
@@ -262,7 +263,13 @@ describe('meeting-report-fast — Zod validation', () => {
 describe('meeting-report-fast — input_schema согласован с Zod', () => {
   it('top-level required списки совпадают', () => {
     expect(MEETING_REPORT_FAST_INPUT_SCHEMA.required?.sort()).toEqual(
-      ['chapters', 'tasks', 'summary_markdown', 'quality_score'].sort(),
+      [
+        'chapters',
+        'tasks',
+        'summary_markdown',
+        'quality_score',
+        'data_quality',
+      ].sort(),
     );
   });
 

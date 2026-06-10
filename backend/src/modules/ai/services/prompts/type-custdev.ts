@@ -22,6 +22,8 @@ export const SCHEMA = z
     frequency: z.string().nullable(),
     willingness_to_pay: z.string().nullable(),
     insights: z.array(z.string()),
+    // A11-Волна2 (additive, опциональное — обратная совместимость):
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -41,7 +43,10 @@ const SYSTEM = `Ты — продуктовый ассистент. Это CustD
 - "willingness_to_pay": готовность платить (или null).
 - "insights": ключевые инсайты для команды продукта.
 
-Стороны: интервьюер (наша) vs респондент. quotes/pains/use_cases — ТОЛЬКО слова РЕСПОНДЕНТА, не интервьюера. insights — это интерпретация; quotes — дословный факт; не путай. Пусто — честно «не выявлено».`;
+Стороны: интервьюер (наша) vs респондент. quotes/pains/use_cases — ТОЛЬКО слова РЕСПОНДЕНТА, не интервьюера. insights — это интерпретация; quotes — дословный факт; не путай. Пусто — честно «не выявлено».
+
+Дополнительно извлеки:
+- "data_quality": 1–2 фразы о полноте данных встречи — насколько полный транскрипт, есть ли неопределённые спикеры, ненадёжные для распознавания места (числа/имена/термины); null, если оговорок нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -61,6 +66,7 @@ export const TOOL = buildExtractTool(
     frequency: fieldNullableString,
     willingness_to_pay: fieldNullableString,
     insights: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'pains',
@@ -70,5 +76,6 @@ export const TOOL = buildExtractTool(
     'frequency',
     'willingness_to_pay',
     'insights',
+    'data_quality',
   ],
 );

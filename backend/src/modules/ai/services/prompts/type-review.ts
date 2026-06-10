@@ -38,6 +38,10 @@ export const SCHEMA = z
     next_steps: z.array(z.string()),
     /** Общая оценка/вердикт по результату (одной фразой), либо null. */
     verdict: z.string().nullable(),
+    /** Принятые на ревью решения (принято / отклонено / на доработку). */
+    decisions: z.array(z.string()).optional(),
+    /** Заметка о полноте и надёжности входных данных или null. */
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -54,7 +58,11 @@ const SYSTEM = `Ты — деловой ассистент. Это обзорн�
 Если поле пустое — вернуть пустой массив. Для строковых полей null допустим только там, где явно указано.
 
 Само-проверка и различения:
-to_improve — только то, что прозвучало явно, не твоя интерпретация. verdict обоснуй конкретной репликой. Пусто — честно «не зафиксировано».`;
+to_improve — только то, что прозвучало явно, не твоя интерпретация. verdict обоснуй конкретной репликой. Пусто — честно «не зафиксировано».
+
+Дополнительно:
+- "decisions": конкретные решения, принятые на ревью по результату — «принято», «отклонено», «на доработку», «переделать раздел X». Только зафиксированные решения, не обсуждённые варианты. Пустой массив, если решений не зафиксировано.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -73,6 +81,17 @@ export const TOOL = buildExtractTool(
     risks: fieldStringArray,
     next_steps: fieldStringArray,
     verdict: fieldNullableString,
+    decisions: fieldStringArray,
+    data_quality: fieldNullableString,
   },
-  ['subject', 'went_well', 'to_improve', 'risks', 'next_steps', 'verdict'],
+  [
+    'subject',
+    'went_well',
+    'to_improve',
+    'risks',
+    'next_steps',
+    'verdict',
+    'decisions',
+    'data_quality',
+  ],
 );

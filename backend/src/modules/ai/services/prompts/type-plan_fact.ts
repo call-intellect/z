@@ -23,6 +23,8 @@ export const SCHEMA = z
     risks: z.array(z.string()),
     next_plan: z.array(z.string()),
     next_step: z.string().nullable(),
+    unexplained_gaps: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -44,7 +46,11 @@ const SYSTEM = `Ты — деловой ассистент. Это встреч�
 - "next_step": ближайший шаг или null.
 
 Само-проверка и различения:
-responsible привязывай к конкретным пунктам, не общё. done и not_done взаимоисключающи (пункт либо там, либо там). Если причина невыполнения не названа — не выдумывай. Пусто — «не выявлено».`;
+responsible привязывай к конкретным пунктам, не общё. done и not_done взаимоисключающи (пункт либо там, либо там). Если причина невыполнения не названа — не выдумывай. Пусто — «не выявлено».
+
+Дополнительно:
+- "unexplained_gaps": невыполненные пункты, по которым причина отклонения НЕ была названа на встрече (расхождение план/факт без объяснения). Это подмножество not_done без соответствующей записи в deviation_reasons. Пустой массив, если все отклонения объяснены или невыполненных пунктов нет.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -65,6 +71,8 @@ export const TOOL = buildExtractTool(
     risks: fieldStringArray,
     next_plan: fieldStringArray,
     next_step: fieldNullableString,
+    unexplained_gaps: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'planned',
@@ -75,5 +83,7 @@ export const TOOL = buildExtractTool(
     'risks',
     'next_plan',
     'next_step',
+    'unexplained_gaps',
+    'data_quality',
   ],
 );

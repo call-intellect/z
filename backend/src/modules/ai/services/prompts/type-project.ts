@@ -21,6 +21,8 @@ export const SCHEMA = z
     risks: z.array(z.string()),
     open_questions: z.array(z.string()),
     next_step: z.string().nullable(),
+    ideas: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -40,7 +42,11 @@ const SYSTEM = `Ты — деловой ассистент. Это проект�
 - "next_step": ближайший следующий шаг или null.
 
 Само-проверка и различения:
-agreements — только принятые решения, не обсуждённые варианты. Идея/предложение ≠ договорённость ≠ задача. Если ответственный/срок не назван — «не уточнено». Пусто — честно «не зафиксировано».`;
+agreements — только принятые решения, не обсуждённые варианты. Идея/предложение ≠ договорённость ≠ задача. Если ответственный/срок не назван — «не уточнено». Пусто — честно «не зафиксировано».
+
+Дополнительно:
+- "ideas": идеи и предложения по проекту, которые прозвучали, но НЕ стали договорённостями и НЕ зафиксированы как зоны ответственности (варианты «можно было бы», «давайте подумаем», предложения на будущее). Пустой массив, если таких не было.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -59,6 +65,8 @@ export const TOOL = buildExtractTool(
     risks: fieldStringArray,
     open_questions: fieldStringArray,
     next_step: fieldNullableString,
+    ideas: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'agreements',
@@ -67,5 +75,7 @@ export const TOOL = buildExtractTool(
     'risks',
     'open_questions',
     'next_step',
+    'ideas',
+    'data_quality',
   ],
 );

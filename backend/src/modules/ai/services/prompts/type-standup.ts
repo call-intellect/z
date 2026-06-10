@@ -24,6 +24,8 @@ export const SCHEMA = z
     blockers: z.array(z.string()),
     decisions_needed: z.array(z.string()),
     next_checkpoint: z.string().nullable(),
+    proposals: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -43,7 +45,11 @@ const SYSTEM = `Ты — деловой ассистент. Это планёр�
 Не выдумывай.
 
 Само-проверка и различения:
-new_tasks — только реальные обязательства, не пожелания. who_does_what: если исполнитель не установлен по репликам — person=«не определён», не угадывай из контекста. Пусто — честно «не зафиксировано».`;
+new_tasks — только реальные обязательства, не пожелания. who_does_what: если исполнитель не установлен по репликам — person=«не определён», не угадывай из контекста. Пусто — честно «не зафиксировано».
+
+Дополнительно:
+- "proposals": идеи и пожелания, прозвучавшие на планёрке, но НЕ ставшие задачами (предложения «надо бы», «давайте попробуем», варианты без обязательства). Пустой массив, если таких не было.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -73,6 +79,8 @@ export const TOOL = buildExtractTool(
     blockers: fieldStringArray,
     decisions_needed: fieldStringArray,
     next_checkpoint: fieldNullableString,
+    proposals: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'priorities',
@@ -81,5 +89,7 @@ export const TOOL = buildExtractTool(
     'blockers',
     'decisions_needed',
     'next_checkpoint',
+    'proposals',
+    'data_quality',
   ],
 );

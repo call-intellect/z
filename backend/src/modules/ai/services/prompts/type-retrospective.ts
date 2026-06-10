@@ -43,6 +43,10 @@ export const SCHEMA = z
     team_mood: z.enum(MOOD_VALUES),
     /** Краткое summary настроения (1-2 предложения) или null. */
     mood_notes: z.string().nullable(),
+    /** Повторяющиеся проблемы (всплывают снова / «как всегда»). */
+    recurring_problems: z.array(z.string()).optional(),
+    /** Заметка о полноте и надёжности входных данных или null. */
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -60,7 +64,11 @@ const SYSTEM = `Ты — деловой ассистент. Это ретрос�
 Если массив пустой — возвращай []. Не дублируй пункты между what_worked и what_did_not_work.
 
 Само-проверка и различения:
-kudos атрибутируй («кто похвалил кого»), не обобщай. mood_notes — только наблюдаемое поведение (тон, реакции), НЕ психологизируй и не ставь диагнозы. Пусто — «не выявлено».`;
+kudos атрибутируй («кто похвалил кого»), не обобщай. mood_notes — только наблюдаемое поведение (тон, реакции), НЕ психологизируй и не ставь диагнозы. Пусто — «не выявлено».
+
+Дополнительно:
+- "recurring_problems": проблемы, которые на ретро отмечены как повторяющиеся — «снова», «как всегда», «опять то же самое», «в прошлый раз тоже». Извлекай ТОЛЬКО при явном признаке повторяемости, единичную проблему сюда не клади. Пустой массив, если таких не было.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -92,6 +100,8 @@ export const TOOL = buildExtractTool(
     kudos: fieldStringArray,
     team_mood: fieldEnum(MOOD_VALUES),
     mood_notes: fieldNullableString,
+    recurring_problems: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'what_worked',
@@ -101,5 +111,7 @@ export const TOOL = buildExtractTool(
     'kudos',
     'team_mood',
     'mood_notes',
+    'recurring_problems',
+    'data_quality',
   ],
 );

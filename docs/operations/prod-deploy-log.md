@@ -70,6 +70,20 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📖 2026-06-10 — Волна 6 A10: модель Instruction (first-class «Инструкция», single-role)
+
+> Контракт: master-prompt-fleet (Волна 6 A10), схема-слой. Ветка `feature/master-prompt-fleet-2026-06-10`.
+>
+> **Зачем для прода:** новая first-class сущность «Инструкция» (`Instruction`) — пошаговое руководство для ОДНОЙ роли (`forRole`), зеркалит `Regulation` + признак single-role. Только схема-слой (таблица + индексы), без extraction/API/RBAC (другой слой). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет.**
+
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610120000_add_instruction`): `+ table instructions` (FK → `Org`/`persons`/self/`CardVersion`; unique `(tenantId, name)` + unique `entityId`; индексы по `(tenantId, status)`/`(tenantId, forRole)`/`(tenantId, ownerPersonId)`/`(currentVersionId)`; колонка `embedding vector(1536)`). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 5 — postgres-init.sql — HNSW** — новый: `instructions_embedding_hnsw_cosine_idx ON "instructions" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine dedupe/supersede инструкций, зеркало `decisions`/`regulations`). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`).
+- **Шаг 11 — Docker rebuild** — обязателен (новый PrismaClient-модель `instruction`): `docker compose up -d --build backend`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐞 2026-06-10 — Фикс открытых багов retest3 (Ф1–Ф9, кроме #20/#24/#17/#26)
 
 > Контракт: `plans/tz/2026-06-10-bugfix-fleet-retest3.md`. Коммиты: Ф1 `e696d831` · Ф2 `a442fc37` · Ф5 `5781b43f` · Ф6 `1f035158` · Ф7 `73af1791` · Ф4 `9550d382` · Ф3 `0652c365` · Ф8 `a9289d54` · Ф9 `048be10e`.

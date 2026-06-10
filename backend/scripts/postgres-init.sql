@@ -671,3 +671,24 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Instruction — first-class «Инструкция» (Волна 6 A10, single-role руководство).
+--   HNSW индекс на instructions.embedding (vector_cosine_ops) для KNN cosine
+--   dedupe + supersede-detect (зеркало regulations/decisions card-эмбеддингов).
+--   Без HNSW — seq-scan по всем инструкциям Org; с индексом — O(log n).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'instructions'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "instructions_embedding_hnsw_cosine_idx"
+      ON "instructions" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;

@@ -2509,6 +2509,7 @@ model Org {
   processes       Process[]
   processSteps    ProcessStep[]
   regulations     Regulation[]
+  instructions    Instruction[]
   policies        Policy[]
   tools           Tool[]
   metrics         Metric[]
@@ -3858,6 +3859,7 @@ model CardVersion {
   /// после triage'а (см. sub-TZ §4, §5).
   processesAsCurrent   Process[]     @relation("ProcessCurrentVersion")
   regulationsAsCurrent Regulation[]  @relation("RegulationCurrentVersion")
+  instructionCurrent   Instruction[] @relation("InstructionCurrentVersion")
   policiesAsCurrent    Policy[]      @relation("PolicyCurrentVersion")
   /// SBA β-3 — обратное relation для Decision.currentVersionId.
   decisionsAsCurrent   Decision[]    @relation("DecisionCurrentVersion")
@@ -4782,6 +4784,7 @@ model Person {
   ownedGoals                  Goal[]                             @relation("GoalOwnerPerson")
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations            Regulation[]                       @relation("RegulationOwnerPerson")
+  instructionsOwned           Instruction[]                      @relation("InstructionOwnerPerson")
   ownedPolicies               Policy[]                           @relation("PolicyOwnerPerson")
   /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
   ownedProcessTemplates       ProcessTemplate[]                  @relation("ProcessTemplateOwnerPerson")
@@ -5853,6 +5856,57 @@ model Regulation {
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
   @@map("regulations")
+}
+
+/// Instruction — first-class сущность «Инструкция»: пошаговое руководство для ОДНОЙ роли
+/// (Волна 6 A10). Зеркалит Regulation, но с признаком single-role `forRole`.
+model Instruction {
+  id               String                       @id @default(cuid())
+  tenantId         String
+  name             String                       @db.VarChar(300)
+  contentMd        String                       @db.Text
+  status           ProcessStatus                @default(active)
+  version          Int                          @default(1)
+  confidence       Float?
+  /// `forRole` — роль-владелец инструкции (single-role признак).
+  forRole          String?                      @db.VarChar(120)
+  /// `entityId` — связка с графом.
+  entityId         String?                      @unique
+  /// `statement` — структурированная суть инструкции (альтернатива contentMd для дедупа / retrieval).
+  statement        String?                      @db.Text
+  /// `scope` — область действия: 'org' | 'department:<id>' | 'role:<id>' | 'project:<id>'.
+  scope            String?                      @db.VarChar(120)
+  /// FK на Person — назначенный ответственный за инструкцию.
+  ownerPersonId    String?
+  /// Self-relation для версионирования (новая запись «заменяет» старую).
+  supersedesId     String?
+  /// FK на CardVersion (последняя активная версия после triage).
+  currentVersionId String?
+  /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения.
+  sourceBlockIds   String[]                     @default([])
+  /// `personSubjectIds[]` — Person'ы, которым инструкция присвоена как subject.
+  personSubjectIds String[]                     @default([])
+  dataClass        DataClass                    @default(internal)
+  /// audit-trail вычисления dataClass (policyVersion + sources).
+  dataClassAudit   Json?
+  /// Эмбеддинг (name + statement) — для KNN-дедупа.
+  embedding        Unsupported("vector(1536)")?
+  lastConfirmedAt  DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson      Person?          @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  supersedes       Instruction?     @relation("InstructionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy     Instruction[]    @relation("InstructionSupersedes")
+  currentVersion   CardVersion?     @relation("InstructionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, forRole])
+  @@index([tenantId, ownerPersonId])
+  @@index([currentVersionId])
+  @@map("instructions")
 }
 
 /// Policy — политика (Фаза 0a, группа Б). UI в Фазе α-7.

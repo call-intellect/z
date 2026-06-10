@@ -648,13 +648,13 @@ function showAiSuggestionsToasts(
     if (passesThreshold) {
       const summary = buildFieldsSummary(fields);
       if (summary) {
-        toast(`AI предлагает: ${summary}. Принять?`, { duration: 12000, action: {
+        toast(`Кора предлагает: ${summary}. Принять?`, { duration: 12000, action: {
             label: 'Принять',
             onClick: async () => {
               try {
                 await acceptFieldSuggestions(issue.id, fields, ctx);
                 await ctx.mutateBoard();
-                toast.success('Подсказки AI применены.');
+                toast.success('Подсказки Коры применены.');
               } catch (err) {
                 toast.error(`Не удалось применить подсказки: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
               }
@@ -668,7 +668,7 @@ function showAiSuggestionsToasts(
   if (suggestions.goal && suggestions.goal.confidence >= AI_CONFIDENCE_THRESHOLD) {
     const goalId = suggestions.goal.goalId;
     const pct = Math.round(suggestions.goal.confidence * 100);
-    toast(`AI предлагает связать с целью (∼${pct}%). Принять?`, { duration: 12000, action: {
+    toast(`Кора предлагает связать с целью (∼${pct}%). Принять?`, { duration: 12000, action: {
         label: 'Связать',
         onClick: async () => {
           try {

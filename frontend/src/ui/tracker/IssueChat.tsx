@@ -44,6 +44,7 @@ import { toast } from 'sonner';
 import {
   chatV2ModeLabel,
   formatTimestamp,
+  stripContextMarkers,
   type ChatV2Citation,
   type ChatV2Mode,
 } from '@/domain/chat-v2';
@@ -337,7 +338,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
               <MessageCircle size={16} className="text-fg-tertiary" />
             </div>
             <div className="text-sm font-medium text-fg-primary">
-              Спросите AI про эту задачу
+              Спросите Кору про эту задачу
             </div>
             <div className="mt-1 text-xs text-fg-tertiary">
               Кора подтянет контекст из памяти компании и ответит со ссылками
@@ -360,7 +361,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-fg-tertiary">
             <Loader2 size={14} className="animate-spin" />
-            AI печатает ответ…
+            Кора печатает ответ…
           </div>
         ) : null}
 
@@ -373,7 +374,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-2 border-t border-border-subtle p-3"
+        className="flex flex-col gap-2 border-t border-border-subtle p-3 pb-20 sm:pr-20"
       >
         <div className="flex items-end gap-2">
           <input
@@ -384,12 +385,12 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
                 ? 'Идёт запись… нажмите квадрат, чтобы остановить'
                 : rec.kind === 'transcribing'
                   ? 'Распознаю…'
-                  : 'Спросить AI про эту задачу…'
+                  : 'Спросить Кору про эту задачу…'
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading || rec.kind !== 'idle'}
-            aria-label="Вопрос к AI"
+            aria-label="Вопрос к Коре"
           />
 
           {micSupported ? (
@@ -472,7 +473,7 @@ function ChatBubble({
             Режим: {chatV2ModeLabel(message.mode)}
           </div>
         ) : null}
-        <div>{message.text}</div>
+        <div>{isUser ? message.text : stripContextMarkers(message.text)}</div>
         {!isUser ? (
           <button
             type="button"

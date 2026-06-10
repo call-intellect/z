@@ -153,6 +153,32 @@ export function toChatV2ConversationWithMessages(
   };
 }
 
+/**
+ * #57 — служебные маркеры источников/рассуждений, которые бэкенд НАМЕРЕННО
+ * оставляет в тексте ответа ассистента (цитаты парсятся отдельно и показываются
+ * блоком «Источники»). Пользователю в самом тексте они не нужны. Покрывает все
+ * формы: `[BLOCK:id]`, `[CONTRADICTING BLOCK]`, слитный `[CONTRADICTING BLOCK:id]`,
+ * `[REASONING CHAIN FOR BLOCK id]`, `[DECISION:id]`. id-класс — `[a-zA-Z0-9_-]+`.
+ * НЕ трогает markdown-ссылки `[текст](url)` и обычный текст в скобках — матчит
+ * только конкретные служебные ключевые слова.
+ */
+const CONTEXT_MARKER_RE =
+  /\[(?:BLOCK:[a-zA-Z0-9_-]+|CONTRADICTING BLOCK(?::[a-zA-Z0-9_-]+)?|REASONING CHAIN FOR BLOCK [a-zA-Z0-9_-]+|DECISION:[a-zA-Z0-9_-]+)\]/g;
+
+export function stripContextMarkers(text: string): string {
+  return text
+    .replace(CONTEXT_MARKER_RE, '')
+    // схлопываем пробелы/табы, оставшиеся от вырезанного маркера, НЕ трогая
+    // переводы строк (важно для whitespace-pre-wrap поверхностей).
+    .replace(/[^\S\n]{2,}/g, ' ')
+    // убираем пробел перед знаком препинания, появившийся от выреза.
+    .replace(/[^\S\n]+([.,;:!?])/g, '$1')
+    // убираем хвостовой пробел перед переводом строки (но НЕ ведущий отступ
+    // следующей строки — он может быть значимым для markdown-списков).
+    .replace(/[^\S\n]+\n/g, '\n')
+    .trim();
+}
+
 /** Форматирует mm:ss из миллисекунд. */
 export function formatTimestamp(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '00:00';

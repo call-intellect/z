@@ -30,6 +30,7 @@ import {
   chatV2ModeLabel,
   chatV2ScopeLabel,
   formatTimestamp,
+  stripContextMarkers,
   toChatV2Conversation,
   toChatV2ConversationWithMessages,
   type ChatV2Conversation,
@@ -444,21 +445,9 @@ function EmptyState(): ReactElement {
   );
 }
 
-/**
- * Защитная очистка текста ассистента от служебных маркеров источников
- * `[BLOCK:<id>]`, которые приходят с бэкенда: цитаты показываем отдельным
- * блоком «Источники», в самом тексте маркеры пользователю не нужны.
- */
-function stripBlockMarkers(text: string): string {
-  return text
-    .replace(/\[BLOCK:[^\]]+\]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
-
 function MessageView({ message }: { message: ChatV2Message }): ReactElement {
   const isUser = message.role === 'user';
-  const displayText = isUser ? message.text : stripBlockMarkers(message.text);
+  const displayText = isUser ? message.text : stripContextMarkers(message.text);
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div

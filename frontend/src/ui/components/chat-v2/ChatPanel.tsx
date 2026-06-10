@@ -7,6 +7,7 @@ import { chatV2Api, type ChatV2ModeApi, type ChatV2ScopeApi } from '@/api/chat-v
 import {
   chatV2ModeLabel,
   formatTimestamp,
+  stripContextMarkers,
   type ChatV2Citation,
 } from '@/domain/chat-v2';
 
@@ -92,7 +93,7 @@ export function ChatPanel(props: ChatPanelProps): ReactElement {
           <div className="flex h-full items-center justify-center text-fg-tertiary text-sm">
             <div className="text-center">
               <MessageCircle className="mx-auto mb-2" size={24} />
-              <div>Задайте вопрос — AI ответит с цитатами из памяти компании.</div>
+              <div>Задайте вопрос — Кора ответит с цитатами из памяти компании.</div>
             </div>
           </div>
         ) : (
@@ -101,7 +102,7 @@ export function ChatPanel(props: ChatPanelProps): ReactElement {
           ))
         )}
         {loading ? (
-          <div className="text-fg-tertiary text-sm italic">AI печатает ответ...</div>
+          <div className="text-fg-tertiary text-sm italic">Кора печатает ответ...</div>
         ) : null}
         {error ? (
           <div className="rounded bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
@@ -110,11 +111,14 @@ export function ChatPanel(props: ChatPanelProps): ReactElement {
         ) : null}
       </div>
 
-      <form onSubmit={onSubmit} className="border-t border-border p-3 flex gap-2">
+      <form
+        onSubmit={onSubmit}
+        className="border-t border-border p-3 pb-20 sm:pr-20 flex gap-2"
+      >
         <input
           type="text"
           className="flex-1 rounded border border-border bg-bg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          placeholder={props.placeholder ?? 'Спросите AI...'}
+          placeholder={props.placeholder ?? 'Спросите Кору...'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={loading}
@@ -147,7 +151,7 @@ function ChatBubble({ message }: { message: LocalMessage }): ReactElement {
             Режим: {chatV2ModeLabel(message.mode)}
           </div>
         ) : null}
-        <div>{message.text}</div>
+        <div>{isUser ? message.text : stripContextMarkers(message.text)}</div>
         {!isUser && message.uncertaintyNote ? (
           <div className="mt-2 rounded bg-chip-warning-bg px-2 py-1 text-xs text-chip-warning-fg">
             {message.uncertaintyNote}

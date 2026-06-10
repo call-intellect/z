@@ -4,7 +4,8 @@
  * Покрываем чистый предикат canView (таблица сценариев) и buildListWhere.
  * prisma/resolver для этих чистых методов не нужны — передаём заглушки.
  */
-import { describe, expect, it } from 'vitest';
+import { BadRequestException } from '@nestjs/common';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
@@ -176,5 +177,142 @@ describe('MeetingVisibilityService.buildListWhere', () => {
   it('bypass → { tenantId }', () => {
     const svc = buildService(true);
     expect(svc.buildListWhere(BYPASS, 't-1', 'u-1')).toEqual({ tenantId: 't-1' });
+  });
+});
+
+describe('MeetingVisibilityService.getVisibility', () => {
+  function buildWithPrisma(prisma: unknown): MeetingVisibilityService {
+    const cfg = { meetingVisibilityEnabled: true } as unknown as TypedConfigService;
+    return new MeetingVisibilityService(
+      prisma as PrismaService,
+      resolverStub,
+      cfg,
+    );
+  }
+
+  it('возвращает scope из meeting + гранты с человекочитаемыми именами', async () => {
+    const prisma = {
+      meetingAccessGrant: {
+        findMany: vi.fn().mockResolvedValue([
+          { granteeType: 'person', granteeId: 'p1' },
+          { granteeType: 'group', granteeId: 'g1' },
+        ]),
+      },
+      person: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'p1', name: 'Иван' }]),
+      },
+      knowledgeGroup: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'g1', name: 'Руководство' }]),
+      },
+    };
+    const svc = buildWithPrisma(prisma);
+    const res = await svc.getVisibility({ id: 'm1', tenantId: 't1', visibilityScope: 'custom' });
+    expect(res.scope).toBe('custom');
+    expect(res.grants).toEqual([
+      { granteeType: 'person', granteeId: 'p1', name: 'Иван' },
+      { granteeType: 'group', granteeId: 'g1', name: 'Руководство' },
+    ]);
+  });
+});
+
+describe('MeetingVisibilityService.setVisibility', () => {
+  function buildWithPrisma(prisma: unknown): MeetingVisibilityService {
+    const cfg = { meetingVisibilityEnabled: true } as unknown as TypedConfigService;
+    return new MeetingVisibilityService(
+      prisma as PrismaService,
+      resolverStub,
+      cfg,
+    );
+  }
+
+  function makeTxMock() {
+    return {
+      meeting: { update: vi.fn().mockResolvedValue({}) },
+      meetingAccessGrant: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+  }
+
+  it("custom без grants → BadRequestException(grants_required_for_custom), $transaction не вызван", async () => {
+    const $transaction = vi.fn();
+    const svc = buildWithPrisma({ $transaction });
+    await expect(
+      svc.setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', { scope: 'custom' }),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'grants_required_for_custom' } },
+    });
+    expect($transaction).not.toHaveBeenCalled();
+  });
+
+  it("custom с невалидным grantee → BadRequestException(invalid_grantee)", async () => {
+    const $transaction = vi.fn();
+    const prisma = {
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+      knowledgeGroup: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction,
+    };
+    const svc = buildWithPrisma(prisma);
+    await expect(
+      svc.setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', {
+        scope: 'custom',
+        grants: [{ granteeType: 'person', granteeId: 'p-x' }],
+      }),
+    ).rejects.toMatchObject({ response: { error: { code: 'invalid_grantee' } } });
+    expect($transaction).not.toHaveBeenCalled();
+  });
+
+  it("scope='org' → $transaction: update + deleteMany вызваны, createMany НЕ вызван", async () => {
+    const tx = makeTxMock();
+    const $transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx));
+    const svc = buildWithPrisma({ $transaction });
+    await svc.setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', { scope: 'org' });
+    expect(tx.meeting.update).toHaveBeenCalledWith({
+      where: { id: 'm1' },
+      data: { visibilityScope: 'org' },
+    });
+    expect(tx.meetingAccessGrant.deleteMany).toHaveBeenCalledWith({
+      where: { meetingId: 'm1' },
+    });
+    expect(tx.meetingAccessGrant.createMany).not.toHaveBeenCalled();
+  });
+
+  it("scope='custom' валидный → createMany вызван с 1 грантом (grantedById=userId)", async () => {
+    const tx = makeTxMock();
+    const $transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx));
+    const prisma = {
+      person: { findMany: vi.fn().mockResolvedValue([{ id: 'p1' }]) },
+      knowledgeGroup: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction,
+    };
+    const svc = buildWithPrisma(prisma);
+    await svc.setVisibility({ id: 'm1', tenantId: 't1' }, 'u-host', {
+      scope: 'custom',
+      grants: [{ granteeType: 'person', granteeId: 'p1' }],
+    });
+    expect(tx.meetingAccessGrant.deleteMany).toHaveBeenCalled();
+    expect(tx.meetingAccessGrant.createMany).toHaveBeenCalledTimes(1);
+    const arg = tx.meetingAccessGrant.createMany.mock.calls[0]?.[0] as {
+      data: unknown;
+    };
+    expect(arg.data).toEqual([
+      {
+        tenantId: 't1',
+        meetingId: 'm1',
+        granteeType: 'person',
+        granteeId: 'p1',
+        grantedById: 'u-host',
+      },
+    ]);
+  });
+
+  it('BadRequestException действительно от @nestjs/common', async () => {
+    const svc = buildWithPrisma({ $transaction: vi.fn() });
+    await svc
+      .setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', { scope: 'custom' })
+      .catch((e) => {
+        expect(e).toBeInstanceOf(BadRequestException);
+      });
   });
 });

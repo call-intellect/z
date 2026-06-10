@@ -270,7 +270,7 @@ MEETING_VISIBILITY_ENABLED: z.coerce.boolean().default(true),
 - `bun run typecheck` + затронутые `bunx vitest run` зелёные.
 **Закрывает:** R2, R4.
 
-### Ф4 — Бэкенд: API «Кому видно» `[ ]`
+### Ф4 — Бэкенд: API «Кому видно» `[x]`
 **Цель:** `GET`/`PATCH /meetings/:id/visibility` (host-only) + отдача `visibilityScope` в DTO деталей/отчёта.
 **Входит:** Zod-DTO `SetVisibilitySchema`; контроллер-методы (host-only через существующую owner-проверку `getForUser`-как-хост — НЕ `canView`); сервис-методы `getVisibility`/`setVisibility` (транзакция замены грантов, валидация granteeId принадлежит tenant); Swagger; коды ошибок из контракта.
 **Что НЕ входит:** UI (Ф5).

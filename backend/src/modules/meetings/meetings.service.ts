@@ -36,6 +36,7 @@ import type {
   Paginated,
 } from './domain/meeting.domain';
 import type { MeetingPublicDto } from './dto/meeting-public.dto';
+import type { SetVisibilityBody } from './dto/visibility.dto';
 import { assertTransition } from './fsm/meeting-fsm';
 import { MeetingVisibilityService } from './meeting-visibility.service';
 import { MeetingsRepository } from './meetings.repository';
@@ -680,6 +681,18 @@ export class MeetingsService {
     return meeting;
   }
 
+  /** ТЗ Ф4 — текущий режим «Кому видно» (host-only). */
+  async getMeetingVisibility(meetingId: string, userId: string) {
+    const meeting = await this.assertMeetingHost(meetingId, userId);
+    return this.visibility.getVisibility(meeting);
+  }
+
+  /** ТЗ Ф4 — задать «Кому видно» (host-only). */
+  async setMeetingVisibility(meetingId: string, userId: string, dto: SetVisibilityBody): Promise<void> {
+    const meeting = await this.assertMeetingHost(meetingId, userId);
+    await this.visibility.setVisibility(meeting, userId, dto);
+  }
+
   async list(
     userId: string,
     tenantId: string | undefined,
@@ -1021,6 +1034,7 @@ export class MeetingsService {
       customPrompt: string | null;
       failureReason: string | null;
       cardId: string | null;
+      visibilityScope: string;
     };
     participants: Array<{
       id: string;
@@ -1088,6 +1102,7 @@ export class MeetingsService {
         customPrompt: meeting.customPrompt ?? null,
         failureReason: meeting.failureReason ?? null,
         cardId: meeting.cardId ?? null,
+        visibilityScope: meeting.visibilityScope,
       },
       participants: meeting.participants
         .filter(isPresentParticipant)

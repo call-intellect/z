@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import type { Meeting } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
@@ -128,5 +128,113 @@ export class MeetingVisibilityService {
         },
       ],
     };
+  }
+
+  /** ТЗ Ф4 — текущий режим + гранты с человекочитаемыми именами (host уже проверен вызывающим). */
+  async getVisibility(meeting: {
+    id: string;
+    tenantId: string;
+    visibilityScope: string;
+  }): Promise<{ scope: string; grants: { granteeType: string; granteeId: string; name: string }[] }> {
+    const grants = await this.prisma.meetingAccessGrant.findMany({
+      where: { meetingId: meeting.id },
+      select: { granteeType: true, granteeId: true },
+    });
+    const personIds = grants.filter((g) => g.granteeType === 'person').map((g) => g.granteeId);
+    const groupIds = grants.filter((g) => g.granteeType === 'group').map((g) => g.granteeId);
+    const [persons, groups] = await Promise.all([
+      personIds.length
+        ? this.prisma.person.findMany({ where: { id: { in: personIds } }, select: { id: true, name: true } })
+        : Promise.resolve([] as { id: string; name: string }[]),
+      groupIds.length
+        ? this.prisma.knowledgeGroup.findMany({ where: { id: { in: groupIds } }, select: { id: true, name: true } })
+        : Promise.resolve([] as { id: string; name: string }[]),
+    ]);
+    const pName = new Map(persons.map((p) => [p.id, p.name]));
+    const gName = new Map(groups.map((g) => [g.id, g.name]));
+    return {
+      scope: meeting.visibilityScope,
+      grants: grants.map((g) => ({
+        granteeType: g.granteeType,
+        granteeId: g.granteeId,
+        name:
+          g.granteeType === 'person'
+            ? pName.get(g.granteeId) ?? '—'
+            : gName.get(g.granteeId) ?? '—',
+      })),
+    };
+  }
+
+  /** ТЗ Ф4 — задать режим + (для custom) полная замена набора грантов в транзакции. */
+  async setVisibility(
+    meeting: { id: string; tenantId: string },
+    userId: string,
+    dto: {
+      scope: 'owner_only' | 'participants' | 'custom' | 'org';
+      grants?: { granteeType: 'person' | 'group'; granteeId: string }[];
+    },
+  ): Promise<void> {
+    let grants: { granteeType: 'person' | 'group'; granteeId: string }[] = [];
+    if (dto.scope === 'custom') {
+      if (!dto.grants || dto.grants.length === 0) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'grants_required_for_custom',
+            message: 'Для режима «Выбрать людей и группы» укажите хотя бы одного получателя',
+          },
+        });
+      }
+      const seen = new Set<string>();
+      grants = dto.grants.filter((g) => {
+        const k = `${g.granteeType}:${g.granteeId}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      const personIds = grants.filter((g) => g.granteeType === 'person').map((g) => g.granteeId);
+      const groupIds = grants.filter((g) => g.granteeType === 'group').map((g) => g.granteeId);
+      const [vp, vg] = await Promise.all([
+        personIds.length
+          ? this.prisma.person.findMany({
+              where: { tenantId: meeting.tenantId, id: { in: personIds }, deletedAt: null },
+              select: { id: true },
+            })
+          : Promise.resolve([] as { id: string }[]),
+        groupIds.length
+          ? this.prisma.knowledgeGroup.findMany({
+              where: { tenantId: meeting.tenantId, id: { in: groupIds } },
+              select: { id: true },
+            })
+          : Promise.resolve([] as { id: string }[]),
+      ]);
+      const vps = new Set(vp.map((p) => p.id));
+      const vgs = new Set(vg.map((g) => g.id));
+      for (const g of grants) {
+        const ok = g.granteeType === 'person' ? vps.has(g.granteeId) : vgs.has(g.granteeId);
+        if (!ok) {
+          throw new BadRequestException({
+            ok: false,
+            error: { code: 'invalid_grantee', message: 'Получатель не найден в этой компании' },
+          });
+        }
+      }
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.meeting.update({ where: { id: meeting.id }, data: { visibilityScope: dto.scope } });
+      await tx.meetingAccessGrant.deleteMany({ where: { meetingId: meeting.id } });
+      if (dto.scope === 'custom' && grants.length) {
+        await tx.meetingAccessGrant.createMany({
+          data: grants.map((g) => ({
+            tenantId: meeting.tenantId,
+            meetingId: meeting.id,
+            granteeType: g.granteeType,
+            granteeId: g.granteeId,
+            grantedById: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
   }
 }

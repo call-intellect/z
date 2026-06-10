@@ -43,6 +43,7 @@ import {
   ListMeetingsQuerySchema,
 } from './dto/list-meetings.dto';
 import type { MeetingForUserDto } from './dto/meeting-public.dto';
+import { SetVisibilitySchema, type SetVisibilityBody } from './dto/visibility.dto';
 import { HostControlsService } from './host-controls.service';
 import { MeetingsService } from './meetings.service';
 
@@ -271,6 +272,7 @@ export class MeetingsController {
       failureReason: meeting.failureReason ?? null,
       createdAt: meeting.createdAt.toISOString(),
       customPrompt: meeting.customPrompt ?? null,
+      visibilityScope: meeting.visibilityScope,
       participants: meeting.participants.map((p) => ({
         id: p.id,
         name: p.name,
@@ -342,6 +344,44 @@ export class MeetingsController {
   ): Promise<{ ok: true; status: string; failureReason: string | null }> {
     const result = await this.hostControls.finish(meetingId, user.id);
     return { ok: true, status: result.status, failureReason: result.failureReason };
+  }
+
+  // ─────────────────────────── visibility «Кому видно» (Ф4) ───────────────
+
+  /**
+   * ТЗ 2026-06-10 meeting-visibility (Ф4) — текущий режим «Кому видно» + гранты
+   * с человекочитаемыми именами (host-only).
+   *
+   *   - 403 `not_meeting_host` — actor не хост встречи;
+   *   - 404 `meeting_not_found` — встреча не найдена.
+   */
+  @Get(':id/visibility')
+  async getMeetingVisibility(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ scope: string; grants: { granteeType: string; granteeId: string; name: string }[] }> {
+    return this.meetings.getMeetingVisibility(id, user.id);
+  }
+
+  /**
+   * ТЗ 2026-06-10 meeting-visibility (Ф4) — задать режим «Кому видно» (host-only).
+   * Для scope='custom' grants — полная замена набора получателей.
+   *
+   *   - 400 `grants_required_for_custom` — scope='custom' без получателей;
+   *   - 400 `invalid_grantee` — получатель не из этой компании;
+   *   - 403 `not_meeting_host` — actor не хост встречи;
+   *   - 404 `meeting_not_found` — встреча не найдена.
+   */
+  @Patch(':id/visibility')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.OK)
+  async setMeetingVisibility(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetVisibilitySchema)) body: SetVisibilityBody,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true }> {
+    await this.meetings.setMeetingVisibility(id, user.id, body);
+    return { ok: true };
   }
 
   /**

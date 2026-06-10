@@ -85,6 +85,21 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧩 2026-06-10 — Волна 6 A7: агент-компилятор орг-документа (`compile-org-document`)
+
+> Контракт: master-prompt-fleet (Волна 6 Стадия C, A7). Ветка `feature/master-prompt-fleet-2026-06-10`.
+>
+> **Зачем для прода:** единый владелец сборки `contentMd` орг-документа (regulation/process/policy/instruction). На verdict merge/extension от `regulation-dedupe` специалист 3.1 теперь собирает структурный документ по шаблону типа (режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ, маркеры `[требует уточнения]`/`[конфликт]`/`[изменено]`, «ничего не теряй») вместо plain-update поля + инкремент `version`. Best-effort: при ошибке компилятора — fallback к существующему телу (dedupe-путь не ломается). **Миграций БД НЕТ.** **1 новая ENV (kill-switch, default ON).** **1 новый taskType.**
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `DOC_COMPILER_ENABLED` (`aiFeatures.docCompilerEnabled`, default `true`). Аварийный откат: `=false` → legacy plain-update поля. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 7 — Seed-маршрут — 1 новый, идемпотентный, в STEPS** (`phase:'seed-llm-routes'`, alias `'compile-org-document'`): `scripts/seed-llm-task-routes-compile-org-document.ts` — taskType `compile-org-document` → `deepseek-v4-pro` primary → `openai-via-proxy/gpt-5.4` → `ollama/qwen3.5:9b` (capable + tool-use). Без seed поедет по `DEFAULT_FALLBACK_CHAIN` (тоже работоспособен). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `StructuredDocumentCompilerService`, новый промпт `compile_org_document`, вызов из `Specialist31Service` на merge/extension, новый taskType; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): `/admin/ai-models` → `compile-org-document` (deepseek-v4-pro primary). После встречи с повторно-упомянутым регламентом/процессом: в логах backend нет ERROR от `structured-document-compiler`; `contentMd` существующей карточки на extension собран по структуре типа (таблица «кто-что-когда» для регламента / разделы для процесса), `version` инкрементирован.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐞 2026-06-10 — Фикс открытых багов retest3 (Ф1–Ф9, кроме #20/#24/#17/#26)
 
 > Контракт: `plans/tz/2026-06-10-bugfix-fleet-retest3.md`. Коммиты: Ф1 `e696d831` · Ф2 `a442fc37` · Ф5 `5781b43f` · Ф6 `1f035158` · Ф7 `73af1791` · Ф4 `9550d382` · Ф3 `0652c365` · Ф8 `a9289d54` · Ф9 `048be10e`.

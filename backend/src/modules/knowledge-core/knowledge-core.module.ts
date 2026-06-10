@@ -54,6 +54,7 @@ import { Specialist37Service } from './services/specialist-3-7-skill.service';
 import { Specialist39ExperimentProbeService } from './services/specialist-3-9-experiment-probe.service';
 import { Specialist39ExperimentsService } from './services/specialist-3-9-experiments.service';
 import { SpecialistsCombinedService } from './services/specialists-combined.service';
+import { StructuredDocumentCompilerService } from './services/structured-document-compiler.service';
 import { SprintHelperService } from './services/sprint-helper.service';
 import { SprintReviewService } from './services/sprint-review.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
@@ -150,6 +151,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // и процессов; Specialist31ProbeService — probe-events.
     Specialist31Service,
     Specialist31ProbeService,
+    // Волна 6 Стадия C, A7: StructuredDocumentCompilerService — агент-компилятор
+    // contentMd орг-документа (вызывается Specialist31Service на merge/extension).
+    StructuredDocumentCompilerService,
     // SBA β-2: Specialist32Service (rebuild knowledgeProfile через LLM
     // extract+merge+triage) и Specialist32ProbeService (probe-events
     // new_expertise_detected / contradiction_detected).
@@ -304,6 +308,8 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // SBA α-7: экспортируем для Worker'а и тестов.
     Specialist31Service,
     Specialist31ProbeService,
+    // Волна 6 A7: экспортируем для тестов и потребителей.
+    StructuredDocumentCompilerService,
     // SBA β-2: экспортируем — KnowledgeCloneRebuildWorker и
     // Specialist32KnowledgeCloneWorker (WorkersModule) их инжектят.
     Specialist32Service,

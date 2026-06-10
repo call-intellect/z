@@ -687,6 +687,18 @@ export class TypedConfigService {
         'CLIENT_PROTOCOL_ENABLED',
         true,
       ),
+      /**
+       * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+       * орг-документа (`compile-org-document`). При `true` (default) на verdict
+       * merge/extension от regulation-dedupe специалист 3.1 собирает
+       * структурный `contentMd` через компилятор. При `false` — legacy
+       * plain-update поля (фича не валит dedupe-путь).
+       */
+      docCompilerEnabled: this.resolveSync<boolean>(
+        'aiFeatures.docCompilerEnabled',
+        'DOC_COMPILER_ENABLED',
+        true,
+      ),
     } as const;
   }
 

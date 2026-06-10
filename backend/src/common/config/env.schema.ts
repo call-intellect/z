@@ -416,6 +416,15 @@ const AiFeatureFlagsSchema = z.object({
    * валит основной отчёт). Аварийный рубильник: фича готова и выкатывается ON.
    */
   CLIENT_PROTOCOL_ENABLED: zBool(true),
+  /**
+   * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+   * орг-документа (`compile-org-document`). При `true` (default) на verdict
+   * merge/extension от regulation-dedupe специалист 3.1 собирает структурный
+   * `contentMd` через компилятор (вместо plain-update поля). При `false` —
+   * legacy plain-update (фича не валит dedupe-путь). Аварийный рубильник: фича
+   * готова и выкатывается ON.
+   */
+  DOC_COMPILER_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */

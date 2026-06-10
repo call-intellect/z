@@ -134,6 +134,10 @@ const STEPS: Step[] = [
     // support-clone-draft (Pro capable) + support-answer-critic /
     // support-edit-classify (flash cheap judge, Б9).
     'support',
+    // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
+    // contentMd орг-документа; capable + tool-use). Без маршрута поедет по
+    // DEFAULT_FALLBACK_CHAIN; явный seed фиксирует deepseek-v4-pro primary.
+    'compile-org-document',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

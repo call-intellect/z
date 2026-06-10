@@ -578,7 +578,17 @@ export type LlmTaskType =
   // Граница D6: ноль внутренних оценок. DEFAULT-маршрут (без strict-json), за
   // kill-switch clientProtocolEnabled (дефолт ON). Cache-friendly: SYSTEM
   // статичен, диалог+участники+дата в КОНЦЕ user.
-  | 'client-meeting-split';
+  | 'client-meeting-split'
+  // Волна 6 Стадия C, A7 (2026-06-10) — structured-document-compiler.
+  // 'compile-org-document' — единый агент-компилятор `contentMd` орг-документа
+  //   (regulation/process/policy/instruction). Вызывается после
+  //   regulation-dedupe на verdict merge/extension: собирает структурный
+  //   документ по шаблону типа (режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ, маркеры) через tool
+  //   `compile_org_document` → { contentMd, steps, changeReason, signals }.
+  //   Capable модель + tool-use. Primary = deepseek-v4-pro; secondary = gpt-5.4
+  //   (proxy); tertiary = ollama qwen3.5:9b (см. seed-маршрут). За kill-switch
+  //   docCompilerEnabled (дефолт ON).
+  | 'compile-org-document';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -792,6 +802,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // Волна 4 B0 (2026-06-10) — client-meeting-split (нейтральный протокол встречи
   // наружу для клиента, free-text; DEFAULT-маршрут, за kill-switch ON).
   'client-meeting-split',
+  // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
+  // contentMd орг-документа; tool-use, capable; за kill-switch docCompilerEnabled ON).
+  'compile-org-document',
 ] as const;
 
 /**

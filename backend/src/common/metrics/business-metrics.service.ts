@@ -5197,10 +5197,15 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
-  /** Результат intent-классификации входящего текста бота (LLM или эвристика). */
+  /**
+   * Результат intent-классификации входящего текста бота (LLM или эвристика).
+   * ТЗ 2026-06-10 §2 Ф4 — добавлены значения `task` / `show_tasks` (гейт
+   * намерения перед созданием задачи): теперь метрика показывает РАСПРЕДЕЛЕНИЕ
+   * всех терминальных намерений бота, а не только chat_query/free_note.
+   */
   incBotIntentClassified(args: {
     channel: 'telegram_bot' | 'max_bot';
-    intent: 'chat_query' | 'free_note';
+    intent: 'chat_query' | 'free_note' | 'task' | 'show_tasks';
     source: 'llm' | 'heuristic';
   }): void {
     this.botIntentClassifiedTotal.inc({

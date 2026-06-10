@@ -9,7 +9,6 @@ import type { ChannelBinding, Issue } from '@prisma/client';
 import { TypedConfigService } from '../../../../common/config/index';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-import { VoxService } from '../../../ai/services/vox.service';
 import { tenantTopOf } from '../../../dialog-layer/utils/tenant-top';
 import { CommentsService } from '../../../tracker/services/comments.service';
 import { IntakeAutoTriageQueueService } from '../../../tracker/services/intake-auto-triage-queue.service';
@@ -28,19 +27,22 @@ import type {
 /**
  * Wave 3 / Tracker Phase 4 РФ (2026-05-24) — TelegramBotMessageHandler.
  *
- * «Бот для задач» поверх существующего TelegramBotChannelAdapter. Handler
- * вызывается из адаптера ПЕРЕД стандартным `free_note|chat_query` flow:
- * если сообщение распознано как task-related (создание/forward/reply на
- * наше уведомление) — handler сам его обработает и вернёт `true`. Иначе
- * адаптер продолжит обычный pipeline (intent classify → InboundMessage).
+ * «Бот для задач» поверх TelegramBotChannelAdapter.
  *
- * 4 сценария (по входящему message):
- *   1. **text**       → `parseCreateTask` → IntakeIssue (опц. auto-triage).
- *   2. **voice**      → ASR → text → parseCreateTask.
- *   3. **forward**    → `parseForwardToTask` → IntakeIssue.
- *   4. **reply** на наше уведомление с meta.relatedIssueId → `classifyReply` →
- *      status_command (transitionState) / comment (CommentsService) /
- *      new_task (parseCreateTask).
+ * ТЗ 2026-06-10 §2 (гейт намерения): раньше handler перехватывал ЛЮБОЙ
+ * непустой ввод и делал из него задачу, обходя классификатор намерения
+ * («план/вопрос» падали в IntakeIssue). Теперь handler выставляет три
+ * точки входа, а РЕШЕНИЕ принимает адаптер по классификатору:
+ *   - `tryHandleStructural` — структурные спецслучаи ДО классификации:
+ *       **forward** → `parseForwardToTask` → IntakeIssue;
+ *       **reply** на наше уведомление о задаче (meta.relatedIssueId) →
+ *       `classifyReply` → status_command / comment / new_task.
+ *   - `handleCreateTask` — создание задачи из текста, зовётся адаптером
+ *       ТОЛЬКО при intent=task (для голоса — на ASR-транскрипте).
+ *   - `handleShowTasks` — читалка «мои задачи» (intent=show_tasks, Р-6):
+ *       список открытых задач исполнителя текстом zero-button.
+ * Голос: ASR + классификацию делает адаптер (`handleVoice`); handler
+ * голос больше не транскрибирует.
  *
  * Зависимости:
  *   - TelegramTaskParserService — обязательно.
@@ -58,6 +60,55 @@ import type {
  * conversational.service). На текущем этапе не все уведомления это делают —
  * см. README sub-ТЗ §«Telegram-бот» 1.
  */
+/** Сколько задач показываем в Telegram-читалке «мои задачи» (ТЗ §2 Ф5). */
+const SHOW_TASKS_LIMIT = 10;
+
+/** Лёгкая форма открытой задачи для рендера читалки «мои задачи». */
+export interface MyTaskListItem {
+  identifier: string;
+  title: string;
+  stateName: string | null;
+  dueDate: Date | null;
+}
+
+/** Экранирование HTML (бот шлёт сообщения с parseMode=HTML). */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function shortenText(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+/**
+ * Чистый рендер списка «мои задачи» (ТЗ 2026-06-10 §2 Ф5, для unit-теста).
+ * zero-button (без inline-кнопок, по фидбеку владельца). Пусто →
+ * «Открытых задач нет»; total>limit → «…и ещё M в кабинете».
+ */
+export function renderMyTasksText(
+  items: MyTaskListItem[],
+  total: number,
+  limit: number,
+): string {
+  if (total === 0) {
+    return 'Открытых задач нет. 🎉';
+  }
+  const lines = items.map((t) => {
+    const due = t.dueDate
+      ? ` — до ${t.dueDate.toISOString().slice(0, 10)}`
+      : '';
+    return `• ${escapeHtml(shortenText(t.title, 120))}${due}`;
+  });
+  let out = `Ваши задачи (${total}):\n${lines.join('\n')}`;
+  if (total > limit) {
+    out += `\n…и ещё ${total - limit} в кабинете.`;
+  }
+  return out;
+}
+
 @Injectable()
 export class TelegramBotMessageHandler {
   private readonly logger = new Logger(TelegramBotMessageHandler.name);
@@ -71,7 +122,6 @@ export class TelegramBotMessageHandler {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TelegramApiClient) private readonly api: TelegramApiClient,
-    @Inject(VoxService) private readonly vox: VoxService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TelegramTaskParserService)
@@ -94,72 +144,41 @@ export class TelegramBotMessageHandler {
   ) {}
 
   /**
-   * Главная точка входа. Возвращает `true` если сообщение было обработано
-   * task-flow'ом и адаптер должен выйти; `false` — пусть адаптер
-   * продолжает обычный pipeline (intent classify → free_note|chat_query).
+   * Структурные спецслучаи task-flow, проверяемые адаптером ДО классификации
+   * намерения (ТЗ 2026-06-10 §2 Ф3): reply на наше уведомление о задаче +
+   * forward («преврати это в задачу»). Возвращает `true` если обработано
+   * (адаптер выходит); `false` — пусть адаптер классифицирует намерение.
    *
-   * Best-effort: ошибки внутри handler'а не пробрасываем — иначе webhook
-   * вернёт 5xx и Telegram засрёт retry'ями.
+   * ВАЖНО (фикс §2): plain text / voice здесь БОЛЬШЕ не перехватываются
+   * безусловно как задача. Раньше любой непустой ввод → IntakeIssue, минуя
+   * классификатор намерения; теперь task создаётся ТОЛЬКО при intent=task
+   * (адаптер → `handleCreateTask`), вопросы → chat_query, план/отчёт →
+   * чек-ин, «какие задачи?» → `handleShowTasks`.
+   *
+   * Best-effort: ошибки не пробрасываем — иначе webhook вернёт 5xx и
+   * Telegram засрёт retry'ями.
    */
-  async tryHandle(args: {
+  async tryHandleStructural(args: {
     msg: TelegramMessage;
     binding: ChannelBinding;
     tenantId: string;
     config: TelegramBotChannelConfig;
   }): Promise<boolean> {
     try {
-      // 4. Reply на наше уведомление — приоритет, если match есть.
+      // Reply на наше уведомление о задаче — спецслучай (раньше классификации).
       if (args.msg.reply_to_message) {
         const handled = await this.handleReply(args);
         if (handled) return true;
-        // Если не нашли related issue в нашем notification — fall-through
-        // на старый pipeline (адаптер сам попробует tryMatchReplyToProbe).
+        // Нет match'а — fall-through (адаптер попробует tryMatchReplyToProbe).
       }
 
-      // 3. Forward → IntakeIssue (telegram_forward).
+      // Forward → IntakeIssue (явное «преврати это в задачу», telegram_forward).
       if (this.isForwarded(args.msg)) {
         await this.handleForward(args);
         return true;
       }
 
-      // 2. Voice → ASR → text → как create_task.
-      const voice = args.msg.voice ?? args.msg.audio;
-      if (voice && this.cfg.bot.voiceEnabled) {
-        const transcript = await this.transcribeVoice({
-          fileId: voice.file_id,
-          token: args.config.botToken,
-        });
-        if (!transcript) {
-          await this.replyBestEffort({
-            config: args.config,
-            chatId: args.msg.chat.id,
-            text: 'Не удалось распознать голос. Попробуйте текстом.',
-          });
-          return true;
-        }
-        this.metrics.incTelegramVoiceTranscribed({
-          tenantTop: tenantTopOf(args.tenantId),
-          kind: 'create_task',
-        });
-        await this.handleCreateTaskFromText({
-          ...args,
-          text: transcript,
-          externalId: `${args.msg.chat.id}:${args.msg.message_id}`,
-        });
-        return true;
-      }
-
-      // 1. Plain text → create_task.
-      const text = (args.msg.text ?? args.msg.caption ?? '').trim();
-      if (text.length > 0) {
-        await this.handleCreateTaskFromText({
-          ...args,
-          text,
-          externalId: `${args.msg.chat.id}:${args.msg.message_id}`,
-        });
-        return true;
-      }
-
+      // Plain text / voice НЕ перехватываем — их классифицирует адаптер.
       return false;
     } catch (err) {
       this.logger.error(
@@ -167,17 +186,45 @@ export class TelegramBotMessageHandler {
           tenantId: args.tenantId,
           err: err instanceof Error ? err.message : String(err),
         },
-        'telegram-bot-message-handler: fatal — best-effort skip',
+        'telegram-bot-message-handler: tryHandleStructural fatal — best-effort skip',
       );
-      this.metrics.incTelegramTasksCreated({
-        tenantTop: tenantTopOf(args.tenantId),
-        status: 'failed',
-      });
       return false;
     }
   }
 
   // ─────────────────────── 1+2. create from text/voice ────────────────────
+
+  /**
+   * ТЗ 2026-06-10 §2 Ф3 — создание задачи из текста. Зовётся адаптером, когда
+   * классификатор вернул intent=task (для голоса — на ASR-транскрипте). Раньше
+   * эта логика срабатывала безусловно на ЛЮБОЙ непустой ввод (баг §2 — гейт
+   * намерения обходился); теперь — только по явному намерению. Best-effort:
+   * ошибки не пробрасываем (webhook не должен вернуть 5xx).
+   */
+  async handleCreateTask(args: {
+    msg: TelegramMessage;
+    binding: ChannelBinding;
+    tenantId: string;
+    config: TelegramBotChannelConfig;
+    text: string;
+    externalId: string;
+  }): Promise<void> {
+    try {
+      await this.handleCreateTaskFromText(args);
+    } catch (err) {
+      this.logger.error(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram-bot-message-handler: handleCreateTask fatal — best-effort skip',
+      );
+      this.metrics.incTelegramTasksCreated({
+        tenantTop: tenantTopOf(args.tenantId),
+        status: 'failed',
+      });
+    }
+  }
 
   private async handleCreateTaskFromText(args: {
     msg: TelegramMessage;
@@ -198,6 +245,56 @@ export class TelegramBotMessageHandler {
       parsed,
       origin: 'create',
     });
+  }
+
+  // ─────────────────────── 5. show my tasks (Р-6) ────────────────────────
+
+  /**
+   * ТЗ 2026-06-10 §2 Ф5 (Р-6) — читалка «мои задачи». Зовётся адаптером при
+   * intent=show_tasks. Список ОТКРЫТЫХ задач исполнителя (по `binding.userId`)
+   * из трекера, рендер текстом zero-button (без inline-кнопок, фидбек
+   * владельца). Если трекер не подключён (degraded) — мягкий ответ.
+   * Best-effort: ошибки не пробрасываем.
+   */
+  async handleShowTasks(args: {
+    msg: TelegramMessage;
+    binding: ChannelBinding;
+    tenantId: string;
+    config: TelegramBotChannelConfig;
+  }): Promise<void> {
+    if (!this.issuesService) {
+      await this.replyBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text: 'Не получается показать задачи прямо сейчас. Откройте раздел «Задачи» в кабинете.',
+      });
+      return;
+    }
+    try {
+      const { items, total } = await this.issuesService.listOpenForAssignee({
+        tenantId: args.tenantId,
+        userId: args.binding.userId,
+        limit: SHOW_TASKS_LIMIT,
+      });
+      await this.replyBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text: renderMyTasksText(items, total, SHOW_TASKS_LIMIT),
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'telegram-bot-message-handler: handleShowTasks упал',
+      );
+      await this.replyBestEffort({
+        config: args.config,
+        chatId: args.msg.chat.id,
+        text: 'Не удалось получить список задач. Попробуйте ещё раз.',
+      });
+    }
   }
 
   // ─────────────────────── 3. forward → IntakeIssue ───────────────────────
@@ -577,37 +674,7 @@ export class TelegramBotMessageHandler {
     });
   }
 
-  // ─────────────────────── helpers: voice + telegram ─────────────────────
-
-  /**
-   * Скачивает voice file через TelegramApi и пропускает через VoxService.
-   * Возвращает transcript или null на любую ошибку.
-   */
-  private async transcribeVoice(args: {
-    fileId: string;
-    token: string;
-  }): Promise<string | null> {
-    try {
-      const file = await this.api.getFile({
-        token: args.token,
-        fileId: args.fileId,
-      });
-      if (!file.file_path) return null;
-      const buffer = await this.api.downloadFile({
-        token: args.token,
-        filePath: file.file_path,
-      });
-      const submitted = await this.vox.submit(buffer);
-      const result = await this.vox.poll(submitted.taskId);
-      return (result.transcriptText ?? '').trim() || null;
-    } catch (err) {
-      this.logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'telegram-bot-message-handler: transcribeVoice упал',
-      );
-      return null;
-    }
-  }
+  // ─────────────────────── helpers: telegram ─────────────────────────────
 
   private isForwarded(msg: TelegramMessage): boolean {
     // Telegram Bot API: новые версии используют `forward_origin`, старые —

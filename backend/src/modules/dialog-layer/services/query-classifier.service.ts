@@ -29,7 +29,8 @@ import {
  *     резерв.
  *
  * Intent ∈ { factual | exploratory | analytical | clone_roleplay |
- *            daily_plan_morning | daily_report_evening | note }.
+ *            daily_plan_morning | daily_report_evening | note | task |
+ *            show_tasks }.
  */
 
 export type DialogIntent =
@@ -39,7 +40,12 @@ export type DialogIntent =
   | 'clone_roleplay'
   | 'daily_plan_morning'
   | 'daily_report_evening'
-  | 'note';
+  | 'note'
+  // ТЗ 2026-06-10 §2 — Telegram-бот: поставить задачу / показать мои задачи.
+  // В web chat-v2 эти intent'ы сводятся к 'factual' (narrowToChatIntent) —
+  // обычный запрос, без регрессии. Перехватываются только в bot-адаптере.
+  | 'task'
+  | 'show_tasks';
 
 /**
  * Узкий подтип «классические chat-интенты» — 4 категории, на которые
@@ -60,12 +66,13 @@ export type ChatDialogIntent =
   | 'clone_roleplay';
 
 /**
- * Сужает 7-категорийный DialogIntent до 4-категорийного ChatDialogIntent
- * для legacy-потребителей. Новые intent'ы (daily_plan_morning /
- * daily_report_evening / note) маппятся в 'factual' — это безопасный
- * дефолт для chat-pipeline'а (не выбирает агрессивный режим типа
- * analytical/judgmental). На практике bot-adapter перехватывает 3 новых
- * intent'а раньше, и они никогда не доходят до chat-v2/clones.
+ * Сужает 9-категорийный DialogIntent до 4-категорийного ChatDialogIntent
+ * для legacy-потребителей. Не-chat intent'ы (daily_plan_morning /
+ * daily_report_evening / note / task / show_tasks) маппятся в 'factual' —
+ * это безопасный дефолт для chat-pipeline'а (не выбирает агрессивный режим
+ * типа analytical/judgmental). На практике bot-adapter перехватывает эти
+ * intent'ы раньше, и они никогда не доходят до chat-v2/clones (web —
+ * без регрессии: task/show_tasks в вебе = обычный запрос → factual).
  */
 export function narrowToChatIntent(intent: DialogIntent): ChatDialogIntent {
   switch (intent) {
@@ -333,7 +340,20 @@ function mapRawIntent(raw: string): DialogIntent | null {
     case 'daily_plan_morning':
     case 'daily_report_evening':
     case 'note':
+    case 'task':
+    case 'show_tasks':
       return raw;
+    // task-alias'ы (ТЗ 2026-06-10 §2)
+    case 'create_task':
+    case 'new_task':
+    case 'todo':
+      return 'task';
+    // show_tasks-alias'ы
+    case 'list_tasks':
+    case 'my_tasks':
+    case 'show_my_tasks':
+    case 'tasks':
+      return 'show_tasks';
     // clone alias'ы (legacy)
     case 'clone-roleplay':
     case 'clone style':

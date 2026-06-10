@@ -325,6 +325,51 @@ export class PersonsService {
         });
       }
     }
+    // ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф4 — дружелюбный дедуп по email
+    // ДО вставки (поверх partial unique persons_tenant_email_active_uniq из Ф2).
+    // Сравнение по lower(email) (как в индексе) через $queryRaw — wildcard-safe
+    // (Prisma mode:insensitive дал бы ILIKE, где '_' в email трактуется как wildcard).
+    const dedupEmail = args.body.email?.trim();
+    if (dedupEmail) {
+      const byEmailRows = await this.prisma.$queryRaw<
+        Array<{ id: string; userId: string | null }>
+      >`
+        SELECT "id", "userId" FROM "persons"
+        WHERE "tenantId" = ${args.tenantId}
+          AND "deletedAt" IS NULL
+          AND lower("email") = lower(${dedupEmail})
+        LIMIT 1
+      `;
+      const byEmail = byEmailRows[0] ?? null;
+      if (byEmail) {
+        // Линковка: задан linkUserId и найдена безличная карточка (userId=null).
+        if (args.body.linkUserId && byEmail.userId === null) {
+          await this.prisma.person.update({
+            where: { id: byEmail.id },
+            data: { userId: args.body.linkUserId },
+          });
+          void this.audit.log({
+            userId: args.userId,
+            action: 'person.linked_by_email',
+            resourceId: byEmail.id,
+            metadata: {
+              tenantId: args.tenantId,
+              email: dedupEmail,
+              linkUserId: args.body.linkUserId,
+            },
+          });
+          return this.get({ tenantId: args.tenantId, id: byEmail.id });
+        }
+        // Иначе карточка с этим email уже есть → понятный 409 (Р3).
+        throw new ConflictException({
+          ok: false,
+          error: {
+            code: 'person_email_taken',
+            message: 'Сотрудник с таким email уже есть в компании',
+          },
+        });
+      }
+    }
     const now = new Date();
     try {
       const personId = await this.prisma.$transaction(async (tx) => {

@@ -84,7 +84,7 @@
 **Prod-deploy:** Шаг 8.
 **Риск:** средний (трогает прод-карточки) → строго soft-delete, обогащение только в null, dry-run для предпросмотра, перед прогоном — авто-бэкап schema-фазы.
 
-### Ф4 — Дедуп при создании `Person`
+### Ф4 — Дедуп при создании `Person` ✅
 **Файл:** `backend/src/modules/persons/services/persons.service.ts` (`create` ~292; при необходимости `quickCreate`/`createBatch`).
 **Изменения:** до вставки, если `email` задан, искать активную `Person` по `(tenantId, email)` (insensitive):
 - ручное создание и нашлась → 409 `person_email_taken` (Р3);

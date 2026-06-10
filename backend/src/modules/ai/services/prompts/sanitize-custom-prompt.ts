@@ -50,6 +50,17 @@ export const FORBIDDEN_PATTERNS: ReadonlyArray<{
   { id: 'chatml_tokens', regex: /<\|im_start\|>|<\|im_end\|>/ },
   // Двойные скобки `[[system]]` / `[[ system ]]`
   { id: 'bracket_system', regex: /\[\[\s*system\s*\]\]/i },
+  // Рус. ролевая инъекция: «действуй как», «веди себя как», «ты теперь», «представь что ты»
+  {
+    id: 'act_as_ru',
+    regex: /(?:действуй|веди\s+себя|отвечай)\s+как\s+|представь[,\s]+что\s+ты\s+|ты\s+(?:теперь|больше\s+не)\s+/i,
+  },
+  // Рус. «новая инструкция / новые инструкции»
+  { id: 'new_instruction_ru', regex: /нов(?:ая|ые)\s+инструкци/i },
+  // Code-fence с попыткой подделать роль (```...system:/assistant:)
+  { id: 'code_fence_role', regex: /(?:```|~~~)[\s\S]{0,40}(?:system|assistant|user)\s*:/i },
+  // XML role-маркеры: <system>, </instructions>, <prompt> и т.п.
+  { id: 'xml_role_tag', regex: /<\/?(?:system|assistant|instructions?|prompt)\s*>/i },
 ];
 
 /**

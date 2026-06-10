@@ -47,4 +47,11 @@ describe('withGlossary', () => {
     expect(out).toMatch(/\n- Decision —/);
     expect(out).toMatch(/\n- Regulation —/);
   });
+
+  it('process-discriminator (A0.4) — известный ключ, подмешивается определение', () => {
+    const out = withGlossary(SYSTEM, ['process-discriminator']);
+    expect(out).toContain('Глоссарий бизнес-терминов:');
+    expect(out).toContain('Процесс/норма —');
+    expect(out).toContain('Разовое НЕ создаёт регламент');
+  });
 });

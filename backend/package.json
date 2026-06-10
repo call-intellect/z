@@ -13,6 +13,7 @@
     "start": "bun dist/main.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
+    "lint:input-guards": "bun run scripts/lint-input-guards.ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "test:unit": "vitest run src",
     "test:integration": "vitest run test/integration",

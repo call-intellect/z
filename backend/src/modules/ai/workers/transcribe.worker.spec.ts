@@ -176,6 +176,8 @@ function makeWorker(opts: {
   const cfg = {
     ai: { vox: { model: 'v3_rnnt', pollIntervalMs: 5000, pollMaxAttempts: 180 } },
     s3: { bucket: 'bucket' },
+    // #74 — порог «битого» аудио (AdminSetting); в тесте отдаём default.
+    getDynamic: vi.fn(async (_k: string, _e: unknown, d: number) => d),
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
 
@@ -364,6 +366,46 @@ describe('TranscribeWorker.process', () => {
     expect(deps.poll).toHaveBeenCalledTimes(2);
     expect(deps.upsert).toHaveBeenCalledTimes(1);
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
+  });
+
+  it('#74: пустой результат + малое аудио (битое) → ОДИН ре-submit свежей задачи', async () => {
+    const empty = {
+      status: 'COMPLETED' as const,
+      transcriptText: '',
+      durationSeconds: 0,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => empty,
+    });
+    // getObject по умолчанию даёт 11 байт (< minAudioBytes 1024) → битое.
+    await run(worker);
+
+    // initial submit + один ре-submit = 2; poll вызван дважды.
+    expect(deps.submit).toHaveBeenCalledTimes(2);
+    expect(deps.poll).toHaveBeenCalledTimes(2);
+  });
+
+  it('#74: пустой результат, но аудио не малое и dur>0 (тишина) → БЕЗ ре-submit', async () => {
+    const silent = {
+      status: 'COMPLETED' as const,
+      transcriptText: '',
+      durationSeconds: 120,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => silent,
+    });
+    // большое аудио (> minAudioBytes) + ненулевая длительность → не битое.
+    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(
+      Buffer.alloc(5000),
+    );
+    await run(worker);
+
+    expect(deps.submit).toHaveBeenCalledTimes(1);
+    expect(deps.poll).toHaveBeenCalledTimes(1);
   });
 
   it('merge ровно один раз только когда ВСЕ дорожки успешны', async () => {

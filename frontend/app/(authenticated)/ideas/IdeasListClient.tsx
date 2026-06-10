@@ -621,7 +621,8 @@ function IdeasMasterDetail({
 
 // ──────────────────────────── Деталь идеи ──────────────────────────────────
 
-function IdeaDetailPane({
+// #80 — экспортируется для отдельного роута /ideas/[id] (deep-link из виджетов).
+export function IdeaDetailPane({
   idea,
   onUpdated,
   onListChanged,

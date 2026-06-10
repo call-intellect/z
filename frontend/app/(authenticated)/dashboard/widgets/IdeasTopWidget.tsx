@@ -6,7 +6,7 @@ import useSWR from 'swr';
 
 import { ideasApi } from '@/api/ideas.api';
 import { useAuth } from '@/contexts/auth-context';
-import { IDEA_KIND_LABEL, IDEA_STATUS_LABEL } from '@/domain/idea';
+import { ideaHref, IDEA_KIND_LABEL, IDEA_STATUS_LABEL } from '@/domain/idea';
 import {
   CardTitle,
   CHART,
@@ -68,7 +68,7 @@ export function IdeasTopWidget() {
             {items.map((idea) => (
               <li key={idea.id}>
                 <Link
-                  href={`/ideas/${encodeURIComponent(idea.id)}`}
+                  href={ideaHref(idea.id)}
                   className="block rounded-xl px-3 py-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
                 >
                   <p

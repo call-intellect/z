@@ -130,14 +130,18 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'regulation' && draft.kind !== 'standard') {
-      // LLM решила, что блок — про process / policy. Делегируем соответствующий
-      // путь. Это рассматривается как «misrouted» сигнал, но не failure.
+      // LLM решила, что блок — про process / policy / instruction. Делегируем
+      // соответствующий путь. Это «misrouted» сигнал, но не failure.
       if (draft.kind === 'process') {
         await this.upsertProcess(block, draft);
         return;
       }
       if (draft.kind === 'policy') {
         await this.upsertPolicy(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -157,13 +161,17 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'process') {
-      // LLM думает иначе. Если regulation/policy/standard — делегируем.
+      // LLM думает иначе. Если regulation/policy/standard/instruction — делегируем.
       if (draft.kind === 'regulation' || draft.kind === 'standard') {
         await this.upsertRegulation(block, draft);
         return;
       }
       if (draft.kind === 'policy') {
         await this.upsertPolicy(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -191,6 +199,10 @@ export class Specialist31Service {
       }
       if (draft.kind === 'process') {
         await this.upsertProcess(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -824,6 +836,156 @@ export class Specialist31Service {
     }
   }
 
+  /**
+   * A12 (Волна 6) — upsert инструкции (kind='instruction') в ОТДЕЛЬНУЮ таблицу
+   * `instructions` (НЕ regulations). Инструкция — пошаговое «как сделать X» для
+   * ОДНОЙ роли (single-role). Зеркалит upsertProcess по структуре, но проще:
+   * без KNN-дедуп-арбитра и без curation-triage (Instruction не входит в
+   * RBAC resourceType триажа regulation/process/policy — версии/триаж
+   * инструкций добавятся следующей волной). Upsert идемпотентен по
+   * (tenantId, name).
+   *
+   * Маппинг A12-полей:
+   *   - extractionStatus → status (ProcessStatus): «существует» → active;
+   *     «нужен»/«обсуждается» → deprecated (ближайший не-active статус в enum
+   *     ProcessStatus, у которого нет 'draft'/'proposed' — deprecated означает
+   *     «ещё/уже не действующий»).
+   *   - roles[0] (или scope 'role:<id>') → forRole.
+   *   - roles → personSubjectIds НЕ кладём (roles — это должности, не Person'ы);
+   *     personSubjectIds резолвятся из упомянутых в блоке Person-entity, как у
+   *     остальных типов.
+   */
+  private async upsertInstruction(
+    block: IdeaBlock,
+    draft: RegulationDraft,
+  ): Promise<void> {
+    try {
+      const ownerPersonId = await this.resolveOwnerPersonHint(
+        block.tenantId,
+        draft.ownerHint,
+      );
+      const sourceBlockIds = [block.id];
+      const personSubjectIds = await this.resolvePersonSubjects(block.id);
+      const dcRes = this.deriveDataClassForPersist({
+        blockId: block.id,
+        blockDataClass: block.dataClass,
+        kind: 'process',
+      });
+
+      const forRole = this.deriveForRole(draft);
+      const status = this.mapExtractionStatusToProcessStatus(
+        draft.extractionStatus,
+      );
+
+      const instruction = await this.prisma.instruction.upsert({
+        where: {
+          tenantId_name: { tenantId: block.tenantId, name: draft.name },
+        },
+        update: {
+          contentMd: draft.statement,
+          statement: draft.statement,
+          scope: draft.scope ?? undefined,
+          forRole: forRole ?? undefined,
+          status,
+          ownerPersonId: ownerPersonId ?? undefined,
+          sourceBlockIds: { set: this.union(sourceBlockIds, []) },
+          personSubjectIds: { set: this.union(personSubjectIds, []) },
+          dataClass: dcRes.dataClass,
+          dataClassAudit: dcRes.dataClassAudit,
+          confidence: draft.confidence ?? null,
+        },
+        create: {
+          tenantId: block.tenantId,
+          name: draft.name,
+          contentMd: draft.statement,
+          statement: draft.statement,
+          scope: draft.scope ?? null,
+          forRole: forRole ?? null,
+          status,
+          ownerPersonId: ownerPersonId ?? null,
+          sourceBlockIds,
+          personSubjectIds,
+          dataClass: dcRes.dataClass,
+          dataClassAudit: dcRes.dataClassAudit,
+          confidence: draft.confidence ?? null,
+        },
+      });
+
+      // Эмбеддинг (best-effort) — для будущего KNN-дедупа инструкций.
+      await this.tryWriteInstructionEmbedding({
+        id: instruction.id,
+        text: `${draft.name} ${draft.statement}`,
+      });
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'regulation',
+        reason: 'db_error',
+      });
+      this.logger.error(
+        {
+          blockId: block.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-1.upsertInstruction: внутренняя ошибка — пропускаю блок',
+      );
+    }
+  }
+
+  /**
+   * A12 — выбор forRole для инструкции: из scope вида 'role:<id>' (приоритет),
+   * иначе первая роль из draft.roles. Возвращает строку ≤120 символов (лимит
+   * Instruction.forRole в схеме) или null.
+   */
+  private deriveForRole(draft: RegulationDraft): string | null {
+    const scope = draft.scope?.trim();
+    if (scope && scope.startsWith('role:')) {
+      const id = scope.slice('role:'.length).trim();
+      if (id) return id.slice(0, 120);
+    }
+    const first = draft.roles?.find((r) => r && r.trim().length > 0)?.trim();
+    return first ? first.slice(0, 120) : null;
+  }
+
+  /**
+   * A12 — маппинг extractionStatus (русские ярлыки LLM) → ProcessStatus:
+   *   «существует» → active; «нужен»/«обсуждается» → deprecated; null → active.
+   */
+  private mapExtractionStatusToProcessStatus(
+    s: RegulationDraft['extractionStatus'],
+  ): 'active' | 'deprecated' {
+    return s === 'нужен' || s === 'обсуждается' ? 'deprecated' : 'active';
+  }
+
+  /**
+   * A12 — embedding для Instruction (best-effort). Отдельный метод, т.к.
+   * tableMap в tryWriteEmbedding покрывает только regulation/process/policy.
+   */
+  private async tryWriteInstructionEmbedding(args: {
+    id: string;
+    text: string;
+  }): Promise<void> {
+    try {
+      const text = args.text.trim().slice(0, 2_000);
+      if (!text) return;
+      const vec = await this.embedder.embedQuery(text);
+      if (!vec) return;
+      const vecStr = `[${vec.join(',')}]`;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "instructions" SET "embedding" = $1::vector WHERE "id" = $2`,
+        vecStr,
+        args.id,
+      );
+    } catch (err) {
+      this.logger.debug(
+        {
+          id: args.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-1.tryWriteInstructionEmbedding: пропускаю (best-effort)',
+      );
+    }
+  }
+
   // ──────────────────────── helpers ────────────────────────
 
   /**
@@ -1382,7 +1544,7 @@ export class Specialist31Service {
 // ──────────────────────── shared types ────────────────────────
 
 export interface RegulationDraft {
-  kind: 'regulation' | 'process' | 'policy' | 'standard';
+  kind: 'regulation' | 'process' | 'policy' | 'standard' | 'instruction';
   name: string;
   statement: string;
   scope?: string | null;
@@ -1402,6 +1564,12 @@ export interface RegulationDraft {
     stepOrder?: number | null;
     stepDescription?: string | null;
   } | null;
+  /** A12 (Волна 6) — статус существования документа (русские ярлыки LLM). */
+  extractionStatus?: 'существует' | 'нужен' | 'обсуждается' | null;
+  /** A12 — роли/должности, которых касается норма. Для instruction — исполнитель. */
+  roles?: string[];
+  /** A12 — дословная опора из блока (≤15-20 слов). */
+  evidenceQuote?: string | null;
   confidence: number;
 }
 

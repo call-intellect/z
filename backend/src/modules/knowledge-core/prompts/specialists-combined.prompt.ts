@@ -31,7 +31,10 @@
 import { z } from 'zod';
 
 import type { LlmTool } from '../../ai/services/llm.types';
-import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+import {
+  EXTRACTION_STATUS_RU,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 
 // ──────────────────────────── Метаданные ────────────────────────────
 
@@ -127,10 +130,18 @@ export type ExperimentDraft = z.infer<typeof ExperimentDraftSchema>;
 export const RegulationDraftSchema = z
   .object({
     sourceBlockId: z.string().min(1),
-    kind: z.enum(['regulation', 'process', 'policy', 'standard']),
+    kind: z.enum(['regulation', 'process', 'policy', 'standard', 'instruction']),
     name: z.string().min(1),
     statement: z.string().min(1),
     severity: z.enum(['advisory', 'mandatory', 'blocking']).optional(),
+    // A12 (Волна 6) — извлечение «Инструкции». Все опциональные/nullable:
+    // обратная совместимость со старыми моделями, которые их не вернут.
+    extractionStatus: z
+      .enum(['существует', 'нужен', 'обсуждается'])
+      .nullable()
+      .optional(),
+    roles: z.array(z.string()).optional(),
+    evidenceQuote: z.string().nullable().optional(),
     confidence: Confidence01,
   })
   .strict();
@@ -361,7 +372,13 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
             sourceBlockId: { type: 'string' },
             kind: {
               type: 'string',
-              enum: ['regulation', 'process', 'policy', 'standard'],
+              enum: [
+                'regulation',
+                'process',
+                'policy',
+                'standard',
+                'instruction',
+              ],
             },
             name: { type: 'string' },
             statement: { type: 'string' },
@@ -369,6 +386,12 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
               type: 'string',
               enum: ['advisory', 'mandatory', 'blocking'],
             },
+            extractionStatus: {
+              type: ['string', 'null'],
+              enum: [null, 'существует', 'нужен', 'обсуждается'],
+            },
+            roles: { type: 'array', items: { type: 'string' } },
+            evidenceQuote: { type: ['string', 'null'] },
             confidence: { type: 'number' },
           },
         },
@@ -476,6 +499,11 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '',
     'Не выдумывай факты вне блоков. sourceBlockId обязательно для всех сущностей кроме knowledge_categories/skill_traits (там — список sourceBlockIds[]). Все строки на русском.',
     '',
+    'regulations — различай kind:',
+    '- regulation — формальное правило/норматив компании; process — последовательность шагов СКВОЗЬ несколько ролей (есть передача работы между ролями); policy — политика со строгостью; standard — внешний стандарт (ISO и т.п.);',
+    '- instruction — пошаговое «как сделать X» для ОДНОЙ роли (single-role): все шаги выполняет один исполнитель/должность, передачи работы между ролями НЕТ (например, «как менеджеру оформить возврат»). Если работа передаётся между ролями — это process, НЕ instruction. Для instruction заполни roles (затронутая роль).',
+    `- extractionStatus (статус существования документа): ${EXTRACTION_STATUS_RU.join(' | ')}. «существует» — документ уже есть и действует; «нужен» — заявлена потребность, документа ещё нет; «обсуждается» — не финализирован. Извлечённый из разговора ≠ подтверждённый: не ставь «существует» только потому, что тему упомянули.`,
+    '- roles — список ролей/должностей, которых касается норма; evidenceQuote — дословная опора (≤15-20 слов).',
     'regulations — чего НЕ извлекать как орг-документ:',
     '- чужие практики (как делают у конкурентов / в Google / «в больших компаниях») — это не регламент компании;',
     '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',

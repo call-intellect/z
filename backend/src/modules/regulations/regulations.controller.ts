@@ -214,6 +214,7 @@ export class RegulationsController {
   private mapKindToResourceType(kind: RegulationKindDto): ResourceType {
     if (kind === 'process') return 'process';
     if (kind === 'policy') return 'policy';
+    if (kind === 'instruction') return 'instruction';
     return 'regulation';
   }
 
@@ -243,6 +244,7 @@ export class RegulationsController {
       this.rbac.canRead(userId, tenantId, 'regulation'),
       this.rbac.canRead(userId, tenantId, 'process'),
       this.rbac.canRead(userId, tenantId, 'policy'),
+      this.rbac.canRead(userId, tenantId, 'instruction'),
     ]);
     if (!checks.some(Boolean)) {
       throw new ForbiddenException({

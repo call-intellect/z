@@ -120,6 +120,9 @@ export class RegulationsService {
     if (q.kind === 'policy') {
       return this.listPolicies({ ...args, skip, take });
     }
+    if (q.kind === 'instruction') {
+      return this.listInstructions({ ...args, skip, take });
+    }
     if (q.kind === 'regulation' || q.kind === 'standard') {
       return this.listRegulations({ ...args, skip, take, restrictCategory: q.kind });
     }
@@ -295,6 +298,43 @@ export class RegulationsService {
     };
   }
 
+  /**
+   * A12 (Волна 6) — список инструкций (отдельная таблица `instructions`).
+   * Маппинг в тот же RegulationListItem-shape (kind='instruction'). Версии
+   * инструкций (CardVersion) пока не пишутся специалистом 3.1 →
+   * trustTier='human' по умолчанию. Гейт доступа (Ф6) применяется так же,
+   * как к regulation/process/policy.
+   */
+  private async listInstructions(args: {
+    tenantId: string;
+    userId?: string;
+    query: ListRegulationsQuery;
+    skip: number;
+    take: number;
+  }): Promise<ListRegulationsResponse> {
+    const where = this.instructionsWhere(args.tenantId, args.query);
+    const [items, total] = await Promise.all([
+      this.prisma.instruction.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip: args.skip,
+        take: args.take,
+      }),
+      this.prisma.instruction.count({ where }),
+    ]);
+    const visible = await this.gateProjections(items, {
+      tenantId: args.tenantId,
+      userId: args.userId,
+    });
+    return {
+      items: visible.map((i) => this.instructionToListItem(i)),
+      total,
+      page: args.query.page,
+      limit: args.query.limit,
+      totalPages: Math.max(1, Math.ceil(total / args.query.limit)),
+    };
+  }
+
   // ───────────────────────────── get by id ─────────────────────────────
 
   async getByIdAndKind(args: {
@@ -321,6 +361,13 @@ export class RegulationsService {
       if (!policy) this.notFound(args.kind, args.id);
       return this.policyToDetail(policy, policy.currentVersion?.trustTier ?? 'human');
     }
+    if (args.kind === 'instruction') {
+      const instruction = await this.prisma.instruction.findFirst({
+        where: { id: args.id, tenantId: args.tenantId },
+      });
+      if (!instruction) this.notFound(args.kind, args.id);
+      return this.instructionToDetail(instruction);
+    }
     // regulation / standard
     const reg = await this.prisma.regulation.findFirst({
       where: {
@@ -343,6 +390,10 @@ export class RegulationsService {
     id: string;
     kind: RegulationKindDto;
   }): Promise<RegulationHistoryResponse> {
+    // A12 — версии инструкций (CardVersion) пока не пишутся специалистом 3.1.
+    // Возвращаем пустую timeline вместо чтения по resourceType='regulation'
+    // (которое дало бы чужие версии или пусто). История инструкций — след. волна.
+    if (args.kind === 'instruction') return { items: [] };
     const resourceType = this.resourceTypeForKind(args.kind);
     const versions = await this.prisma.cardVersion.findMany({
       where: {
@@ -448,6 +499,18 @@ export class RegulationsService {
       });
       return { ok: true, lastConfirmedAt: now.toISOString() };
     }
+    if (args.body.kind === 'instruction') {
+      const exists = await this.prisma.instruction.findFirst({
+        where: { id: args.id, tenantId: args.tenantId },
+        select: { id: true },
+      });
+      if (!exists) this.notFound(args.body.kind, args.id);
+      await this.prisma.instruction.update({
+        where: { id: args.id },
+        data: { lastConfirmedAt: now },
+      });
+      return { ok: true, lastConfirmedAt: now.toISOString() };
+    }
     // regulation / standard
     const exists = await this.prisma.regulation.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
@@ -474,6 +537,19 @@ export class RegulationsService {
     reason?: string;
     actorUserId: string;
   }): Promise<{ ok: true }> {
+    // A12 — dispute/correct для инструкций идут через ту же инфру версий
+    // (CurationItem/CardVersion) — отложено на следующую волну (нет triage
+    // инструкций). Явный отказ вместо неверного 404 из regulation-ветки.
+    if (args.kind === 'instruction') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'instruction_action_unsupported',
+          message:
+            'Оспаривание/исправление инструкций появится в следующей версии.',
+        },
+      });
+    }
     await this.findByKind(args.tenantId, args.id, args.kind);
     await this.curation.recordDecision({
       tenantId: args.tenantId,
@@ -506,6 +582,17 @@ export class RegulationsService {
     actorUserId: string;
     canApplyDirectly: boolean;
   }): Promise<{ ok: true; applied: boolean }> {
+    // A12 — исправление инструкций (через CardVersion) отложено на след. волну.
+    if (args.kind === 'instruction') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'instruction_action_unsupported',
+          message:
+            'Исправление инструкций появится в следующей версии.',
+        },
+      });
+    }
     const existing = await this.findByKind(args.tenantId, args.id, args.kind);
     const resourceType = this.kindToResourceType(args.kind);
 
@@ -808,6 +895,23 @@ export class RegulationsService {
     return where;
   }
 
+  private instructionsWhere(
+    tenantId: string,
+    q: ListRegulationsQuery,
+  ): Prisma.InstructionWhereInput {
+    const where: Prisma.InstructionWhereInput = { tenantId };
+    if (q.status) where.status = q.status;
+    if (q.scope) where.scope = { contains: q.scope, mode: 'insensitive' };
+    if (q.q) {
+      where.OR = [
+        { name: { contains: q.q, mode: 'insensitive' } },
+        { contentMd: { contains: q.q, mode: 'insensitive' } },
+        { statement: { contains: q.q, mode: 'insensitive' } },
+      ];
+    }
+    return where;
+  }
+
   // mappers
 
   private regulationToListItem(
@@ -879,6 +983,46 @@ export class RegulationsService {
       lastConfirmedAt: p.lastConfirmedAt ? p.lastConfirmedAt.toISOString() : null,
       updatedAt: p.updatedAt.toISOString(),
       createdAt: p.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * A12 (Волна 6) — маппер Instruction → RegulationListItem-shape.
+   * status → extractionStatus: active→exists; deprecated/archived→discussed.
+   * trustTier='human' (версии инструкций пока не пишутся).
+   */
+  private instructionToListItem(
+    i: NonNullable<Awaited<ReturnType<PrismaService['instruction']['findFirst']>>>,
+  ): RegulationListItemDto {
+    return {
+      id: i.id,
+      kind: 'instruction',
+      name: i.name,
+      statement: i.statement ?? i.contentMd ?? null,
+      category: null,
+      severity: null,
+      scope: i.scope ?? null,
+      status: i.status,
+      ownerPersonId: i.ownerPersonId ?? null,
+      confidence: i.confidence ?? null,
+      extractionStatus: i.status === 'active' ? 'exists' : 'discussed',
+      forRole: i.forRole ?? null,
+      trustTier: 'human',
+      lastConfirmedAt: i.lastConfirmedAt ? i.lastConfirmedAt.toISOString() : null,
+      updatedAt: i.updatedAt.toISOString(),
+      createdAt: i.createdAt.toISOString(),
+    };
+  }
+
+  private instructionToDetail(
+    i: NonNullable<Awaited<ReturnType<PrismaService['instruction']['findFirst']>>>,
+  ): RegulationDetailDto {
+    return {
+      ...this.instructionToListItem(i),
+      contentMd: i.contentMd,
+      sourceBlockIds: i.sourceBlockIds,
+      personSubjectIds: i.personSubjectIds,
+      currentVersionId: i.currentVersionId ?? null,
     };
   }
 

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, History, Replace, Search } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -14,9 +16,14 @@ import {
 } from '@/api/regulations.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  EXTRACTION_STATUS_LABEL,
   POLICY_SEVERITY_LABEL,
+  REGULATION_CHANGE_SOURCE_LABEL,
   REGULATION_KIND_LABEL,
   REGULATION_STATUS_LABEL,
+  isDraftExtraction,
+  mapVersionItem,
+  type ExtractionStatus,
   type PolicySeverity,
   type RegulationDetail,
   type RegulationStatus,
@@ -70,7 +77,8 @@ const KIND_FILTERS: ReadonlyArray<{
 }> = [
   { value: 'all', label: 'Все виды' },
   { value: 'regulation', label: 'Правила и стандарты' },
-  { value: 'process', label: 'Процессы и инструкции' },
+  { value: 'process', label: 'Процессы' },
+  { value: 'instruction', label: 'Инструкция' },
   { value: 'policy', label: 'Политики и положения' },
 ];
 
@@ -95,6 +103,29 @@ const SEVERITY_CHIP: Record<PolicySeverity, 'danger' | 'warning' | 'info'> = {
   mandatory: 'warning',
   advisory: 'info',
 };
+
+/** Чип статуса извлечения (B2.2): exists=success, needed=warning, discussed=info. */
+const EXTRACTION_CHIP: Record<
+  ExtractionStatus,
+  'success' | 'warning' | 'info'
+> = {
+  exists: 'success',
+  needed: 'warning',
+  discussed: 'info',
+};
+
+/**
+ * Маркеры в тексте (B2.4). Литералы превращаются в цветные чипы:
+ *   [требует уточнения] → warning, [конфликт] → danger, [изменено] → info.
+ */
+const CONTENT_MARKERS: ReadonlyArray<{
+  literal: string;
+  variant: 'warning' | 'danger' | 'info';
+}> = [
+  { literal: 'требует уточнения', variant: 'warning' },
+  { literal: 'конфликт', variant: 'danger' },
+  { literal: 'изменено', variant: 'info' },
+];
 
 function RegulationsListContent() {
   const { currentOrgRole } = useAuth();
@@ -340,9 +371,10 @@ function RegulationsListContent() {
                         <Chip variant="info" size="sm">
                           {REGULATION_KIND_LABEL[r.kind]}
                         </Chip>
-                        <Chip variant={STATUS_CHIP[r.status]} size="sm">
-                          {REGULATION_STATUS_LABEL[r.status]}
-                        </Chip>
+                        <LifecycleChip
+                          status={r.status}
+                          extractionStatus={r.extractionStatus ?? null}
+                        />
                         {r.kind === 'policy' && r.severity ? (
                           <Chip
                             variant={SEVERITY_CHIP[r.severity]}
@@ -353,6 +385,19 @@ function RegulationsListContent() {
                         ) : null}
                         <TrustBadge tier={r.trustTier} size="sm" />
                       </div>
+                      {r.extractionStatus ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-fg-tertiary">
+                            Извлечение:
+                          </span>
+                          <Chip
+                            variant={EXTRACTION_CHIP[r.extractionStatus]}
+                            size="sm"
+                          >
+                            {EXTRACTION_STATUS_LABEL[r.extractionStatus]}
+                          </Chip>
+                        </div>
+                      ) : null}
                       <div className="truncate text-sm font-medium text-fg-primary">
                         {r.name}
                       </div>
@@ -392,9 +437,10 @@ function RegulationsListContent() {
                   <Chip variant="info" size="sm">
                     {REGULATION_KIND_LABEL[detail.kind]}
                   </Chip>
-                  <Chip variant={STATUS_CHIP[detail.status]} size="sm">
-                    {REGULATION_STATUS_LABEL[detail.status]}
-                  </Chip>
+                  <LifecycleChip
+                    status={detail.status}
+                    extractionStatus={detail.extractionStatus}
+                  />
                   {detail.kind === 'policy' && detail.severity ? (
                     <Chip variant={SEVERITY_CHIP[detail.severity]} size="sm">
                       {POLICY_SEVERITY_LABEL[detail.severity]}
@@ -402,6 +448,25 @@ function RegulationsListContent() {
                   ) : null}
                   <TrustBadge tier={detail.trustTier} size="sm" />
                 </div>
+                {detail.extractionStatus ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-bg-overlay/30 px-2.5 py-1.5">
+                    <span className="text-xs text-fg-secondary">
+                      Статус извлечения:
+                    </span>
+                    <Chip
+                      variant={EXTRACTION_CHIP[detail.extractionStatus]}
+                      size="sm"
+                    >
+                      {EXTRACTION_STATUS_LABEL[detail.extractionStatus]}
+                    </Chip>
+                    {isDraftExtraction(detail.extractionStatus) ? (
+                      <span className="text-xs text-fg-tertiary">
+                        Это черновик — запись ещё обсуждается и пока не
+                        действует.
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 <h2 className="text-lg font-semibold">{detail.name}</h2>
                 <dl className="grid grid-cols-1 gap-1 text-xs text-fg-tertiary sm:grid-cols-2">
                   {detail.scope ? (
@@ -441,21 +506,19 @@ function RegulationsListContent() {
                 <h3 className="text-sm font-medium text-fg-primary">
                   Содержание
                 </h3>
-                {detail.statement ? (
-                  <p className="whitespace-pre-wrap text-sm text-fg-primary">
+                {detail.statement &&
+                detail.statement !== detail.contentMd ? (
+                  <p className="text-sm font-medium text-fg-primary">
                     {detail.statement}
                   </p>
                 ) : null}
-                {detail.contentMd && detail.contentMd !== detail.statement ? (
-                  <details className="rounded-md border border-border-subtle bg-bg-overlay/30 p-3">
-                    <summary className="cursor-pointer text-xs text-fg-secondary">
-                      Полный текст
-                    </summary>
-                    <pre className="mt-2 whitespace-pre-wrap text-xs text-fg-primary">
-                      {detail.contentMd}
-                    </pre>
-                  </details>
-                ) : null}
+                {detail.contentMd ? (
+                  <ContentMarkdown text={detail.contentMd} />
+                ) : detail.statement ? null : (
+                  <p className="text-sm text-fg-tertiary">
+                    Текст пока не заполнен.
+                  </p>
+                )}
               </section>
 
               {detail.steps && detail.steps.length > 0 ? (
@@ -560,22 +623,29 @@ function RegulationsListContent() {
                     </p>
                   ) : (
                     <ol className="space-y-2">
-                      {history.items.map((v) => (
+                      {history.items.map(mapVersionItem).map((v) => (
                         <li
                           key={v.id}
                           className="border-l-2 border-border-subtle pl-3"
                         >
-                          <div className="text-xs font-medium text-fg-primary">
-                            Версия {v.version}{' '}
-                            <span className="font-normal text-fg-tertiary">
-                              ·{' '}
-                              {new Date(v.createdAt).toLocaleDateString(
-                                'ru-RU',
-                              )}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-medium text-fg-primary">
+                              Версия {v.version}
                             </span>
+                            <span className="text-xs font-normal text-fg-tertiary">
+                              · {v.createdAt.toLocaleDateString('ru-RU')}
+                            </span>
+                            {v.source ? (
+                              <Chip variant="lavender" size="sm">
+                                {REGULATION_CHANGE_SOURCE_LABEL[v.source]}
+                              </Chip>
+                            ) : null}
                           </div>
                           {v.changeReason ? (
-                            <p className="text-xs text-fg-secondary">
+                            <p className="mt-0.5 text-xs text-fg-secondary">
+                              <span className="font-medium text-fg-primary">
+                                Причина изменения:{' '}
+                              </span>
                               {v.changeReason}
                             </p>
                           ) : null}
@@ -619,10 +689,117 @@ function RegulationsListContent() {
 }
 
 /**
+ * Lifecycle-чип записи (B2.3).
+ *
+ * Если статус извлечения ∈ {needed, discussed} — запись ещё не действует,
+ * вместо lifecycle «Действует» показываем «Черновик/обсуждается». Это не
+ * новый lifecycle-enum, а гейт поверх `extractionStatus` (см. ТЗ B2.3).
+ */
+function LifecycleChip({
+  status,
+  extractionStatus,
+}: {
+  status: RegulationStatus;
+  extractionStatus: ExtractionStatus | null;
+}) {
+  if (isDraftExtraction(extractionStatus)) {
+    return (
+      <Chip variant="sand" size="sm">
+        Черновик/обсуждается
+      </Chip>
+    );
+  }
+  return (
+    <Chip variant={STATUS_CHIP[status]} size="sm">
+      {REGULATION_STATUS_LABEL[status]}
+    </Chip>
+  );
+}
+
+/**
+ * Разбор строки на сегменты по маркерам (B2.4).
+ *
+ * Литералы `[требует уточнения]`, `[конфликт]`, `[изменено]` (регистр и
+ * пробелы внутри скобок не важны) превращаются в цветные чипы; остальной
+ * текст остаётся как есть.
+ */
+type MarkerSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'marker'; value: string; variant: 'warning' | 'danger' | 'info' };
+
+export function parseContentMarkers(text: string): MarkerSegment[] {
+  const segments: MarkerSegment[] = [];
+  // Захватываем любые скобки [...] — внутри ищем известный маркер.
+  const re = /\[([^\]]+)\]/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const inner = m[1].trim().toLowerCase();
+    const found = CONTENT_MARKERS.find((c) => c.literal === inner);
+    if (!found) continue; // неизвестная скобка — оставляем как обычный текст
+    if (m.index > last) {
+      segments.push({ kind: 'text', value: text.slice(last, m.index) });
+    }
+    segments.push({
+      kind: 'marker',
+      value: m[0].slice(1, -1).trim(),
+      variant: found.variant,
+    });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    segments.push({ kind: 'text', value: text.slice(last) });
+  }
+  return segments;
+}
+
+/**
+ * Рендер contentMd как markdown (react-markdown@10 + rehype-sanitize@6 —
+ * тот же стек, что в `MeetingSummaryRender`) с подсветкой маркеров (B2.4).
+ *
+ * Маркеры вырезаются из текста ДО markdown-рендера и показываются строкой
+ * чипов сверху, чтобы не зависеть от того, как markdown разобьёт абзацы.
+ */
+function ContentMarkdown({ text }: { text: string }) {
+  const segments = useMemo(() => parseContentMarkers(text), [text]);
+  const markers = segments.filter(
+    (s): s is Extract<MarkerSegment, { kind: 'marker' }> => s.kind === 'marker',
+  );
+  // Текст без маркер-литералов — чтобы [требует уточнения] не дублировался.
+  const cleanText = useMemo(
+    () =>
+      segments
+        .map((s) => (s.kind === 'text' ? s.value : ''))
+        .join('')
+        .trim(),
+    [segments],
+  );
+
+  return (
+    <div className="space-y-2">
+      {markers.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {markers.map((mk, i) => (
+            <Chip key={`${mk.value}-${i}`} variant={mk.variant} size="sm">
+              {mk.value}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
+      <div className="prose prose-sm max-w-none text-sm text-fg-primary [&>*]:my-2">
+        <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+          {cleanText || text}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Поля формы «Исправить» зависят от вида записи.
- *  - regulation/standard → название + суть + полный текст.
- *  - process            → название + описание (хранится в contentMd детали).
- *  - policy             → название + текст политики (contentMd).
+ *  - regulation/standard    → название + суть + полный текст.
+ *  - process/instruction    → название + описание (хранится в contentMd детали).
+ *  - policy                 → название + текст политики (contentMd).
  */
 function buildRegulationCorrectionFields(
   detail: RegulationDetail,
@@ -632,7 +809,7 @@ function buildRegulationCorrectionFields(
     label: 'Название',
     value: detail.name,
   };
-  if (detail.kind === 'process') {
+  if (detail.kind === 'process' || detail.kind === 'instruction') {
     return [
       name,
       {

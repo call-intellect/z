@@ -8,7 +8,14 @@
 #   1. cp livekit.yaml.example livekit.yaml && cp egress.yaml.example egress.yaml
 #   2. Заполни реальные ключи/домен/сертификаты в livekit.yaml и egress.yaml.
 #      Ключи должны совпадать с LIVEKIT_API_KEY/SECRET в backend .env.
-#   3. docker compose up -d
+#   3. ** chmod 0640 livekit.yaml egress.yaml **
+#      livekit-server / egress стартуют под непривилегированным пользователем,
+#      а монтирование ./egress.yaml → /etc/egress.yaml сохраняет права хоста.
+#      Если на хосте файл создан с 0600 (vim, cp от root без --preserve) —
+#      контейнер упадёт с `permission denied` и уйдёт в RestartLoop. Делаем
+#      явный chmod 0640 (нужен rw для owner, r для group/other). На проде
+#      владелец обычно root:root, чтение группе достаточно.
+#   4. docker compose up -d
 #
 # livekit.yaml и egress.yaml в .gitignore — git pull их НЕ перезапишет.
 #
@@ -37,7 +44,9 @@ services:
     container_name: z-livekit
     restart: unless-stopped
     network_mode: host
-    command: ['--config', '/etc/livekit.yaml']
+    # Подстраховка от `permission denied` на /etc/livekit.yaml (см. комментарий
+    # у egress). livekit-server тоже стартует под непривилегированным uid.
+    entrypoint: ['/bin/sh', '-c', 'chmod a+r /etc/livekit.yaml 2>/dev/null || true; exec /tini -- livekit-server --config /etc/livekit.yaml']
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
     depends_on:
@@ -51,10 +60,17 @@ services:
     network_mode: host
     cap_add:
       - SYS_ADMIN   # для chrome-headless внутри egress
+    # Подстраховка от `permission denied` на /etc/egress.yaml (файл создан с 0600
+    # на хосте → контейнер, идущий под egress-пользователем, его не прочтёт).
+    # init-wrapper делает `chmod a+r` на смонтированные yaml и затем exec'ит
+    # оригинальный entrypoint, подменяя PID 1. Делается здесь (а не в Dockerfile)
+    # потому что образ upstream.
+    entrypoint: ['/bin/sh', '-c', 'chmod a+r /etc/egress.yaml /etc/livekit.yaml 2>/dev/null || true; exec /tini -- egress']
     environment:
       EGRESS_CONFIG_FILE: /etc/egress.yaml
     volumes:
       - ./egress.yaml:/etc/egress.yaml:ro
+      - ./livekit.yaml:/etc/livekit.yaml:ro
     depends_on:
       redis:
         condition: service_healthy

@@ -384,10 +384,30 @@ export class PulsePatternsService {
           proScore: true,
           contraScore: true,
           netScore: true,
-          person: { select: { name: true, primaryDepartmentId: true } },
         },
       }),
     ]);
+
+    // Имена/отделы людей — отдельным запросом: у PersonGoalContribution НЕТ
+    // реляции `person` (только скаляр `personId`, см. schema.prisma:7344-7366),
+    // поэтому `select: { person: {...} }` валил весь запрос → 500 (#70).
+    const personIds = new Set(contributions.map((c) => c.personId));
+    const personMeta = new Map<
+      string,
+      { name: string | null; primaryDepartmentId: string | null }
+    >();
+    if (personIds.size > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId, id: { in: [...personIds] } },
+        select: { id: true, name: true, primaryDepartmentId: true },
+      });
+      for (const p of persons) {
+        personMeta.set(p.id, {
+          name: p.name,
+          primaryDepartmentId: p.primaryDepartmentId,
+        });
+      }
+    }
 
     // primaryGoalId: явная Goal.isPrimary, иначе fallback B-2 среди
     // загруженной выборки (max weight → min createdAt).
@@ -434,9 +454,7 @@ export class PulsePatternsService {
             net: number;
           }
         >();
-      const person = c.person as
-        | { name: string | null; primaryDepartmentId: string | null }
-        | null;
+      const person = personMeta.get(c.personId) ?? null;
       const prev = inner.get(c.personId) ?? {
         name: person?.name ?? 'Без имени',
         departmentId: person?.primaryDepartmentId ?? null,

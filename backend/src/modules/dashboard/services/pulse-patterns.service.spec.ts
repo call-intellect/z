@@ -26,6 +26,7 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
     departmentFindMany: vi.fn(async () => []),
     personGoalContributionGroupBy: vi.fn(async () => []),
     personGoalContributionFindMany: vi.fn(async () => []),
+    personFindMany: vi.fn(async () => []),
     goalFindMany: vi.fn(async () => []),
     goalFindFirst: vi.fn(async () => null),
     knowledgeVelocitySnapshotFindFirst: vi.fn(async () => null),
@@ -41,6 +42,7 @@ function buildService(overrides: Partial<Record<string, unknown>> = {}): {
       findMany: mocks.crossFunctionalFrictionFindMany,
     },
     department: { findMany: mocks.departmentFindMany },
+    person: { findMany: mocks.personFindMany },
     personGoalContribution: {
       groupBy: mocks.personGoalContributionGroupBy,
       findMany: mocks.personGoalContributionFindMany,
@@ -185,7 +187,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('12.000'),
           contraScore: new Prisma.Decimal('2.000'),
           netScore: new Prisma.Decimal('10.000'),
-          person: { name: 'Сергей', primaryDepartmentId: 'd-1' },
         },
         {
           goalId: 'g-1',
@@ -193,8 +194,11 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('6.000'),
           contraScore: new Prisma.Decimal('1.000'),
           netScore: new Prisma.Decimal('5.000'),
-          person: { name: 'Анна', primaryDepartmentId: null },
         },
+      ]),
+      personFindMany: vi.fn(async () => [
+        { id: 'p-1', name: 'Сергей', primaryDepartmentId: 'd-1' },
+        { id: 'p-2', name: 'Анна', primaryDepartmentId: null },
       ]),
       knowledgeVelocitySnapshotFindFirst: vi.fn(async () => ({
         medianHoursToAnswer: new Prisma.Decimal('18.50'),
@@ -446,7 +450,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('15.000'),
           contraScore: new Prisma.Decimal('3.000'),
           netScore: new Prisma.Decimal('12.000'),
-          person: { name: 'Иван', primaryDepartmentId: 'dep1' },
         },
         {
           goalId: 'goalA',
@@ -454,7 +457,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('7.000'),
           contraScore: new Prisma.Decimal('2.000'),
           netScore: new Prisma.Decimal('5.000'),
-          person: { name: 'Пётр', primaryDepartmentId: 'dep2' },
         },
         {
           goalId: 'goalA',
@@ -462,7 +464,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('3.000'),
           contraScore: new Prisma.Decimal('0.000'),
           netScore: new Prisma.Decimal('3.000'),
-          person: { name: 'Без отдела', primaryDepartmentId: null },
         },
         // goalB: только один отдел.
         {
@@ -471,8 +472,12 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('10.000'),
           contraScore: new Prisma.Decimal('2.000'),
           netScore: new Prisma.Decimal('8.000'),
-          person: { name: 'Иван', primaryDepartmentId: 'dep1' },
         },
+      ]),
+      personFindMany: vi.fn(async () => [
+        { id: 'p1', name: 'Иван', primaryDepartmentId: 'dep1' },
+        { id: 'p2', name: 'Пётр', primaryDepartmentId: 'dep2' },
+        { id: 'p3', name: 'Без отдела', primaryDepartmentId: null },
       ]),
       departmentFindMany: vi.fn(async () => [
         { id: 'dep1', name: 'Маркетинг' },
@@ -618,7 +623,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('3.000'),
           contraScore: new Prisma.Decimal('1.000'),
           netScore: new Prisma.Decimal('2.000'),
-          person: { name: 'Малый', primaryDepartmentId: null },
         },
         // |net| = 9 (самый большой по модулю)
         {
@@ -627,7 +631,6 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('12.000'),
           contraScore: new Prisma.Decimal('3.000'),
           netScore: new Prisma.Decimal('9.000'),
-          person: { name: 'Большой', primaryDepartmentId: null },
         },
         // |net| = 5 (отрицательный — abs всё равно учитывается)
         {
@@ -636,8 +639,12 @@ describe('PulsePatternsService', () => {
           proScore: new Prisma.Decimal('1.000'),
           contraScore: new Prisma.Decimal('6.000'),
           netScore: new Prisma.Decimal('-5.000'),
-          person: { name: 'Минус', primaryDepartmentId: null },
         },
+      ]),
+      personFindMany: vi.fn(async () => [
+        { id: 'small', name: 'Малый', primaryDepartmentId: null },
+        { id: 'big', name: 'Большой', primaryDepartmentId: null },
+        { id: 'neg', name: 'Минус', primaryDepartmentId: null },
       ]),
     });
 

@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 
 import { TypedConfigService } from '../../../common/config/index';
 
+import { ensureJsonWordInUser } from './json-mode.util';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
@@ -110,10 +111,8 @@ export class OllamaService {
         role: string;
         content: string;
       }>;
-      const hasJsonWord = messages.some((m) => /json/i.test(m.content));
-      if (!hasJsonWord && messages[0]) {
-        messages[0].content += '\n\nФормат ответа: верни валидный JSON.';
-      }
+      // Слово «json» — в ХВОСТ последнего USER (не в SYSTEM, ради prompt caching).
+      ensureJsonWordInUser(messages);
     }
     if (input.tools && input.tools.length > 0) {
       params['tools'] = input.tools.map((t) => ({

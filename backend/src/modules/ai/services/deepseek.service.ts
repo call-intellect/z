@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
+import { ensureJsonWordInUser } from './json-mode.util';
 import { isThinkingModel } from './llm-thinking-models';
 import type {
   LlmCompleteInput,
@@ -246,14 +247,10 @@ export class DeepSeekService {
         );
       } else if (fmt.type === 'json_object') {
         params['response_format'] = { type: 'json_object' };
-        // DeepSeek/OpenAI json_object mode требует слово "json" в сообщениях,
-        // иначе 400 «Prompt must contain the word 'json'... to use
-        // 'response_format' of type 'json_object'». Гарантируем его наличие
-        // (иначе meeting-report-fast и др. промпты без слова JSON падают).
-        const hasJsonWord = messages.some((m) => /json/i.test(m.content));
-        if (!hasJsonWord && messages[0]) {
-          messages[0].content += '\n\nФормат ответа: верни валидный JSON.';
-        }
+        // DeepSeek json_object mode требует слово "json" в сообщениях, иначе 400
+        // «Prompt must contain the word 'json'...». Гарантируем его в ХВОСТЕ
+        // последнего USER (а НЕ в SYSTEM — иначе ломается prompt caching).
+        ensureJsonWordInUser(messages);
       } else if (fmt.type === 'json_schema') {
         params['response_format'] = {
           type: 'json_schema',
@@ -283,26 +280,6 @@ export class DeepSeekService {
       params['reasoning'] = { effort: input.reasoningEffort };
     }
     return { params, autoConvertedToolName, usedForce };
-  }
-
-  /**
-   * DeepSeek JSON mode (`response_format: json_object`) требует, чтобы слово
-   * «json» присутствовало в system или user (офиц. дока + probe 2026-06-03),
-   * иначе 400 «Prompt must contain the word 'json'». Если его нет — дописываем
-   * короткую инструкцию в ХВОСТ последнего user-сообщения. SYSTEM не трогаем:
-   * стабильный SYSTEM нужен для prompt caching (правка SYSTEM ломает кеш).
-   */
-  private ensureJsonWord(
-    messages: Array<{ role: 'system' | 'user'; content: string }>,
-  ): void {
-    const hasJson = messages.some((m) =>
-      m.content.toLowerCase().includes('json'),
-    );
-    if (hasJson) return;
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg && lastMsg.role === 'user') {
-      lastMsg.content += '\n\nОтвет верни строго в формате JSON.';
-    }
   }
 
   private mapResponse(

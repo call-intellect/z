@@ -203,6 +203,53 @@ describe('QualityScoreWorker.process', () => {
     expect(h.metricsRefs.disabled).not.toHaveBeenCalled();
   });
 
+  it('#71 — плоская структура категорий нормализуется и пишется (без Zod-фейла categories)', async () => {
+    // Модель в json_object режиме иногда кладёт 5 категорий ПЛОСКО (на верхнем
+    // уровне) вместо вложенного `categories`. Нормализатор должен их поднять.
+    const FLAT_LLM_JSON = JSON.stringify({
+      overallScore: 75,
+      preparation: 70,
+      structure: 80,
+      clarity: 75,
+      outcomes: 70,
+      engagement: 80,
+      recommendations: [
+        {
+          text: 'Озвучить повестку в первые 5 минут.',
+          severity: 'warning',
+          category: 'preparation',
+        },
+      ],
+      strengths: ['Чёткие задачи с ответственными.'],
+    });
+    const h = buildHarness({
+      meeting: buildMeeting(),
+      merged: {
+        meetingId: 'm-1',
+        turns: [
+          { speaker: 'Алиса', text: 'Привет', startSec: 0, endSec: 2 },
+          { speaker: 'Боб', text: 'Поехали', startSec: 2, endSec: 4 },
+        ],
+      },
+      llmText: FLAT_LLM_JSON,
+      tierOnSuccess: 'primary',
+    });
+
+    await h.worker.process(JOB);
+
+    expect(h.scoreUpsert).toHaveBeenCalledTimes(1);
+    const upsertArg = h.scoreUpsert.mock.calls[0]?.[0] as {
+      create: { overallScore: number };
+    };
+    expect(upsertArg.create.overallScore).toBe(75);
+    expect(h.txMeetingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'm-1' },
+        data: { qualityScoreStatus: 'ready' },
+      }),
+    );
+  });
+
   it('skip too_short — длительность 2 минуты, статус=disabled, LLM не вызывается', async () => {
     const h = buildHarness({
       meeting: buildMeeting({

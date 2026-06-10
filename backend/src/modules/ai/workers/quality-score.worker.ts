@@ -210,6 +210,9 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
         meetingId: meeting.id,
         jobId: job.id ?? undefined,
         responseFormat: { type: 'json_object' },
+        // #73 — HTTP-200 с телом, которое не парсится/не проходит схему, НЕ
+        // считаем успехом: роутер перейдёт к следующему провайдеру в каскаде.
+        validate: (text) => tryParseQualityScore(text) !== null,
         dataClass: 'internal',
         sourceRef: { type: 'meeting', id: meeting.id },
       });
@@ -378,11 +381,43 @@ export class QualityScoreWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
+const QUALITY_CATEGORY_KEYS = [
+  'preparation',
+  'structure',
+  'clarity',
+  'outcomes',
+  'engagement',
+] as const;
+
 /**
- * Парсит ответ LLM. JSON может прийти как «голый» объект (json_object mode)
- * или в коде markdown — пробуем оба варианта.
+ * #71 — некоторые модели в json_object режиме возвращают 5 категорий ПЛОСКО
+ * (preparation/structure/… на верхнем уровне) вместо вложенного `categories`.
+ * Поднимаем их в `categories`, чтобы Zod-схема прошла. Идемпотентно: если
+ * `categories` уже есть — не трогаем.
  */
-function parseAndValidate(text: string): MeetingQualityScoreOutput {
+function normalizeQualityScoreShape(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const obj = raw as Record<string, unknown>;
+  if (
+    (obj.categories === undefined || obj.categories === null) &&
+    QUALITY_CATEGORY_KEYS.some((k) => typeof obj[k] === 'number')
+  ) {
+    const categories: Record<string, unknown> = {};
+    for (const k of QUALITY_CATEGORY_KEYS) {
+      if (obj[k] !== undefined) categories[k] = obj[k];
+    }
+    return { ...obj, categories };
+  }
+  return raw;
+}
+
+/**
+ * Парс + нормализация + Zod. Возвращает null, если ответ не удалось привести к
+ * схеме (используется и для router-`validate`: HTTP-200 с битым телом → НЕ успех,
+ * роутер перейдёт к следующему провайдеру). JSON может прийти «голым» (json_object
+ * mode) или в markdown-обёртке — пробуем оба варианта.
+ */
+function tryParseQualityScore(text: string): MeetingQualityScoreOutput | null {
   const stripped = stripCodeFence(text);
   let raw: unknown;
   try {
@@ -390,16 +425,25 @@ function parseAndValidate(text: string): MeetingQualityScoreOutput {
   } catch {
     // Fallback: вытаскиваем первый JSON-блок regex'ом.
     const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) {
-      throw new Error('LLM-ответ не содержит JSON-объекта');
+    if (!match) return null;
+    try {
+      raw = JSON.parse(match[0]);
+    } catch {
+      return null;
     }
-    raw = JSON.parse(match[0]);
   }
-  const parsed = MEETING_QUALITY_SCORE_SCHEMA.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`Zod parse failed: ${parsed.error.message}`);
+  const parsed = MEETING_QUALITY_SCORE_SCHEMA.safeParse(
+    normalizeQualityScoreShape(raw),
+  );
+  return parsed.success ? parsed.data : null;
+}
+
+function parseAndValidate(text: string): MeetingQualityScoreOutput {
+  const result = tryParseQualityScore(text);
+  if (!result) {
+    throw new Error('LLM-ответ quality-score не прошёл парс/Zod-схему');
   }
-  return parsed.data;
+  return result;
 }
 
 function stripCodeFence(text: string): string {

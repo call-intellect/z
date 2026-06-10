@@ -368,7 +368,7 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
     expect(callArgs.tool_choice).toBeUndefined();
   });
 
-  it('json_object + промпт без слова "json" → подмешиваем слово в system (DeepSeek 400-guard)', async () => {
+  it('json_object + промпт без слова "json" → слово в ХВОСТ USER, SYSTEM не тронут (cache-guard #56)', async () => {
     const { metrics } = makeMetricsMock();
     const svc = new DeepSeekService(makeCfg(), metrics);
     if (!lastSdkInstance) throw new Error('sdk not constructed');
@@ -376,8 +376,9 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
       okResponse({ content: '{"ok":true}' }),
     );
 
+    const systemText = 'Сделай отчёт по встрече.'; // нет слова json
     await svc.complete({
-      system: { text: 'Сделай отчёт по встрече.' }, // нет слова json
+      system: { text: systemText },
       user: 'Транскрипт...',
       model: 'deepseek-v4-pro',
       responseFormat: { type: 'json_object' },
@@ -387,8 +388,13 @@ describe('DeepSeekService.buildParams — формат вывода', () => {
       lastSdkInstance.chat.completions.create.mock.calls[0]![0] as {
         messages: Array<{ role: string; content: string }>;
       };
-    const allContent = callArgs.messages.map((m) => m.content).join('\n');
-    expect(allContent.toLowerCase()).toContain('json');
+    // Cache-safety: SYSTEM-сообщение байт-в-байт неизменно (кэш не ломается).
+    expect(callArgs.messages[0]!.content).toBe(systemText);
+    // Слово «json» дописано в хвост ПОСЛЕДНЕГО user-сообщения.
+    const lastMsg = callArgs.messages[callArgs.messages.length - 1]!;
+    expect(lastMsg.role).toBe('user');
+    expect(lastMsg.content.toLowerCase()).toContain('json');
+    expect(lastMsg.content.startsWith('Транскрипт...')).toBe(true);
   });
 
   it('json_object + промпт уже содержит "json" → не дублируем подсказку', async () => {

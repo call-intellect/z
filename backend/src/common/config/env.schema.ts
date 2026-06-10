@@ -149,11 +149,12 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
   // ТЗ-3 Фаза 3 — форсить вызов synthetic-tool (`tool_choice:{type:function}`)
   // вместо 'auto' при autoConvert (json_schema → tool) для НЕ-thinking
-  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу. ДЕФОЛТ OFF:
-  // forced tool_choice — внешне-наблюдаемое поведение LLM-API, требует прод-пробу
-  // agent-lia; включает владелец после пробы. При OFF поведение = текущее ('auto').
-  // Guard в deepseek.service сам откатывает на 'auto' при format-400 от прокси.
-  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
+  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу.
+  // ДЕФОЛТ ON (Ship-On, retest3 #56/Р2): фича готова — выкатываем включённой.
+  // Это kill-switch: при инциденте можно выставить false, действий владельца не
+  // требует. Guard в deepseek.service сам откатывает на 'auto' при format-400
+  // от прокси (и не форсит thinking-модели — они 400'ят на forced tool_choice).
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(true),
 });
 
 const OllamaSchema = z.object({

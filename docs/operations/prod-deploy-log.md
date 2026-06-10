@@ -70,6 +70,23 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🩹 2026-06-10 — Зависание встречи в `scheduled` + дубли/статусы «Команда» (Ф1–Ф6)
+
+> Контракт: `plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (6 коммитов).
+>
+> **Зачем для прода:** два независимых багфикса. (1) «Команда»: один человек = одна строка (дедуп по email + статус по membership). (2) Встреча больше не виснет навсегда в `scheduled` — `finish` устойчив, idle-cron reconcile'ит брошенные `scheduled`. **Миграций Prisma НЕТ** (partial unique — в `postgres-init.sql`). **Новых ENV нет.** **Docker rebuild backend+frontend** (код).
+>
+> ⚠ **Главный прод-блокер (вне репо, владельцу):** доставка вебхуков LiveKit `room_started`/`room_finished` на backend сломана после переезда `meet.crossmark.ru → korateam.ru` — без её починки **каждая новая встреча будет зависать в `scheduled`**, а Ф5/Ф6 — лишь страховка устойчивости, корень не лечат. Действия — см. ТЗ §4 (правка `infra/livekit/livekit.yaml` `webhook.urls` + nginx-проксирование `/webhooks/` на backend) и строку в `second-brain/04_не-сделано/README.md`.
+
+- **Шаг 5 — postgres-init.sql** — новый partial unique: `persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''` (запрещает второй активный `Person` на тот же email в Org; образец — `Vendor_tenantId_inn_unique_idx`/`Entity_strong_email_uniq`). **Self-skip:** если на момент прогона ещё есть активные дубли по email — блок делает `RAISE NOTICE` и пропускает создание индекса; индекс встанет на следующем прогоне `postgres-init` **уже после backfill Ф3** (Шаг 8). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `args:['--apply']`, `skipBootstrap:true`): `scripts/backfill-merge-duplicate-persons.ts` — сливает дубли `Person` по `(tenantId, lower(email))`: каноническая = аккаунтная (`userId`) либо старейшая, дубли soft-delete'ятся, пустые поля канонической обогащаются, слабое имя-логин заменяется человеческим (Р4); `≥2` аккаунтов на email — НЕ сливает (warn). **Сначала dry-run** (без флага, только counts — сверить): `docker compose exec backend bun run scripts/backfill-merge-duplicate-persons.ts` → **затем `--apply`** через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `... backfill-merge-duplicate-persons.ts --apply`, опц. `--tenant=<id>`). Идемпотентен (повтор → 0 групп). Запускать **до** повторного `apply-postgres-init` (чтобы self-skip-индекс Шага 5 встал).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `orgs.service.listTeamRoster` (статус по membership + дедуп по email), `persons.service.create` (дедуп по email до вставки → 409 `person_email_taken` / линковка безличной карточки), `host-controls.service.finish` (устойчив из `scheduled`/терминальных), `idle-meeting.cron` (reconcile брошенных `scheduled`); frontend: нейтральный тост finish): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): раздел «Команда» — один человек = одна строка, владелец помечен «активен» (не «не приглашён»); тестовая встреча — «Завершить» из любого состояния закрывает без 409 (из `scheduled` → нейтральный тост «Встреча завершена (запись не велась)»).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📖 2026-06-10 — Волна 6 A10: модель Instruction (first-class «Инструкция», single-role)
 
 > Контракт: master-prompt-fleet (Волна 6 A10), схема-слой. Ветка `feature/master-prompt-fleet-2026-06-10`.

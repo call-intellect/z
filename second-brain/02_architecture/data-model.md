@@ -191,7 +191,9 @@ transcription_processing
 ai_processing → ai_ready
 ```
 
-Параллельная ветка: `failed` (с любого этапа, с указанием причины).
+Параллельная ветка: `failed` (с любого этапа, с указанием причины в `failureReason`). Известные коды `failureReason` для «встреча технически не состоялась» (2026-06-10, ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md)):
+- **`ended_before_start`** — хост нажал «Завершить», когда встреча ещё в `scheduled` (вебхук `room_started` потерян, записи нет): `finish` переводит `scheduled → failed`, отвечает 200 (не 409); UI показывает нейтральный текст «Встреча завершена (запись не велась)», не «ошибка» (`host-controls.service.finish`, Р1).
+- **`never_activated`** — брошенную `scheduled` старше `max(idle.timeoutMinutes, 30)` мин подбирает idle-cron: если LiveKit-room пуста/нет — `scheduled → failed('never_activated')`; если в room есть живые участники (значит `room_started` потерян, но встреча идёт) — наоборот `scheduled → active` + попытка стартовать запись (recovery) (`idle-meeting.cron`, Р2).
 
 ## Таблицы для аудио-дорожек
 
@@ -641,7 +643,7 @@ erDiagram
 ### Группа А (с UI)
 - `Department(id, tenantId, name, parentDepartmentId?, deletedAt?)` — иерархия в схеме, UI плоский.
 - `Role(id, tenantId, name, departmentId?, tags[], deletedAt?)` — бизнес-должность.
-- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК.
+- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК. **Partial unique по email (2026-06-10, в `postgres-init.sql`, не в schema):** `persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''` — не более одной активной карточки на email в Org. (Schema-уровневый `@@unique([tenantId, email, deletedAt])` бесполезен: `NULL ≠ NULL` в PG пропускает несколько активных дублей с `deletedAt IS NULL`.) Индекс с **self-skip** при существующих дублях (встаёт после backfill `backfill-merge-duplicate-persons.ts`); при создании `Person` дедуп по email идёт ещё до вставки (`persons.service.create` → 409 `person_email_taken` либо линковка безличной карточки). ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md) Ф2–Ф4.
 - `PersonRole(id, tenantId, personId, roleId, validFrom, validTo?)` — M:M Person↔Role с временем.
 - `JobDescription(id, tenantId, roleId, contentMd, sourceDocumentId?, version, deletedAt?)`.
 - `Skill(id, tenantId, name, description?, deletedAt?)`.

@@ -24,13 +24,12 @@ import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
 import { chatV2Api } from '@/api/chat-v2.api';
+import { AssistantMarkdown } from '@/ui/components/chat-v2/AssistantMarkdown';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import {
   chatV2ConversationStatusLabel,
-  chatV2ModeLabel,
   chatV2ScopeLabel,
   formatTimestamp,
-  stripContextMarkers,
   toChatV2Conversation,
   toChatV2ConversationWithMessages,
   type ChatV2Conversation,
@@ -447,22 +446,23 @@ function EmptyState(): ReactElement {
 
 function MessageView({ message }: { message: ChatV2Message }): ReactElement {
   const isUser = message.role === 'user';
-  const displayText = isUser ? message.text : stripContextMarkers(message.text);
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
+        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm ${
           isUser
-            ? 'bg-accent text-accent-fg'
+            ? 'whitespace-pre-wrap bg-accent text-accent-fg'
             : 'bg-surface border border-border text-fg-primary'
         }`}
       >
-        {!isUser && message.mode ? (
-          <div className="mb-1 text-xs text-fg-tertiary">
-            Режим: {chatV2ModeLabel(message.mode)}
-          </div>
+        {!isUser ? (
+          <div className="mb-1 text-xs text-fg-tertiary">✨ Мастер Кора</div>
         ) : null}
-        <div>{displayText}</div>
+        {isUser ? (
+          <div>{message.text}</div>
+        ) : (
+          <AssistantMarkdown text={message.text} />
+        )}
 
         {!isUser && message.citations.length > 0 ? (
           <div className="mt-3 space-y-1.5 border-t border-border pt-2">

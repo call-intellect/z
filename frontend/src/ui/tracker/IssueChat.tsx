@@ -42,12 +42,11 @@ import { ApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
 import { toast } from 'sonner';
 import {
-  chatV2ModeLabel,
   formatTimestamp,
-  stripContextMarkers,
   type ChatV2Citation,
   type ChatV2Mode,
 } from '@/domain/chat-v2';
+import { AssistantMarkdown } from '@/ui/components/chat-v2/AssistantMarkdown';
 
 interface LocalMessage {
   id: string;
@@ -462,18 +461,20 @@ function ChatBubble({
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-[85%] break-words rounded-lg px-3 py-2 text-sm ${
           isUser
-            ? 'bg-accent text-accent-fg'
+            ? 'whitespace-pre-wrap bg-accent text-accent-fg'
             : 'border border-border-subtle bg-bg text-fg-primary'
         }`}
       >
-        {!isUser && message.mode ? (
-          <div className="mb-1 text-[11px] text-fg-tertiary">
-            Режим: {chatV2ModeLabel(message.mode)}
-          </div>
+        {!isUser ? (
+          <div className="mb-1 text-[11px] text-fg-tertiary">✨ Мастер Кора</div>
         ) : null}
-        <div>{isUser ? message.text : stripContextMarkers(message.text)}</div>
+        {isUser ? (
+          <div>{message.text}</div>
+        ) : (
+          <AssistantMarkdown text={message.text} />
+        )}
         {!isUser ? (
           <button
             type="button"

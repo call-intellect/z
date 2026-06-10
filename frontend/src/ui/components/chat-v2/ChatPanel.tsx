@@ -5,11 +5,10 @@ import { useState, type FormEvent, type ReactElement } from 'react';
 
 import { chatV2Api, type ChatV2ModeApi, type ChatV2ScopeApi } from '@/api/chat-v2.api';
 import {
-  chatV2ModeLabel,
   formatTimestamp,
-  stripContextMarkers,
   type ChatV2Citation,
 } from '@/domain/chat-v2';
+import { AssistantMarkdown } from './AssistantMarkdown';
 
 /**
  * SBA α-5 — `<ChatPanel>` для встраивания на других страницах (например,
@@ -140,18 +139,20 @@ function ChatBubble({ message }: { message: LocalMessage }): ReactElement {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
           isUser
-            ? 'bg-accent text-accent-fg'
+            ? 'whitespace-pre-wrap bg-accent text-accent-fg'
             : 'bg-bg border border-border text-fg-primary'
         }`}
       >
-        {!isUser && message.mode ? (
-          <div className="text-xs text-fg-tertiary mb-1">
-            Режим: {chatV2ModeLabel(message.mode)}
-          </div>
+        {!isUser ? (
+          <div className="text-xs text-fg-tertiary mb-1">✨ Мастер Кора</div>
         ) : null}
-        <div>{isUser ? message.text : stripContextMarkers(message.text)}</div>
+        {isUser ? (
+          <div>{message.text}</div>
+        ) : (
+          <AssistantMarkdown text={message.text} />
+        )}
         {!isUser && message.uncertaintyNote ? (
           <div className="mt-2 rounded bg-chip-warning-bg px-2 py-1 text-xs text-chip-warning-fg">
             {message.uncertaintyNote}

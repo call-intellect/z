@@ -577,7 +577,15 @@ export type LlmTaskType =
   // авто-применения НЕТ — Р3). Дешёвый классификатор: primary deepseek-v4-flash.
   // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
   // переменное (текст + темы) в КОНЦЕ user.
-  | 'document-attribution-suggest';
+  | 'document-attribution-suggest'
+  // Волна 4 B0 (2026-06-10) — client-meeting-split: нейтральный ПРОТОКОЛ встречи
+  // НАРУЖУ для клиента (free-text Markdown, как summary; без tool/JSON-схемы).
+  // Запускается в analyze.worker для клиентских типов (sales/customer_success/
+  // partner/custdev), результат — AiResult.structuredData.client_protocol_md.
+  // Граница D6: ноль внутренних оценок. DEFAULT-маршрут (без strict-json), за
+  // kill-switch clientProtocolEnabled (дефолт ON). Cache-friendly: SYSTEM
+  // статичен, диалог+участники+дата в КОНЦЕ user.
+  | 'client-meeting-split';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -792,6 +800,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
   // темы для загруженного документа без явной атрибуции; human-in-the-loop).
   'document-attribution-suggest',
+  // Волна 4 B0 (2026-06-10) — client-meeting-split (нейтральный протокол встречи
+  // наружу для клиента, free-text; DEFAULT-маршрут, за kill-switch ON).
+  'client-meeting-split',
 ] as const;
 
 /**

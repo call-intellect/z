@@ -674,6 +674,19 @@ export class TypedConfigService {
         'SUMMARY_AGENT_ENABLED',
         true,
       ),
+      /**
+       * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+       * (нейтральный протокол встречи наружу для клиента). При `true` (default)
+       * `analyze.worker` для клиентских типов встреч дополнительно генерит
+       * протокол и мержит его в `AiResult.structuredData.client_protocol_md`.
+       * При `false` — пропуск (фича не валит основной отчёт). Фича готова →
+       * выкатывается ON; рубильник только для экстренного выключения.
+       */
+      clientProtocolEnabled: this.resolveSync<boolean>(
+        'aiFeatures.clientProtocolEnabled',
+        'CLIENT_PROTOCOL_ENABLED',
+        true,
+      ),
     } as const;
   }
 

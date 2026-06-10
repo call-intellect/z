@@ -407,6 +407,15 @@ const AiFeatureFlagsSchema = z.object({
    * выставить `false` — `−1` LLM-вызов MiniMax (ops-решение).
    */
   SUMMARY_AGENT_ENABLED: zBool(true),
+  /**
+   * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+   * (нейтральный ПРОТОКОЛ встречи наружу для клиента, free-text). При `true`
+   * (default) для клиентских типов встреч (sales/customer_success/partner/
+   * custdev) `analyze.worker` дополнительно генерит протокол и мержит его в
+   * `AiResult.structuredData.client_protocol_md`. При `false` — пропуск (не
+   * валит основной отчёт). Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  CLIENT_PROTOCOL_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */

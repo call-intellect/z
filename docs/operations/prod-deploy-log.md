@@ -2295,6 +2295,14 @@ SPECIALISTS_COMBINED_ENABLED=false
 COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
 DATACLASS_POLICY_ENFORCEMENT=shadow      # off | shadow | enforce — на проде сначала shadow
 
+# === Волна 4 B0 (2026-06-10) — client-meeting-split (kill-switch, default ON) ===
+# Нейтральный ПРОТОКОЛ встречи наружу для клиента (free-text Markdown) для
+# клиентских типов (sales/customer_success/partner/custdev). analyze.worker
+# мержит результат в AiResult.structuredData.client_protocol_md. Граница D6:
+# ноль внутренних оценок. Default ON — действий владельца не требует; рубильник
+# для экстренного выключения. AdminSetting-зеркало: aiFeatures.clientProtocolEnabled.
+CLIENT_PROTOCOL_ENABLED=true
+
 # === Concierge → dialog-layer integration (ТЗ 2026-05-27) ===
 # При CONCIERGE_DIALOG_LAYER_ENABLED=true главный AI-агент использует
 # 5-шаговый pipeline DialogService (contextualize → confidence → classify →

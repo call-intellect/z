@@ -122,6 +122,9 @@ const registry = new Map<string, ZodTypeAny>([
   // (analyze.worker runSummary, MiniMax). Дефолт TRUE — обратимо; false = −1
   // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
+  // Волна 4 B0 (2026-06-10) — kill-switch агента client-meeting-split
+  // (нейтральный протокол встречи наружу для клиента). Дефолт TRUE — фича ON.
+  ['aiFeatures.clientProtocolEnabled', z.boolean()],
 
   // ── LLM cache-smoke (llm.*) — Ф6 Часть 3, наблюдаемость ───────────────
   // cacheSmokeEnabled — включает smoke-проверку доли cache-хитов в cron'е.

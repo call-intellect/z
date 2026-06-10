@@ -208,6 +208,14 @@ export function structuredValueToMarkdown(value: unknown): string {
 }
 
 /**
+ * Ключи structuredData, которые UI рендерит ОТДЕЛЬНОЙ секцией (вне общего грида
+ * отчёта) и которые поэтому не должны попадать в «весь отчёт» при копировании —
+ * иначе задвоятся. Сейчас это клиентский протокол (Волна 4, B1.4): он показан
+ * секцией «Протокол для клиента» со своей кнопкой «Скопировать».
+ */
+const REPORT_MARKDOWN_EXCLUDED_KEYS = new Set(['client_protocol_md']);
+
+/**
  * structuredData/output → markdown (текстовое зеркало `ReportOutputRenderer`):
  * каждый непустой top-level ключ → '## Заголовок' + сериализованное значение.
  * Пустые секции (`isEmptyStructuredValue`) пропускаются. Примитивный output —
@@ -224,6 +232,7 @@ export function structuredReportToMarkdown(output: unknown, title?: string): str
     lines.push(`# ${title}`, '');
   }
   for (const [key, value] of Object.entries(output as Record<string, unknown>)) {
+    if (REPORT_MARKDOWN_EXCLUDED_KEYS.has(key)) continue;
     if (isEmptyStructuredValue(value)) continue;
     lines.push(`## ${structuredFieldLabel(key)}`);
     lines.push(structuredValueToMarkdown(value));

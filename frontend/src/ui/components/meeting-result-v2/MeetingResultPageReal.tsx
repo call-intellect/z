@@ -933,6 +933,21 @@ function OverviewTab({
     { label: 'Длительность', value: fmtDurationCompact(durationMs) },
   ];
 
+  /**
+   * Волна 4, B1.4 — клиентский протокол. Backend кладёт нейтральный текст для
+   * отправки клиенту в `structuredData.client_protocol_md` (markdown-строка).
+   * Рендерим его отдельной секцией «Протокол для клиента» (ниже), а из общего
+   * generic-грида `StructuredDataCard` ключ исключён, чтобы не дублировать.
+   */
+  const clientProtocolMd =
+    structuredData &&
+    typeof structuredData === 'object' &&
+    typeof (structuredData as Record<string, unknown>).client_protocol_md ===
+      'string'
+      ? ((structuredData as Record<string, unknown>)
+          .client_protocol_md as string).trim()
+      : '';
+
   return (
     <div className="flex flex-col gap-4">
       <StatsRow stats={stats} />
@@ -954,6 +969,7 @@ function OverviewTab({
           </div>
         </Card>
       )}
+      {clientProtocolMd ? <ClientProtocolCard markdown={clientProtocolMd} /> : null}
       {structuredData ? <StructuredDataCard data={structuredData} /> : null}
       {customMd && (
         <Card>
@@ -1003,6 +1019,10 @@ const STRUCTURED_SPECIAL_KEYS = new Set([
   'churn_risk_quote',
   'ideas',
   'proposals',
+  // Волна 4, B1.4 — клиентский протокол рендерится ОТДЕЛЬНОЙ секцией
+  // «Протокол для клиента» (ClientProtocolCard) над StructuredDataCard, поэтому
+  // из общего generic-грида он исключён, чтобы не дублироваться.
+  'client_protocol_md',
 ]);
 
 /**
@@ -1126,6 +1146,42 @@ function FollowUpCard({ text }: { text: string }) {
       <pre className="m-0 overflow-auto whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-base p-4 font-mono text-xs leading-relaxed text-fg-primary">
         {text}
       </pre>
+    </Card>
+  );
+}
+
+/**
+ * Волна 4, B1.4 — клиентский протокол. Нейтральный текст для отправки клиенту
+ * (markdown), который backend кладёт в `structuredData.client_protocol_md`.
+ * Отдельная секция со своей кнопкой «Скопировать» (по образцу FollowUpCard),
+ * markdown-рендер через тот же `MeetingSummaryRender`, что и краткое содержание.
+ */
+function ClientProtocolCard({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
+  return (
+    <Card>
+      <CardHeader
+        title="Протокол для клиента"
+        accessory={
+          <Button variant="outline" size="sm" onClick={onCopy}>
+            <Copy size={12} />
+            {copied ? 'Скопировано' : 'Скопировать'}
+          </Button>
+        }
+      />
+      <p className="mb-3 mt-0 text-xs text-fg-tertiary">
+        Нейтральный текст для отправки клиенту.
+      </p>
+      <MeetingSummaryRender markdown={markdown} />
     </Card>
   );
 }

@@ -180,7 +180,7 @@ export function SourcesClient() {
   if (!currentOrgId) {
     return (
       <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-        Эта страница доступна только в рамках Org. Создайте или присоединитесь к организации.
+        Эта страница доступна только в рамках организации. Создайте или присоединитесь к организации.
       </div>
     );
   }
@@ -188,7 +188,7 @@ export function SourcesClient() {
   if (!canManage) {
     return (
       <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm">
-        Управление источниками доступно только владельцу или администратору Org.
+        Управление источниками доступно только владельцу или администратору организации.
       </div>
     );
   }
@@ -202,7 +202,7 @@ export function SourcesClient() {
           </h1>
           <p className="text-sm text-fg-secondary">
             Подключите внешние каналы — Telegram, телефония, почта, дамп мысли —
-            события из них попадают в общий knowledge-core Org.
+            события из них попадают в общий граф знаний компании.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)} size="sm">

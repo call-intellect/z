@@ -21,6 +21,7 @@ import {
   type CurationDecisionType,
   type CurationLevel,
 } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import {
   AdminError,
@@ -304,7 +305,7 @@ function CurationDetailView({
       {/* Заголовок */}
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
-          {item.resourceType}
+          {resourceTypeRu(item.resourceType)}
         </div>
         <h1 className="mt-1 text-2xl font-semibold break-all">
           {item.resourceId}

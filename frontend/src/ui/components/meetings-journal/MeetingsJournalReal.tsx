@@ -1092,7 +1092,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
             <div className="flex flex-col gap-6">
               {summary ? (
                 <section>
-                  <SectionHeader icon={<Sparkles size={14} />} title="Summary" />
+                  <SectionHeader icon={<Sparkles size={14} />} title="Краткое содержание" />
                   <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
                     <p className="m-0 text-sm leading-relaxed text-fg-primary">
                       {summary}
@@ -1120,7 +1120,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                         {p.name}
                         {p.role === 'host' && (
                           <span className="ml-1 rounded bg-accent-muted px-1 text-[10px] text-accent">
-                            host
+                            ведущий
                           </span>
                         )}
                       </span>
@@ -1133,7 +1133,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
               <section>
                 <SectionHeader
                   icon={<ListChecks size={14} />}
-                  title="Action items"
+                  title="Задачи"
                   right={
                     <span className="text-xs text-fg-tertiary">
                       {tasks.length} всего

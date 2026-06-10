@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { resourceTypeRu } from '../resource-type-ru';
+
 import {
   ageDaysFrom,
   isPrivileged,
@@ -66,7 +68,7 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        title: `Конфликт карточек: ${i.resourceType}`,
+        title: `Конфликт карточек: ${resourceTypeRu(i.resourceType)}`,
         severity:
           ageDays >= this.cfg.pendingActions.urgentAgeDays
             ? 'urgent'

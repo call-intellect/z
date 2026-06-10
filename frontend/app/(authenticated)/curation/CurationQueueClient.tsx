@@ -31,6 +31,7 @@ import {
   type CurationItem,
   type CurationItemDetail,
 } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 
@@ -78,7 +79,7 @@ export function CurationQueueClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -288,7 +289,7 @@ function CurationQueueContent() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{it.resourceType}</span>
+                      <span className="font-medium">{resourceTypeRu(it.resourceType)}</span>
                       <span className="text-xs text-fg-tertiary">
                         {curationLevelLabel(it.level)}
                       </span>
@@ -392,7 +393,7 @@ function CurationDetailPanel({
     <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-6">
       <header>
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
-          {item.resourceType}
+          {resourceTypeRu(item.resourceType)}
         </div>
         <h2 className="mt-1 text-xl font-semibold">{item.resourceId}</h2>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
@@ -603,7 +604,7 @@ function ConflictRow({
     <li className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium">
-          {conflict.resourceType}: {conflict.existingId} ↔ {conflict.newId}
+          {resourceTypeRu(conflict.resourceType)}: {conflict.existingId} ↔ {conflict.newId}
         </span>
         <span className="text-xs">{conflictStatusLabel(conflict.status)}</span>
       </div>

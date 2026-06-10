@@ -201,11 +201,7 @@ function DigestView(props: { data: WeeklyOperationsDigestApi }) {
       </GlassCard>
 
       <p className="text-xs" style={{ color: CHART.faint }}>
-        Сгенерировано {new Date(data.createdAt).toLocaleString('ru-RU')}
-        {data.llmTaskRouteId
-          ? ` · модель: ${data.llmTaskRouteId}`
-          : ' · автоматически (без LLM)'}
-        .
+        Сгенерировано {new Date(data.createdAt).toLocaleString('ru-RU')}.
       </p>
     </div>
   );

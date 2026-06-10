@@ -66,7 +66,7 @@ const SECTIONS: Record<SectionKey, SectionConfig> = {
       `${n} ${declension(n, ['процесс', 'процесса', 'процессов'])}`,
   },
   regulations: {
-    title: 'Регламенты',
+    title: 'Правила и стандарты',
     description:
       'Регламенты и стандарты компании появятся в следующей фазе. Уже сейчас извлекаем их из загруженных документов.',
     countApi: '/api/v1/regulations/count',

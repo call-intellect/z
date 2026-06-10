@@ -48,7 +48,7 @@ export function InsightsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }

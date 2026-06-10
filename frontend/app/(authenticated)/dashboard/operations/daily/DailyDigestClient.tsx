@@ -475,9 +475,6 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       <p className="text-xs" style={{ color: CHART.faint }}>
         Сгенерировано{' '}
         {data.createdAt.toLocaleString('ru-RU')}
-        {data.llmTaskRouteId
-          ? ` · модель: ${data.llmTaskRouteId}`
-          : ' · автоматически (без LLM)'}
         {data.deliveredAt
           ? ` · доставлено в Telegram ${data.deliveredAt.toLocaleString('ru-RU')}`
           : ''}

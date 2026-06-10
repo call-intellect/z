@@ -103,7 +103,7 @@ export function DocumentsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Этот раздел доступен только в рамках Org."
+        description="Этот раздел доступен только в рамках организации."
       />
     );
   }

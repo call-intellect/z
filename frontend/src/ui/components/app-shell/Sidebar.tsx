@@ -95,6 +95,7 @@ import {
 } from '@/domain/entitlement';
 import { useTheme } from '@/ui/components/theme/ThemeProvider';
 import { NAV_HELP } from '@/lib/nav-help';
+import { SECTION_LABELS } from '@/lib/section-labels';
 import { OrgSwitcher } from './OrgSwitcher';
 
 /**
@@ -214,7 +215,7 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
   // SBA β-5 — реестр идей и запросов клиентов (доступ всем member по умолчанию).
   { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
   // SBA α-7 — Regulation / Process / Policy.
-  { href: '/regulations', label: 'Правила и стандарты', icon: ClipboardList, matchPrefix: '/regulations' },
+  { href: '/regulations', label: SECTION_LABELS.regulations, icon: ClipboardList, matchPrefix: '/regulations' },
   // SBA β-3 — реестр решений компании.
   { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
   // SBA β-4 — повторяющиеся сигналы (problems / risks / blockers).
@@ -249,7 +250,7 @@ const DAILY_GROUP: NavGroup = {
     // ролью. Переехал из свёрнутого «Справочника» наверх как daily-driver
     // владельца. tourTarget welcome.structure перенесён сюда (был на /structure
     // в «Справочнике»).
-    { href: '/structure', label: 'Команда', icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
+    { href: '/structure', label: SECTION_LABELS.structure, icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
@@ -299,7 +300,7 @@ const ME_GROUP: NavGroup = {
     // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
     { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
     // 2026-05-28 referrals-sidebar — реферальная программа (20 000 ₽ с платежа).
-    { href: '/referrals', label: 'Реферальная программа', icon: Gift, matchPrefix: '/referrals' },
+    { href: '/referrals', label: SECTION_LABELS.referrals, icon: Gift, matchPrefix: '/referrals' },
   ],
 };
 

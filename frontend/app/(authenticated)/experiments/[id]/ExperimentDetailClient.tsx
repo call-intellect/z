@@ -93,7 +93,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -101,7 +101,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
     return (
       <AdminForbidden
         title="Нет прав на просмотр эксперимента"
-        description="Попросите owner или admin Org выдать вам право experiment:read."
+        description="Попросите владельца или администратора организации выдать вам право experiment:read."
       />
     );
   }

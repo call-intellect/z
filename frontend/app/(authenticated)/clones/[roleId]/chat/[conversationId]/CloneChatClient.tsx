@@ -91,7 +91,7 @@ export function CloneChatClient({
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Раздел доступен только внутри Org."
+        description="Раздел доступен только внутри организации."
       />
     );
   }

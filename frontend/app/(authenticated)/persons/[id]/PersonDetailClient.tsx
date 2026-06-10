@@ -68,7 +68,7 @@ export function PersonDetailClient({ entityId }: { entityId: string }) {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org. Попросите владельца пригласить вас."
+        description="Вы не состоите ни в одной организации. Попросите владельца пригласить вас."
       />
     );
   }
@@ -137,7 +137,7 @@ function PersonDetailContent({
     return (
       <AdminForbidden
         title="Нет прав на просмотр"
-        description="Этот раздел доступен авторизованным сотрудникам Org."
+        description="Этот раздел доступен авторизованным сотрудникам организации."
       />
     );
   }
@@ -145,7 +145,7 @@ function PersonDetailContent({
     return (
       <AdminForbidden
         title="Персона не найдена"
-        description="Сущность не существует или не принадлежит вашей Org."
+        description="Сущность не существует или не принадлежит вашей организации."
       />
     );
   }
@@ -264,7 +264,7 @@ function PersonDetailContent({
 
       {!isOwner && isPerson && (
         <section className="rounded-lg border border-border-subtle bg-bg-overlay p-5 text-sm text-fg-tertiary">
-          Удаление личных данных доступно только владельцу Org.
+          Удаление личных данных доступно только владельцу организации.
         </section>
       )}
 

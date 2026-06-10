@@ -9,6 +9,7 @@ import { curationApi, type ConflictStatusApi } from '@/api/curation.api';
 import { useAuth } from '@/contexts/auth-context';
 import type { CurrentOrgRole } from '@/domain/account';
 import { conflictStatusLabel, mapConflictItem } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import {
   AdminEmpty,
   AdminError,
@@ -158,7 +159,7 @@ export function ConflictsListClient() {
                 className="flex flex-col gap-1 px-4 py-3 transition hover:bg-bg-hover/50"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{c.resourceType}</span>
+                  <span className="text-sm font-medium">{resourceTypeRu(c.resourceType)}</span>
                   <span
                     className={`rounded-full border px-2 py-0.5 text-xs ${statusBadgeClass(
                       c.status,

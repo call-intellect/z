@@ -18,6 +18,7 @@ import {
   conflictStatusLabel,
   mapConflictItem,
 } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import {
   AdminError,
@@ -252,7 +253,7 @@ function ConflictDetailView({
       {/* Заголовок */}
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
-          {conflict.resourceType}
+          {resourceTypeRu(conflict.resourceType)}
         </div>
         <h1 className="mt-1 text-2xl font-semibold">Конфликт канонизации</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">

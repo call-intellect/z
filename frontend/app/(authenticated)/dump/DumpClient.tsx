@@ -76,7 +76,7 @@ export function DumpClient() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          Эта страница доступна только в рамках Org. Создайте или присоединитесь к организации.
+          Эта страница доступна только в рамках организации. Создайте или присоединитесь к организации.
         </div>
       </div>
     );

@@ -161,7 +161,7 @@ export function OrganizationClient() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="open">
-                  Open — менеджеры видят все ресурсы Org
+                  Open — менеджеры видят все ресурсы организации
                 </SelectItem>
                 <SelectItem value="strict">
                   Strict — менеджеры видят только свои ресурсы

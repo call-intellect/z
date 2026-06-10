@@ -7,6 +7,7 @@ import { IdleMeetingCron } from './cron/idle-meeting.cron';
 import { HostControlsService } from './host-controls.service';
 import { MeetingActionItemsService } from './meeting-action-items.service';
 import { MeetingTaskDedupeService } from './meeting-task-dedupe.service';
+import { MeetingVisibilityService } from './meeting-visibility.service';
 import { MeetingsController } from './meetings.controller';
 import { MeetingsCrossmarkController } from './meetings.crossmark.controller';
 import { MeetingsRepository } from './meetings.repository';
@@ -33,6 +34,7 @@ import { MeetingsService } from './meetings.service';
     HostControlsService,
     MeetingActionItemsService,
     MeetingTaskDedupeService,
+    MeetingVisibilityService,
     IdleMeetingCron,
     IdempotencyInterceptor,
   ],
@@ -42,6 +44,7 @@ import { MeetingsService } from './meetings.service';
     HostControlsService,
     MeetingActionItemsService,
     MeetingTaskDedupeService,
+    MeetingVisibilityService,
   ],
 })
 export class MeetingsModule {}

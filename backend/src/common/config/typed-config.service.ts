@@ -1784,6 +1784,15 @@ export class TypedConfigService {
     } as const;
   }
 
+  /** ТЗ 2026-06-10 meeting-visibility — kill-switch «Кому видно» (Ship-On: true). */
+  get meetingVisibilityEnabled(): boolean {
+    return this.resolveSync<boolean>(
+      'meeting.visibility.enabled',
+      'MEETING_VISIBILITY_ENABLED',
+      true,
+    );
+  }
+
   // ─────────────────────── recording reliability ─────────────────
   /**
    * Надёжность записи (ТЗ 2026-06-03 meeting-recording-reliability):

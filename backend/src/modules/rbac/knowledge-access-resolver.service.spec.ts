@@ -181,6 +181,59 @@ describe('KnowledgeAccessResolver.resolveAccessibleGroups', () => {
   });
 });
 
+// ─── ТЗ 2026-06-10 meeting-visibility — resolveDirectGroupIds ───────────────
+describe('KnowledgeAccessResolver.resolveDirectGroupIds', () => {
+  it('owner → isBypass=true, personId=null, пустые группы', async () => {
+    const { resolver } = buildResolver({ loadContext: { role: 'owner' } });
+    const res = await resolver.resolveDirectGroupIds({ tenantId: TENANT, userId: USER });
+    expect(res.isBypass).toBe(true);
+    expect(res.personId).toBeNull();
+    expect(res.groupIds).toEqual([]);
+  });
+
+  it('нет Person → isBypass=false, personId=null, пустые группы', async () => {
+    const { resolver } = buildResolver({ loadContext: { role: 'manager' }, person: null });
+    const res = await resolver.resolveDirectGroupIds({ tenantId: TENANT, userId: USER });
+    expect(res.isBypass).toBe(false);
+    expect(res.personId).toBeNull();
+    expect(res.groupIds).toEqual([]);
+  });
+
+  it('МАТРИЦА НЕ применяется: groupIds содержит свою dept-группу, но НЕ visibleGroup из policy', async () => {
+    const { resolver } = buildResolver({
+      loadContext: { role: 'manager', isSuperAdmin: false },
+      person: { id: 'p-1', primaryDepartmentId: 'dep-1' },
+      personRoles: [],
+      appointments: [],
+      headOf: [],
+      deptGroups: [{ id: 'g-dep-1' }],
+      memberships: [],
+      // Матрица даёт visibleGroup — он НЕ должен попасть в прямые группы.
+      policies: [{ visibleGroupId: 'g-visible-via-matrix' }],
+    });
+    const res = await resolver.resolveDirectGroupIds({ tenantId: TENANT, userId: USER });
+    expect(res.personId).toBe('p-1');
+    expect(res.isBypass).toBe(false);
+    expect(res.groupIds).toContain('g-dep-1');
+    expect(res.groupIds).not.toContain('g-visible-via-matrix');
+  });
+
+  it('прямое членство в closed-группе → в groupIds; чужой tenant игнорируется', async () => {
+    const { resolver } = buildResolver({
+      loadContext: { role: 'manager' },
+      person: { id: 'p-2', primaryDepartmentId: null },
+      deptGroups: [],
+      memberships: [
+        { groupId: 'g-council', group: { kind: 'council', isClosed: true, tenantId: TENANT } },
+        { groupId: 'g-other', group: { kind: 'council', isClosed: true, tenantId: 'OTHER' } },
+      ],
+    });
+    const res = await resolver.resolveDirectGroupIds({ tenantId: TENANT, userId: USER });
+    expect(res.groupIds).toContain('g-council');
+    expect(res.groupIds).not.toContain('g-other');
+  });
+});
+
 describe('KnowledgeAccessResolver.buildAccessWhere', () => {
   it('non-bypass → AND[2]: none-closed + OR[none-dept, some-in-deptGroupIds]', () => {
     const { resolver } = buildResolver({ loadContext: { role: 'manager' } });

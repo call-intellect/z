@@ -237,7 +237,7 @@ MEETING_VISIBILITY_ENABLED: z.coerce.boolean().default(true),
 - Миграция повторно применяется как no-op (idempotent на чистой БД).
 **Закрывает:** R1.
 
-### Ф2 — Бэкенд-ядро: резолвер + предикат `[ ]`
+### Ф2 — Бэкенд-ядро: резолвер + предикат `[x]`
 **Цель:** `resolveDirectGroupIds` (read-only, в KnowledgeAccessResolver) + `MeetingVisibilityService` (`canView`/`assertCanView`/`buildListWhere`) + kill-switch ENV.
 **Входит:**
 - НОВЫЙ метод `resolveDirectGroupIds({tenantId,userId})` в `knowledge-access-resolver.service.ts` (additive; НЕ менять `resolveAccessibleGroups`/`buildAccessWhere`/прочее).

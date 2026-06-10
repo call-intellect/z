@@ -81,6 +81,7 @@ import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { AnthropicService } from './services/anthropic.service';
+import { DeepSeekService } from './services/deepseek.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
 import { MinimaxService } from './services/minimax.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
@@ -152,6 +153,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     VoxService,
     LlmFallbackService,
     AnthropicService,
+    DeepSeekService,
     MinimaxService,
     OpenAiProxyService,
 

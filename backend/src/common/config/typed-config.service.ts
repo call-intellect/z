@@ -307,13 +307,12 @@ export class TypedConfigService {
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
         defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
         // ТЗ-3 Фаза 3 — форс synthetic-tool через tool_choice для не-thinking
-        // моделей при autoConvert. Дефолт OFF (см. env.schema.ts): включает
-        // владелец после прод-пробы agent-lia. Guard в deepseek.service
-        // откатывает на 'auto' при format-400 прокси.
+        // моделей при autoConvert. Дефолт ON (Ship-On, retest3 #56): kill-switch.
+        // Guard в deepseek.service откатывает на 'auto' при format-400 прокси.
         forceToolChoiceEnabled: this.resolveSync<boolean>(
           'ai.deepseek.forceToolChoiceEnabled',
           'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
-          false,
+          true,
         ),
       },
       ollama: {
@@ -323,6 +322,11 @@ export class TypedConfigService {
       minimax: {
         apiKey: this.get('MINIMAX_API_KEY'),
         baseUrl: this.get('MINIMAX_BASE_URL'),
+      },
+      // retest3 Ф5 #51/Р3 — основной провайдер главного отчёта встречи
+      // (LlmFallbackService). 'deepseek' (Ship-On) | 'minimax' (kill-switch-откат).
+      mainReport: {
+        primary: this.get('LLM_MAIN_REPORT_PRIMARY'),
       },
       grsai: {
         apiKey: this.get('GRSAI_API_KEY'),

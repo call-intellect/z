@@ -87,6 +87,15 @@ import {
  *
  * Concurrency: 2 (рейт-лимит Anthropic-комплита).
  */
+
+/**
+ * retest3 Ф5 #51 — per-agent модель главного отчёта. summary/report-by-type/
+ * follow-up идут на capable pro-модель DeepSeek; tasks/custom — на flash-default
+ * (model не задаётся). В minimax-ветке `LlmFallbackService` это имя сбрасывается
+ * (D1) — поэтому безопасно проставлять всегда.
+ */
+const MAIN_REPORT_MODEL = 'deepseek-v4-pro';
+
 @Injectable()
 export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalyzeWorker.name);
@@ -581,6 +590,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       agentType: 'summary',
       promptName: SUMMARY_TOOL_NAME,
       input: {
+        model: MAIN_REPORT_MODEL,
         system: { text: systemText, cacheControl: 'ephemeral' },
         user: userText,
       },
@@ -768,6 +778,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType: 'report-by-type',
         promptName: expectedToolName,
         input: {
+          model: MAIN_REPORT_MODEL,
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user: userExtra,
           tools: [tool],
@@ -917,6 +928,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType,
         promptName: toolName,
         input: {
+          // follow-up — на pro-модели; tasks остаётся на flash-default (model=undefined).
+          ...(agentType === 'follow-up' ? { model: MAIN_REPORT_MODEL } : {}),
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user:
             attempt === 0

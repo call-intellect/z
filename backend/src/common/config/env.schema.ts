@@ -126,6 +126,14 @@ const LlmRouterSchema = z.object({
     .int()
     .positive()
     .default(300_000),
+  /**
+   * retest3 Ф5 #51/Р3 — основной провайдер ГЛАВНОГО отчёта встречи
+   * (`LlmFallbackService`, потребитель — `analyze.worker`). `deepseek` (Ship-On:
+   * фича готова → включена; работает кэш DeepSeek + per-agent pro-модель) с
+   * каскадом DeepSeek→MiniMax→OpenAI. `minimax` оставлен как kill-switch-откат
+   * (дословно прежний каскад MiniMax→OpenAI).
+   */
+  LLM_MAIN_REPORT_PRIMARY: z.enum(['minimax', 'deepseek']).default('deepseek'),
 });
 
 const VoxSchema = z.object({

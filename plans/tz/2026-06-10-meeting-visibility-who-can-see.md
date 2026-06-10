@@ -282,7 +282,8 @@ MEETING_VISIBILITY_ENABLED: z.coerce.boolean().default(true),
 - Swagger smoke: оба эндпоинта в `/api/docs`. `bun run typecheck`/`build` зелёные.
 **Закрывает:** R5.
 
-### Ф5 — Фронтенд: контрол «Кому видно» `[ ]`
+### Ф5 — Фронтенд: контрол «Кому видно» `[x]`
+> Реализация: `VisibilityControl`/`VisibilityDialog` (meeting-result-v2) + пресет в `CreateMeetingFormV2` (после create → PATCH если scope≠participants). Пикер людей — через существующий `ParticipantPicker` (поиск), группы — `knowledgeAccessApi.listGroups`. isHost — реакция на 403 (явного флага хоста на странице нет). Чип «Кому видно: …» в шапке. typecheck/lint/build 0; ручная приёмка глазами — в проде (qa-tester).
 **Цель:** выбор «Кому видно» при создании встречи и на странице встречи (пресеты + пикер людей/групп), слои `ApiDto→DomainModel→UiModel`.
 **Входит:** компонент «Кому видно» (radio пресеты: Только мне / Участникам / Выбрать людей и группы / Всей компании; при «Выбрать» — мультиселект людей и групп Org); вызовы `GET/PATCH visibility` через единый `api-client.ts`; маппер домена; показ текущего режима в карточке/деталях встречи. Все строки UI — русские; парные цветовые токены.
 **Что НЕ входит:** документы.

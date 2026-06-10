@@ -28,6 +28,7 @@ import {
   Clock,
   Copy,
   Download,
+  Eye,
   ExternalLink,
   Files,
   FileText,
@@ -74,7 +75,11 @@ import {
   type ClosedGroupKind,
 } from '@/domain/knowledge-access';
 import type { MeetingDomain } from '@/domain/meeting';
-import { meetingStatusView, MEETING_TYPE_LABEL_RU } from '@/domain/meeting';
+import {
+  meetingStatusView,
+  visibilityScopeLabel,
+  MEETING_TYPE_LABEL_RU,
+} from '@/domain/meeting';
 import type { MeetingType } from '@/domain/enums';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
@@ -114,6 +119,7 @@ import { MeetingChatPanel } from './MeetingChatPanel';
 import { MeetingSummaryRender } from './MeetingSummaryRender';
 import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
+import { VisibilityDialog } from './VisibilityDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
 import { fmtTime, fmtDurationCompact } from './format-utils';
 import {
@@ -469,6 +475,7 @@ function MeetingHeader({
   const router = useRouter();
   const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
 
   // Список юзерских и системных шаблонов для regenerate sub-menu.
   const { data: templatesData } = useSWR(
@@ -585,6 +592,13 @@ function MeetingHeader({
             <span className="font-mono text-xs text-fg-tertiary">
               v{meeting.recapVersion}
             </span>
+            <span className="inline-flex items-center gap-1.5 text-fg-tertiary">
+              <Eye size={12} strokeWidth={1.75} />
+              Кому видно:{' '}
+              <span className="text-fg-secondary">
+                {visibilityScopeLabel(meeting.visibilityScope)}
+              </span>
+            </span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -664,6 +678,11 @@ function MeetingHeader({
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setVisibilityOpen(true)}>
+                <Eye size={14} />
+                Кому видно
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <Lock size={14} />
@@ -696,6 +715,12 @@ function MeetingHeader({
 
       <ProcessingBanner meeting={meeting} />
       {confirmDialog}
+      <VisibilityDialog
+        meetingId={meeting.id}
+        open={visibilityOpen}
+        onOpenChange={setVisibilityOpen}
+        onSaved={onMutateMeeting}
+      />
     </header>
   );
 }

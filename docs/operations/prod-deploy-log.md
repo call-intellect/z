@@ -135,6 +135,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 👁 2026-06-10 — «Кому видно» — доступ к видеовстречам (Ф1–Ф6)
+
+> Контракт: `plans/tz/2026-06-10-meeting-visibility-who-can-see.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (5 код-коммитов).
+>
+> **Зачем для прода:** убирает боль «сотрудники не видят встречи владельца» (by design owner-only MVP). Хост встречи управляет аудиторией «Кому видно» (как в Google Диске): `owner_only` · `participants` (ДЕФОЛТ) · `custom` (выбрать людей/группы) · `org` (всей компании). Кому видна встреча — тому видны видео/запись/расшифровка/отчёт (6 READ-поверхностей переведены на предикат `canView`). Управление встречей (rename/контролы/retry-ai/start/stop/delete/смена видимости) остаётся host-only. Граф знаний («второй мозг») НЕ затронут — отдельная подсистема. **Миграция БД ЕСТЬ** (аддитивная, авто). **1 новая ENV (kill-switch, default true).**
+>
+> ⚠ **Регистрировать в `apply-prod-deploy.ts` STEPS НЕ нужно** — это миграция схемы (`prisma migrate deploy`), не seed/patch/backfill.
+
+- **Шаг 1 — ENV (kill-switch, default true — действий владельца НЕ требует):** `MEETING_VISIBILITY_ENABLED` (`cfg.meetingVisibilityEnabled`, zBool default `true`). Действует «Кому видно». Аварийный откат: `=false` в `.env` + `docker compose up -d --force-recreate backend` → legacy owner-only (встречу видит только создатель). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610130000_meeting_visibility`): `Meeting +visibilityScope VARCHAR(16) NOT NULL DEFAULT 'participants'`; `+ table MeetingAccessGrant` (грант person/group: `tenantId`/`meetingId`/`granteeType`/`granteeId`/`grantedById`/`createdAt`; FK `meetingId → Meeting ON DELETE CASCADE`; unique `(meetingId,granteeType,granteeId)` + индексы `(tenantId,meetingId)`/`(granteeType,granteeId)`). Аддитивна (ADD COLUMN с дефолтом + CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна (повтор — no-op). **В STEPS агрегатора регистрировать НЕ нужно.**
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingVisibilityService` (`canView`/`assertCanView`/`buildListWhere`), `KnowledgeAccessResolver.resolveDirectGroupIds` (новый read-only метод), новый `assertMeetingHost`, эндпоинты `GET/PATCH /meetings/:id/visibility`, новая PrismaClient-модель `meetingAccessGrant`; frontend: контрол «Кому видно» на странице встречи + при создании): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` → `GET /api/v1/meetings/:id/visibility` + `PATCH /api/v1/meetings/:id/visibility` (host-only). На странице встречи (хост) виден чип «Кому видно: …» и диалог редактирования; участник встречи видит её в списке/деталях/отчёте/записи; не-участник при дефолте `participants` без гранта → `403`.
+
+Прод-инструкция кратко: `docker compose up -d --build backend frontend` (миграция применится сама) + при желании выставить `MEETING_VISIBILITY_ENABLED=true` в `.env` (это и так дефолт). Все прочие команды — через `docker compose exec backend ...`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🛟 2026-06-09 — Встроенная служба поддержки + закрытый контур + самообучающийся клон (Ф1–Ф4)
 
 > Контракт: `plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.

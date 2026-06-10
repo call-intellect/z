@@ -127,6 +127,17 @@ type: architecture
 
 ---
 
+## «Кому видно» — доступ к видеовстрече (2026-06-10)
+
+Доступ к самой видеовстрече (её странице: список → детали → отчёт → расшифровка → запись) — **отдельная подсистема** от графа знаний, не пересекается с knowledge-access (`block-access-deriver`/`IdeaBlockAccess`/retrieval/`KNOWLEDGE_ACCESS_ENFORCEMENT`). ТЗ [`2026-06-10-meeting-visibility-who-can-see.md`](../../plans/tz/2026-06-10-meeting-visibility-who-can-see.md).
+
+- **Модель «Кому видно»** (как в Google Диске): хост задаёт `Meeting.visibilityScope` — `owner_only` · `participants` (ДЕФОЛТ) · `custom` (явные гранты `MeetingAccessGrant` людям/группам) · `org` (вся компания). Раньше встреча была доступна **только создателю** (`ownerId === userId`) — отсюда боль «сотрудники не видят встречи владельца». Один доступ на всё про встречу: кому видна встреча — тому видны видео/запись/расшифровка/отчёт.
+- **6 READ-поверхностей** (список, детали, отчёт, статус, транскрипт, запись: download + audio-tracks) гейтятся единым предикатом `MeetingVisibilityService.canView` (`canView`/`assertCanView`/`buildListWhere`). Грант группе — по **ПРЯМОМУ** членству (read-only метод `KnowledgeAccessResolver.resolveDirectGroupIds`, БЕЗ матрицы видимости отделов). Bypass (super_admin/owner/admin) видит все встречи своей Org.
+- **Управление встречей остаётся host-only** (rename/контролы/retry-ai/start/stop/delete/смена «Кому видно») — через явный публичный `assertMeetingHost` (owner-чек). Просмотр ≠ управление: грант-зритель не получает прав хоста.
+- **Kill-switch `MEETING_VISIBILITY_ENABLED`** (default true): `=false` → аварийный откат к legacy owner-only на всех затронутых поверхностях. Документы и «факты наследуют доступ источника» — vNext (см. [[../04_не-сделано/README]]).
+
+---
+
 ## Policy.csv — Casbin-стиль правила
 
 **Файл:** `backend/src/modules/rbac/policies/policy.csv` (~900 строк)

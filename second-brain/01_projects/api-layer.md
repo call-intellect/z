@@ -541,6 +541,15 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 Гейт доступа в retrieval — без отдельных эндпоинтов и кодов ошибок: отфильтрованные блоки просто не попадают в выдачу (не 403). Включается флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off/shadow/enforce, дефолт off).
 
+**«Кому видно» — доступ к видеовстрече** (модуль `meetings`, `meetings.controller.ts`; ТЗ [`2026-06-10-meeting-visibility-who-can-see.md`](../../plans/tz/2026-06-10-meeting-visibility-who-can-see.md); kill-switch `MEETING_VISIBILITY_ENABLED`):
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/meetings/:id/visibility` | текущая аудитория встречи: `{ scope, grants: [{ granteeType, granteeId, name }] }`. `scope`: `owner_only`/`participants`/`custom`/`org` | host-only |
+| PATCH | `/api/v1/meetings/:id/visibility` | задать аудиторию. Тело `{ scope, grants?: [{ granteeType:'person'\|'group', granteeId }] }`; при `scope='custom'` — полная замена набора грантов (delete-all + createMany, идемпотентно по `@@unique`), при других scope гранты очищаются | host-only |
+
+Коды ошибок: `403 not_meeting_host` (не хост), `404 meeting_not_found`, `400 grants_required_for_custom` (`scope='custom'` без непустого `grants`), `400 invalid_grantee` (`granteeId` не Person/KnowledgeGroup этого tenant). Поле `visibilityScope` отдаётся в DTO деталей/отчёта и в summary списка. Отличие от `KNOWLEDGE_ACCESS_ENFORCEMENT`: это физический доступ к СТРАНИЦЕ встречи (видео/запись/расшифровка/отчёт через предикат `canView`), не фильтрация блоков графа знаний — отдельная подсистема.
+
 ## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
 
 **Источник:** ТЗ-2/ТЗ-3/ТЗ-4/ТЗ-5. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».

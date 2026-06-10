@@ -53,6 +53,28 @@ type: architecture
 
 **Поле `card_id`** — опциональная привязка к CRM-карточке (см. [[../01_projects/cards]]). `onDelete: SetNull` — при удалении карточки встреча сохраняется, привязка обнуляется. Один `card_id` (one-to-many от Card к Meeting). Несколько карточек на встречу — vNext.
 
+**Поле `visibilityScope String @default("participants") @db.VarChar(16)`** (миграция `20260610130000_meeting_visibility`, ТЗ meeting-visibility-who-can-see) — «Кому видно» встречу: кто видит её страницу (а с ней — видео/запись/расшифровку/отчёт). Значения: `owner_only` (только создатель + bypass-роли) · `participants` (ДЕФОЛТ — создатель + участники с `Participant.userId`) · `custom` (участники + явные гранты `MeetingAccessGrant`) · `org` (вся компания одного tenant). Источник правды доступа к READ-поверхностям встречи (предикат `MeetingVisibilityService.canView`). **Отдельная подсистема от графа знаний** — `visibilityScope` НЕ читается ingest-конвейером/`block-access-deriver` (тот читает `closedGroupKind`/тип/участников). Управление встречей остаётся host-only. Kill-switch `MEETING_VISIBILITY_ENABLED` (=false → legacy owner-only). Back-relation: `accessGrants MeetingAccessGrant[]`.
+
+### MeetingAccessGrant
+
+```json
+{
+  "id": "ckxxxxxxxxxxxx",
+  "tenantId": "cmp...",
+  "meetingId": "meeting_123",
+  "granteeType": "person",
+  "granteeId": "person_456",
+  "grantedById": "user_abc",
+  "created_at": "2026-06-10T12:00:00Z"
+}
+```
+
+Явный грант доступа к встрече при `visibilityScope='custom'` — кому хост открыл руками (миграция `20260610130000_meeting_visibility`).
+- `granteeType String @db.VarChar(8)` — `'person'` (грант человеку, `granteeId` = `Person.id`) или `'group'` (грант группе, `granteeId` = `KnowledgeGroup.id`; срабатывает по **ПРЯМОМУ** членству, БЕЗ матрицы видимости отделов).
+- `grantedById` — `User.id` хоста, выдавшего доступ.
+- `tenantId` — денормализован скаляром для индекса `(tenantId, meetingId)`; FK/каскад идёт через `Meeting` (`onDelete: Cascade` — при удалении встречи гранты удаляются), НЕ через `Org`.
+- Индексы: unique `(meetingId, granteeType, granteeId)` (идемпотентность PATCH), `(tenantId, meetingId)`, `(granteeType, granteeId)`.
+
 ### Card (CRM)
 
 ```json

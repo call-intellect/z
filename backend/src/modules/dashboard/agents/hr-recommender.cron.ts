@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 
 /**
  * Pulse Wave 3 §3.7 — HR-Recommender cron.
@@ -33,7 +34,12 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
  * мягкий (без strict schema — модель может вернуть 0 рекомендаций или
  * добавить optional поля).
  */
-const HR_RECOMMENDER_SYSTEM_PROMPT = `Ты — HR-консультант. На вход — сводка сигналов про сотрудника за 14 дней. Выдай рекомендации руководителю в 5 категориях:
+// A9 (2026-06-10): у каждой рекомендации есть `confidence` (0..1) — основание,
+// показывать ли её руководителю и с каким приоритетом. Базовая шкала
+// уверенности (`withConfidenceCalibration`) дописывается в КОНЕЦ SYSTEM
+// (cache-friendly), чтобы HR-рекомендации с шаткими сигналами не выдавали
+// завышенную уверенность.
+const HR_RECOMMENDER_SYSTEM_PROMPT = withConfidenceCalibration(`Ты — HR-консультант. На вход — сводка сигналов про сотрудника за 14 дней. Выдай рекомендации руководителю в 5 категориях:
 
 — praise (похвалить за конкретное)
 — compensation_review (рассмотреть ЗП-ревью)
@@ -46,7 +52,7 @@ const HR_RECOMMENDER_SYSTEM_PROMPT = `Ты — HR-консультант. На �
 - Каждая рекомендация имеет: type, text (1-2 предложения на русском), signals (массив строк — какие сигналы легли в основу), confidence (0..1).
 - НЕ называй полное имя сотрудника в text, говори «сотрудник» или «он/она».
 - Только на основе данных в сводке. Не выдумывай.
-- Верни строго JSON: { recommendations: [...] }.`;
+- Верни строго JSON: { recommendations: [...] }.`);
 
 const HR_RECOMMENDER_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

@@ -11,7 +11,7 @@ import {
   ChaptersResponseSchema,
   buildChaptersPrompt,
 } from './prompts/chapters';
-import type { DialogTurn } from './prompts/common';
+import { applyInputGuards, type DialogTurn } from './prompts/common';
 
 export interface ExtractChaptersInput {
   meetingId: string;
@@ -52,16 +52,24 @@ export class ChapterExtractionService {
       meeting: input.meeting,
       dialog: input.dialog,
     });
+    // A2-AI: вход — сырой транскрипт встречи. Оборачиваем user в маркеры
+    // данных + ASR-нота. Сервис без TypedConfigService — глобальный kill-switch
+    // здесь не гейтит (enabled по умолчанию true). Делаем один раз ДО цикла,
+    // чтобы маркеры обрамляли только транскрипт, а ретрай-добавка шла снаружи.
+    const guarded = applyInputGuards(prompt.system, prompt.user, {
+      injection: true,
+      asr: true,
+    });
 
     let lastError: unknown = null;
     for (let attempt = 0; attempt < ChapterExtractionService.MAX_RETRIES; attempt++) {
       const userMessage =
         attempt === 0
-          ? prompt.user
-          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"chapters":[...]} без markdown.`;
+          ? guarded.user
+          : `${guarded.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"chapters":[...]} без markdown.`;
       const result = await this.router.call({
         taskType: CHAPTERS_TASK_TYPE,
-        systemPrompt: prompt.system,
+        systemPrompt: guarded.system,
         userMessage,
         tenantId: input.tenantId,
         meetingId: input.meetingId,

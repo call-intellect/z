@@ -13,7 +13,7 @@
  *   { facts: [{ propertyId, value, confidence: 0..1, quote, timeSec }] }
  */
 
-import { withAsrNote, withInjectionGuard } from './common';
+import { withAsrNote, withInjectionGuard, wrapUserData } from './common';
 
 /**
  * Каталог типов колонок для подсказки модели, как форматировать `value`.
@@ -112,7 +112,9 @@ export function buildTableExtractRowsPrompt(
     schemaLines || '  (нет колонок)',
     '',
     'Фрагмент транскрипта встречи:',
-    args.transcriptChunk.trim(),
+    // Сырой ASR-транскрипт встречи — оборачиваем в маркеры данных
+    // (anti-injection). SYSTEM держит INJECTION_GUARD_NOTE + ASR-ноту выше.
+    wrapUserData(args.transcriptChunk.trim()),
     '',
     'Верни JSON по правилам из системного сообщения. Возвращай только прямо подтверждённые факты.',
   ].join('\n');

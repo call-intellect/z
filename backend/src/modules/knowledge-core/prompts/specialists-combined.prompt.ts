@@ -31,6 +31,7 @@
 import { z } from 'zod';
 
 import type { LlmTool } from '../../ai/services/llm.types';
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 
 // ──────────────────────────── Метаданные ────────────────────────────
 
@@ -446,7 +447,13 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
  * формулировку в system и user).
  */
 export function buildSpecialistsCombinedSystemPrompt(): string {
-  return [
+  // A9 (2026-06-10): у каждой извлечённой сущности есть `confidence`, которая
+  // течёт в вес/порог downstream (canonical draft → проекции). Единая шкала
+  // уверенности (`withConfidenceCalibration`) дописывается в КОНЕЦ SYSTEM
+  // (cache-friendly). Локальная калибровка confidence для regulations
+  // (голое упоминание → 0.5, шаги/роли/сроки → 0.9) остаётся в теле и не
+  // конфликтует с общей шкалой — это частный якорь для одного типа.
+  const body = [
     'Ты — knowledge-инженер компании Кора. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.',
     '',
     'Маршрутизация по signalType:',
@@ -477,6 +484,7 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '',
     `ВАЖНО: верни результат строго через вызов инструмента \`${SPECIALISTS_COMBINED_TOOL_NAME}\`. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');
+  return withConfidenceCalibration(body);
 }
 
 // ──────────────────────────── User message ────────────────────────────

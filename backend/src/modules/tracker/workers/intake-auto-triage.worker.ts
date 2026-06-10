@@ -77,7 +77,7 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
 - "suggestedLabels": массив меток (короткие slug'и) — может быть пустой.
 - "confidence": число 0..1, насколько ты уверен что задача чётко сформулирована и атрибуция верна.
 
-Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.92 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста.`;
+Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.75 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста (это порог авто-создания задачи).`;
 
 /**
  * Wave 3 / Tracker Phase 3 part B (2026-05-24) — IntakeAutoTriageWorker.
@@ -87,9 +87,10 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
  *   2. Загружает контекст организации (projects, people, goals, recent
  *      issues для паттернов).
  *   3. LLM `intake-auto-triage` → структурированный suggestion.
- *   4. Если confidence ≥ 0.92 + source='meeting' + suggestedAssigneeId
- *      разрешён через Person → создаёт Issue автоматически, помечает
- *      IntakeIssue.status='accepted', triagedAt=now, createdIssueId.
+ *   4. Если confidence ≥ tracker.autoAcceptConfidenceThreshold (дефолт 0.75) +
+ *      source='meeting' + suggestedAssigneeId разрешён через Person → создаёт
+ *      Issue автоматически, помечает IntakeIssue.status='accepted',
+ *      triagedAt=now, createdIssueId.
  *   5. Иначе — обновляет suggested* поля (status остаётся 'pending').
  *
  * Все шаги в одном методе `process` ради читаемости. На любую ошибку LLM —

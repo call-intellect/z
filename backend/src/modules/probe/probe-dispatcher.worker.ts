@@ -14,6 +14,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
+import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalService } from '../conversational/conversational.service';
 import { CORE_QUEUE_NAMES, type ProbeEventJobData } from '../core-queue/queues';
 import {
@@ -218,10 +219,14 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const contextKind = this.toStringOrUndef(payload.contextCardKind);
       const contextTitle = this.toStringOrUndef(payload.contextCardTitle);
-      const result = await this.llm.call({
-        taskType: 'probe-formulate',
-        systemPrompt: PROBE_FORMULATE_SYSTEM_PROMPT,
-        userMessage: PROBE_FORMULATE_USER_TEMPLATE({
+      // A2: оборачиваем сырой пользовательский ввод (message от specialist'a,
+      // suggestedActions, заголовок карточки) в анти-инъекционные маркеры.
+      // asr не нужен (это не транскрипт). Kill-switch — общий флаг.
+      const guardOn =
+        this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const guarded = applyInputGuards(
+        PROBE_FORMULATE_SYSTEM_PROMPT,
+        PROBE_FORMULATE_USER_TEMPLATE({
           emittedByService: probe.emittedByService,
           reason: probe.reason,
           message,
@@ -231,6 +236,12 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
               ? { kind: contextKind, title: contextTitle }
               : null,
         }),
+        { enabled: guardOn, injection: true },
+      );
+      const result = await this.llm.call({
+        taskType: 'probe-formulate',
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
         tenantId: probe.tenantId,
         responseFormat: {
           type: 'json_schema',

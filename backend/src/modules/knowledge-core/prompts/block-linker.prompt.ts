@@ -14,6 +14,8 @@
 import type { IdeaBlockLinkType } from '@prisma/client';
 import { z } from 'zod';
 
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+
 /**
  * Полный список допустимых типов IdeaBlockLink (без sentinel `'none'`).
  * Хранится здесь же, чтобы JSON Schema, Zod и сервис ссылались на один
@@ -92,7 +94,12 @@ export const BlockLinkerResponseSchema = z.object({
   validUntil: z.string().max(40).nullable().optional(),
 });
 
-export const BLOCK_LINKER_SYSTEM_PROMPT = `Ты — эксперт по связям между знаниями.
+// A9 (2026-06-10): `confidence` здесь решает, создавать ли типизированное ребро
+// графа (IdeaBlockLink) и с каким весом — поэтому SYSTEM завершается единой
+// шкалой уверенности (`withConfidenceCalibration`, дописывается в КОНЕЦ →
+// cache-friendly). Локальное правило про «0.9+ только если связь явная»
+// остаётся в теле промпта и согласуется со шкалой.
+export const BLOCK_LINKER_SYSTEM_PROMPT = withConfidenceCalibration(`Ты — эксперт по связям между знаниями.
 На вход даются два IdeaBlock — A (новый) и B (кандидат). Каждый — пара "критический вопрос → доверенный ответ".
 
 Твоя задача: определить, есть ли между A и B устойчивая логическая связь, и если да — какого типа.
@@ -113,4 +120,4 @@ export const BLOCK_LINKER_SYSTEM_PROMPT = `Ты — эксперт по связ
 - "confidence" ∈ [0,1] — насколько ты уверен. 0.9+ только если связь явная.
 - "explanation" — 1-2 короткие фразы на русском.
 - "validFrom" / "validUntil" — ISO-дата (YYYY-MM-DD / YYYY-MM / YYYY), если в исходных блоках есть явный временной указатель ("с октября", "до конца квартала", "до подписания контракта"). Если ничего не сказано — null. НЕ ВЫДУМЫВАЙ даты.
-- Ответ — строго JSON по схеме. Никакого markdown.`;
+- Ответ — строго JSON по схеме. Никакого markdown.`);

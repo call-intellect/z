@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { applyInputGuards } from '../../ai/services/prompts/common';
 import {
   CONCIERGE_STEP_PRM_JSON_SCHEMA,
   CONCIERGE_STEP_PRM_SCHEMA_NAME,
@@ -75,11 +76,20 @@ export class ConciergeStepScorerService {
       retrievedContextDigest: this.digestContext(args.retrievedContext),
       candidate: args.candidate,
     });
+    // A2: оборачиваем сырой пользовательский ввод (цель + история диалога
+    // пользователя с Concierge) в анти-инъекционные маркеры. У сервиса нет
+    // TypedConfigService — глобальный kill-switch здесь не гейтит (enabled по
+    // умолчанию true); конструктор ради флага не расширяем.
+    const guarded = applyInputGuards(
+      CONCIERGE_STEP_PRM_SYSTEM_PROMPT,
+      userMessage,
+      { injection: true },
+    );
     try {
       const out = await this.llm.call({
         taskType: 'concierge-step-prm',
-        systemPrompt: CONCIERGE_STEP_PRM_SYSTEM_PROMPT,
-        userMessage,
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
         tenantId: args.tenantId,
         maxTokens: 400,
         responseFormat: {

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { ApiError } from './api-error';
+import { ApiError, httpStatusFallbackRu } from './api-error';
 
 type GetOpts = { signal?: AbortSignal; headers?: Record<string, string> };
 type PostOpts = {
@@ -61,9 +61,11 @@ async function parseError(res: Response, requestId: string): Promise<ApiError> {
     body = null;
   }
   const err = body?.error;
+  // ВАЖНО: фолбэк message — РУССКАЯ фраза, а не «HTTP 500». Эта строка всплывает
+  // в тостах/баннерах по всему кабинету; технический код остаётся в `code`.
   return new ApiError({
     code: err?.code ?? `http_${res.status}`,
-    message: err?.message ?? `HTTP ${res.status}`,
+    message: err?.message ?? httpStatusFallbackRu(res.status),
     requestId: err?.requestId ?? requestId,
     details: err?.details,
   });

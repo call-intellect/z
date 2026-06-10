@@ -169,7 +169,7 @@ export function ConflictsListClient() {
                   </span>
                 </div>
                 <div className="truncate text-xs text-fg-tertiary">
-                  {c.existingId} ↔ {c.newId}
+                  Две карточки знания расходятся — откройте, чтобы решить
                 </div>
                 <div className="text-xs text-fg-tertiary">
                   обнаружен {c.createdAt.toLocaleString('ru-RU')}

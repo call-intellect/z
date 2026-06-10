@@ -73,6 +73,24 @@ export function conflictResolutionLabel(r: ConflictResolution): string {
   return CONFLICT_RESOLUTION_LABEL[r] ?? r;
 }
 
+/**
+ * RU-подпись характера связи конфликта. Значения приходят из block-linker
+ * (enum IdeaBlockLinkType); на практике для конфликта это почти всегда
+ * `contradicts`. Неизвестное — нейтральная подпись, НЕ сырой код.
+ */
+const CONFLICT_RELATION_LABEL: Record<string, string> = {
+  contradicts: 'Противоречие',
+  develops: 'Развитие',
+  causes: 'Причина',
+  consequences_of: 'Следствие',
+  shares_topic: 'Общая тема',
+  shares_entity: 'Общая сущность',
+  question_answered_by: 'Ответ на вопрос',
+};
+export function conflictRelationLabel(relationType: string): string {
+  return CONFLICT_RELATION_LABEL[relationType.toLowerCase()] ?? 'Связь карточек';
+}
+
 export interface CurationItem {
   id: string;
   tenantId: string;

@@ -22,7 +22,11 @@ const RESOURCE_TYPE_RU: Record<string, string> = {
   company_profile: 'профиль компании',
 };
 export const RESOURCE_TYPE_RU_KEYS = Object.keys(RESOURCE_TYPE_RU);
-/** Переводит тип ресурса в RU для отображения; неизвестный — как есть. */
+/**
+ * Переводит тип ресурса в RU для отображения; неизвестный — как есть.
+ * Бэкенд иногда отдаёт тип в верхнем регистре (`IDEA_BLOCK`), а словарь —
+ * в нижнем (`idea_block`), поэтому нормализуем регистр перед поиском.
+ */
 export function resourceTypeRu(t: string): string {
-  return RESOURCE_TYPE_RU[t] ?? t;
+  return RESOURCE_TYPE_RU[t] ?? RESOURCE_TYPE_RU[t.toLowerCase()] ?? t;
 }

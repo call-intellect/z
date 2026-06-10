@@ -14,6 +14,7 @@ import {
 } from '@/api/curation.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  conflictRelationLabel,
   conflictResolutionLabel,
   conflictStatusLabel,
   mapConflictItem,
@@ -255,20 +256,24 @@ function ConflictDetailView({
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
           {resourceTypeRu(conflict.resourceType)}
         </div>
-        <h1 className="mt-1 text-2xl font-semibold">Конфликт канонизации</h1>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <h1 className="mt-1 text-2xl font-semibold">Возможное противоречие</h1>
+        <p className="mt-1 max-w-2xl text-sm text-fg-secondary">
+          Кора заметила, что две карточки знания расходятся между собой.
+          Посмотрите объяснение ниже и выберите, какую версию оставить.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-fg-secondary">
             {conflictStatusLabel(conflict.status)}
           </span>
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-fg-secondary">
-            {conflict.relationType}
+            {conflictRelationLabel(conflict.relationType)}
           </span>
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-fg-secondary">
-            обнаружил: {conflict.detectedBy}
+            Найдено автоматически
           </span>
         </div>
         <div className="mt-2 text-xs text-fg-tertiary">
-          обнаружен {conflict.createdAt.toLocaleString('ru-RU')}
+          обнаружено {conflict.createdAt.toLocaleString('ru-RU')}
         </div>
       </header>
 
@@ -278,22 +283,30 @@ function ConflictDetailView({
           <div className="mb-1 text-xs uppercase tracking-wide text-fg-tertiary">
             Существующая карточка
           </div>
-          <div className="break-all text-sm font-medium">{conflict.existingId}</div>
+          <div className="text-sm font-medium text-fg-primary">
+            {resourceTypeRu(conflict.resourceType)}
+          </div>
+          <div className="mt-1 break-all text-[11px] text-fg-tertiary">
+            ID: {conflict.existingId}
+          </div>
         </div>
         <div className="rounded-lg border border-accent/40 bg-accent/5 p-4">
           <div className="mb-1 text-xs uppercase tracking-wide text-fg-tertiary">
             Новая карточка
           </div>
-          <div className="break-all text-sm font-medium">{conflict.newId}</div>
+          <div className="text-sm font-medium text-fg-primary">
+            {resourceTypeRu(conflict.resourceType)}
+          </div>
+          <div className="mt-1 break-all text-[11px] text-fg-tertiary">
+            ID: {conflict.newId}
+          </div>
         </div>
       </section>
 
-      {/* Доказательства */}
+      {/* Объяснение Коры — человекочитаемо, без сырого JSON */}
       <section className="mb-6">
-        <h2 className="mb-1 text-sm font-medium">Доказательства</h2>
-        <pre className="max-h-72 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(conflict.evidence, null, 2)}
-        </pre>
+        <h2 className="mb-1.5 text-sm font-medium">Почему Кора так решила</h2>
+        <ConflictEvidence evidence={conflict.evidence} />
       </section>
 
       {/* Уже разрешён — показываем результат */}
@@ -450,6 +463,37 @@ function ConflictDetailView({
           Этот конфликт уже закрыт.
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * Человекочитаемый рендер «доказательств» конфликта. Раньше здесь показывался
+ * сырой `JSON.stringify(evidence)` — техническая утечка в интерфейс. Теперь:
+ * текст объяснения (поле `explanation`) + уверенность в процентах. Остальные
+ * технические поля (blockIds/relationType) пользователю не показываем.
+ */
+function ConflictEvidence({
+  evidence,
+}: {
+  evidence: Record<string, unknown>;
+}) {
+  const explanation =
+    typeof evidence.explanation === 'string' ? evidence.explanation.trim() : '';
+  const confidence =
+    typeof evidence.confidence === 'number' ? evidence.confidence : null;
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-card p-4 text-sm">
+      <p className="leading-relaxed text-fg-secondary">
+        {explanation ||
+          'Кора нашла возможное противоречие между двумя карточками знания.'}
+      </p>
+      {confidence !== null ? (
+        <p className="text-xs text-fg-tertiary">
+          Уверенность Коры: {Math.round(confidence * 100)}%
+        </p>
+      ) : null}
     </div>
   );
 }

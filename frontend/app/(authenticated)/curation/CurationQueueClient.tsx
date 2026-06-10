@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   curationApi,
   type CurationDecisionTypeApi,
@@ -34,6 +34,7 @@ import {
 import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
+import { ReadablePayload } from './ReadablePayload';
 
 const COMPLETENESS_CARD_TYPES_BY_RESOURCE: Partial<
   Record<string, CompletenessParentCardType>
@@ -294,9 +295,6 @@ function CurationQueueContent() {
                         {curationLevelLabel(it.level)}
                       </span>
                     </div>
-                    <div className="truncate text-xs text-fg-tertiary">
-                      {it.resourceId}
-                    </div>
                     <div className="flex items-center justify-between text-xs text-fg-tertiary">
                       <span>{curationStatusLabel(it.status)}</span>
                       {it.confidence !== null && (
@@ -375,7 +373,7 @@ function CurationDetailPanel({
       });
       onAfterDecide();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось сохранить решение');
+      setError(humanizeApiError(e, 'Не удалось сохранить решение'));
     } finally {
       setSubmitting(false);
     }
@@ -395,7 +393,7 @@ function CurationDetailPanel({
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
           {resourceTypeRu(item.resourceType)}
         </div>
-        <h2 className="mt-1 text-xl font-semibold">{item.resourceId}</h2>
+        <h2 className="mt-1 text-xl font-semibold">Требует вашей проверки</h2>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
           <span>{curationLevelLabel(item.level)}</span>
           <span>{curationStatusLabel(item.status)}</span>
@@ -411,16 +409,12 @@ function CurationDetailPanel({
 
       <section>
         <h3 className="mb-1 text-sm font-medium">Предлагается канонизировать</h3>
-        <pre className="max-h-72 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.proposedPayload, null, 2)}
-        </pre>
+        <ReadablePayload value={item.proposedPayload} />
       </section>
 
       <section>
         <h3 className="mb-1 text-sm font-medium">Почему сюда попала</h3>
-        <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.triageReason, null, 2)}
-        </pre>
+        <ReadablePayload value={item.triageReason} />
       </section>
 
       {/* SBA α-4 wave 2 — Вкладка «Полнота карточки». Показывается только для

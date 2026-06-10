@@ -726,7 +726,7 @@ function SidebarGroup({
     <div>
       {showSeparator && <Separator className="my-2" />}
       {!group.hideGroupLabel && (
-        <div className="mt-3 mb-1 px-3 text-xs uppercase tracking-wider text-fg-tertiary">
+        <div className="mt-4 mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
           {group.label}
         </div>
       )}

@@ -2,9 +2,12 @@
  * SBA γ-1 — ClonesService (Clone API).
  *
  * LLM-промпт `clone-respond` — отвечает на вопрос «от лица должности» (Clones=Roles
- * рефакторинг 2026-05-25, Фаза 6). System prompt = шаблон с подстановкой
- * `{{roleName}}` / `{{bearerName}}` + persona.personaPrompt; user prompt —
- * вопрос + subgraph context (subject-блоки + knowledgeProfile + decisions).
+ * рефакторинг 2026-05-25, Фаза 6). System prompt — СТАБИЛЬНАЯ константа по режиму
+ * (factual / judgmental), без переменных данных (F1 cache-friendly, 2026-06-10).
+ * Переменные данные клона — `roleName` / `bearerName` / `personaPrompt` — едут в
+ * user-сообщении (`CLONE_RESPOND_USER_TEMPLATE`, блоки `── КЛОН ДОЛЖНОСТИ ──` /
+ * `── PERSONA PROMPT ──`), вместе с вопросом и subgraph context (subject-блоки +
+ * knowledgeProfile + decisions).
  *
  * Контракт:
  *   - Тон — от лица должности (роли), а не конкретного человека.
@@ -20,31 +23,39 @@
  */
 
 /**
- * Базовый «каркас» системного промпта без подстановки имён. Хранится как
- * константа, чтобы snapshot-тест мог зафиксировать жёсткий регламент
- * (правила 1-7, в т.ч. анти-deepfake пункт 6) отдельно от заголовка,
- * который зависит от {roleName, bearerName}.
+ * Базовый «каркас» системного промпта БЕЗ переменных данных. Хранится как
+ * стабильная константа — это критично для prompt-caching (DeepSeek/OpenAI-proxy
+ * кэшируют стабильный SYSTEM-префикс ≈99%; см. feedback
+ * `LLM-промпты — обязательно cache-friendly`, second-brain/02_architecture/
+ * llm-cache-status.md).
+ *
+ * Конкретные `roleName` / `bearerName` БОЛЬШЕ НЕ вшиваются в SYSTEM (иначе он
+ * менялся бы на каждую роль/носителя и кэш ломался) — они едут в user-сообщении
+ * блоком `── КЛОН ДОЛЖНОСТИ ──` (см. `CLONE_RESPOND_USER_TEMPLATE`). В SYSTEM —
+ * только обобщённые формулировки «эта должность» / «текущий носитель».
  *
  * Это legacy-режим (до ТЗ 2026-05-25 §9 Фазы 7) — соответствует mode='factual'
  * в новой архитектуре, оставлен в виде константы ради snapshot-теста.
  */
 export const CLONE_RESPOND_SYSTEM_PROMPT_BASE = [
-  '⚠ Ты — клон должности «{{roleName}}» в компании.',
-  'На этой должности сейчас работает {{bearerName}} — его опыт, решения и',
+  '⚠ Ты — клон должности в компании (конкретные название должности и имя',
+  'текущего носителя даны ниже, в пользовательском сообщении, блоком',
+  '«── КЛОН ДОЛЖНОСТИ ──»).',
+  'На этой должности сейчас работает текущий носитель — его опыт, решения и',
   'образ мышления учтены в твоих ответах. Отвечай от лица должности (как сама',
   'функция/роль), опираясь на опыт текущего носителя. Это не сам человек —',
   'это «должностной клон» по наблюдаемому поведению.',
   '',
   'Правила:',
   '1. От первого лица должности: «На этой должности я обычно …», «у нас в роли',
-  '   принято …», «как правило, исходя из опыта {{bearerName}}, я бы …».',
+  '   принято …», «как правило, исходя из опыта текущего носителя, я бы …».',
   '2. Если используешь факт из контекста — обязательная цитата [BLOCK:<id>].',
   '3. Если в контексте нет ответа на вопрос — честно сказать: «На этой должности',
   '   у нас нет такого опыта» / «Я с таким не сталкивался в этой роли».',
   '4. НЕ выдумывать факты. НЕ обещать ничего конкретного от лица текущего носителя.',
   '5. Это не сам носитель, а должностной клон — упомяни это коротко в конце ответа:',
   '   «(ответ — от клона должности; могу ошибаться, при необходимости уточни у',
-  '   текущего носителя — {{bearerName}})».',
+  '   текущего носителя)».',
   '6. КРИТИЧЕСКОЕ (анти-deepfake): Если в контексте < 2 reasoning-блоков по теме вопроса —',
   '   ОТКАЖИСЬ отвечать. Верни: «У оригинала недостаточно высказываний по этой теме, чтобы',
   '   я мог отвечать в его стиле без выдумывания. Спроси напрямую.» Лучше промолчать,',
@@ -52,7 +63,8 @@ export const CLONE_RESPOND_SYSTEM_PROMPT_BASE = [
   '7. Запрещено: обещания, согласия, отказы, мнения о коллегах, оценки производительности —',
   '   даже если в контексте есть похожие фразы. Это область, где deepfake особенно вреден.',
   '',
-  '── PERSONA PROMPT ──',
+  'Persona-prompt этой роли (стиль/инструменты/тон носителя) даётся ниже, в',
+  'пользовательском сообщении, блоком «── PERSONA PROMPT ──» — следуй ему.',
 ].join('\n');
 
 /**
@@ -83,8 +95,10 @@ export const CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL = CLONE_RESPOND_SYSTEM_PROMPT_B
  * ситуации, а не на дословные факты. Дисклеймер от лица клона остаётся.
  */
 export const CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL = [
-  '⚠ Ты — клон должности «{{roleName}}» в компании.',
-  'На этой должности сейчас работает {{bearerName}} — его опыт, решения и',
+  '⚠ Ты — клон должности в компании (конкретные название должности и имя',
+  'текущего носителя даны ниже, в пользовательском сообщении, блоком',
+  '«── КЛОН ДОЛЖНОСТИ ──»).',
+  'На этой должности сейчас работает текущий носитель — его опыт, решения и',
   'образ мышления учтены в твоих ответах. Отвечай от лица должности (как сама',
   'функция/роль), опираясь на накопленный опыт текущего носителя. Это не сам',
   'человек — это «должностной клон» по наблюдаемому поведению.',
@@ -106,61 +120,51 @@ export const CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL = [
   '   носителю конкретных слов или решений, которых нет в контексте.',
   '5. Это не сам носитель, а должностной клон — упомяни это коротко в конце:',
   '   «(ответ — от клона должности по аналогии; могу ошибаться, спроси',
-  '   напрямую — {{bearerName}})».',
+  '   напрямую у текущего носителя)».',
   '6. КРИТИЧЕСКОЕ (анти-deepfake): запрещены обещания, согласия, отказы,',
   '   оценки коллег, прогнозы по конкретным сделкам и любые «от первого лица',
   '   за носителя» утверждения, которые могут быть восприняты как реальное',
   '   решение человека. Только обобщённые паттерны и принципы.',
   '',
-  '── PERSONA PROMPT ──',
+  'Persona-prompt этой роли (стиль/инструменты/тон носителя) даётся ниже, в',
+  'пользовательском сообщении, блоком «── PERSONA PROMPT ──» — следуй ему.',
 ].join('\n');
 
 /**
  * Безопасные дефолты для случаев, когда роль или носитель не определены
  * (например, legacy person-scope ask или роль без текущего носителя). Подбирает
  * стилистически нейтральные формулировки, чтобы шаблон не «протекал»
- * скобочными плейсхолдерами в LLM.
+ * пустотами в LLM.
+ *
+ * Экспортируются, т.к. подстановка имён переехала в user-блок
+ * `── КЛОН ДОЛЖНОСТИ ──` (см. `CLONE_RESPOND_USER_TEMPLATE`).
  */
-const DEFAULT_ROLE_NAME = 'сотрудника';
-const DEFAULT_BEARER_NAME = 'текущий носитель этой роли';
+export const CLONE_RESPOND_DEFAULT_ROLE_NAME = 'сотрудника';
+export const CLONE_RESPOND_DEFAULT_BEARER_NAME = 'текущий носитель этой роли';
 
 /**
- * Собирает финальный системный промпт для clone-respond: подставляет
- * `{{roleName}}` и `{{bearerName}}` в базовый каркас и аппендит
- * `persona.personaPrompt`.
+ * Возвращает СТАБИЛЬНЫЙ системный промпт для clone-respond по режиму `mode`.
+ *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8): SYSTEM
+ * больше НЕ содержит переменных (`roleName` / `bearerName` / `personaPrompt`) —
+ * они переехали в user-сообщение (`CLONE_RESPOND_USER_TEMPLATE`: блоки
+ * `── КЛОН ДОЛЖНОСТИ ──` и `── PERSONA PROMPT ──`). Это держит SYSTEM-префикс
+ * стабильным → prompt-cache hit ≈99% (см. feedback
+ * `LLM-промпты — обязательно cache-friendly`).
  *
  * Используется `ClonesService.callCloneRespond` (и любыми другими местами,
  * где нужно вызвать clone-respond — например, conversational-каналом).
  *
- * ТЗ 2026-05-25 §9.4.5 (Фаза 7) — добавлен необязательный аргумент `mode`.
- *   - `mode='factual'` (default — обратная совместимость) — фактический режим
- *     (legacy-каркас CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL = BASE).
- *   - `mode='judgmental'` — рассуждающий режим
- *     (CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL, температура и порог topic-density
- *     меняются на стороне caller'а).
+ * ТЗ 2026-05-25 §9.4.5 (Фаза 7) — аргумент `mode`.
+ *   - `mode='factual'` (default) — фактический режим (BASE).
+ *   - `mode='judgmental'` — рассуждающий режим (JUDGMENTAL).
  */
-export function buildCloneRespondSystemPrompt(args: {
-  roleName: string | null | undefined;
-  bearerName: string | null | undefined;
-  personaPrompt: string;
+export function buildCloneRespondSystemPrompt(args?: {
   mode?: 'factual' | 'judgmental';
 }): string {
-  const roleName =
-    args.roleName && args.roleName.trim().length > 0
-      ? args.roleName.trim()
-      : DEFAULT_ROLE_NAME;
-  const bearerName =
-    args.bearerName && args.bearerName.trim().length > 0
-      ? args.bearerName.trim()
-      : DEFAULT_BEARER_NAME;
-  const base =
-    args.mode === 'judgmental'
-      ? CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL
-      : CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL;
-  const filled = base
-    .replace(/\{\{roleName\}\}/g, roleName)
-    .replace(/\{\{bearerName\}\}/g, bearerName);
-  return `${filled}\n\n${args.personaPrompt}`;
+  return args?.mode === 'judgmental'
+    ? CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL
+    : CLONE_RESPOND_SYSTEM_PROMPT_FACTUAL;
 }
 
 /**
@@ -180,6 +184,16 @@ export interface CloneRespondPracticeSkill {
 
 export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   question: string;
+  /**
+   * F1 cache-friendly — переменные данные клона едут в user (не в SYSTEM).
+   * `roleName` / `bearerName` / `personaPrompt` опциональны: если не переданы,
+   * блоки `── КЛОН ДОЛЖНОСТИ ──` / `── PERSONA PROMPT ──` собираются с
+   * безопасными дефолтами (обратная совместимость со снапшот-тестами,
+   * которые вызывают шаблон только с question+subgraph).
+   */
+  roleName?: string | null;
+  bearerName?: string | null;
+  personaPrompt?: string | null;
   subgraph: {
     reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
     knowledgeProfileSummary: string | null;
@@ -191,6 +205,18 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
    */
   practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
 }): string => {
+  const roleName =
+    args.roleName && args.roleName.trim().length > 0
+      ? args.roleName.trim()
+      : CLONE_RESPOND_DEFAULT_ROLE_NAME;
+  const bearerName =
+    args.bearerName && args.bearerName.trim().length > 0
+      ? args.bearerName.trim()
+      : CLONE_RESPOND_DEFAULT_BEARER_NAME;
+  const personaPrompt =
+    args.personaPrompt && args.personaPrompt.trim().length > 0
+      ? args.personaPrompt.trim()
+      : '(persona-prompt не задан)';
   const reasoningLines = args.subgraph.reasoningBlocks.length
     ? args.subgraph.reasoningBlocks
         .map((b) => `  [BLOCK:${b.id}] ${b.text.slice(0, 600)}`)
@@ -233,6 +259,13 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
         ].join('\n')
       : '';
   const parts = [
+    '── КЛОН ДОЛЖНОСТИ ──',
+    `Должность (роль): ${roleName}`,
+    `Текущий носитель должности: ${bearerName}`,
+    '',
+    '── PERSONA PROMPT ──',
+    personaPrompt,
+    '',
     'Контекст из памяти роли (накопленный опыт текущего носителя):',
     '',
     'Reasoning-блоки (объяснения «почему так решили»):',

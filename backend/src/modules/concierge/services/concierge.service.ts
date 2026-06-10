@@ -73,30 +73,43 @@ export interface ProcessInput {
  * Экспортируется отдельно от класса, чтобы покрыть unit-тестами без
  * необходимости поднимать NestJS DI / PrismaService.
  *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10): предварительные
+ * результаты поиска (`preHits`) переехали сюда из SYSTEM — это переменные
+ * данные на каждый запрос, а SYSTEM должен оставаться стабильным
+ * (см. `buildSystemPrompt`).
+ *
  * Структура output (в порядке появления):
  *   1. `КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:` + summary (если задан)
  *   2. `История диалога:` + последние N сообщений (если есть)
  *   3. `Результаты последних tool вызовов:` (если есть)
- *   4. `Новый запрос пользователя: <userMessage>`
+ *   4. `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` + preHits (если есть)
+ *   5. `Новый запрос пользователя: <userMessage>`
  */
 /**
- * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает системный промпт.
+ * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает СИСТЕМНЫЙ промпт.
  *
  * Вынесен из метода класса, чтобы покрыть snapshot-тестами без поднятия
  * NestJS DI. `toolFragment` передаётся параметром (раньше брался через
  * `this.serviceMap.buildToolUsePromptFragment()`).
  *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8):
+ * предварительные результаты поиска (`preHits`) — это ПЕРЕМЕННЫЕ данные на
+ * каждый запрос, поэтому они БОЛЬШЕ НЕ в SYSTEM. SYSTEM держим стабильным
+ * (контекст пользователя + tool-fragment + принципы), а preHits переехали в
+ * user-сообщение (`composeUserMessageForIteration`, блок
+ * `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===`). Это держит SYSTEM-префикс
+ * стабильным → prompt-cache hit ≈99% (см. feedback
+ * `LLM-промпты — обязательно cache-friendly`).
+ *
  * Структура output (в порядке появления):
  *   1. Преамбула (роль ассистента).
  *   2. `=== КОНТЕКСТ ===` + contextBlock (или fallback).
- *   3. (опц.) `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` если `preHits.length > 0`.
- *   4. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment.
- *   5. Принципы.
+ *   3. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment.
+ *   4. Принципы.
  */
 export function buildSystemPrompt(args: {
   contextBlock: string;
   toolFragment: string;
-  preHits: Array<{ query: string; result: unknown }>;
 }): string {
   const parts: string[] = [
     'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
@@ -106,16 +119,6 @@ export function buildSystemPrompt(args: {
     args.contextBlock || '(контекст недоступен)',
     '',
   ];
-  // ТЗ 2026-05-27 Фаза 3: блок предварительных результатов pre-retrieval.
-  if (args.preHits.length > 0) {
-    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
-    parts.push(
-      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
-    );
-    parts.push('');
-    parts.push(JSON.stringify(args.preHits, null, 2));
-    parts.push('');
-  }
   parts.push(
     '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
     'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
@@ -126,6 +129,7 @@ export function buildSystemPrompt(args: {
     '',
     'Принципы:',
     '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
+    '- Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.',
     '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
     '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
   );
@@ -137,6 +141,12 @@ export function composeUserMessageForIteration(args: {
   toolMessages: Array<{ role: 'tool'; content: string }>;
   history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
   summary: string | null;
+  /**
+   * F1 cache-friendly — предварительные результаты поиска (pre-retrieval).
+   * Переехали из SYSTEM в user (см. `buildSystemPrompt`). Опционально:
+   * legacy-вызовы без preHits продолжают работать (старые snapshot-тесты).
+   */
+  preHits?: Array<{ query: string; result: unknown }>;
 }): string {
   const parts: string[] = [];
   if (args.summary != null && args.summary.trim() !== '') {
@@ -162,6 +172,17 @@ export function composeUserMessageForIteration(args: {
     for (const tm of args.toolMessages) {
       parts.push(`- ${tm.content}`);
     }
+    parts.push('');
+  }
+  // ТЗ 2026-05-27 Фаза 3 (pre-retrieval) + F1 cache-friendly (2026-06-10):
+  // блок предварительных результатов теперь в user, не в SYSTEM.
+  if (args.preHits != null && args.preHits.length > 0) {
+    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+    parts.push(
+      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
+    );
+    parts.push('');
+    parts.push(JSON.stringify(args.preHits, null, 2));
     parts.push('');
   }
   parts.push(`Новый запрос пользователя: ${args.userMessage}`);
@@ -451,7 +472,8 @@ export class ConciergeService {
       pageContext: input.pageContext ?? null,
     });
 
-    const rawSystemPrompt = this.buildSystemPrompt(contextBlock, preHits);
+    // F1 cache-friendly — SYSTEM стабилен (без preHits); preHits едут в user.
+    const rawSystemPrompt = this.buildSystemPrompt(contextBlock);
 
     // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
     // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
@@ -481,6 +503,9 @@ export class ConciergeService {
         toolMessages,
         history,
         summary: conversation.summary,
+        // F1 cache-friendly — pre-retrieval результаты теперь в user-блоке
+        // (раньше вшивались в SYSTEM на каждый запрос, ломая prompt-cache).
+        preHits,
       });
       // E2 — обернуть весь user-блок в маркеры данных (идемпотентно, system
       // уже несёт INJECTION_GUARD_NOTE; см. systemPrompt выше).
@@ -762,15 +787,16 @@ export class ConciergeService {
    * ТЗ 2026-05-27 Фаза 5: делегирует pure-функции `buildSystemPrompt`
    * (module-level export). Имена совпадают — вызов через `this.` снимает
    * неоднозначность, локальный shadow не возникает.
+   *
+   * F1 cache-friendly (2026-06-10): SYSTEM больше не зависит от preHits —
+   * предварительные результаты поиска подмешиваются в user-сообщение
+   * (`composeUserMessageForIteration`), чтобы SYSTEM-префикс был стабилен
+   * и кэшировался провайдером.
    */
-  private buildSystemPrompt(
-    contextBlock: string,
-    preHits: Array<{ query: string; result: unknown }> = [],
-  ): string {
+  private buildSystemPrompt(contextBlock: string): string {
     return buildSystemPrompt({
       contextBlock,
       toolFragment: this.serviceMap.buildToolUsePromptFragment(),
-      preHits,
     });
   }
 

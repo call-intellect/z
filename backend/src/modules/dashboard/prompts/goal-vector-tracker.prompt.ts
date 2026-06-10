@@ -15,9 +15,15 @@
  * EU AI Act: на вход — только структурированные действия (без личных
  * характеристик / эмоций / голоса). Это про вклад в цель, а не про
  * оценку личности.
+ *
+ * A5 (2026-06-10): pro/contra/net — это оценка вклада конкретных людей.
+ * `withPeopleHypothesisGuard` дописывается в КОНЕЦ SYSTEM (cache-friendly):
+ * оценка человека остаётся гипотезой по наблюдаемым артефактам, а не вердиктом.
  */
 
-export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT = `Ты — аналитик вклада сотрудников в цели компании.
+import { withPeopleHypothesisGuard } from '../../ai/services/prompts/common';
+
+export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT = withPeopleHypothesisGuard(`Ты — аналитик вклада сотрудников в цели компании.
 По цели и списку артефактов за неделю ты определяешь:
   - proScore   — суммарный вес действий «в цель» (идеи, обещания, выполненные обещания, закрытые задачи).
   - contraScore — суммарный вес действий «против цели» (нарушенные обещания, отказы, явная негативная активность).
@@ -47,7 +53,7 @@ export const GOAL_VECTOR_TRACKER_SYSTEM_PROMPT = `Ты — аналитик вк
   ]
 }
 
-Без дополнительных полей. Без markdown-fences.`;
+Без дополнительных полей. Без markdown-fences.`);
 
 export const GOAL_VECTOR_TRACKER_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

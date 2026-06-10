@@ -22,7 +22,7 @@
  * проверка системного промпта с предварительными результатами:
  *   (з) preRetrieve skip для intent='clone_roleplay' — toolRouter НЕ вызывается;
  *   (и) preRetrieve дедуп по id из items[] двух query;
- *   (к) полный flow Фаза 3 — preHits попадают в systemPrompt + событие thinking.
+ *   (к) полный flow Фаза 3 — preHits попадают в userMessage (F1, было в systemPrompt) + событие thinking.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -521,7 +521,7 @@ describe('ConciergeService.preRetrieve() — Фаза 3', () => {
     expect(allIds.length).toBeLessThanOrEqual(12); // topK
   });
 
-  it('(к) полный flow Фаза 3: preHits попадают в systemPrompt и в событие thinking', async () => {
+  it('(к) полный flow Фаза 3: preHits попадают в userMessage (F1) и в событие thinking', async () => {
     const dialogResult: DialogProcessResult = {
       enabled: true,
       standaloneQuestion: 'Что мы решили по проекту X?',
@@ -572,13 +572,17 @@ describe('ConciergeService.preRetrieve() — Фаза 3', () => {
     // 2. LLM был вызван хотя бы раз.
     expect(mocks.llmCall).toHaveBeenCalledTimes(1);
 
-    // 3. systemPrompt содержит блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ и item-1.
+    // 3. F1 cache-friendly (2026-06-10): preHits теперь в userMessage, а НЕ в
+    //    systemPrompt (SYSTEM держим стабильным для prompt-cache). Проверяем,
+    //    что блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ и item-1 доехали в user.
     const llmCalls = mocks.llmCall.mock.calls as unknown as Array<
-      Array<{ systemPrompt?: string }>
+      Array<{ systemPrompt?: string; userMessage?: string }>
     >;
     const llmArgs = llmCalls[0]?.[0] ?? {};
-    expect(llmArgs.systemPrompt ?? '').toContain('ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ');
-    expect(llmArgs.systemPrompt ?? '').toContain('item-1');
+    expect(llmArgs.userMessage ?? '').toContain('ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ');
+    expect(llmArgs.userMessage ?? '').toContain('item-1');
+    // SYSTEM больше не содержит переменных preHits.
+    expect(llmArgs.systemPrompt ?? '').not.toContain('item-1');
 
     // 4. toolRouter.execute дёргался под `search_knowledge` (2 queries).
     expect(toolRouterExec).toHaveBeenCalled();
@@ -664,21 +668,26 @@ describe('ConciergeService.process() — Фаза 4 metrics', () => {
   });
 });
 
-// ───────────────────────── buildSystemPrompt (Фаза 5) ─────────────────────────
+// ───────────────────────── buildSystemPrompt (Фаза 5 + F1) ─────────────────────────
 //
-// ТЗ 2026-05-27 Фаза 5: snapshot-тесты pure-функции `buildSystemPrompt`.
-// Фиксируем формат системного промпта Concierge для двух кейсов:
-//   (м) без preHits — обычный промпт с контекстом и tool-fragment;
-//   (н) с preHits — добавляется блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА.
+// ТЗ 2026-05-27 Фаза 5: snapshot-тест pure-функции `buildSystemPrompt`.
+// F1 cache-friendly (2026-06-10, Кластер 7-B/A8): preHits переехали из SYSTEM в
+// user (`composeUserMessageForIteration`), поэтому `buildSystemPrompt` теперь
+// СТАБИЛЕН и НЕ зависит от preHits. Проверяем:
+//   (м) стабильный SYSTEM с контекстом и tool-fragment (без preHits);
+//   (н) preHits доезжают в user-блок через `composeUserMessageForIteration`.
 // Обновлять snapshot'ы только при осознанном изменении формата.
 
-describe('buildSystemPrompt (Фаза 5)', () => {
-  it('(м) без preHits — обычный промпт с контекстом и tool-fragment', () => {
+describe('buildSystemPrompt (Фаза 5 + F1 cache-friendly)', () => {
+  it('(м) стабильный SYSTEM с контекстом и tool-fragment (preHits в SYSTEM больше нет)', () => {
     const out = buildSystemPrompt({
       contextBlock: 'User: Иван, Org: Acme',
       toolFragment: '[{"name":"list_meetings"}]',
-      preHits: [],
     });
+    // SYSTEM не содержит переменного JSON-блока preHits (только ссылку-принцип
+    // на user-блок). Проверяем, что нет данных конкретного хита.
+    expect(out).not.toContain('"query"');
+    expect(out).not.toContain('m-1');
     expect(out).toMatchInlineSnapshot(`
       "Ты — Concierge, AI-помощник в кабинете компании Z (Кора).
       Отвечай по-русски, кратко и по делу.
@@ -695,15 +704,18 @@ describe('buildSystemPrompt (Фаза 5)', () => {
 
       Принципы:
       - Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.
+      - Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.
       - Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).
       - Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос."
     `);
   });
 
-  it('(н) с preHits — добавляется блок ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА с m-1', () => {
-    const out = buildSystemPrompt({
-      contextBlock: 'User: Иван',
-      toolFragment: '[{"name":"list_meetings"}]',
+  it('(н) preHits доезжают в user-блок через composeUserMessageForIteration', () => {
+    const out = composeUserMessageForIteration({
+      userMessage: 'когда встреча?',
+      toolMessages: [],
+      history: [],
+      summary: null,
       preHits: [
         { query: 'когда встреча', result: [{ id: 'm-1', title: 'Sync' }] },
       ],
@@ -711,13 +723,7 @@ describe('buildSystemPrompt (Фаза 5)', () => {
     expect(out).toContain('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
     expect(out).toContain('m-1');
     expect(out).toMatchInlineSnapshot(`
-      "Ты — Concierge, AI-помощник в кабинете компании Z (Кора).
-      Отвечай по-русски, кратко и по делу.
-
-      === КОНТЕКСТ ===
-      User: Иван
-
-      === ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===
+      "=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===
       Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.
 
       [
@@ -732,17 +738,7 @@ describe('buildSystemPrompt (Фаза 5)', () => {
         }
       ]
 
-      === ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===
-      Если запрос требует действия — верни ОДНУ строку строго в формате JSON:
-      {"tool_call": {"name": "<имя>", "arguments": { ... }}}
-      Если действие не требуется — верни просто текст ответа без JSON.
-      Имя инструмента ДОЛЖНО быть из списка ниже:
-      [{"name":"list_meetings"}]
-
-      Принципы:
-      - Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.
-      - Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).
-      - Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос."
+      Новый запрос пользователя: когда встреча?"
     `);
   });
 });

@@ -2699,17 +2699,18 @@ export class ClonesService {
     practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
   }): Promise<LlmCallResult> {
     const mode = args.mode ?? 'factual';
-    const systemPrompt = buildCloneRespondSystemPrompt({
-      roleName: args.roleName,
-      bearerName: args.bearerName,
-      personaPrompt: args.persona.personaPrompt,
-      mode,
-    });
+    // F1 cache-friendly (мастер-промпт-флот 2026-06-10): SYSTEM стабилен по
+    // режиму, переменные данные клона (roleName / bearerName / personaPrompt)
+    // едут в user-сообщении через CLONE_RESPOND_USER_TEMPLATE.
+    const systemPrompt = buildCloneRespondSystemPrompt({ mode });
     return this.llm.call({
       taskType: 'clone-respond',
       systemPrompt,
       userMessage: CLONE_RESPOND_USER_TEMPLATE({
         question: args.question,
+        roleName: args.roleName,
+        bearerName: args.bearerName,
+        personaPrompt: args.persona.personaPrompt,
         subgraph: {
           reasoningBlocks: args.subgraph.reasoningBlocks.map((b) => ({
             id: b.id,

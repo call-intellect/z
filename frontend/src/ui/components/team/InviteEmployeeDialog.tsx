@@ -8,7 +8,6 @@ import { orgsApi, type InviteMemberRequest } from '@/api/orgs.api';
 import {
   mapOrgInvitationCreateResultDtoToDomain,
   type OrgInvitationCreateResultDomain,
-  type OrgInvitationRole,
 } from '@/domain/org-invitations';
 import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
@@ -37,12 +36,25 @@ type Props = {
   onCreated: (result: OrgInvitationCreateResultDomain) => void;
 };
 
+/** Роль, выдаваемая при приглашении (без owner — он не выдаётся через UI). */
+type InviteRole = NonNullable<InviteMemberRequest['role']>;
+
+/** Русские описания роли для подсказки под селектом. */
+const ROLE_HINT: Record<InviteRole, string> = {
+  admin: 'Администратор может приглашать сотрудников и менять настройки компании.',
+  manager: 'Сотрудник видит свои встречи, задачи и переписку с ботом.',
+  coo: 'Операционный директор видит сводные дашборды и операционные показатели, но не управляет настройками и ролями.',
+  hr_partner:
+    'HR-партнёр видит аналитику по командам и сигналы вовлечённости (карточку человека — только с его согласия), без управления настройками и ролями.',
+};
+
 /**
  * β-9 (2026-05-25) — диалог «Пригласить сотрудника» в GitHub-style flow.
  *
  * Поля:
  *   - Имя — обязательное (показывается в карточке pending до accept).
- *   - Роль в системе — «Сотрудник» (manager) по умолчанию / «Администратор» (admin).
+ *   - Роль в системе — «Сотрудник» (manager) по умолчанию / «Администратор» (admin) /
+ *     «COO» (coo) / «HR-партнёр» (hr_partner) — A5/Р3 (2026-06-10) разблокировали coo/hr_partner.
  *   - Электронная почта — опциональная. Если пусто — после создания
  *     откроется модал «Скопировать ссылку» с manualShareUrl + QR + linkCode.
  *
@@ -58,7 +70,7 @@ export function InviteEmployeeDialog({
 }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<OrgInvitationRole>('manager');
+  const [role, setRole] = useState<InviteRole>('manager');
   const [submitting, setSubmitting] = useState(false);
 
   // Сбрасываем поля при открытии/закрытии — чтобы старые данные не «прилипали».
@@ -81,7 +93,7 @@ export function InviteEmployeeDialog({
     try {
       const body: InviteMemberRequest = {
         name: trimmedName,
-        role: role === 'manager' ? 'manager' : 'admin',
+        role,
       };
       if (trimmedEmail) {
         body.email = trimmedEmail;
@@ -140,7 +152,7 @@ export function InviteEmployeeDialog({
             <Label htmlFor="invite-role-dialog">Роль в системе</Label>
             <Select
               value={role}
-              onValueChange={(v) => setRole(v as OrgInvitationRole)}
+              onValueChange={(v) => setRole(v as InviteRole)}
               disabled={submitting}
             >
               <SelectTrigger id="invite-role-dialog">
@@ -149,13 +161,11 @@ export function InviteEmployeeDialog({
               <SelectContent>
                 <SelectItem value="manager">Сотрудник</SelectItem>
                 <SelectItem value="admin">Администратор</SelectItem>
+                <SelectItem value="coo">COO (операционный директор)</SelectItem>
+                <SelectItem value="hr_partner">HR-партнёр</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-fg-secondary">
-              {role === 'admin'
-                ? 'Администратор может приглашать сотрудников и менять настройки компании.'
-                : 'Сотрудник видит свои встречи, задачи и переписку с ботом.'}
-            </p>
+            <p className="text-xs text-fg-secondary">{ROLE_HINT[role]}</p>
           </div>
 
           <div className="space-y-1.5">

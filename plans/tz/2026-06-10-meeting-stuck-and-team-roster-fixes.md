@@ -103,8 +103,9 @@ FSM: `scheduled → failed` уже разрешён ([meeting-fsm.ts:29](../../b
 **Frontend:** в [Curation… / meeting-room UI] тост по `failureReason='ended_before_start'` — «Встреча завершена (запись не велась)», не «ошибка». (Точное место рендера finish-ответа уточнить при реализации.)
 **Риск:** средний (FSM/деньги/идемпотентность) → strict-production-review-gate + unit на каждый исходный статус.
 
-### Ф6 — Встреча: reconcile брошенных `scheduled`
+### Ф6 — Встреча: reconcile брошенных `scheduled` ✅
 **Файл:** `backend/src/modules/meetings/cron/idle-meeting.cron.ts` (расширить) или новый `scheduled-reconcile.cron.ts`.
+> Реализация: порог reconcile = `Math.max(cfg.idle.timeoutMinutes, 30)` (Р2 «через 30 мин» как пол; общий idle-timeout по умолчанию 15 — мало для scheduled). Обе ветки через `MeetingsService.transitionStatus` (assertTransition + событие). RecordingsService — `@Optional()+forwardRef` (graceful null).
 **Изменения (по Р2 = 30 мин):** добавить выборку `status='scheduled'` старше `createdAt + IDLE_MEETING_TIMEOUT_MINUTES`; для каждой — проверить `livekit.listParticipants`: если room пуста/не существует → `deleteRoom` (best-effort) + `scheduled → failed('never_activated')`; если в room есть живые участники (значит `room_started` потерян, но встреча идёт) → `scheduled → active` (startedAt=now) + при `recordByDefault` попытаться стартовать запись (recovery).
 **Риск:** средний → unit на обе ветки (пустая room / есть участники).
 

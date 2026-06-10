@@ -105,7 +105,12 @@ export class TelegramTaskParserService {
     }
     const ctx = await this.loadOrgContext(args.tenantId, args.userId);
     const today = new Date().toISOString().slice(0, 10);
-    const prompt = this.buildCreateTaskPrompt({ rawText, today, ctx });
+    const prompt = this.buildTaskExtractPrompt({
+      mode: 'own',
+      text: rawText,
+      today,
+      ctx,
+    });
 
     const parsed = await this.callTaskExtract({
       tenantId: args.tenantId,
@@ -152,8 +157,9 @@ export class TelegramTaskParserService {
     }
     const ctx = await this.loadOrgContext(args.tenantId, args.userId);
     const today = new Date().toISOString().slice(0, 10);
-    const prompt = this.buildForwardTaskPrompt({
-      forwardedText: rawText,
+    const prompt = this.buildTaskExtractPrompt({
+      mode: 'forward',
+      text: rawText,
       today,
       ctx,
     });
@@ -623,56 +629,67 @@ export class TelegramTaskParserService {
 
   // ─────────────────────────── prompts ───────────────────────────────────
 
-  private buildCreateTaskPrompt(args: {
-    rawText: string;
+  /**
+   * Волна 5 / кластер B — ЕДИНЫЙ builder извлечения задачи из Telegram.
+   *
+   * Раньше было два почти одинаковых билдера (`buildCreateTaskPrompt` /
+   * `buildForwardTaskPrompt`). Объединены в один с параметром `mode`:
+   *   - mode='own'     — пользователь пишет боту в личке (создание задачи себе/коллеге);
+   *   - mode='forward' — пользователь переслал боту чужое сообщение (форвард→задача).
+   *
+   * Общий SYSTEM-костяк (роль + список полей + правило «не выдумывай») —
+   * стабилен между mode и не содержит переменных данных (cache-friendly, F1):
+   * `today` ушёл из SYSTEM в user-блок «Сегодня: …». В SYSTEM остаётся лишь
+   * короткая mode-специфичная вставка про источник и калибровку confidence.
+   */
+  private buildTaskExtractPrompt(args: {
+    mode: 'own' | 'forward';
+    text: string;
     today: string;
     ctx: OrgContext;
   }): { system: string; user: string } {
-    const system = `Ты — AI-парсер задач из Telegram-бота. Пользователь пишет в личке короткое поручение (себе или коллеге). Извлеки из текста:
-- "title": короткая формулировка задачи (5-10 слов, императив или infinitive).
-- "suggestedAssigneeHint": ФИО исполнителя как написано в тексте, или null если про себя / не указано.
-- "suggestedDueDate": дата в формате YYYY-MM-DD, если упомянуто (сегодня / завтра / 24 мая / в пятницу). Сегодня = ${args.today}. Если не упомянуто — null.
+    // Ветка по mode — только в части про источник и калибровку confidence.
+    const sourceLine =
+      args.mode === 'forward'
+        ? 'Пользователь переслал боту чужое сообщение (форвард из чата). Это значит «я хочу превратить это в задачу». Извлеки из форварда:'
+        : 'Пользователь пишет в личке короткое поручение (себе или коллеге). Извлеки из текста:';
+    const titleLine =
+      args.mode === 'forward'
+        ? '- "title": короткая суть, что нужно сделать. Если форвард — длинное обсуждение, выбери главное действие.'
+        : '- "title": короткая формулировка задачи (5-10 слов, императив или infinitive).';
+    const assigneeLine =
+      args.mode === 'forward'
+        ? '- "suggestedAssigneeHint": ФИО, если кто-то упомянут как ответственный; иначе null.'
+        : '- "suggestedAssigneeHint": ФИО исполнителя как написано в тексте, или null если про себя / не указано.';
+    const confidenceLine =
+      args.mode === 'forward'
+        ? '- "confidence": 0..1. Форварды часто шумные — confidence ставь скромнее (обычно 0.4-0.75).'
+        : '- "confidence": 0..1, насколько ты уверен. ≥ 0.85 ставь только если формулировка чёткая и атрибуция явная.';
+    const quoteLine =
+      args.mode === 'forward'
+        ? '- "sourceQuote": ключевая цитата из форварда.'
+        : '- "sourceQuote": фрагмент исходного текста, на котором ты основал title (для аудита).';
+
+    // SYSTEM без `today` — дата приходит в user-блоке (cache-friendly, F1).
+    const system = `Ты — AI-парсер задач из Telegram-бота. ${sourceLine}
+${titleLine}
+${assigneeLine}
+- "suggestedDueDate": дата в формате YYYY-MM-DD, если упомянуто (сегодня / завтра / 24 мая / в пятницу). Дата «сегодня» передана в сообщении пользователя ниже. Если не упомянуто — null.
 - "suggestedProjectHint": если упомянут проект/объект — короткое название или identifier; иначе null.
 - "suggestedPriority": "urgent" | "high" | "medium" | "low" | null.
-- "confidence": 0..1, насколько ты уверен. ≥ 0.85 ставь только если формулировка чёткая и атрибуция явная.
-- "sourceQuote": фрагмент исходного текста, на котором ты основал title (для аудита).
+${confidenceLine}
+${quoteLine}
 
 Не выдумывай. Что не указано в тексте — null.`;
 
     const ctxBlock = formatOrgContext(args.ctx);
+    const sourceHeader = args.mode === 'forward' ? 'Форвард' : 'Сообщение пользователя';
     const user = `Сегодня: ${args.today}
 ${ctxBlock}
 
-Сообщение пользователя:
+${sourceHeader}:
 """
-${args.rawText}
-"""`;
-    return { system, user };
-  }
-
-  private buildForwardTaskPrompt(args: {
-    forwardedText: string;
-    today: string;
-    ctx: OrgContext;
-  }): { system: string; user: string } {
-    const system = `Ты — AI-парсер задач из Telegram-бота. Пользователь переслал боту чужое сообщение (форвард из чата). Это значит «я хочу превратить это в задачу». Извлеки из форварда:
-- "title": короткая суть, что нужно сделать. Если форвард — длинное обсуждение, выбери главное действие.
-- "suggestedAssigneeHint": ФИО, если кто-то упомянут как ответственный; иначе null.
-- "suggestedDueDate": YYYY-MM-DD, если есть. Сегодня = ${args.today}.
-- "suggestedProjectHint": название/identifier проекта, если упомянут.
-- "suggestedPriority": "urgent" | "high" | "medium" | "low" | null.
-- "confidence": 0..1. Форварды часто шумные — confidence ставь скромнее (обычно 0.4-0.75).
-- "sourceQuote": ключевая цитата из форварда.
-
-Не выдумывай.`;
-
-    const ctxBlock = formatOrgContext(args.ctx);
-    const user = `Сегодня: ${args.today}
-${ctxBlock}
-
-Форвард:
-"""
-${args.forwardedText}
+${args.text}
 """`;
     return { system, user };
   }

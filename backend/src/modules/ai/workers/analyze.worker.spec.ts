@@ -295,7 +295,7 @@ describe('AnalyzeWorker.process', () => {
     expect(structuredCall).toBeDefined();
   });
 
-  it('customPrompt → customOutputMd, structuredData=null, для team дополнительно tasks', async () => {
+  it('customPrompt → customOutputMd, structuredData=null (tasks-блок снят 2026-06-10)', async () => {
     const llmComplete = vi.fn();
     // 1) summary
     llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
@@ -303,19 +303,8 @@ describe('AnalyzeWorker.process', () => {
     llmComplete.mockResolvedValueOnce(
       makeLlmOutput('# Отчёт\n\n- пункт 1\n- пункт 2'),
     );
-    // 3) tasks — t.k. type=team нужен tasks-промпт.
-    llmComplete.mockResolvedValueOnce(
-      makeLlmOutput('', [
-        {
-          name: 'extract_tasks',
-          input: {
-            tasks: [
-              { title: 'починить баг', assignee: 'Боб', dueDate: null },
-            ],
-          },
-        },
-      ]),
-    );
+    // Блок «7. tasks» удалён вместе с v2-стеком: analyze больше не пишет
+    // AiResult.tasks (фронт читает Task-модель из tasks-extract.worker'а).
 
     const { worker, aiResultUpdate, transitionStatus } = buildWorker({
       type: 'team',
@@ -326,7 +315,8 @@ describe('AnalyzeWorker.process', () => {
       worker as unknown as { process: (j: unknown) => Promise<void> }
     ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
 
-    expect(llmComplete).toHaveBeenCalledTimes(3);
+    // summary + custom = 2 LLM-вызова (tasks-вызов снят).
+    expect(llmComplete).toHaveBeenCalledTimes(2);
     expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
     // Удостоверимся, что есть update с customOutputMd.
     const calls = aiResultUpdate.mock.calls.map((c) => c[0]?.data ?? c[0]);
@@ -335,11 +325,11 @@ describe('AnalyzeWorker.process', () => {
         typeof d?.['customOutputMd'] === 'string' && (d?.['customOutputMd'] as string).length > 0,
     );
     expect(custom).toBeDefined();
-    // tasks update тоже произошёл.
+    // tasks update больше НЕ происходит.
     const tasksUpd = calls.find(
       (d: Record<string, unknown> | undefined) => Array.isArray(d?.['tasks']),
     );
-    expect(tasksUpd).toBeDefined();
+    expect(tasksUpd).toBeUndefined();
   });
 
   // ──────────────────────────────────────────────────────────────────────

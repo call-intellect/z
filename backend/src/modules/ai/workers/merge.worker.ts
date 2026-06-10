@@ -211,8 +211,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     // Фаза B — поведенческие метрики параллельно с analyze (не блокирует).
     await this.queue.enqueueBehaviorMetrics(meetingId);
     // ТЗ 2026-05-25, Фаза 4 — параллельный producer meeting-report-fast.
-    // Старая цепочка `ai.analyze` (и/или `core.meeting-analyze-v2`) не
-    // ломается — новая запускается рядом для A/B-сравнения.
+    // Цепочка `ai.analyze` не ломается — meeting-report-fast запускается рядом.
     await this.maybeEnqueueMeetingReportFast(meetingId);
 
     // Фаза D — опционально ставим очистку транскрипта.

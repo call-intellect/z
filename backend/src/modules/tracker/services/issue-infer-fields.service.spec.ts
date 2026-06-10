@@ -122,7 +122,9 @@ describe('IssueInferFieldsService.inferFields', () => {
       suggestedAssigneeId: 'u1',
       suggestedDueDate: '2026-06-01',
       suggestedPriority: 'high',
-      suggestedGoalId: 'g1',
+      // Волна 5 / кластер B — goal-привязка убрана из issue-infer (владелец —
+      // issue-goal-suggest). Даже если LLM вернул goalId, поле теперь всегда null.
+      suggestedGoalId: null,
       confidence: 0.85,
       meetsThreshold: true,
     });
@@ -175,7 +177,8 @@ describe('IssueInferFieldsService.inferFields', () => {
     });
     const result = await svc.inferFields({ tenantId: 't1', issueId: 'iss1' });
     expect(result?.suggestedAssigneeId).toBeNull();
-    expect(result?.suggestedGoalId).toBe('g1');
+    // Волна 5 / кластер B — goalId больше не извлекается этим агентом → null.
+    expect(result?.suggestedGoalId).toBeNull();
     expect(result?.suggestedPriority).toBe('medium');
   });
 

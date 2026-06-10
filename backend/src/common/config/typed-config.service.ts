@@ -833,13 +833,9 @@ export class TypedConfigService {
       ),
       themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
       cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
-      // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
-      // НАМЕРЕННО через this.get(ENV), НЕ resolveSync: seed выставляет
-      // knowledge.v2AgentsEnabled=true, а ENV-дефолт=false; перевод на
-      // resolveSync читал бы AdminSetting первым и ВКЛЮЧИЛ бы v2-агентов на
-      // засеянном проде (текущее поведение — OFF). Это master-флаг фичи, а не
-      // крутилка-порог малого тенанта — включать v2 должно быть отдельным
-      // осознанным решением, не побочкой Фазы 6. См. §Фаза 6 МТЗ.
+      // DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2) удалён как мёртвый
+      // код. Эти три поля остались инертными (никто их больше не читает) —
+      // оставлены, чтобы не трогать env-валидацию/admin-setting-registry/specs.
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),

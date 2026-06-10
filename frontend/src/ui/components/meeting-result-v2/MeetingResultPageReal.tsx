@@ -914,10 +914,10 @@ function OverviewTab({
   meeting: MeetingDomain;
   durationMs: number | null;
   /**
-   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'v2'|'legacy' }`
+   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'legacy' }`
    * либо `null` если ни одного варианта нет.
    */
-  primarySummary: { markdown: string; source: 'fast' | 'v2' | 'legacy' } | null;
+  primarySummary: { markdown: string; source: 'fast' | 'legacy' } | null;
   followUpEmail: string | null;
   structuredData: unknown;
   customMd: string | null;

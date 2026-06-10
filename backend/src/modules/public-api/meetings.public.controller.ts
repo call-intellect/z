@@ -92,9 +92,9 @@ export class MeetingsPublicController {
         error: { code: 'meeting_not_found', message: 'Meeting not found' },
       });
     }
-    // Р6: внешний контракт отдаёт каноническую сводку (summaryFast ?? summaryV2
-    // ?? summary). После отключения legacy summary-агента поле summary в БД может
-    // быть пустым — подменяем его на канон, чтобы клиенты не получали ''.
+    // Р6: внешний контракт отдаёт каноническую сводку (summaryFast ?? summary).
+    // После отключения legacy summary-агента поле summary в БД может быть пустым
+    // — подменяем его на канон, чтобы клиенты не получали ''.
     if (meeting.aiResult) {
       meeting.aiResult.summary = pickPrimarySummary(meeting.aiResult);
     }

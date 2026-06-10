@@ -18,23 +18,19 @@ type Props = {
 
 type TabKey = 'summary' | 'chapters' | 'tasks';
 
-type Version = 'v2' | 'fast';
-
-const VERSION_LABEL: Record<Version, string> = {
-  v2: 'v2 (meeting-analyze-v2)',
-  fast: 'fast (meeting-report-fast)',
-};
+const FAST_LABEL = 'fast (meeting-report-fast)';
 
 /**
- * Фаза 5 ТЗ meeting-report-split-from-block-ingest: admin compare UI.
+ * Admin-страница отчёта встречи (meeting-report-fast).
  *
- * Двухколонный layout с тремя табами:
- *  - «Сводка» — markdown `aiResult.summaryV2` vs `aiResult.summaryFast`
- *  - «Главы» — `chapters` отфильтрованные по `extractorVersion`
- *  - «Задачи» — `tasks` отфильтрованные по `extractorVersion`
+ * Три таба:
+ *  - «Сводка» — markdown `aiResult.summaryFast`
+ *  - «Главы» — `chapters` (extractorVersion='fast')
+ *  - «Задачи» — `tasks` (extractorVersion='fast')
  *
- * Цель: продакт-менеджер видит обе версии рядом и решает, какая лучше
- * на dev-трафике.
+ * v2-колонка удалена 2026-06-10 вместе с мёртвым v2-стеком. Исторические
+ * строки с extractorVersion='v2' в БД могут существовать, но в этом UI больше
+ * не показываются.
  */
 export function AdminMeetingCompareSummaries({ meetingId }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('summary');
@@ -61,10 +57,7 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
       <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-1/2" />
         <Skeleton className="h-6 w-1/3" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -84,7 +77,7 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
         </div>
         <div>
           <h1 className="text-2xl font-semibold text-fg-primary">
-            Сравнение отчётов: v2 vs fast
+            Отчёт встречи (fast)
           </h1>
           <p className="mt-1 text-sm text-fg-secondary">
             {m.title}{' '}
@@ -94,7 +87,6 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <StatusBadge label="v2" status={data.reportStatuses.analyzeV2.status} />
           <StatusBadge
             label="fast"
             status={data.reportStatuses.reportFast.status}
@@ -110,25 +102,16 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
         </TabsList>
 
         <TabsContent value="summary">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SummaryColumn version="v2" data={data} />
-            <SummaryColumn version="fast" data={data} />
-          </div>
+          <SummaryColumn data={data} />
           <QualityScoreBlock qualityScore={m.qualityScore} />
         </TabsContent>
 
         <TabsContent value="chapters">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <ChaptersColumn version="v2" data={data} />
-            <ChaptersColumn version="fast" data={data} />
-          </div>
+          <ChaptersColumn data={data} />
         </TabsContent>
 
         <TabsContent value="tasks">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <TasksColumn version="v2" data={data} />
-            <TasksColumn version="fast" data={data} />
-          </div>
+          <TasksColumn data={data} />
         </TabsContent>
       </Tabs>
     </section>
@@ -137,29 +120,15 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
 
 // ───────────────────── Summary column ─────────────────────
 
-function SummaryColumn({
-  version,
-  data,
-}: {
-  version: Version;
-  data: AdminMeetingDetailsApi;
-}) {
+function SummaryColumn({ data }: { data: AdminMeetingDetailsApi }) {
   const ai = data.aiResult;
-  const summary = version === 'v2' ? ai?.summaryV2 ?? null : ai?.summaryFast ?? null;
-  const model =
-    version === 'v2' ? ai?.summaryV2Model ?? null : ai?.summaryFastModel ?? null;
-  const generatedAt =
-    version === 'v2'
-      ? ai?.summaryV2GeneratedAt ?? null
-      : ai?.summaryFastGeneratedAt ?? null;
-
-  const status =
-    version === 'v2'
-      ? data.reportStatuses.analyzeV2
-      : data.reportStatuses.reportFast;
+  const summary = ai?.summaryFast ?? null;
+  const model = ai?.summaryFastModel ?? null;
+  const generatedAt = ai?.summaryFastGeneratedAt ?? null;
+  const status = data.reportStatuses.reportFast;
 
   return (
-    <Column title={VERSION_LABEL[version]}>
+    <Column title={FAST_LABEL}>
       <MetaBlock
         model={model}
         generatedAt={generatedAt}
@@ -184,21 +153,12 @@ function SummaryColumn({
 
 // ───────────────────── Chapters column ─────────────────────
 
-function ChaptersColumn({
-  version,
-  data,
-}: {
-  version: Version;
-  data: AdminMeetingDetailsApi;
-}) {
-  // v2: extractorVersion === 'v2' либо null (исторически до миграции).
-  // fast: только extractorVersion === 'fast'.
-  const items = data.chapters.filter((c) =>
-    version === 'v2' ? c.extractorVersion === 'v2' : c.extractorVersion === 'fast',
-  );
+function ChaptersColumn({ data }: { data: AdminMeetingDetailsApi }) {
+  // Только extractorVersion === 'fast'.
+  const items = data.chapters.filter((c) => c.extractorVersion === 'fast');
 
   return (
-    <Column title={VERSION_LABEL[version]}>
+    <Column title={FAST_LABEL}>
       <p className="mb-2 text-xs text-fg-secondary">
         Всего глав: <span className="font-semibold">{items.length}</span>
       </p>
@@ -234,19 +194,11 @@ function ChaptersColumn({
 
 // ───────────────────── Tasks column ─────────────────────
 
-function TasksColumn({
-  version,
-  data,
-}: {
-  version: Version;
-  data: AdminMeetingDetailsApi;
-}) {
-  const items = data.tasks.filter((t) =>
-    version === 'v2' ? t.extractorVersion === 'v2' : t.extractorVersion === 'fast',
-  );
+function TasksColumn({ data }: { data: AdminMeetingDetailsApi }) {
+  const items = data.tasks.filter((t) => t.extractorVersion === 'fast');
 
   return (
-    <Column title={VERSION_LABEL[version]}>
+    <Column title={FAST_LABEL}>
       <p className="mb-2 text-xs text-fg-secondary">
         Всего задач: <span className="font-semibold">{items.length}</span>
       </p>
@@ -327,9 +279,8 @@ function TasksColumn({
 // ───────────────────── Quality score (общий блок) ─────────────────────
 
 /**
- * Единый collapsed-блок quality_score под обеими колонками сводки.
- * Генерируется только fast-цепочкой (meeting-report-fast.worker), поэтому
- * нет смысла дублировать по колонкам v2/fast. NULL = ещё не посчитано.
+ * Единый collapsed-блок quality_score под сводкой.
+ * Генерируется fast-цепочкой (meeting-report-fast.worker). NULL = ещё не посчитано.
  */
 function QualityScoreBlock({
   qualityScore,

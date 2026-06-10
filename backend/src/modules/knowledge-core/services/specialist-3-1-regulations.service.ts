@@ -597,8 +597,9 @@ export class Specialist31Service {
       }
 
       // ProcessStep — если в черновике пришёл processStepHint, создаём один шаг.
-      // Полное извлечение всех шагов будет через `process-steps-extract`, но это
-      // отдельный pass поверх группы блоков. На α-7 — простой single-step upsert.
+      // На α-7 — простой single-step upsert (отдельный pass полного извлечения
+      // шагов процесса не реализован — промпт-сирота process-steps-extract
+      // удалён 2026-06-10 как нереализованный).
       if (draft.processStepHint) {
         await this.upsertSingleProcessStep({
           tenantId: block.tenantId,

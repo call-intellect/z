@@ -43,8 +43,7 @@ import { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver'
  *
  * Knowledge-core (Фаза 2+): block-ingest, block-distill, block-linker,
  * entity-resolver, entity-merge-arbiter, entity-graph-builder, theme-classify,
- * reframing, card-rollup-v2, task-extract-v2, chapter-extract-v2, summary-v2,
- * chat-v2, goal-alignment, dashboard-summary.
+ * reframing, card-rollup-v2, chat-v2, goal-alignment, dashboard-summary.
  */
 export type LlmTaskType =
   | 'summary'
@@ -66,9 +65,6 @@ export type LlmTaskType =
   | 'theme-classify'
   | 'reframing'
   | 'card-rollup-v2'
-  | 'task-extract-v2'
-  | 'chapter-extract-v2'
-  | 'summary-v2'
   | 'chat-v2'
   | 'goal-alignment'
   | 'dashboard-summary'
@@ -92,10 +88,8 @@ export type LlmTaskType =
   // SBA α-7 — Specialist 3.1 (Regulations / Processes / Policies).
   // 'regulation-extract' — извлечение черновика Regulation/Process/Policy из блока.
   // 'regulation-dedupe' — арбитр merge/new/extension/contradicts (KNN-кандидаты).
-  // 'process-steps-extract' — извлечение упорядоченных шагов процесса.
   | 'regulation-extract'
   | 'regulation-dedupe'
-  | 'process-steps-extract'
   // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
   // 'process-template-extract' — батч IdeaBlock'ов (signalType=process_step|methodology_step)
   // → массив кандидатов ProcessTemplate (name + summary + steps).
@@ -394,9 +388,8 @@ export type LlmTaskType =
   // ТЗ 2026-05-25 (meeting-report-split-from-block-ingest) — Фаза 1.
   // 'meeting-report-fast' — ОДИН LLM-вызов поверх СЫРОГО транскрипта,
   //   возвращает { chapters, tasks, summary_markdown, quality_score } через
-  //   tool_use. Заменяет цепочку block-ingest → tasks-v2 → chapters-v2 →
-  //   summary-v2 → meeting-quality-score для «быстрого» пользовательского
-  //   отчёта. Capable модель + большой выход + thinking.
+  //   tool_use для «быстрого» пользовательского отчёта (заменил снятый с
+  //   эксплуатации v2-стек). Capable модель + большой выход + thinking.
   //   Primary = deepseek-v4-pro; secondary = gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
   | 'meeting-report-fast'
   // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
@@ -613,9 +606,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'theme-classify',
   'reframing',
   'card-rollup-v2',
-  'task-extract-v2',
-  'chapter-extract-v2',
-  'summary-v2',
   'chat-v2',
   'goal-alignment',
   'dashboard-summary',
@@ -629,7 +619,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA α-7
   'regulation-extract',
   'regulation-dedupe',
-  'process-steps-extract',
   // SBA β-2
   'knowledge-clone-extract',
   'knowledge-clone-merge',
@@ -1883,10 +1872,8 @@ export class LlmRouterService implements OnModuleInit {
   ): 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' {
     switch (taskType) {
       case 'summary':
-      case 'summary-v2':
         return 'summary';
       case 'tasks':
-      case 'task-extract-v2':
         return 'tasks';
       case 'follow-up':
         return 'follow-up';

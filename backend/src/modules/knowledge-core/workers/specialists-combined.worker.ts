@@ -7,11 +7,11 @@
  * `CombinedInputBlock[]` (формат из §3.5 ТЗ) и дёргает
  * `SpecialistsCombinedService.extractAll`. Один LLM-вызов на ВСЕ блоки.
  *
- * Producer'ы (на старте rollout'а):
- *   - `MeetingAnalyzeV2Cron` — если `cfg.specialistsCombined.enabled=true`,
- *     enqueue идёт ПАРАЛЛЕЛЬНО с meeting-analyze-v2 (старые специалисты
- *     продолжают работать через `block-ingest.worker → router.dispatch`
- *     per-block; новый воркер работает поверх всех блоков встречи).
+ * Producer'ы: на 2026-06-10 cron-producer удалён вместе с v2-стеком (он работал
+ * только при `KNOWLEDGE_CORE_V2_AGENTS_ENABLED=true`, который прод никогда не
+ * включал). Enqueue остаётся доступен через `CoreQueueService.enqueueSpecialistsCombined`
+ * (ручной запуск / тесты); per-block специалисты продолжают работать через
+ * `block-ingest.worker → router.dispatch`.
  *
  * Идемпотентность через jobId=`specialists_combined_<meetingId>` (CoreQueueService).
  * Concurrency=1 — один большой LLM-вызов на встречу, упираемся в провайдера.

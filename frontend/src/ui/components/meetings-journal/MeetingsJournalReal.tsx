@@ -998,7 +998,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
-  // Р6: единый селектор канонической сводки (summaryFast ?? summaryV2 ?? summary),
+  // Р6: единый селектор канонической сводки (summaryFast ?? summary),
   // чтобы превью журнала совпадало со страницей результата (конец «дубля сводок»).
   const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
   // S6-03: задачи из таблицы Task (тот же источник, что страница результата),

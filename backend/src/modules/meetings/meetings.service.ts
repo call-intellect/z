@@ -1022,14 +1022,6 @@ export class MeetingsService {
       summaryFast: string | null;
       summaryFastModel: string | null;
       summaryFastGeneratedAt: string | null;
-      /**
-       * Сводка предыдущего поколения (knowledge-core v2). Fallback, если
-       * `summaryFast` ещё не сгенерирован. Поле сохраняется до полного
-       * удаления v2-агентов (через 2 недели A/B-сравнения).
-       */
-      summaryV2: string | null;
-      summaryV2Model: string | null;
-      summaryV2GeneratedAt: string | null;
     } | null;
     recording: {
       hasRecording: boolean;
@@ -1159,9 +1151,6 @@ export class MeetingsService {
     summaryFast: string | null;
     summaryFastModel: string | null;
     summaryFastGeneratedAt: string | null;
-    summaryV2: string | null;
-    summaryV2Model: string | null;
-    summaryV2GeneratedAt: string | null;
   } {
     return {
       summary: r.summary,
@@ -1175,9 +1164,6 @@ export class MeetingsService {
       summaryFast: r.summaryFast ?? null,
       summaryFastModel: r.summaryFastModel ?? null,
       summaryFastGeneratedAt: r.summaryFastGeneratedAt?.toISOString() ?? null,
-      summaryV2: r.summaryV2 ?? null,
-      summaryV2Model: r.summaryV2Model ?? null,
-      summaryV2GeneratedAt: r.summaryV2GeneratedAt?.toISOString() ?? null,
     };
   }
 

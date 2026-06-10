@@ -62,19 +62,12 @@ import {
 import {
   getPromptForType,
   typeNeedsFollowUp,
-  typeNeedsTasks,
 } from '../services/prompts/index';
 import { sanitizeCustomPrompt } from '../services/prompts/sanitize-custom-prompt';
 import {
   SUMMARY_TOOL_NAME,
   buildSummaryPrompt,
 } from '../services/prompts/system-summary';
-import {
-  TASKS_SCHEMA,
-  TASKS_TOOL,
-  TASKS_TOOL_NAME,
-  buildTasksPrompt,
-} from '../services/prompts/tasks';
 
 /**
  * Worker стадии `ai.analyze`.
@@ -400,26 +393,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 7. tasks.
-    if (typeNeedsTasks(meeting.type)) {
-      const tasksStarted = Date.now();
-      const tasks = await this.runTasks({
-        meeting,
-        dialog,
-        roomChat,
-        jobId: job.id ?? null,
-      });
-      aiResult = await this.prisma.aiResult.update({
-        where: { id: aiResult.id },
-        data: { tasks: (tasks ?? []) as Prisma.InputJsonValue },
-      });
-      this.metrics.observeAiPipelineDuration({
-        stage: 'analyze.tasks',
-        type: meeting.type,
-        model: 'mixed',
-        seconds: (Date.now() - tasksStarted) / 1000,
-      });
-    }
+    // 7. tasks — снято 2026-06-10. Раньше analyze писал AiResult.tasks (мёртвое
+    //    поле: фронт читает Task-модель, заполняемую tasks-extract.worker'ом).
+    //    Блок и private runTasks удалены вместе с v2-стеком; колонка
+    //    AiResult.tasks остаётся в БД (миграция не делалась), но больше не пишется.
 
     // 8. transition → ai_ready.
     await this.meetings.transitionStatus(meetingId, 'ai_ready', {
@@ -1001,32 +978,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async runTasks(args: {
-    meeting: Meeting;
-    dialog: DialogTurn[];
-    roomChat?: RoomChatMessage[];
-    jobId: string | null;
-  }): Promise<Array<{ title: string; assignee: string | null; dueDate: string | null }> | null> {
-    const prompt = buildTasksPrompt({
-      meeting: { ...args.meeting },
-      dialog: args.dialog,
-      roomChat: args.roomChat,
-    });
-    const result = await this.callStructured(
-      args,
-      prompt,
-      TASKS_TOOL,
-      TASKS_TOOL_NAME,
-      TASKS_SCHEMA,
-      'tasks',
-    );
-    return result?.tasks ?? null;
-  }
-
   /**
-   * Структурный вызов с retry на invalid schema, для follow-up и tasks.
+   * Структурный вызов с retry на invalid schema. Используется follow-up.
    * Не падает фатально — на устойчивую ошибку возвращает null
-   * (follow-up/tasks — не критичные поля).
+   * (follow-up — не критичное поле).
    */
   private async callStructured<T>(
     args: { meeting: Meeting; jobId: string | null },
@@ -1034,16 +989,12 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     tool: LlmTool,
     toolName: string,
     schema: { safeParse: (v: unknown) => { success: boolean; data?: T } },
-    agentType: 'follow-up' | 'tasks',
+    agentType: 'follow-up',
   ): Promise<T | null> {
     // ТЗ 2026-05-24 §4 (F1) — обернуть system + user; retry-suffix снаружи маркеров.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
-    // ТЗ-4 Ф2 — ASR-нота только для tasks (follow-up не извлекает факты из
-    // сырого ASR — ему нота не нужна). Дописывается СНАРУЖИ guard'а самым
-    // последним блоком system (cache-friendly).
-    const wrappedSystem =
-      agentType === 'tasks' ? withAsrNote(guardedSystem) : guardedSystem;
+    const wrappedSystem = guardedSystem;
     const wrappedUser = guardOn ? wrapUserData(prompt.user) : prompt.user;
     for (let attempt = 0; attempt < 2; attempt++) {
       const out = await this.callLlm({
@@ -1052,8 +1003,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType,
         promptName: toolName,
         input: {
-          // follow-up — на pro-модели; tasks остаётся на flash-default (model=undefined).
-          ...(agentType === 'follow-up' ? { model: MAIN_REPORT_MODEL } : {}),
+          // follow-up — на pro-модели.
+          model: MAIN_REPORT_MODEL,
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user:
             attempt === 0

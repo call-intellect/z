@@ -13,13 +13,11 @@ import { cn } from '@/ui/shadcn/lib/utils';
  * Источник `markdown` определяется через `pickPrimarySummary` в
  * `@/domain/ai-result`:
  *   - приоритет — `summaryFast` (`MeetingReportFastWorker`, 2026-05-25);
- *   - fallback — `summaryV2` (knowledge-core v2);
  *   - legacy — `summary` (single-step prompt).
  *
- * Для `fast` и `v2` ожидается markdown — рендерится через
- * `react-markdown@10` + `rehype-sanitize@6`. Для legacy `summary` это
- * был plain-text, но markdown-рендер совместим (без разметки результат
- * выглядит как обычный текст).
+ * Для `fast` ожидается markdown — рендерится через `react-markdown@10` +
+ * `rehype-sanitize@6`. Для legacy `summary` это был plain-text, но
+ * markdown-рендер совместим (без разметки результат выглядит как обычный текст).
  */
 export function MeetingSummaryRender({
   markdown,

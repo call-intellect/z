@@ -241,7 +241,7 @@ export class SharesService {
         chapters: { orderBy: { order: 'asc' } },
         tasks: true,
         aiResult: {
-          select: { summaryFast: true, summaryV2: true, summary: true },
+          select: { summaryFast: true, summary: true },
         },
         transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } },
         recording: { select: { mainVideoUrl: true, status: true } },

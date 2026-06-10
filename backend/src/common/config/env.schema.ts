@@ -648,30 +648,16 @@ const KnowledgeCoreSchema = z.object({
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 
-  // ── Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0) ──
-  /**
-   * Master-флаг v2-агентов. По умолчанию `false`, чтобы legacy
-   * `tasks-extract.worker`/`chapters.worker` остались единственным источником
-   * данных в UI. При `true` — `meeting-analyze-v2.cron` начинает enqueue'ить
-   * jobs, которые пишут в `Task.evidenceBlockIds`/`MeetingChapter.evidenceBlockIds`/
-   * `AiResult.summaryV2` — параллельно legacy.
-   *
-   * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
-   * фаза после ручного решения владельца продукта (см. decisions-log).
-   */
+  // ── DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2 + extractor-v2) удалён ──
+  // Воркер/cron/очередь/extractor-сервисы снесены как мёртвый код (прод никогда
+  // не включал `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`). ENV-ключи оставлены инертными,
+  // чтобы не трогать env-валидацию/admin-registry; ничего больше их не читает.
+  // Колонки `AiResult.summaryV2*`/`Meeting.analyzeV2*` тоже остались в БД (без миграции).
+  /** @deprecated инертный флаг снятого v2-стека — больше не влияет ни на что. */
   KNOWLEDGE_CORE_V2_AGENTS_ENABLED: zBool(false),
-  /**
-   * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
-   * Cron-выражение в декораторе литералом, ENV-значение для логов и для
-   * будущей перерегистрации через `SchedulerRegistry`.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_CRON: z.string().min(1).default('*/10 * * * *'),
-  /**
-   * Дебаунс enqueue в `core.meeting-analyze-v2`: после `meeting.status='ai_ready'`
-   * мы ждём 2 минуты, чтобы block-ingest/distill успели стабилизироваться
-   * (canonical-блоки могут «доезжать» спустя несколько секунд после ai_ready).
-   * Несколько событий по одной встрече за окно складываются в один job.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
 
   // ── ТЗ 2026-05-25: meeting-report-fast (объединённый отчёт по сырому транскрипту) ──
@@ -685,9 +671,6 @@ const KnowledgeCoreSchema = z.object({
    *
    * Default `true` — на dev включаем сразу; на prod выключать через ENV
    * до явного подтверждения качества (kill-switch).
-   *
-   * Старая цепочка `meeting-analyze-v2` НЕ переключается этим флагом —
-   * она имеет собственный `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`.
    */
   MEETING_REPORT_FAST_ENABLED: zBool(true),
 

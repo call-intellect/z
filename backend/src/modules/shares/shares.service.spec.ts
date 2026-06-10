@@ -235,9 +235,9 @@ describe('SharesService', () => {
             dueDate: null,
           },
         ],
-        // Р6: select теперь тянет summaryFast/summaryV2/summary; legacy-only
-        // встреча (fast ещё не сгенерирован) → pickPrimarySummary падает на summary.
-        aiResult: { summaryFast: null, summaryV2: null, summary: 'Краткое резюме' },
+        // Р6: select тянет summaryFast/summary; legacy-only встреча (fast ещё
+        // не сгенерирован) → pickPrimarySummary падает на summary.
+        aiResult: { summaryFast: null, summary: 'Краткое резюме' },
         transcript: null,
         recording: null,
       });
@@ -272,7 +272,6 @@ describe('SharesService', () => {
         tasks: [],
         aiResult: {
           summaryFast: 'Быстрая сводка',
-          summaryV2: 'V2 сводка',
           summary: 'Legacy сводка',
         },
         transcript: null,

@@ -17,7 +17,7 @@ export type ChapterApi = {
   /**
    * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
    * `'fast'` = новый `MeetingReportFastWorker` (приоритет в пользовательском UI),
-   * `'v2'` = knowledge-core `meeting-analyze-v2.worker` (fallback),
+   * `'v2'` = историческое значение снятого v2-стека (генератор удалён 2026-06-10),
    * `null` = legacy `chapters.worker`.
    */
   extractorVersion: string | null;

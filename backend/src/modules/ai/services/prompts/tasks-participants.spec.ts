@@ -10,13 +10,8 @@
  *      `assigneeUserId`.
  *   4. `buildTasksToolUnified` с participants → JSON Schema содержит
  *      `assigneeUserId: ['string','null']`.
- *   5. `buildTasksV2Prompt` (knowledge-core) с participants → system дополнен
- *      правилами, user содержит блок участников.
  */
 import { describe, expect, it } from 'vitest';
-
-import { buildTasksV2Prompt } from '../../../knowledge-core/prompts/tasks-v2.prompt';
-import type { MeetingBlock } from '../../../knowledge-core/services/block-fetch.service';
 
 import type { DialogTurn, PromptInput } from './common';
 import type { AiParticipantContext } from './participant-context';
@@ -160,42 +155,5 @@ describe('buildTasksToolUnified — JSON Schema', () => {
         properties: { tasks: { items: { properties: Record<string, unknown> } } };
       }).properties.tasks.items.properties;
     expect(tasksProp).not.toHaveProperty('assigneeUserId');
-  });
-});
-
-describe('buildTasksV2Prompt — participants (knowledge-core)', () => {
-  const BLOCKS: MeetingBlock[] = [
-    {
-      id: 'b-1',
-      name: 'Подготовить отчёт',
-      criticalQuestion: null,
-      trustedAnswer: null,
-      signalType: 'commitment',
-      tags: [],
-      evidence: [{ quote: 'Сделаю отчёт', startMs: 0, endMs: 5000 }],
-      dataClass: 'general',
-    } as unknown as MeetingBlock,
-  ];
-
-  it('с participants → system содержит правила, user — блок участников', () => {
-    const { system, user } = buildTasksV2Prompt({
-      meetingId: 'm-1',
-      meetingTitle: 'Test meeting',
-      blocks: BLOCKS,
-      participants: PARTICIPANTS,
-    });
-    expect(system).toContain('Правила идентификации');
-    expect(user).toContain('Участники этой встречи');
-    expect(user).toContain('user_anna');
-  });
-
-  it('без participants → legacy режим, никаких новых блоков', () => {
-    const { system, user } = buildTasksV2Prompt({
-      meetingId: 'm-1',
-      meetingTitle: 'Test meeting',
-      blocks: BLOCKS,
-    });
-    expect(system).not.toContain('Правила идентификации');
-    expect(user).not.toContain('Участники этой встречи');
   });
 });

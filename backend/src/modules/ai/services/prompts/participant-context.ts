@@ -3,7 +3,7 @@
  *
  * ТЗ 2026-05-25 `hard-participant-identification` (§4.1).
  *
- * Используется промптами извлечения задач (`tasks-v2`, `tasks-structured`,
+ * Используется промптами извлечения задач (`tasks-structured`,
  * `tasks-unified`), чтобы LLM мог вернуть не только строку `assigneeRaw`
  * («Иван», «маркетинг»), но и точный `User.id` (`assigneeUserId`) для
  * зарегистрированных сотрудников, упомянутых в этой встрече.
@@ -53,7 +53,7 @@ export interface AiParticipantContext {
  *   - "Сергей" (userId=user_def, role=host)
  *   - "Иван" (userId=null, role=guest)
  *
- * Используется в `tasks-v2.prompt`, `tasks-unified`, `tasks-structured`.
+ * Используется в `tasks-unified`, `tasks-structured`.
  */
 export function formatParticipantsForPrompt(
   participants: readonly AiParticipantContext[],

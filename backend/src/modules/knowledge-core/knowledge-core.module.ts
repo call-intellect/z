@@ -13,7 +13,6 @@ import { BlockFetchService, KnowledgeBlockResolver } from './services/block-fetc
 import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
-import { ChaptersExtractorV2Service } from './services/chapters-extractor-v2.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
 import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
@@ -57,9 +56,7 @@ import { Specialist39ExperimentsService } from './services/specialist-3-9-experi
 import { SpecialistsCombinedService } from './services/specialists-combined.service';
 import { SprintHelperService } from './services/sprint-helper.service';
 import { SprintReviewService } from './services/sprint-review.service';
-import { SummaryExtractorV2Service } from './services/summary-extractor-v2.service';
 import { TaskAssigneeResolverService } from './services/task-assignee-resolver.service';
-import { TasksExtractorV2Service } from './services/tasks-extractor-v2.service';
 import { TemporalConflictService } from './services/temporal-conflict.service';
 import { TemporalProbeService } from './services/temporal-probe.service';
 import { ThemeClassificationService } from './services/theme-classification.service';
@@ -123,18 +120,16 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     ClusteringService,
     ThemeClassificationService,
     CardRollupV2Service,
-    // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
+    // BlockFetchService — резолвер canonical-блоков встречи (используется
+    // SpecialistsCombinedService и др. потребителями графа).
     BlockFetchService,
     // KC-Temporal W1.1 (2026-05-25) — резолвер активных IdeaBlock'ов
     // (validUntil IS NULL или validFrom<=at<validUntil). Используется
     // search/snapshot/graph слоями. Без ENV-флага — это чистый helper.
     KnowledgeBlockResolver,
-    TasksExtractorV2Service,
-    ChaptersExtractorV2Service,
-    SummaryExtractorV2Service,
     // ТЗ 2026-05-25 hard-participant-identification — резолвер
     // Task.assigneeUserId на выходе LLM (fallback по имени + защита от
-    // галлюцинаций). Используется meeting-analyze-v2 и tasks-extract воркерами.
+    // галлюцинаций). Используется tasks-extract воркерами.
     TaskAssigneeResolverService,
     // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов, 5 scope).
     ChatV2RetrievalService,
@@ -285,14 +280,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     ClusteringService,
     ThemeClassificationService,
     CardRollupV2Service,
-    // Фаза 5: экспортируем для воркеров (`MeetingAnalyzeV2Worker` и
-    // `MeetingAnalyzeV2Cron` живут в WorkersModule).
+    // BlockFetchService — экспортируем для воркеров (`SpecialistsCombinedWorker`
+    // живёт в WorkersModule и инжектит canonical-блоки встречи).
     BlockFetchService,
     // KC-Temporal W1.1 — экспортируется для consumer'ов (search/snapshot/graph).
     KnowledgeBlockResolver,
-    TasksExtractorV2Service,
-    ChaptersExtractorV2Service,
-    SummaryExtractorV2Service,
     TaskAssigneeResolverService,
     // Фаза 6: ChatV2 экспортируется, чтобы chat.service из ChatModule мог
     // его инжектить (этот модуль @Global, поэтому импортирует прозрачно).

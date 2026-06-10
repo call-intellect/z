@@ -344,6 +344,10 @@ const STEPS: Step[] = [
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
   { phase: 'backfill', script: 'scripts/backfill-default-board.ts', hint: 'default Board + issues.boardId backfill', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-system-generated-projects.ts', hint: 'пометить org-контейнеры «Спринт компании» systemGenerated=true (A6)', skipBootstrap: true },
+  // 2026-06-10 Волна 6 A10 — переклассификация single-role Process → Instruction
+  // (first-class «Инструкция»). Идемпотентен (skip по tenantId+name), dry-run по
+  // умолчанию → нужен `--apply`. На чистом старте инструкций нет → skipBootstrap.
+  { phase: 'backfill', script: 'scripts/backfill-reclassify-instructions.ts', args: ['--apply'], hint: 'Process scope=role:* → Instruction (A10)', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-onboarding-setup-completed.ts',

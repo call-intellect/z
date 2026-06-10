@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { accountsApi } from '@/api/accounts.api';
 import { ApiError } from '@/api/api-error';
 import {
+  PASSWORD_RULE_HINT,
   passwordsMatch,
   validatePassword,
 } from '@/lib/password-validation';
@@ -84,7 +85,7 @@ export function ResetPasswordForm() {
         if (err.code === 'reset_token_invalid') {
           toast.error('Ссылка недействительна или истекла. Запросите заново.');
         } else if (err.code === 'password_too_weak') {
-          toast.error('Пароль слишком простой. Минимум 8 символов, буква и цифра.');
+          toast.error(`Пароль слишком простой. ${PASSWORD_RULE_HINT}`);
         } else {
           toast.error(err.message);
         }
@@ -98,7 +99,7 @@ export function ResetPasswordForm() {
   return (
     <AuthShell
       title="Новый пароль"
-      subtitle="Минимум 8 символов, должны быть буква и цифра."
+      subtitle={PASSWORD_RULE_HINT}
       footer={
         <Link
           href="/login"

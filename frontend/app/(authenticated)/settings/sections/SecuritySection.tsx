@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { accountsApi } from '@/api/accounts.api';
 import { ApiError } from '@/api/api-error';
 import {
+  PASSWORD_RULE_HINT,
   passwordsMatch,
   validatePassword,
 } from '@/lib/password-validation';
@@ -102,9 +103,7 @@ export function SecuritySection() {
             {newPassword && !passwordCheck.valid ? (
               <p className="text-xs text-danger">{passwordCheck.message}</p>
             ) : (
-              <p className="text-xs text-fg-tertiary">
-                Минимум 8 символов, буква и цифра.
-              </p>
+              <p className="text-xs text-fg-tertiary">{PASSWORD_RULE_HINT}</p>
             )}
           </div>
 

@@ -18,7 +18,15 @@ export const TOOL_NAME = 'extract_team';
 export const SCHEMA = z
   .object({
     discussed: z.array(z.string()),
-    decisions: z.array(z.string()),
+    decisions: z.array(
+      z
+        .object({
+          text: z.string(),
+          speaker: z.string().nullable(),
+          changes_what: z.string().nullable(),
+        })
+        .strict(),
+    ),
     tasks: z.array(TaskItemSchema),
     blockers: z.array(z.string()),
     next_step: z.string().nullable(),
@@ -32,7 +40,10 @@ export type TeamReport = z.infer<typeof SCHEMA>;
 const SYSTEM = `Ты — деловой ассистент. Это командная встреча.
 Извлеки структурированный отчёт. Все поля — на русском, без оценочных суждений.
 - "discussed": темы, которые обсуждались (список коротких пунктов).
-- "decisions": принятые решения (список).
+- "decisions": принятые решения — список объектов { text, speaker, changes_what }:
+  - text — формулировка решения;
+  - speaker — кто принял решение (имя/роль) или null, если не названо;
+  - changes_what — что меняет это решение (на что влияет) или null, если не ясно.
 - "tasks": задачи с ответственными и сроками. assignee/dueDate — null, если не названы.
 - "blockers": блокеры/риски, упомянутые на встрече.
 - "next_step": следующий шаг команды или null, если не определён.
@@ -57,7 +68,19 @@ export const TOOL = buildExtractTool(
   'Извлечь структурированный отчёт командной встречи',
   {
     discussed: fieldStringArray,
-    decisions: fieldStringArray,
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: fieldString,
+          speaker: fieldNullableString,
+          changes_what: fieldNullableString,
+        },
+        required: ['text', 'speaker', 'changes_what'],
+        additionalProperties: false,
+      },
+    },
     tasks: {
       type: 'array',
       items: {

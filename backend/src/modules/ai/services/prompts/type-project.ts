@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   buildExtractTool,
   fieldNullableString,
+  fieldString,
   fieldStringArray,
   type PromptInput,
   type PromptOutput,
@@ -15,8 +16,24 @@ export const TOOL_NAME = 'extract_project';
 
 export const SCHEMA = z
   .object({
-    agreements: z.array(z.string()),
-    responsibilities: z.array(z.string()),
+    agreements: z.array(
+      z
+        .object({
+          text: z.string(),
+          speaker: z.string().nullable(),
+          supersedes: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    responsibilities: z.array(
+      z
+        .object({
+          who: z.string(),
+          what: z.string(),
+          deadline: z.string().nullable(),
+        })
+        .strict(),
+    ),
     deadlines: z.array(z.string()),
     risks: z.array(z.string()),
     open_questions: z.array(z.string()),
@@ -34,8 +51,14 @@ const SYSTEM = `Ты — деловой ассистент. Это проект�
 - Имена собственные (компании, продукты, люди) — оставляй как есть.
 
 Извлеки:
-- "agreements": договорённости сторон.
-- "responsibilities": зоны ответственности (кто за что отвечает).
+- "agreements": договорённости сторон — список объектов { text, speaker, supersedes }:
+  - text — формулировка договорённости;
+  - speaker — кто её озвучил/принял (имя/роль) или null, если не названо;
+  - supersedes — какую прежнюю договорённость она отменяет/заменяет или null, если ничего не заменяет.
+- "responsibilities": зоны ответственности — список объектов { who, what, deadline }:
+  - who — кто отвечает (имя/роль);
+  - what — за что отвечает;
+  - deadline — срок по этой зоне ответственности или null, если не назван.
 - "deadlines": сроки/дедлайны (текстом, со ссылкой на задачу/блок если упомянуто).
 - "risks": риски проекта.
 - "open_questions": открытые вопросы.
@@ -59,8 +82,32 @@ export const TOOL = buildExtractTool(
   TOOL_NAME,
   'Извлечь отчёт проектной встречи',
   {
-    agreements: fieldStringArray,
-    responsibilities: fieldStringArray,
+    agreements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: fieldString,
+          speaker: fieldNullableString,
+          supersedes: fieldNullableString,
+        },
+        required: ['text', 'speaker', 'supersedes'],
+        additionalProperties: false,
+      },
+    },
+    responsibilities: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          who: fieldString,
+          what: fieldString,
+          deadline: fieldNullableString,
+        },
+        required: ['who', 'what', 'deadline'],
+        additionalProperties: false,
+      },
+    },
     deadlines: fieldStringArray,
     risks: fieldStringArray,
     open_questions: fieldStringArray,

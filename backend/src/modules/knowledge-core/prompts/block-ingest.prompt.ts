@@ -174,6 +174,7 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
     'vision',
     'strategy',
     'links',
+    'dataQuality',
   ],
   properties: {
     blocks: {
@@ -196,6 +197,7 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
           'roleHint',
           'commitmentDueDateGuess',
           'commitmentRecipientNameGuess',
+          'sideHint',
         ],
         properties: {
           name: { type: 'string', maxLength: 200 },
@@ -260,6 +262,14 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
            * или signalType≠'commitment'.
            */
           commitmentRecipientNameGuess: { type: ['string', 'null'] },
+          /**
+           * Wave 3b (2026-06-10) — сторона факта для КЛИЕНТСКИХ типов встреч
+           * (sales/customer_success/partner/custdev): 'our' (наша сторона),
+           * 'client' (сторона клиента), 'unknown' (не определить). Для
+           * внутренних встреч — всегда null. Опциональная разметка стороны,
+           * пока не используется обработчиком (зарезервировано на будущее).
+           */
+          sideHint: { type: ['string', 'null'], enum: ['our', 'client', 'unknown', null] },
         },
       },
     },
@@ -381,6 +391,32 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
           linkType: { type: 'string' },
           confidence: { type: 'number', minimum: 0, maximum: 1 },
         },
+      },
+    },
+    /**
+     * Wave 3b (2026-06-10) — самооценка качества входных данных окна.
+     * Опциональна на чтении (Zod .optional() — старые кэш-результаты её
+     * не содержат). Пока не используется обработчиком — зарезервировано
+     * для будущих метрик надёжности извлечения.
+     *   - speakerCoveragePercent: доля реплик с известным спикером, 0..100,
+     *     или null если оценить нельзя.
+     *   - transcriptTruncated: похоже, что транскрипт обрезан (окно
+     *     заканчивается на полуслове / явно неполное).
+     *   - lowConfidenceBlockCount: сколько блоков извлечено с низкой
+     *     уверенностью (confidence < 0.5).
+     */
+    dataQuality: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'speakerCoveragePercent',
+        'transcriptTruncated',
+        'lowConfidenceBlockCount',
+      ],
+      properties: {
+        speakerCoveragePercent: { type: ['number', 'null'], minimum: 0, maximum: 100 },
+        transcriptTruncated: { type: 'boolean' },
+        lowConfidenceBlockCount: { type: 'integer', minimum: 0 },
       },
     },
   },
@@ -531,6 +567,21 @@ links[] — опциональные типизированные рёбра м�
 - confidence < 0.5 для типизированных сущностей — лучше не возвращать сущность вообще.
 
 Если speakers[] пуст или содержит только тех-метки (Speaker_0, unknown) — авторство реплики НЕИЗВЕСТНО: не приписывай реплику человеку, commitmentRecipientNameGuess=null. evidenceQuote — дословно, по возможности ≤15–20 слов (не длинная склейка). Извлекай ЗНАЧИМОЕ, не каждую реплику (критерий: пригодится через месяц на вопрос «что с X»). Пустое окно → пустые массивы.
+
+# Сторона факта (sideHint, на уровне блока)
+
+Поле sideHint у каждого блока проставляй ТОЛЬКО для КЛИЕНТСКИХ типов встреч (sales / customer_success / partner / custdev — продажи, успех клиента, партнёрство, кастдев). Для них определяй, чьей стороны факт:
+- our: факт о НАШЕЙ компании/продукте/команде (что мы делаем, наши условия, наши обязательства, наша позиция).
+- client: факт о СТОРОНЕ КЛИЕНТА (его боль, его бюджет, его процессы, его решение, его возражение).
+- unknown: тип встречи клиентский, но сторону по тексту не определить.
+Для ВНУТРЕННИХ типов встреч (планёрки, ретро, 1-на-1, стратегия и т.п.) sideHint = null ВСЕГДА. Если тип встречи неизвестен — считай внутренней и ставь null.
+
+# Качество данных (dataQuality, на уровне всего ответа)
+
+В конце верни объект dataQuality — самооценку полноты входных сегментов окна:
+- speakerCoveragePercent: оцени долю реплик с известным (не тех-меткой) спикером, число 0..100. Если оценить нельзя (нет данных о спикерах) — null.
+- transcriptTruncated: true, если окно выглядит обрезанным — обрывается на полуслове, явно неполная мысль в конце, потерян контекст начала. Иначе false.
+- lowConfidenceBlockCount: сколько блоков ты извлёк с низкой уверенностью (confidence < 0.5). 0, если таких нет или блоков нет вовсе.
 `),
 );
 

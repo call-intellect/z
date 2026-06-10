@@ -33,6 +33,7 @@ import {
   FileText,
   ListChecks,
   Loader2,
+  Lightbulb,
   Lock,
   MessageCircle,
   MessageSquareText,
@@ -996,6 +997,67 @@ function StatsRow({ stats }: { stats: Array<{ label: string; value: string | num
   );
 }
 
+/** Ключи отчёта с отдельным (не-generic) рендером — вынимаются из общего грида. */
+const STRUCTURED_SPECIAL_KEYS = new Set([
+  'data_quality',
+  'churn_risk_quote',
+  'ideas',
+  'proposals',
+]);
+
+/**
+ * data_quality (строка) — приглушённый блок-бейдж «Качество данных» ВНЕ грида.
+ * Это НЕ оценка качества встречи (QualityScore) — это полнота входных данных отчёта.
+ */
+function DataQualityBadge({ value }: { value: unknown }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-base px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        Качество данных
+      </div>
+      <div className="mt-1 text-sm leading-relaxed text-fg-tertiary">
+        <StructuredFieldValue value={value} />
+      </div>
+      <div className="mt-1 text-[11px] leading-snug text-fg-tertiary">
+        Оценка полноты исходных данных отчёта, а не качества самой встречи.
+      </div>
+    </div>
+  );
+}
+
+/** churn_risk_quote (строка) — выделенная цитата риска оттока. */
+function ChurnRiskQuote({ value }: { value: unknown }) {
+  return (
+    <Card>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        Цитата риска оттока
+      </div>
+      <blockquote className="mt-2 border-l-2 border-chip-warning-fg pl-3 text-sm italic leading-relaxed text-fg-primary">
+        <StructuredFieldValue value={value} />
+      </blockquote>
+    </Card>
+  );
+}
+
+/** ideas / proposals (массивы) — отдельная секция с лампочкой, отличная от Задач. */
+function IdeasSection({ entries }: { entries: Array<[string, unknown]> }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {entries.map(([k, v]) => (
+        <Card key={k}>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+            <Lightbulb size={12} className="text-chip-warning-fg" />
+            {structuredFieldLabel(k)}
+          </div>
+          <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+            <StructuredFieldValue value={v} />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function StructuredDataCard({ data }: { data: unknown }) {
   const entries = useMemo(() => {
     if (!data || typeof data !== 'object') return [];
@@ -1004,24 +1066,37 @@ function StructuredDataCard({ data }: { data: unknown }) {
     );
   }, [data]);
   if (entries.length === 0) return null;
+
+  const genericEntries = entries.filter(([k]) => !STRUCTURED_SPECIAL_KEYS.has(k));
+  const ideasEntries = entries.filter(
+    ([k]) => k === 'ideas' || k === 'proposals',
+  );
+  const dataQuality = entries.find(([k]) => k === 'data_quality');
+  const churnQuote = entries.find(([k]) => k === 'churn_risk_quote');
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-semibold text-fg-primary">Обзор</h3>
         <ReportActions output={data} title="Отчёт встречи" />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {entries.map(([k, v]) => (
-          <Card key={k}>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              {structuredFieldLabel(k)}
-            </div>
-            <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
-              <StructuredFieldValue value={v} />
-            </div>
-          </Card>
-        ))}
-      </div>
+      {genericEntries.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {genericEntries.map(([k, v]) => (
+            <Card key={k}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+                {structuredFieldLabel(k)}
+              </div>
+              <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+                <StructuredFieldValue value={v} />
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {ideasEntries.length > 0 && <IdeasSection entries={ideasEntries} />}
+      {churnQuote && <ChurnRiskQuote value={churnQuote[1]} />}
+      {dataQuality && <DataQualityBadge value={dataQuality[1]} />}
     </div>
   );
 }

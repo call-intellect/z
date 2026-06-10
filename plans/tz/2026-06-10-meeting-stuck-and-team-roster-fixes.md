@@ -66,7 +66,7 @@
 **Контракт:** существующие тесты не ломаются (email в фикстурах разные); добавить 2 кейса (см. §Тест-план).
 **Риск:** низкий, только чтение. Дедуп на чтении — страховка; реальные дубли убирает Ф2+Ф3.
 
-### Ф2 — БД: partial unique index по email
+### Ф2 — БД: partial unique index по email ✅
 **Файл:** `backend/scripts/postgres-init.sql` (в конец).
 **Изменение:** `CREATE UNIQUE INDEX persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''`.
 **Устойчивость к порядку:** `postgres-init` запускается отдельно от backfill (внутри `apply-prod-deploy --with-schema` schema-фаза идёт раньше backfill — [apply-prod-deploy.ts:506-507](../../backend/scripts/apply-prod-deploy.ts#L506-L507)). Поэтому блок ОБЯЗАН не падать на существующих дублях: сначала считать группы-дубли, при `>0` — `RAISE NOTICE` и пропуск; индекс встанет на следующем прогоне `postgres-init` уже после Ф3. (Образец partial unique — `Vendor_tenantId_inn_unique_idx`, `Entity_strong_email_uniq`.)

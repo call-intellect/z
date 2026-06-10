@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { supportApi } from '@/api/support.api';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -57,7 +57,7 @@ export function SupportForm({ onSuccess }: { onSuccess?: () => void }) {
         onSuccess?.();
       } catch (err) {
         if (err instanceof ApiError) {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         } else {
           toast.error('Не удалось отправить. Попробуйте ещё раз.');
         }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { projectsApi, type ProjectEmailInboxApi } from '@/api/tracker/projects.api';
+import { humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import { PROJECT_MEMBER_ROLE_LABELS } from '@/domain/tracker';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
@@ -121,7 +122,7 @@ function EmailInboxSection({
       const fresh = await projectsApi.getEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить настройки email-inbox');
+      setError(humanizeApiError(e, 'Не удалось загрузить настройки email-inbox'));
     } finally {
       setLoading(false);
     }
@@ -138,7 +139,7 @@ function EmailInboxSection({
       const fresh = await projectsApi.enableEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось включить email-inbox');
+      setError(humanizeApiError(e, 'Не удалось включить email-inbox'));
     } finally {
       setBusy(null);
     }
@@ -151,7 +152,7 @@ function EmailInboxSection({
       const fresh = await projectsApi.disableEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось выключить email-inbox');
+      setError(humanizeApiError(e, 'Не удалось выключить email-inbox'));
     } finally {
       setBusy(null);
     }
@@ -171,7 +172,7 @@ function EmailInboxSection({
       const fresh = await projectsApi.regenerateEmailInboxAlias(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сгенерировать новый адрес');
+      setError(humanizeApiError(e, 'Не удалось сгенерировать новый адрес'));
     } finally {
       setBusy(null);
     }

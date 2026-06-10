@@ -6,7 +6,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
 import { accountsApi } from '@/api/accounts.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   PASSWORD_RULE_HINT,
   passwordsMatch,
@@ -87,7 +87,7 @@ export function ResetPasswordForm() {
         } else if (err.code === 'password_too_weak') {
           toast.error(`Пароль слишком простой. ${PASSWORD_RULE_HINT}`);
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось сбросить пароль. Попробуйте ещё раз.');

@@ -6,7 +6,7 @@ import { Loader2, MessagesSquare, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { chatboxApi, type ChatboxChatStatusApi } from '@/api/chatbox.api';
 import {
   chatboxChannelTypeBadgeClass,
@@ -149,7 +149,7 @@ function ChatsListContent() {
 
       {error && (
         <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {error instanceof ApiError ? error.message : 'Не удалось загрузить чаты'}
+          {humanizeApiError(error, 'Не удалось загрузить чаты')}
         </div>
       )}
 

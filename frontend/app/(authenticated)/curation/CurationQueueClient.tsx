@@ -137,7 +137,7 @@ function CurationQueueContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Не удалось загрузить очередь');
+        setError(humanizeApiError(e, 'Не удалось загрузить очередь'));
       }
     } finally {
       setIsLoading(false);
@@ -166,7 +166,7 @@ function CurationQueueContent() {
         }
       } catch (e) {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить детали',
+          humanizeApiError(e, 'Не удалось загрузить детали'),
         );
       }
     },
@@ -581,7 +581,7 @@ function ConflictRow({
       });
       onResolved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось разрешить конфликт');
+      setError(humanizeApiError(e, 'Не удалось разрешить конфликт'));
     } finally {
       setSubmitting(false);
     }
@@ -687,7 +687,7 @@ function CompletenessPanel({
       setSlots(res.items.map(mapCompletenessSlot));
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить слоты',
+        humanizeApiError(e, 'Не удалось загрузить слоты'),
       );
     } finally {
       setIsLoading(false);

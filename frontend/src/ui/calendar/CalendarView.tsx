@@ -19,7 +19,7 @@ import { useCallback, useMemo, useState, type JSX } from 'react';
 import useSWR from 'swr';
 import { CalendarPlus, ChevronLeft, ChevronRight } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   calendarApi,
   type CalendarItemApi,
@@ -235,7 +235,7 @@ export function CalendarView({
         );
       } catch (e) {
         const msg =
-          e instanceof ApiError ? e.message : 'Не удалось перенести событие.';
+          humanizeApiError(e, 'Не удалось перенести событие.');
         if (typeof window !== 'undefined') window.alert(msg);
       }
     },

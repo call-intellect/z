@@ -5,7 +5,7 @@ import useSWR, { mutate } from 'swr';
 import { BriefcaseBusiness, Check, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   rolesDomainApi,
   personsDomainApi,
@@ -136,7 +136,7 @@ function PositionEditor({
       closeAll();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось назначить должность',
+        humanizeApiError(e, 'Не удалось назначить должность'),
       );
     } finally {
       setSaving(false);
@@ -157,7 +157,7 @@ function PositionEditor({
       closeAll();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось назначить должность',
+        humanizeApiError(e, 'Не удалось назначить должность'),
       );
     } finally {
       setSaving(false);

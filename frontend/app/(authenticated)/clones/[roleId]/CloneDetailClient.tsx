@@ -30,7 +30,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { clonesApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -126,7 +126,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
       return <NotFound />;
     }
     const message =
-      err instanceof ApiError ? err.message : 'Не удалось загрузить клона.';
+      humanizeApiError(err, 'Не удалось загрузить клона.');
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
         <BackLink />

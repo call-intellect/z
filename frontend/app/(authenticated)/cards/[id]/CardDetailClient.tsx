@@ -29,7 +29,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import { toast } from 'sonner';
 
 import { cardsApi } from '@/api/cards.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
 import { CardChat } from '@/ui/components/cards/CardChat';
@@ -103,7 +103,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
       const updated = await cardsApi.update(card.id, { pinned: !card.pinned });
       await cardSwr.mutate(cardFromApi(updated), { revalidate: false });
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка');
+      toast.error(humanizeApiError(err, 'Ошибка'));
     }
   }
 
@@ -116,7 +116,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
       await cardSwr.mutate(cardFromApi(updated), { revalidate: false });
       toast.success(card.archivedAt ? 'Карточка восстановлена' : 'Карточка в архиве');
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка');
+      toast.error(humanizeApiError(err, 'Ошибка'));
     }
   }
 
@@ -134,7 +134,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
       toast.success('Карточка удалена');
       router.push('/cards');
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка удаления');
+      toast.error(humanizeApiError(err, 'Ошибка удаления'));
     }
   }
 

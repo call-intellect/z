@@ -11,7 +11,7 @@ import {
   type ConciergeStreamEvent,
 } from '@/api/concierge.api';
 import { tablesApi } from '@/api/tables.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import {
   isInferredTableSchema,
@@ -112,7 +112,7 @@ export function ConciergeChat({
           );
         } else {
           toast.error(
-            e instanceof ApiError ? e.message : 'Не удалось создать таблицу',
+            humanizeApiError(e, 'Не удалось создать таблицу'),
           );
         }
       } finally {

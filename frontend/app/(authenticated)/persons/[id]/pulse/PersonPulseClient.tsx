@@ -20,7 +20,7 @@ import {
   UserRound,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { activityFeedApi } from '@/api/activity-feed.api';
 import { personsApi } from '@/api/persons.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -126,7 +126,7 @@ function PersonPulseContent({
         else if (e.code === 'person_not_found' || e.code === 'http_404') {
           setNotFound(true);
         } else {
-          setError(e.message);
+          setError(humanizeApiError(e));
         }
       } else {
         setError('Не удалось загрузить карточку сотрудника');

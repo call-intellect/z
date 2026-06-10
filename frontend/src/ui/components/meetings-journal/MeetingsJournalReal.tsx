@@ -37,7 +37,7 @@ import {
 import { meetingsApi } from '@/api/meetings.api';
 import { tagsApi } from '@/api/tags.api';
 import { exportsApi } from '@/api/exports.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   meetingSummaryFromApi,
   meetingDurationSeconds,
@@ -250,7 +250,7 @@ export function MeetingsJournalReal() {
       setChecked(new Set());
       void mutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка удаления';
+      const msg = humanizeApiError(e, 'Ошибка удаления');
       toast.error(msg);
     }
   };
@@ -281,7 +281,7 @@ export function MeetingsJournalReal() {
       }
       void mutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка удаления';
+      const msg = humanizeApiError(e, 'Ошибка удаления');
       toast.error(msg);
     }
   };
@@ -296,7 +296,7 @@ export function MeetingsJournalReal() {
       toast.success(`Теги обновлены у ${ids.length}`);
       setChecked(new Set());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -315,7 +315,7 @@ export function MeetingsJournalReal() {
       toast.success('Экспорт запущен. Готовый ZIP появится в /settings/exports.');
       setChecked(new Set());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка экспорта';
+      const msg = humanizeApiError(e, 'Ошибка экспорта');
       toast.error(msg);
     }
   };

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import type { DeskView } from '@/api/support.api';
 import { useDeskTickets } from '@/hooks/useDeskTickets';
 import { useSupportStatus } from '@/hooks/useSupportStatus';
@@ -132,7 +132,7 @@ function EmptyState() {
 
 function ErrorView({ error }: { error: unknown }) {
   const message =
-    error instanceof ApiError ? error.message : 'Не удалось загрузить очередь.';
+    humanizeApiError(error, 'Не удалось загрузить очередь.');
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}

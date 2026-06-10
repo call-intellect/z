@@ -18,7 +18,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { FileSpreadsheet, Plus, Sparkles, Table2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
 import type { TableApi } from '@/api/types/tables';
 import { useAuth } from '@/contexts/auth-context';
@@ -70,7 +70,7 @@ function TablesListContent({ orgId }: { orgId: string }) {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);
@@ -90,7 +90,7 @@ function TablesListContent({ orgId }: { orgId: string }) {
       router.push(`/tables/${created.id}`);
     } catch (e) {
       window.alert(
-        e instanceof ApiError ? e.message : 'Не удалось создать таблицу',
+        humanizeApiError(e, 'Не удалось создать таблицу'),
       );
     } finally {
       setIsCreating(false);

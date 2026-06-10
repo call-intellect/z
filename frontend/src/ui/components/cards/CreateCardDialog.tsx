@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import { cardsApi, type CreateCardRequest } from '@/api/cards.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
 import {
   Dialog,
@@ -76,7 +76,7 @@ export function CreateCardDialog({
       // Сразу переходим в карточку — главный сценарий «открыть и завести встречу».
       router.push(`/cards/${encodeURIComponent(created.id)}`);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось создать карточку';
+      const msg = humanizeApiError(err, 'Не удалось создать карточку');
       toast.error(msg);
     } finally {
       setSubmitting(false);

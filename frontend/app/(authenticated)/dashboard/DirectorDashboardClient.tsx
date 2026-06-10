@@ -23,7 +23,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { orgsApi } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -141,7 +141,7 @@ export function DirectorDashboardClient() {
         setData(directorDashboardFromApi(res));
       } catch (e) {
         const message =
-          e instanceof ApiError ? e.message : 'Не удалось загрузить дашборд';
+          humanizeApiError(e, 'Не удалось загрузить дашборд');
         setError(message);
       } finally {
         setLoading(false);

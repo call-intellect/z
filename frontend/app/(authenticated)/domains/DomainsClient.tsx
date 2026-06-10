@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import Link from 'next/link';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   functionalDomainsApi,
   type IndustrySlugApi,
@@ -62,7 +62,7 @@ function DomainsContent({
       const r = await functionalDomainsApi.list(orgId, { includeChildren: true });
       setItems(r.items.map(toFunctionalDomain));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось загрузить домены');
+      setError(humanizeApiError(err, 'Не удалось загрузить домены'));
     } finally {
       setLoading(false);
     }
@@ -85,7 +85,7 @@ function DomainsContent({
         );
         await load();
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Не удалось применить шаблон');
+        setError(humanizeApiError(err, 'Не удалось применить шаблон'));
       } finally {
         setBusy(false);
       }

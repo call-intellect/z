@@ -34,7 +34,7 @@ import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { useProjectDocuments } from '@/hooks/tracker/useProjectDocuments';
 import { useProjectLinkedCards } from '@/hooks/tracker/useProjectLinkedCards';
 import { projectDocumentsApi } from '@/api/tracker/project-documents.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   type LinkedCard,
   linkedCardKindLabel,
@@ -143,7 +143,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
       await mutateDocs();
     } catch (err) {
       const msg =
-        err instanceof ApiError ? err.message : 'Не удалось закрепить документ';
+        humanizeApiError(err, 'Не удалось закрепить документ');
       toast.error(msg);
     }
   };
@@ -158,7 +158,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
       toast.success('Документ удалён');
     } catch (err) {
       const msg =
-        err instanceof ApiError ? err.message : 'Не удалось удалить документ';
+        humanizeApiError(err, 'Не удалось удалить документ');
       toast.error(msg);
     }
   };

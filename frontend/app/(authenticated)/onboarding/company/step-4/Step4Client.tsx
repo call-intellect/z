@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Check, CloudUpload, Loader2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { documentsApi } from '@/api/documents.api';
 import { rolesDomainApi, type RoleDomainApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -70,7 +70,7 @@ export function Step4Client() {
       toast.success(`«${file.name}» загружено.`);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось загрузить файл.';
+        humanizeApiError(e, 'Не удалось загрузить файл.');
       setRowStates((s) => ({
         ...s,
         [roleId]: {

@@ -34,7 +34,7 @@ import {
   Video,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { billingApi } from '@/api/billing.api';
 import type { BillingPeriodApi, SubscriptionStatusApi } from '@/api/types/billing';
 import {
@@ -98,7 +98,7 @@ export function SubscriptionClient() {
       setInvoices(invRes.items.map(invoiceFromApi));
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось загрузить данные';
+        humanizeApiError(e, 'Не удалось загрузить данные');
       setError(message);
     } finally {
       setLoading(false);
@@ -124,7 +124,7 @@ export function SubscriptionClient() {
       setError('Платёжная ссылка не получена. Свяжитесь с поддержкой.');
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось создать платёж';
+        humanizeApiError(e, 'Не удалось создать платёж');
       setError(message);
     } finally {
       setPayLoading(null);
@@ -146,7 +146,7 @@ export function SubscriptionClient() {
       }
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось выставить счёт';
+        humanizeApiError(e, 'Не удалось выставить счёт');
       setError(message);
     } finally {
       setPayLoading(null);

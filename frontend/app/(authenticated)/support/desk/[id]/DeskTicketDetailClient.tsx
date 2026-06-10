@@ -5,7 +5,7 @@ import { useCallback, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { supportApi } from '@/api/support.api';
 import { useDeskTicket } from '@/hooks/useDeskTicket';
 import { useDeskMeta } from '@/hooks/useDeskMeta';
@@ -139,7 +139,7 @@ function DeskControls({
         onChanged();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось назначить.',
+          humanizeApiError(err, 'Не удалось назначить.'),
         );
       } finally {
         setAssignBusy(false);
@@ -157,7 +157,7 @@ function DeskControls({
         onChanged();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось сменить статус.',
+          humanizeApiError(err, 'Не удалось сменить статус.'),
         );
       } finally {
         setStatusBusy(false);
@@ -285,7 +285,7 @@ function ComposeBox({
         onSent();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось отправить.',
+          humanizeApiError(err, 'Не удалось отправить.'),
         );
       } finally {
         setSubmitting(false);
@@ -342,7 +342,7 @@ function NotAgent() {
 
 function ErrorView({ error }: { error: unknown }) {
   const message =
-    error instanceof ApiError ? error.message : 'Не удалось загрузить тикет.';
+    humanizeApiError(error, 'Не удалось загрузить тикет.');
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}

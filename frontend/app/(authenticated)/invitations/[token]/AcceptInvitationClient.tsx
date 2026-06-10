@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { orgsApi } from '@/api/orgs.api';
 import { toast } from 'sonner';
 import { Button } from '@/ui/shadcn/button';
@@ -36,7 +36,7 @@ export function AcceptInvitationClient({ token }: { token: string }) {
       // Редирект через 1.5 секунды чтобы юзер увидел подтверждение.
       setTimeout(() => router.push('/dashboard'), 1500);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось принять приглашение';
+      const msg = humanizeApiError(e, 'Не удалось принять приглашение');
       setError(msg);
       toast.error(msg);
     } finally {

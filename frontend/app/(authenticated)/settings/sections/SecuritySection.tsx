@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
 import { accountsApi } from '@/api/accounts.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   PASSWORD_RULE_HINT,
   passwordsMatch,
@@ -57,7 +57,7 @@ export function SecuritySection() {
         if (err.code === 'current_password_invalid') {
           toast.error('Текущий пароль введён неверно.');
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось сменить пароль. Попробуйте ещё раз.');

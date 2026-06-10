@@ -10,7 +10,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   proactiveApi,
   type ProactiveNotificationApi,
@@ -95,7 +95,7 @@ export function AssistantSidebar() {
         ),
       );
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(humanizeApiError(e, 'Не удалось загрузить'));
     } finally {
       setLoading(false);
     }

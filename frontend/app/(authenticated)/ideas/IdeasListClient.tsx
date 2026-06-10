@@ -13,7 +13,7 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
 import {
   ideasApi,
@@ -183,7 +183,7 @@ function IdeasAllTab({
         setForbidden(true);
       } else {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить идеи',
+          humanizeApiError(e, 'Не удалось загрузить идеи'),
         );
       }
     } finally {
@@ -278,7 +278,7 @@ function IdeasClustersTab({
         setForbidden(true);
       } else {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить кластеры',
+          humanizeApiError(e, 'Не удалось загрузить кластеры'),
         );
       }
     } finally {
@@ -364,7 +364,7 @@ function ClusterRow({
       })
       .catch((e) => {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить идеи',
+          humanizeApiError(e, 'Не удалось загрузить идеи'),
         );
       })
       .finally(() => setLoading(false));
@@ -376,7 +376,7 @@ function ClusterRow({
       onSelectIdea(mapIdeaDetail(dto));
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить деталь',
+        humanizeApiError(e, 'Не удалось загрузить деталь'),
       );
     }
   }, [onSelectIdea]);
@@ -473,7 +473,7 @@ function IdeasMineTab({
       setItems(resp.items.map(mapIdeaListItem));
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить идеи',
+        humanizeApiError(e, 'Не удалось загрузить идеи'),
       );
     } finally {
       setIsLoading(false);
@@ -549,7 +549,7 @@ function IdeasMasterDetail({
       setSelected(mapIdeaDetail(dto));
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить деталь',
+        humanizeApiError(e, 'Не удалось загрузить деталь'),
       );
     }
   }, [setSelected]);
@@ -652,7 +652,7 @@ export function IdeaDetailPane({
       onUpdated(mapIdeaDetail(fresh));
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось обновить идею',
+        humanizeApiError(e, 'Не удалось обновить идею'),
       );
     }
   }, [idea.id, onUpdated]);
@@ -675,7 +675,7 @@ export function IdeaDetailPane({
           toast.error('Выбранная цель не найдена');
         } else {
           toast.error(
-            e instanceof ApiError ? e.message : 'Не удалось привязать цель',
+            humanizeApiError(e, 'Не удалось привязать цель'),
           );
         }
         throw e;
@@ -693,7 +693,7 @@ export function IdeaDetailPane({
       void r;
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось поддержать',
+        humanizeApiError(e, 'Не удалось поддержать'),
       );
     }
   }, [idea.id, refreshIdea, onListChanged]);
@@ -715,7 +715,7 @@ export function IdeaDetailPane({
         toast.error('Изменять статус могут только owner / admin');
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось изменить статус',
+          humanizeApiError(e, 'Не удалось изменить статус'),
         );
       }
       throw e;

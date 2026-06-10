@@ -5,7 +5,7 @@ import Link from 'next/link';
 import useSWR, { mutate } from 'swr';
 import { Loader2, Link as LinkIcon, Trash2, ExternalLink, RotateCw, Settings2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   generateLinkCode,
   listMyChannels,
@@ -94,7 +94,7 @@ export function ChannelsClient() {
       setCode({ kind, ...result, requestedAt: Date.now(), botUsername });
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось сгенерировать код: ${e.message}`);
+        toast.error(`Не удалось сгенерировать код: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
       }
     } finally {
       setLinkBusy(null);
@@ -113,7 +113,7 @@ export function ChannelsClient() {
       await mutate(swrKey);
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось отвязать: ${e.message}`);
+        toast.error(`Не удалось отвязать: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
       }
       throw e;
     } finally {
@@ -368,7 +368,7 @@ function TelegramCard({
             'Перепривязка пока не реализована на сервере. Попросите руководителя сбросить вас через карточку сотрудника.',
           );
         } else {
-          toast.error(`Не удалось сбросить: ${e.message}`);
+          toast.error(`Не удалось сбросить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
         }
       }
     } finally {
@@ -538,7 +538,7 @@ function MaxDataClassRadio({
     } catch (e) {
       setValue(prev);
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось обновить';
+        humanizeApiError(e, 'Не удалось обновить');
       toast.error(msg);
     } finally {
       setBusy(false);

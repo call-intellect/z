@@ -5,7 +5,7 @@ import Link from 'next/link';
 import useSWR, { mutate } from 'swr';
 import { Loader2, Save } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   listMyChannels,
   updateBindingPreferences,
@@ -170,7 +170,7 @@ function PreferencesForm({
       await onSaved();
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось сохранить: ${e.message}`);
+        toast.error(`Не удалось сохранить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
       }
     } finally {
       setBusy(false);

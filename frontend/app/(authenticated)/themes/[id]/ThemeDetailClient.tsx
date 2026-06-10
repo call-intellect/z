@@ -14,7 +14,7 @@ import {
 import { toast } from 'sonner';
 
 import { themesApi } from '@/api/themes.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   THEME_BRANCH_LABELS,
   THEME_DYNAMIC_LABELS,
@@ -278,7 +278,7 @@ function SaveAsCardDialog({
       if (err instanceof ApiError && err.code === 'card_name_taken') {
         toast.error('Карточка с таким названием уже существует');
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Не удалось сохранить';
+        const msg = humanizeApiError(err, 'Не удалось сохранить');
         toast.error(msg);
       }
     } finally {

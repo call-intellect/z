@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   curationApi,
   type ConflictResolutionApi,
@@ -209,7 +209,7 @@ function ConflictDetailView({
       router.push('/curation/conflicts');
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось разрешить конфликт',
+        humanizeApiError(e, 'Не удалось разрешить конфликт'),
       );
     } finally {
       setSubmitting(false);
@@ -234,7 +234,7 @@ function ConflictDetailView({
       router.push('/curation/conflicts');
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось отклонить конфликт',
+        humanizeApiError(e, 'Не удалось отклонить конфликт'),
       );
     } finally {
       setSubmitting(false);

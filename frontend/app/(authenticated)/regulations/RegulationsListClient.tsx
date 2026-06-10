@@ -6,7 +6,7 @@ import { CheckCircle2, History, Replace, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   regulationsApi,
   type RegulationKindApi,
@@ -176,7 +176,7 @@ function RegulationsListContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);
@@ -197,7 +197,7 @@ function RegulationsListContent() {
       const dto = await regulationsApi.get(selected.id, selected.kind);
       setDetail(mapRegulationDetail(dto));
     } catch (e) {
-      setDetailError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setDetailError(humanizeApiError(e, 'Ошибка загрузки'));
     } finally {
       setDetailLoading(false);
     }
@@ -219,7 +219,7 @@ function RegulationsListContent() {
         toast.error('Изменять регламенты могут только owner / admin');
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось подтвердить',
+          humanizeApiError(e, 'Не удалось подтвердить'),
         );
       }
     }
@@ -246,7 +246,7 @@ function RegulationsListContent() {
         toast.error('Изменять регламенты могут только owner / admin');
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось заменить запись',
+          humanizeApiError(e, 'Не удалось заменить запись'),
         );
       }
       throw e;
@@ -267,7 +267,7 @@ function RegulationsListContent() {
       setHistory(dto);
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить историю',
+        humanizeApiError(e, 'Не удалось загрузить историю'),
       );
     } finally {
       setHistoryLoading(false);

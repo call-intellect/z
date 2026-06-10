@@ -24,7 +24,7 @@ import {
   Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
 import { Button } from '@/ui/shadcn/button';
 import { Progress } from '@/ui/shadcn/progress';
@@ -90,7 +90,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
         toast.error('Выбранная цель не найдена');
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось привязать цель',
+          humanizeApiError(e, 'Не удалось привязать цель'),
         );
       }
       throw e;

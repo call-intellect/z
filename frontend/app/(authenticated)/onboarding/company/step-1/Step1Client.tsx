@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { departmentsApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -58,7 +58,7 @@ export function Step1Client() {
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось сохранить отделы.';
+        humanizeApiError(e, 'Не удалось сохранить отделы.');
       toast.error(msg);
     } finally {
       setSubmitting(false);

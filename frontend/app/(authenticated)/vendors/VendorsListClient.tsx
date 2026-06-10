@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   vendorsApi,
   type VendorSegmentApi,
@@ -72,7 +72,7 @@ function VendorsListContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);

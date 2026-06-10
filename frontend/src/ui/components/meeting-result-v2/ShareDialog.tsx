@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { Copy, Loader2, Trash2 } from 'lucide-react';
 
 import { sharesApi } from '@/api/shares.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useMeetingShares } from '@/hooks/use-meeting-shares';
 import {
   Dialog,
@@ -68,7 +68,7 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
       void mutate();
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось создать ссылку.';
+        humanizeApiError(e, 'Не удалось создать ссылку.');
       toast.error(message);
     } finally {
       setCreating(false);
@@ -82,7 +82,7 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
       void mutate();
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось отозвать ссылку.';
+        humanizeApiError(e, 'Не удалось отозвать ссылку.');
       toast.error(message);
     }
   };

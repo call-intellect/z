@@ -10,7 +10,7 @@ import {
   type ChatCitationApi,
   type ChatMessageApi,
 } from '@/api/chat.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { stripContextMarkers } from '@/domain/chat-v2';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
@@ -115,7 +115,7 @@ export function OrgChatPanel({
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Ошибка чата';
+      const msg = humanizeApiError(err, 'Ошибка чата');
       toast.error(msg);
     } finally {
       setSending(false);

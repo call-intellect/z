@@ -24,6 +24,7 @@ import useSWR from 'swr';
 
 import { meetingsApi } from '@/api/meetings.api';
 import type { JoinMeetingApiResponse } from '@/api/meetings.api';
+import { humanizeApiError } from '@/api/api-error';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
 import {
@@ -135,7 +136,7 @@ export function MeetingRoom({
       data-lk-theme="default"
       onDisconnected={onLeave}
       onError={(e) => {
-        toast.error(e.message);
+        toast.error(humanizeApiError(e, 'Ошибка соединения со встречей'));
       }}
       style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}
     >

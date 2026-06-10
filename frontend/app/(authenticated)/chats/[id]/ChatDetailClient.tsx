@@ -17,7 +17,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { chatboxApi } from '@/api/chatbox.api';
 import {
   chatboxAnalysisStatusLabel,
@@ -238,7 +238,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       setTimeout(() => void chatSwr.mutate(), 6000);
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось запустить анализ',
+        humanizeApiError(e, 'Не удалось запустить анализ'),
       );
     } finally {
       setAnalyzing(false);

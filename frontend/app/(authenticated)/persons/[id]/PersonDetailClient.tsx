@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Activity, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   appointmentsApi,
   type AppointmentTimelineItemApi,
@@ -118,7 +118,7 @@ function PersonDetailContent({
         else if (e.code === 'entity_not_found' || e.code === 'http_404') {
           setNotFound(true);
         } else {
-          setError(e.message);
+          setError(humanizeApiError(e));
         }
       } else {
         setError('Ошибка загрузки');
@@ -323,7 +323,7 @@ function ErasePersonDialog({
       onSuccess();
       router.push('/persons');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить данные');
+      toast.error(humanizeApiError(e, 'Не удалось удалить данные'));
     } finally {
       setSubmitting(false);
     }
@@ -482,7 +482,7 @@ function AppointmentsTimelineSection({
       } catch (e) {
         if (!cancelled) {
           setError(
-            e instanceof ApiError ? e.message : 'Не удалось загрузить назначения',
+            humanizeApiError(e, 'Не удалось загрузить назначения'),
           );
         }
       } finally {
@@ -614,7 +614,7 @@ function PersonCommitmentsSection({ entityId }: { entityId: string }) {
             setIncoming([]);
           } else {
             setError(
-              e instanceof ApiError ? e.message : 'Не удалось загрузить обещания',
+              humanizeApiError(e, 'Не удалось загрузить обещания'),
             );
           }
         }

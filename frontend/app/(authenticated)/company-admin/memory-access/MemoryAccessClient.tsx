@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Lightbulb } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   adminMemoryAccessApi,
   type MemoryAccessApi,
@@ -45,7 +45,7 @@ export function MemoryAccessClient() {
       setData(dto);
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить настройки',
+        humanizeApiError(e, 'Не удалось загрузить настройки'),
       );
     } finally {
       setLoading(false);
@@ -65,7 +65,7 @@ export function MemoryAccessClient() {
         toast.success('Настройки сохранены');
       } catch (e) {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось сохранить',
+          humanizeApiError(e, 'Не удалось сохранить'),
         );
       } finally {
         setSavingKey(null);

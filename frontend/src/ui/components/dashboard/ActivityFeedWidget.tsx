@@ -18,7 +18,7 @@ import {
   Award,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { activityFeedApi } from '@/api/activity-feed.api';
 import {
   feedItemFromApi,
@@ -99,7 +99,7 @@ export function ActivityFeedWidget({
         setError(null);
       } catch (e) {
         if (alive) {
-          setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+          setError(humanizeApiError(e, 'Не удалось загрузить'));
         }
       } finally {
         if (alive) setLoading(false);

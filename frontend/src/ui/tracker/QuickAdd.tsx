@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
+import { humanizeApiError } from '@/api/api-error';
 
 export function QuickAdd({
   onSubmit,
@@ -38,7 +39,7 @@ export function QuickAdd({
       setValue('');
       // Оставляем форму открытой для быстрого ввода следующей.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось создать задачу');
+      setError(humanizeApiError(e, 'Не удалось создать задачу'));
     } finally {
       setSubmitting(false);
     }

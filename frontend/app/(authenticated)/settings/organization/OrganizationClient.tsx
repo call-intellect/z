@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { type OrgApi, orgsApi } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -57,7 +57,7 @@ export function OrganizationClient() {
         setActiveOrgId(res.orgs[0]!.id);
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить организации');
+      setError(humanizeApiError(e, 'Не удалось загрузить организации'));
     } finally {
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export function OrganizationClient() {
       setOrgs((prev) => prev.map((o) => (o.id === res.org.id ? res.org : o)));
       toast.success('Настройки организации сохранены');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSavingOrg(false);
     }

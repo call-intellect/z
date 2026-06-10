@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { highlightsApi } from '@/api/highlights.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   Dialog,
   DialogContent,
@@ -83,7 +83,7 @@ export function HighlightCreatorDialog({
       onOpenChange(false);
       setTitle('');
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : 'Не удалось создать клип.';
+      const message = humanizeApiError(e, 'Не удалось создать клип.');
       toast.error(message);
     } finally {
       setSubmitting(false);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { gamificationApi } from '@/api/gamification.api';
 import {
   contributionFromApi,
@@ -65,10 +65,10 @@ export function ContributionsView({
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError) {
-          setError(err.message);
+          setError(humanizeApiError(err));
           setErrorCode(err.code);
         } else if (err instanceof Error) {
-          setError(err.message);
+          setError(humanizeApiError(err));
           setErrorCode(null);
         } else {
           setError('Не удалось загрузить профиль вклада');

@@ -33,7 +33,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { importsApi } from '@/api/tracker/imports.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -118,7 +118,7 @@ export function ImportDetailClient({
       await mutate();
       toast('Запрос на отмену отправлен');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось отменить импорт');
+      toast.error(humanizeApiError(e, 'Не удалось отменить импорт'));
     } finally {
       setCancelling(false);
     }

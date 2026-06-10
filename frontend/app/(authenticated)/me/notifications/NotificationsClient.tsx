@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { Loader2, Send, X, MessageSquarePlus, MessageSquare, Sparkles } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   createFreeNote,
   dismissNotification,
@@ -285,7 +285,7 @@ function NotificationDetail({
       setResponseText('');
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -300,7 +300,7 @@ function NotificationDetail({
       await respondToNotification(n.id, { response: answer });
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -312,7 +312,7 @@ function NotificationDetail({
       await dismissNotification(n.id);
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -472,7 +472,7 @@ function FreeNoteCard({
       await onCreated();
       toast.success('Заметка отправлена в память компании.');
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(false);
     }
@@ -594,7 +594,7 @@ function ProactiveRow({
       await dismissProactiveNotification(orgId, item.id);
       onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(false);
     }

@@ -58,7 +58,7 @@ import { chaptersApi } from '@/api/chapters.api';
 import { tasksApi } from '@/api/tasks.api';
 import { highlightsApi } from '@/api/highlights.api';
 import { exportsApi } from '@/api/exports.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useMeeting } from '@/hooks/use-meeting';
 import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
 import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
@@ -507,7 +507,7 @@ function MeetingHeader({
           toast.error('Лимит регенераций исчерпан, попробуйте через час.');
           return;
         }
-        toast.error(e.message);
+        toast.error(humanizeApiError(e));
         return;
       }
       toast.error('Не удалось запустить регенерацию');
@@ -525,7 +525,7 @@ function MeetingHeader({
       );
       void job;
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка экспорта';
+      const msg = humanizeApiError(e, 'Ошибка экспорта');
       toast.error(msg);
     }
   };
@@ -543,7 +543,7 @@ function MeetingHeader({
       toast.success('Встреча удалена');
       router.push('/meetings');
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось удалить';
+      const msg = humanizeApiError(e, 'Не удалось удалить');
       toast.error(msg);
     }
   };
@@ -559,7 +559,7 @@ function MeetingHeader({
       );
       toast.success(`Доступ обновлён: ${label}`);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось изменить доступ';
+      const msg = humanizeApiError(e, 'Не удалось изменить доступ');
       toast.error(msg);
     }
   };
@@ -864,7 +864,7 @@ function HighlightCard({
           toast.error('Превышен лимит рендеринга MP4.');
           return;
         }
-        toast.error(e.message);
+        toast.error(humanizeApiError(e));
         return;
       }
       toast.error('Ошибка при скачивании');
@@ -1233,7 +1233,7 @@ function ChaptersTab({
       toast.success('Регенерация глав запущена');
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1246,7 +1246,7 @@ function ChaptersTab({
       setEditingId(null);
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1263,7 +1263,7 @@ function ChaptersTab({
       toast.success('Удалено');
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1281,7 +1281,7 @@ function ChaptersTab({
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1598,7 +1598,7 @@ function TasksTab({
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1609,7 +1609,7 @@ function TasksTab({
       await tasksApi.update(task.id, { status: next });
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1895,7 +1895,7 @@ function ParticipantRow({
       setEditing(false);
       onSaved();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось переименовать';
+      const msg = humanizeApiError(e, 'Не удалось переименовать');
       toast.error(msg);
     } finally {
       setSaving(false);

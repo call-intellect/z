@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   curationApi,
   type CurationDecisionTypeApi,
@@ -275,7 +275,7 @@ function CurationDetailView({
       router.push('/curation');
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось применить решение',
+        humanizeApiError(e, 'Не удалось применить решение'),
       );
     } finally {
       setSubmitting(false);

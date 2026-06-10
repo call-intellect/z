@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { retentionApi } from '@/api/retention.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -100,7 +100,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
         setForbidden(true);
       } else {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить политику',
+          humanizeApiError(e, 'Не удалось загрузить политику'),
         );
       }
     } finally {
@@ -157,7 +157,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
       setPolicy(domain);
       toast.success('Политика хранения сохранена');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSaving(false);
     }

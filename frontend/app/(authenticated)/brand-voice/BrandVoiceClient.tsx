@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   brandVoiceApi,
   type BrandVoiceArtifactApi,
@@ -81,7 +81,7 @@ function BrandVoiceContent({
       setArtifacts(a.items);
     } catch (err) {
       const msg =
-        err instanceof ApiError ? err.message : 'Не удалось загрузить голос бренда';
+        humanizeApiError(err, 'Не удалось загрузить голос бренда');
       setError(msg);
     } finally {
       setLoading(false);
@@ -103,7 +103,7 @@ function BrandVoiceContent({
       await load();
     } catch (err) {
       setRebuildMessage(
-        err instanceof ApiError ? err.message : 'Не удалось запустить пересборку',
+        humanizeApiError(err, 'Не удалось запустить пересборку'),
       );
     } finally {
       setRebuilding(false);
@@ -497,7 +497,7 @@ function EditModal({
       });
     } catch (error) {
       setErr(
-        error instanceof ApiError ? error.message : 'Не удалось сохранить',
+        humanizeApiError(error, 'Не удалось сохранить'),
       );
     } finally {
       setSaving(false);

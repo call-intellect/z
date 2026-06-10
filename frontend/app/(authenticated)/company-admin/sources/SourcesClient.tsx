@@ -18,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { sourcesApi } from '@/api/sources.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -99,7 +99,7 @@ export function SourcesClient() {
       const res = await sourcesApi.list(currentOrgId);
       setItems(res.items.map(mapSourceDtoToDomain));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(humanizeApiError(e, 'Не удалось загрузить'));
     } finally {
       setLoading(false);
     }
@@ -121,7 +121,7 @@ export function SourcesClient() {
         toast.error(`Тест не прошёл: ${res.errorMessage ?? 'неизвестная ошибка'}`);
       }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
+      toast.error(humanizeApiError(e, 'Тест не прошёл'));
     } finally {
       setPendingId(null);
     }
@@ -141,7 +141,7 @@ export function SourcesClient() {
       );
       toast.success(updated.isActive ? 'Источник включён' : 'Источник выключен');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить');
+      toast.error(humanizeApiError(e, 'Не удалось обновить'));
     } finally {
       setPendingId(null);
     }
@@ -163,7 +163,7 @@ export function SourcesClient() {
       await fetchAll();
       toast.success('Источник отключён');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось отключить');
+      toast.error(humanizeApiError(e, 'Не удалось отключить'));
     } finally {
       setPendingId(null);
     }
@@ -642,7 +642,7 @@ function TelegramForm({
       }
       if (mode === 'edit') await onDone();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }
@@ -810,7 +810,7 @@ function MangoForm({
       }
       if (mode === 'edit') await onDone();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }
@@ -1004,7 +1004,7 @@ function ImapForm({
       }
       await onDone();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }
@@ -1045,7 +1045,7 @@ function ImapForm({
         toast.error(`Не удалось подключиться: ${res.errorMessage ?? 'неизвестная ошибка'}`);
       }
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось проверить');
+      toast.error(humanizeApiError(e, 'Не удалось проверить'));
     } finally {
       setTesting(false);
     }
@@ -1241,7 +1241,7 @@ function WebFormForm({
       }
       await onDone();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }

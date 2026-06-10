@@ -5,7 +5,7 @@ import { useCallback, useState } from 'react';
 import { ArrowLeft, Star } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { supportApi } from '@/api/support.api';
 import { useAuth } from '@/contexts/auth-context';
 import { useMyTicket } from '@/hooks/useMyTicket';
@@ -133,7 +133,7 @@ function ReplyBox({
         onSent();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось отправить.',
+          humanizeApiError(err, 'Не удалось отправить.'),
         );
       } finally {
         setSubmitting(false);
@@ -198,7 +198,7 @@ function RatingBox({
       onRated();
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? err.message : 'Не удалось сохранить оценку.',
+        humanizeApiError(err, 'Не удалось сохранить оценку.'),
       );
     } finally {
       setSubmitting(false);

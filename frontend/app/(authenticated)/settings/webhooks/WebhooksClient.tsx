@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, FileClock, Loader2, Plus, Send, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   WEBHOOK_EVENTS,
   webhooksOutApi,
@@ -76,7 +76,7 @@ export function WebhooksClient() {
       const res = await webhooksOutApi.list();
       setSubs(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(humanizeApiError(e, 'Не удалось загрузить'));
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export function WebhooksClient() {
       await webhooksOutApi.test(id);
       toast.success('Тест отправлен');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
+      toast.error(humanizeApiError(e, 'Тест не прошёл'));
     }
   };
 
@@ -107,7 +107,7 @@ export function WebhooksClient() {
       setSubs((prev) => prev.filter((s) => s.id !== id));
       toast.success('Удалено');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(humanizeApiError(e, 'Не удалось удалить'));
     }
   };
 
@@ -249,7 +249,7 @@ function CreateSubscriptionDialog({
       const res = await webhooksOutApi.create({ url: url.trim(), events });
       onCreated(res);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось создать');
+      toast.error(humanizeApiError(e, 'Не удалось создать'));
     } finally {
       setSubmitting(false);
     }

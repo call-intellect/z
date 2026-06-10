@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 import { useIntake } from '@/hooks/tracker/useIntake';
 import { useProjects } from '@/hooks/tracker/useProjects';
 import { intakeApi } from '@/api/tracker/intake.api';
+import { humanizeApiError } from '@/api/api-error';
 import {
   INTAKE_SOURCE_LABELS,
   INTAKE_STATUS_LABELS,
@@ -129,7 +130,7 @@ export function IntakeClient() {
         (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
       );
     } catch (e) {
-      toast.error(`Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`, { duration: 5000 });
+      toast.error(`Не удалось выполнить триаж: ${humanizeApiError(e, 'попробуйте ещё раз')}`, { duration: 5000 });
     } finally {
       setBusyId(null);
     }

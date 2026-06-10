@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import useSWR from 'swr';
 import { ArrowLeft, History } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { clonesApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -50,7 +50,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
 
   if (error) {
     const message =
-      error instanceof ApiError ? error.message : 'Не удалось загрузить историю.';
+      humanizeApiError(error, 'Не удалось загрузить историю.');
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         <BackLink roleId={roleId} />

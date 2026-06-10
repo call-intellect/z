@@ -15,7 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   destinationsApi,
   type CreateDestinationRequest,
@@ -79,7 +79,7 @@ export function DestinationsClient() {
       const res = await destinationsApi.list();
       setItems(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(humanizeApiError(e, 'Не удалось загрузить'));
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,7 @@ export function DestinationsClient() {
       setItems((prev) => prev.filter((d) => d.id !== id));
       toast.success('Удалено');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(humanizeApiError(e, 'Не удалось удалить'));
     }
   };
 
@@ -111,7 +111,7 @@ export function DestinationsClient() {
       await destinationsApi.test(id);
       toast.success('Тест отправлен');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Тест не прошёл');
+      toast.error(humanizeApiError(e, 'Тест не прошёл'));
     } finally {
       setTestingId(null);
     }
@@ -355,7 +355,7 @@ function DestinationDialog({
       onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }

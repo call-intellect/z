@@ -31,7 +31,7 @@ import { searchApi, type SearchResponse } from '@/api/search.api';
 import { conciergeApi } from '@/api/concierge.api';
 import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
 import { voiceApi } from '@/api/voice.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -297,7 +297,7 @@ export function CommandPalette() {
     } catch (err) {
       setVoiceState('idle');
       const message =
-        err instanceof ApiError ? err.message : 'Не удалось распознать голос';
+        humanizeApiError(err, 'Не удалось распознать голос');
       toast.error(message);
     }
   }, [currentOrgId]);

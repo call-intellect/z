@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { documentsApi } from '@/api/documents.api';
 import {
   personsDomainApi,
@@ -231,7 +231,7 @@ function PersonsSection({
       toast.success('Сотрудник снят с должности.');
       onChanged();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
     }
   };
   return (
@@ -312,7 +312,7 @@ function JobDescriptionSection({
       setFile(null);
       onUploaded();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось загрузить.');
+      toast.error(humanizeApiError(e, 'Не удалось загрузить.'));
     } finally {
       setBusy(false);
     }

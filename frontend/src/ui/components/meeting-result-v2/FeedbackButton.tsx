@@ -23,6 +23,7 @@ import {
   type AiResultFeedbackApi,
   meetingResultFeedbackApi,
 } from '@/api/meeting-result-feedback.api';
+import { humanizeApiError } from '@/api/api-error';
 import { toast } from '@/ui/shadcn/toast';
 
 interface FeedbackButtonProps {
@@ -70,7 +71,7 @@ export function FeedbackButton({ meetingId, className }: FeedbackButtonProps) {
         }
       } catch (err) {
         toast.error('Не удалось отправить отзыв', {
-          description: err instanceof Error ? err.message : 'Попробуйте ещё раз',
+          description: humanizeApiError(err, 'Попробуйте ещё раз'),
         });
       } finally {
         setSubmitting(false);

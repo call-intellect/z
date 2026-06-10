@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import Link from 'next/link';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   departmentDomainLinksApi,
   functionalDomainsApi,
@@ -79,7 +79,7 @@ function DepartmentsContent({
       setDomains(flatten(domsRes.items));
       setOrg(orgRes.org);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось загрузить отделы');
+      setError(humanizeApiError(err, 'Не удалось загрузить отделы'));
     } finally {
       setLoading(false);
     }
@@ -95,7 +95,7 @@ function DepartmentsContent({
         );
         setLinks(r.items);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Не удалось загрузить связи');
+        setError(humanizeApiError(err, 'Не удалось загрузить связи'));
         setLinks([]);
       } finally {
         setLoadingDetail(false);
@@ -123,7 +123,7 @@ function DepartmentsContent({
       setAddDomainId('');
       await loadLinks(selectedId);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось привязать домен');
+      setError(humanizeApiError(err, 'Не удалось привязать домен'));
     } finally {
       setBusy(false);
     }
@@ -137,7 +137,7 @@ function DepartmentsContent({
         await departmentDomainLinksApi.unlink(orgId, selectedId, domainId);
         await loadLinks(selectedId);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Не удалось отвязать домен');
+        setError(humanizeApiError(err, 'Не удалось отвязать домен'));
       } finally {
         setBusy(false);
       }

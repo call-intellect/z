@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { Video, Loader2 } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
 import { issuesApi } from '@/api/tracker/issues.api';
+import { humanizeApiError } from '@/api/api-error';
 
 export function StartMeetingButton({
   orgId,
@@ -35,7 +36,7 @@ export function StartMeetingButton({
       const url = res.meetingUrl || `/meetings/${encodeURIComponent(res.meetingId)}`;
       router.push(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось запустить встречу');
+      setError(humanizeApiError(e, 'Не удалось запустить встречу'));
     } finally {
       setLoading(false);
     }

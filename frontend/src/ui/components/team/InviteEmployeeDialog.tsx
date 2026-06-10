@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { UserPlus } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { orgsApi, type InviteMemberRequest } from '@/api/orgs.api';
 import {
   mapOrgInvitationCreateResultDtoToDomain,
@@ -109,7 +109,7 @@ export function InviteEmployeeDialog({
       }
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось создать приглашение');
+      toast.error(humanizeApiError(e, 'Не удалось создать приглашение'));
     } finally {
       setSubmitting(false);
     }

@@ -41,7 +41,7 @@ import { cardsApi } from '@/api/cards.api';
 import { meetingsApi } from '@/api/meetings.api';
 import { templatesApi } from '@/api/templates.api';
 import { knowledgeAccessApi } from '@/api/knowledge-access.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { templateFromApi, type TemplateDomain } from '@/domain/template';
 import { MEETING_TYPES, type MeetingType } from '@/domain/enums';
 import {
@@ -279,7 +279,7 @@ export function CreateMeetingFormV2() {
 
       setCreated(result);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка создания';
+      const msg = humanizeApiError(e, 'Ошибка создания');
       toast.error(msg);
     } finally {
       setSubmitting(false);

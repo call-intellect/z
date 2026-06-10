@@ -21,6 +21,7 @@ import {
   Filter,
   ListChecks,
   LogIn,
+  MoreVertical,
   Plus,
   Search,
   Sparkles,
@@ -254,6 +255,37 @@ export function MeetingsJournalReal() {
     }
   };
 
+  const onDeleteOne = async (id: string) => {
+    const ok = await ask({
+      title: 'Удалить встречу?',
+      description:
+        'Встреча и её запись исчезнут из списка. Восстановить её самостоятельно нельзя.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await meetingsApi.softDelete(id);
+      toast.success('Встреча удалена');
+      setChecked((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      // Если удалили встречу, открытую в detail-панели — сбрасываем выбор.
+      if (selectedId === id) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('selected');
+        const qs = params.toString();
+        router.replace(`/meetings${qs ? `?${qs}` : ''}`);
+      }
+      void mutate();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Ошибка удаления';
+      toast.error(msg);
+    }
+  };
+
   const onBulkSetTags = async (tagIds: string[]) => {
     if (checked.size === 0) return;
     const ids = [...checked];
@@ -422,6 +454,7 @@ export function MeetingsJournalReal() {
                             });
                           }}
                           onClick={() => onSelect(m.id)}
+                          onDelete={() => void onDeleteOne(m.id)}
                         />
                       </li>
                     ))}
@@ -465,12 +498,14 @@ function MeetingRowCard({
   checked,
   onToggleCheck,
   onClick,
+  onDelete,
 }: {
   item: ReturnType<typeof meetingSummaryFromApi>;
   active: boolean;
   checked: boolean;
   onToggleCheck: () => void;
   onClick: () => void;
+  onDelete: () => void;
 }) {
   const durSec = meetingDurationSeconds(item);
   const durMs = durSec ? durSec * 1000 : null;
@@ -541,6 +576,36 @@ function MeetingRowCard({
             className="mt-1 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-warning"
           />
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Действия со встречей"
+              className="-mr-1 -mt-0.5 shrink-0 rounded p-1 text-fg-tertiary opacity-100 transition-colors hover:bg-bg-overlay hover:text-fg-primary focus-visible:opacity-100 data-[state=open]:bg-bg-overlay data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+            >
+              <MoreVertical size={14} strokeWidth={1.75} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-48"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuItem onSelect={() => void copyMeetingLink(item.id)}>
+              <Copy size={14} />
+              Скопировать ссылку
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onDelete()}
+              className="text-danger focus:text-danger"
+            >
+              <Trash2 size={14} />
+              Удалить
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-6 text-xs text-fg-tertiary">
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">

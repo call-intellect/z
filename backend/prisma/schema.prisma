@@ -1354,6 +1354,12 @@ model Meeting {
   /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
   closedGroupKind String? @db.VarChar(20)
 
+  /// ТЗ 2026-06-10 meeting-visibility — «Кому видно» встреча (видео/запись/расшифровка/отчёт).
+  /// 'owner_only' | 'participants' (дефолт) | 'custom' | 'org'. Источник правды доступа к
+  /// READ-поверхностям встречи. НЕ влияет на граф знаний (отдельная подсистема).
+  visibilityScope String               @default("participants") @db.VarChar(16)
+  accessGrants    MeetingAccessGrant[]
+
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — источник встречи. `livekit` (дефолт)
   /// для встреч в комнате; `upload` для встреч, загруженных файлом и диаризованных.
   source                MeetingSource @default(livekit)
@@ -1372,6 +1378,25 @@ model Meeting {
   @@index([linkedIssueId])
   @@index([linkedCycleId])
   @@index([tenantId, source, createdAt])
+}
+
+/// ТЗ 2026-06-10 meeting-visibility — явный грант доступа к встрече (scope='custom').
+/// Кому хост открыл руками: человек (Person) или группа (KnowledgeGroup, ПРЯМОЕ членство).
+/// tenantId — денормализован скаляром для индекса; каскад через Meeting (не через Org,
+/// чтобы не править модель Org). При удалении встречи гранты удаляются.
+model MeetingAccessGrant {
+  id          String   @id @default(cuid())
+  tenantId    String
+  meetingId   String
+  granteeType String   @db.VarChar(8) /// 'person' | 'group'
+  granteeId   String /// Person.id | KnowledgeGroup.id
+  grantedById String /// User.id хоста, выдавшего доступ
+  createdAt   DateTime @default(now())
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, granteeType, granteeId])
+  @@index([tenantId, meetingId])
+  @@index([granteeType, granteeId])
 }
 
 /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикер диаризации загруженной встречи.

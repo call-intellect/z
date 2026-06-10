@@ -172,7 +172,10 @@ export class ChatboxIntegrationService {
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
         syncMode: dto.syncMode,
-        analysisEnabled: dto.analysisEnabled ?? false,
+        // ТЗ 2026-06-10 cabinet §5 (Р-5): подключение канала = СОГЛАСИЕ на анализ
+        // (как создание встречи/загрузка аудио). Дефолт ON — переписку подключают
+        // именно ДЛЯ анализа; молчаливый OFF оставлял чаты в графе невидимыми.
+        analysisEnabled: dto.analysisEnabled ?? true,
         status: 'connected',
         lastError: null,
       },

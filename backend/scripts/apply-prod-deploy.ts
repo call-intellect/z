@@ -190,6 +190,11 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-prompt-role-profile-build-fase0d.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-chat-v2-to-pro.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts', args: ['--update-existing'], skipBootstrap: true },
+  // 2026-06-10 cabinet §5 (Р-5) — включить анализ для уже подключённых ChatBox-
+  // интеграций (раньше analysisEnabled=false по умолчанию → чаты не анализировались).
+  // Идемпотентен (повтор → 0). Дефолт dry-run → нужен --apply. На чистом старте
+  // интеграций нет → skipBootstrap. Cron analyze-sweep сам подберёт их сессии.
+  { phase: 'patch', script: 'scripts/patch-enable-chatbox-analysis.ts', args: ['--apply'], hint: 'ChatBox analysisEnabled=true для подключённых (§5)', skipBootstrap: true },
   // 2026-06-03 — унификация дешёвой модели DeepSeek: все LlmTaskRoute с legacy
   // `deepseek-chat` → `deepseek-v4-flash` (DeepSeek-V4). Идемпотентен (skip
   // editedByAdmin; повторный прогон = 0 кандидатов). На чистом старте сиды уже

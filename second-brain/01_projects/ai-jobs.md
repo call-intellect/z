@@ -250,6 +250,24 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 
 [[../index|← index]]
 
+## Ежедневный чек-ин — источник графа знаний (мост `daily_checkin`, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md). Профильная заметка по каналам — [[conversational-channels]] §«`daily_checkin_self`»; enum — [[../02_architecture/data-model]] §SourceType; перечень ingest-источников — [[../02_architecture/knowledge-core]].
+
+Завершённый чек-ин сотрудника (план/отчёт) теперь **кормит граф знаний** (раньше из него только считался sentiment). Мост — **событийный**, по образцу `ChatboxIngestService`:
+
+`checkin.created` → `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`) → `CheckinIngestService.ingestCheckin(tenantId, checkInId)` → `IngestService.ingest` → `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest (knowledge-core подхватывает сам, без изменений).
+
+- **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие в `RawEvent`; LLM-извлечение блоков делает обычный `block-ingest.worker` ниже по конвейеру.
+- **Best-effort и независимо** — listener зарегистрирован рядом с `CheckinSentimentAnalyzerWorker` (тоже `@OnEvent('checkin.created')`), оба в `operations.module.ts`; провал моста не ломает sentiment и наоборот.
+- **Идемпотентность** — стабильный `idempotencyKey` по `sourceExternalId=checkInId`; `occurredAt` берётся из стабильного `dateLocal` (не из мутирующего `completedAt`). **НЕ ингестит** sentiment/qualityScore (только текст плана/отчёта).
+- **v1-ограничение** — replace чек-ина того же дня = no-op (первый завершённый чек-ин = канон, т.к. `idempotencyKey` стабилен по `dateLocal`); re-ingest при replace — vNext.
+- **Без новой BullMQ-очереди и без cron** — это событийный listener.
+- **Метрика** — `z_checkin_graph_ingest_total{result}`, `result ∈ ok|skipped|error` (Prometheus counter, `business-metrics.service.ts`).
+- **Kill-switch** — `CHECKIN_GRAPH_INGEST_ENABLED` (`betaOps.checkinGraphIngestEnabled`, zBool default true=ON; Ship-On, действий владельца не требует). OFF → чек-ины в граф не попадают.
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.

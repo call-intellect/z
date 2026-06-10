@@ -70,6 +70,23 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-10 — Мост ежедневный чек-ин → граф знаний (`daily_checkin`)
+
+> Контракт: `plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10`.
+>
+> **Зачем для прода:** завершённый чек-ин (план/отчёт сотрудника) теперь становится источником графа знаний — AI-чат компании сможет отвечать «что делал сотрудник X на неделе». Событийный мост: на `checkin.created` слушатель `CheckinGraphIngestListener` зовёт `CheckinIngestService.ingestCheckin`, который пишет `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` через `IngestService.ingest` (по образцу `ChatboxIngestService`). Идемпотентно по `sourceExternalId=checkInId`; `occurredAt` берётся из стабильного `dateLocal` (не из мутирующего `completedAt`). Sentiment/qualityScore в граф НЕ ингестятся — работает рядом и независимо от `CheckinSentimentAnalyzerWorker`. **Миграция БД ЕСТЬ** (enum-значение, аддитивная, авто). **1 новая ENV (kill-switch, default ON).** **Новой BullMQ-очереди/cron НЕТ** — событийный listener.
+>
+> ⚠ **v1-ограничение:** replace чек-ина того же дня = no-op (первый завершённый чек-ин = канон), т.к. `idempotencyKey` стабилен по `dateLocal`; re-ingest при replace — vNext.
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `CHECKIN_GRAPH_INGEST_ENABLED` (`betaOps.checkinGraphIngestEnabled`, zBool default `true`). Аварийный откат: `=false` в `.env` + рестарт → чек-ины перестают попадать в граф (sentiment/обработка чек-ина не затронуты). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610140000_source_type_daily_checkin`): `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'daily_checkin'`. Опасных изменений нет (только новое enum-значение). ⚠ `ALTER TYPE ... ADD VALUE` **не-транзакционна** и её нельзя выполнять в одной транзакции с использованием значения — поэтому enum-значение вынесено в **отдельную** миграцию. Идемпотентна (`IF NOT EXISTS`, повтор — no-op). Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый `CheckinIngestService` + `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`), оба зарегистрированы в `operations.module.ts`; новая ENV; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): после завершения чек-ина появляется новый `RawEvent` с `sourceType='daily_checkin'` (через `diag` или БД); метрика `z_checkin_graph_ingest_total{result}` тикает (`result ∈ ok|skipped|error`): `curl -s localhost:3000/metrics | grep z_checkin_graph_ingest_total`. Новой очереди/cron НЕТ — это событийный listener (отдельного `bullmq_`/cron-grep'а не требует).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🩹 2026-06-10 — Зависание встречи в `scheduled` + дубли/статусы «Команда» (Ф1–Ф6)
 
 > Контракт: `plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (6 коммитов).

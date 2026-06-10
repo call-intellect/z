@@ -723,5 +723,17 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 ### Выходной шлюз retrieval (Ф4)
 При `KNOWLEDGE_ACCESS_ENFORCEMENT='enforce'` финальный набор блоков фильтруется на **выходном шлюзе** `loadContextBlocks`/`loadContradictingBlocks` (chat-v2) + pre-filter в pool/SQL во всех поверхностях retrieval (chat/search/snapshot/graph/reasoning-chain/проекции/контекст клонов). Defense-in-depth: даже precomputed-путь и кэш перефильтровываются на шлюзе. При `off` выдача байт-в-байт текущая.
 
+## Источники графа (sourceType `RawEvent`)
+
+Граф знаний наполняется из нескольких каналов — каждый пишет `RawEvent` через `IngestService.ingest`, а `block-ingest.worker` обрабатывает их единообразно (источник прозрачен для пайплайна). Текущие `sourceType`:
+
+- `meeting` — видеовстреча (мост `MeetingIngestService.ingestMeeting`).
+- `chatbox` — сессия клиентского чата ChatBox (мост `ChatboxIngestService`, см. [[../01_projects/chatbox-integration]]).
+- `tracker_event` — события трекера задач (`TrackerAdapter`).
+- `conversational` — свободные заметки из каналов общения (free_note; `ConversationalIngestAdapter`, см. [[../01_projects/conversational-channels]]).
+- `daily_checkin` (2026-06-10) — ежедневный чек-ин сотрудника (план/отчёт) → `RawEvent` через `CheckinIngestService`, событийный мост по образцу chatbox (`@OnEvent('checkin.created')`, `dataClass='sensitive'`, идемпотентность по `checkInId`, kill-switch `CHECKIN_GRAPH_INGEST_ENABLED`). Детали — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
+
+Полный enum `SourceType` и контракт `RawEvent` — [[data-model]] §«Source / RawEvent».
+
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

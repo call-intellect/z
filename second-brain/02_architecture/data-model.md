@@ -1478,10 +1478,12 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 ### `SourceType += chatbox`
 
 ```prisma
-enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox }
+enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox daily_checkin }
 ```
 
 Сессия клиентского чата → `RawEvent(sourceType='chatbox', sourceExternalId=<sessionId>, dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений).
+
+> **`SourceType += daily_checkin` (2026-06-10).** Ежедневный чек-ин сотрудника (план/отчёт) → knowledge-core. Мост `CheckinIngestService` пишет `RawEvent(sourceType='daily_checkin', sourceExternalId=<checkInId>, dataClass='sensitive')` на событие `checkin.created`. Enum-значение добавлено **отдельной** миграцией `20260610140000_source_type_daily_checkin` (`ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'daily_checkin'` — `ADD VALUE` нельзя выполнять в одной транзакции с использованием значения), применяется авто через `migrate deploy`. ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md); детали моста — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
 
 ### 8 моделей домена (все tenant-scoped, upsert по `@@unique([tenantId, externalId])`)
 

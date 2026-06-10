@@ -282,7 +282,7 @@ export class OrgsService {
         roleName: currentRole?.name ?? null,
         departmentId: p.primaryDepartmentId,
         departmentName: p.primaryDepartment?.name ?? null,
-        invitationStatus: p.invitations[0]?.status ?? 'none',
+        invitationStatus: membership ? 'accepted' : (p.invitations[0]?.status ?? 'none'),
         invitationId: p.invitations[0]?.id ?? null,
         systemRole: membership?.role ?? null,
         telegramLinked: p.userId ? tgLinked.has(p.userId) : false,
@@ -309,7 +309,79 @@ export class OrgsService {
       });
     }
 
-    return rows;
+    return this.dedupRosterByEmail(rows);
+  }
+
+  /**
+   * ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф1 — дедуп ростера по email на чтении
+   * (страховка; реальные дубли Person убирает backfill Ф3). Схлопывает строки с
+   * одинаковым непустым нормализованным email в одну. База — строка с userId
+   * (носитель аккаунта/системной роли); должность/отдел/человеческое имя/карточка
+   * дополняются из «ручной» строки. Порядок первого появления сохраняется.
+   * Два аккаунта на один email (обе строки с userId) — НЕ схлопываются (аномалия видна).
+   */
+  private dedupRosterByEmail(rows: TeamRosterItem[]): TeamRosterItem[] {
+    const indexByEmail = new Map<string, number>();
+    const result: TeamRosterItem[] = [];
+    for (const row of rows) {
+      const norm = (row.email ?? '').trim().toLowerCase();
+      if (!norm) {
+        result.push(row);
+        continue;
+      }
+      const idx = indexByEmail.get(norm);
+      const existing = idx === undefined ? undefined : result[idx];
+      if (idx === undefined || existing === undefined) {
+        indexByEmail.set(norm, result.length);
+        result.push(row);
+      } else if (existing.userId && row.userId) {
+        // два аккаунта на один email — не схлопываем (Ф3 backfill тоже не сольёт)
+        result.push(row);
+      } else {
+        result[idx] = this.mergeRosterRows(existing, row);
+      }
+    }
+    return result;
+  }
+
+  /** Слить две строки ростера с одним email: база — носитель userId, обогащение из второй. */
+  private mergeRosterRows(a: TeamRosterItem, b: TeamRosterItem): TeamRosterItem {
+    const base = a.userId ? a : b.userId ? b : a;
+    const other = base === a ? b : a;
+    const liveInv = [base, other].find(
+      (r) => r.invitationStatus === 'pending' || r.invitationStatus === 'expired',
+    );
+    const isAccepted = [base, other].some(
+      (r) => !!r.systemRole || r.invitationStatus === 'accepted',
+    );
+    const fullName =
+      this.isWeakDisplayName(base.fullName, base.email) &&
+      !this.isWeakDisplayName(other.fullName, other.email)
+        ? other.fullName
+        : base.fullName;
+    return {
+      ...base,
+      personId: base.personId ?? other.personId,
+      fullName,
+      roleId: base.roleId ?? other.roleId,
+      roleName: base.roleName ?? other.roleName,
+      departmentId: base.departmentId ?? other.departmentId,
+      departmentName: base.departmentName ?? other.departmentName,
+      invitationStatus: isAccepted ? 'accepted' : base.invitationStatus,
+      invitationId: liveInv?.invitationId ?? base.invitationId ?? other.invitationId,
+      systemRole: base.systemRole ?? other.systemRole,
+      telegramLinked: base.telegramLinked || other.telegramLinked,
+      hasPersonCard: base.hasPersonCard || other.hasPersonCard,
+    };
+  }
+
+  /** «Слабое» имя = логин/локальная часть email (ASCII без пробелов) → можно заменить человеческим. */
+  private isWeakDisplayName(name: string, email: string | null): boolean {
+    const n = (name ?? '').trim();
+    if (!n) return true;
+    const local = (email ?? '').split('@')[0]?.trim().toLowerCase() ?? '';
+    if (local && n.toLowerCase() === local) return true;
+    return /^[A-Za-z0-9._+\-]+$/.test(n);
   }
 
   /** Сменить роль участника. Только owner/admin. */

@@ -43,7 +43,9 @@ const SYSTEM = `Ты — ассистент Customer Success. Это разго�
   - low — продукт встроен в процессы, обсуждается расширение.
 - "upsell_opportunities": возможности расширения / апсейла.
 - "actions_required": что нашей команде нужно сделать.
-- "next_contact": когда следующий контакт с клиентом или null.`;
+- "next_contact": когда следующий контакт с клиентом или null.
+
+Стороны: НАША сторона — менеджер CS; вторая — клиент. issues — из реплик клиента; actions_required — обязательства ТОЛЬКО нашей стороны. Не приписывай слова не тому спикеру. Пусто — честно «не выявлено».`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {

@@ -39,7 +39,9 @@ const SYSTEM = `Ты — продуктовый ассистент. Это CustD
 - "alternatives": какие альтернативы / workaround'ы он использует сегодня.
 - "frequency": как часто проблема случается (или null).
 - "willingness_to_pay": готовность платить (или null).
-- "insights": ключевые инсайты для команды продукта.`;
+- "insights": ключевые инсайты для команды продукта.
+
+Стороны: интервьюер (наша) vs респондент. quotes/pains/use_cases — ТОЛЬКО слова РЕСПОНДЕНТА, не интервьюера. insights — это интерпретация; quotes — дословный факт; не путай. Пусто — честно «не выявлено».`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {

@@ -15,6 +15,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
@@ -212,13 +217,29 @@ export class IntakeAutoTriageWorker
       }),
     ]);
 
-    const userMessage = this.buildUserMessage({
+    const rawUserMessage = this.buildUserMessage({
       intake,
       projects,
       people: people.map((p) => p.name),
       goals: goals.map((g) => g.name),
       recentIssues,
     });
+
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. rawContent
+    // из внешнего канала идёт в LLM в маркерах данных, system — с
+    // INJECTION_GUARD_NOTE. Observability — sanitize по самому rawContent
+    // (source='chat'), без отклонения текста.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(intake.rawContent);
+      for (const pattern of sanitized.reasons) {
+        this.metrics?.incPromptInjectionAttempt({ source: 'chat', pattern });
+      }
+    }
+    const systemPrompt = guardOn
+      ? withInjectionGuard(INTAKE_AUTO_TRIAGE_SYSTEM)
+      : INTAKE_AUTO_TRIAGE_SYSTEM;
+    const userMessage = guardOn ? wrapUserData(rawUserMessage) : rawUserMessage;
 
     // 3. LLM-вызов с устойчивым разбором (ТЗ B Фаза 4): tryParseJson + ретрай×2
     //    + validate-callback (router уйдёт на secondary на битом JSON, как
@@ -231,7 +252,7 @@ export class IntakeAutoTriageWorker
         const result = await this.llm.call({
           taskType: 'intake-auto-triage',
           tenantId,
-          systemPrompt: INTAKE_AUTO_TRIAGE_SYSTEM,
+          systemPrompt,
           userMessage,
           responseFormat: {
             type: 'json_schema',
@@ -465,6 +486,23 @@ export class IntakeAutoTriageWorker
         confidence: new Prisma.Decimal(args.confidence),
       },
     });
+  }
+
+  /**
+   * E2 (мастер-ТЗ Волна 1, Кластер A) — мастер-флаг защиты от
+   * prompt-injection. IntakeIssue.rawContent приходит из ВНЕШНИХ каналов
+   * (telegram/in_app/meeting) и может содержать инъекцию, которая ложно
+   * завышает confidence/atтрибуцию и через auto-accept создаёт реальный
+   * Issue. Поэтому user-блок обязан идти в LLM обёрнутым в маркеры данных.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
   }
 
   /**

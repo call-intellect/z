@@ -9,6 +9,11 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   DialogService,
@@ -446,7 +451,24 @@ export class ConciergeService {
       pageContext: input.pageContext ?? null,
     });
 
-    const systemPrompt = this.buildSystemPrompt(contextBlock, preHits);
+    const rawSystemPrompt = this.buildSystemPrompt(contextBlock, preHits);
+
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
+    // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
+    // в маркерах данных, а system — с INJECTION_GUARD_NOTE. Обёртку system
+    // делаем ОДИН раз (cache-friendly: стабильный суффикс, не на каждой
+    // итерации), user-блок оборачиваем внутри loop. Observability — sanitize по
+    // самому запросу пользователя (source='chat'), без отклонения промта.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(effectiveQuestion);
+      for (const pattern of sanitized.reasons) {
+        this.metrics.incPromptInjectionAttempt?.({ source: 'chat', pattern });
+      }
+    }
+    const systemPrompt = guardOn
+      ? withInjectionGuard(rawSystemPrompt)
+      : rawSystemPrompt;
     const history = await this.loadRecentHistory(conversation.id, K_RECENT_MESSAGES);
 
     // Tool-use loop (эмулируется через JSON в ответе LLM).
@@ -454,12 +476,15 @@ export class ConciergeService {
     let finalText = '';
 
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
-      const userBlock = composeUserMessageForIteration({
+      const rawUserBlock = composeUserMessageForIteration({
         userMessage: effectiveQuestion,
         toolMessages,
         history,
         summary: conversation.summary,
       });
+      // E2 — обернуть весь user-блок в маркеры данных (идемпотентно, system
+      // уже несёт INJECTION_GUARD_NOTE; см. systemPrompt выше).
+      const userBlock = guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
 
       let llmText: string;
       try {
@@ -662,6 +687,21 @@ export class ConciergeService {
         'concierge: не удалось прочитать cfg.concierge.dialogLayerEnabled — fallback=false',
       );
       return false;
+    }
+  }
+
+  /**
+   * E2 (мастер-ТЗ Волна 1, Кластер A) — мастер-флаг защиты от
+   * prompt-injection. Concierge выполняет МУТИРУЮЩИЕ tools на основе
+   * пользовательского сообщения, поэтому user-блок обязан идти в LLM
+   * обёрнутым в маркеры данных. Defensive try/catch — в старых unit-тестах
+   * cfg может быть mock без `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
     }
   }
 

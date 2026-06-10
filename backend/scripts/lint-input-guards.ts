@@ -6,7 +6,11 @@ import { resolve } from 'node:path';
 // везде). Добавил raw call-site без guard'а — линт упадёт, пока не обернёшь.
 const GUARDED_RAW_CALLSITES: readonly string[] = [
   'src/modules/ai/workers/analyze.worker.ts',
-  // ... только реально-обёрнутые сейчас (проверь grep'ом)
+  // Волна 1 (A1, E2-крит) — мутирующие/внешние входы, обёрнуты guard'ом:
+  'src/modules/concierge/services/concierge.service.ts',
+  'src/modules/tracker/workers/intake-auto-triage.worker.ts',
+  'src/modules/conversational/adapters/telegram-bot/telegram-task-parser.service.ts',
+  'src/modules/operations/services/commitment-response.handler.ts',
 ];
 
 const GUARD_TOKENS = ['wrapUserData(', 'applyInputGuards('];

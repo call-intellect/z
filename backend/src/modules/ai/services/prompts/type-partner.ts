@@ -39,7 +39,9 @@ const SYSTEM = `Ты — деловой ассистент. Это партнё�
 - "joint_mechanics": совместные механики/активности.
 - "pilot": формат пилотного проекта (или null).
 - "risks": риски сотрудничества.
-- "next_step": ближайший следующий шаг или null.`;
+- "next_step": ближайший следующий шаг или null.
+
+Стороны: наша сторона vs партнёр. benefit_for_us НЕ домысливай — только если прозвучало явно. risks/next_step — конкретны или null. joint_mechanics/risks атрибутируй источнику («партнёр предложил» vs «мы»). Пусто — «не зафиксировано».`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {

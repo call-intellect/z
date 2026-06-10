@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../../ai/services/prompts/common';
 import { LlmRouterService } from '../../../ai/services/llm-router.service';
 
 /**
@@ -53,7 +58,31 @@ export class TelegramTaskParserService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    /**
+     * E2 (мастер-ТЗ Волна 1, Кластер A) — нужен только для kill-switch
+     * анти-инъекционной обёртки (`promptInjectionGuardEnabled`). `@Optional()`
+     * + дефолт null — существующие unit-тесты конструируют сервис без него.
+     * Default поведение при отсутствии cfg — guard ON (см.
+     * `isPromptInjectionGuardEnabled`).
+     */
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly config: TypedConfigService | null = null,
   ) {}
+
+  /**
+   * E2 — мастер-флаг защиты от prompt-injection. Telegram-форвард (чужое
+   * сообщение) и личное сообщение боту идут в LLM как user-данные и обязаны
+   * быть обёрнуты в маркеры. Default — true (как в env.schema); при
+   * отсутствии cfg (старые unit-тесты) тоже true.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.config?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   // ─────────────────────────── 1. parseCreateTask ────────────────────────
 
@@ -295,13 +324,26 @@ export class TelegramTaskParserService {
     userMessage: string;
     taskType: 'telegram-create-task' | 'telegram-forward-to-task';
   }): Promise<ParsedTask | null> {
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. И личное
+    // сообщение боту (telegram-create-task), и чужой форвард
+    // (telegram-forward-to-task) — внешний ввод, который через auto-triage
+    // может создать реальную задачу. Оборачиваем user в маркеры данных,
+    // system дополняем INJECTION_GUARD_NOTE. Тройные кавычки в промптах —
+    // косметика, не защита.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const systemPrompt = guardOn
+      ? withInjectionGuard(args.systemPrompt)
+      : args.systemPrompt;
+    const userMessage = guardOn
+      ? wrapUserData(args.userMessage)
+      : args.userMessage;
     try {
       const result = await this.llm.call({
         taskType: args.taskType,
         tenantId: args.tenantId,
         userId: args.userId,
-        systemPrompt: args.systemPrompt,
-        userMessage: args.userMessage,
+        systemPrompt,
+        userMessage,
         responseFormat: {
           type: 'json_schema',
           name: 'telegram_task_extract',
@@ -894,6 +936,3 @@ function clampConfidence(v: number): number {
   if (v > 1) return 1;
   return Math.round(v * 1000) / 1000;
 }
-
-// Подавление неиспользуемого Optional (если потребуется в будущем для DI).
-void Optional;

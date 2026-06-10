@@ -406,11 +406,33 @@ async function cmdGraph(a: Args): Promise<void> {
   }
 }
 
+async function cmdOrgs(a: Args): Promise<void> {
+  // Супер-админский список Org (read-only). Нужен, чтобы привязать tenantId
+  // (он же id Org) → название + владелец. period='all' — без временного среза.
+  const data = await apiGet(`/api/v1/admin/orgs`, {
+    search: str(a, 'search'),
+    period: str(a, 'period') ?? 'month',
+    limit: num(a, 'limit') ?? 50,
+  });
+  if (has(a, 'json')) return printJson(data);
+  const items =
+    (data as { items?: Array<Json> }).items ??
+    (Array.isArray(data) ? (data as Json[]) : []);
+  out('Всего', (data as { total?: number }).total ?? items.length);
+  for (const o of items) {
+    process.stdout.write(
+      `  ${o['id']}  ${trunc(o['name'], 40)}  владелец: ${o['ownerEmail'] ?? o['ownerName'] ?? '—'}` +
+        `  тариф: ${o['tier'] ?? '-'}  участников: ${o['memberCount'] ?? o['membersCount'] ?? '-'}\n`,
+    );
+  }
+}
+
 // ───────────────────────── маршрутизация ─────────────────────────
 const HELP = `diag — read-only разбор прод-данных Коры. Команды:
   trace     --meeting <id>                 вся цепочка встречи (статус→отчёт→AI-вызовы→логи), где сломалось
   report    --meeting <id>                 контент отчёта (summary/structured/custom/followUp/fast)
   meetings  [--status --type --owner --limit]  список встреч
+  orgs      [--search <текст> --limit]      список Org (id=tenantId → название + владелец)
   logs      [--level|--at-least --pipeline --module --search --from --to --limit --offset]
   chain     --trace <traceId|mtg_<id>>     полный технический след одной цепочки
   llm-calls --meeting <id> [--scan N]      AI/ASR-вызовы встречи (провайдер/модель/tier/успех)
@@ -426,6 +448,7 @@ async function main(): Promise<void> {
     case 'trace': return cmdTrace(a);
     case 'report': return cmdReport(a);
     case 'meetings': return cmdMeetings(a);
+    case 'orgs': return cmdOrgs(a);
     case 'logs': return cmdLogs(a);
     case 'chain': return cmdChain(a);
     case 'llm-calls': return cmdLlmCalls(a);

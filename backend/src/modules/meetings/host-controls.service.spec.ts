@@ -18,6 +18,7 @@ interface MeetingMock {
   id: string;
   ownerId: string;
   status: string;
+  failureReason?: string | null;
 }
 
 interface ParticipantMock {
@@ -39,7 +40,7 @@ function makeService(
   const meetingEventCreate = vi.fn(async () => ({}));
 
   const prisma = {
-    meeting: { findUnique: meetingFindUnique },
+    meeting: { findUnique: meetingFindUnique, update: vi.fn(async () => ({})) },
     participant: { findUnique: participantFindUnique },
     meetingEvent: { create: meetingEventCreate },
   } as unknown as PrismaService;
@@ -179,9 +180,38 @@ describe('HostControlsService', () => {
     expect((livekit as any).deleteRoom).not.toHaveBeenCalled();
   });
 
-  it('finish уже завершённой встречи — InvalidFsmTransitionError', async () => {
-    const { svc, livekit } = makeService({ id: 'm-1', ownerId: 'u-host', status: 'completed' });
-    await expect(svc.finish('m-1', 'u-host')).rejects.toThrow(InvalidFsmTransitionError);
+  it('finish уже завершённой (completed) — no-op 200, без deleteRoom/update', async () => {
+    const { svc, livekit, prisma } = makeService({
+      id: 'm-1', ownerId: 'u-host', status: 'completed',
+    });
+    const r = await svc.finish('m-1', 'u-host');
+    expect(r.status).toBe('completed');
     expect((livekit as any).deleteRoom).not.toHaveBeenCalled();
+    expect((prisma as any).meeting.update).not.toHaveBeenCalled();
+  });
+
+  it('finish из scheduled → failed(ended_before_start), 200, deleteRoom best-effort + update', async () => {
+    const { svc, livekit, prisma } = makeService({
+      id: 'm-1', ownerId: 'u-host', status: 'scheduled', failureReason: null,
+    });
+    const r = await svc.finish('m-1', 'u-host');
+    expect(r).toEqual({ status: 'failed', failureReason: 'ended_before_start' });
+    expect((livekit as any).deleteRoom).toHaveBeenCalledWith({ id: 'm-1' });
+    expect((prisma as any).meeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'm-1' },
+        data: { status: 'failed', failureReason: 'ended_before_start' },
+      }),
+    );
+  });
+
+  it('finish из scheduled когда deleteRoom бросает — всё равно failed (best-effort)', async () => {
+    const { svc, livekit, prisma } = makeService({
+      id: 'm-1', ownerId: 'u-host', status: 'scheduled', failureReason: null,
+    });
+    (livekit as any).deleteRoom.mockRejectedValueOnce(new Error('room not found'));
+    const r = await svc.finish('m-1', 'u-host');
+    expect(r.status).toBe('failed');
+    expect((prisma as any).meeting.update).toHaveBeenCalled();
   });
 });

@@ -84,6 +84,9 @@ export function ControlsBar({
     setConfirmFinish(false);
     const result = await host.finish();
     if (result.ok) {
+      if (result.data.failureReason === 'ended_before_start') {
+        toast('Встреча завершена (запись не велась)');
+      }
       try { await room.disconnect(); } catch { /* ignore */ }
       onLeave();
     }

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { MeetingStatus } from '@prisma/client';
 
 import {
   InvalidFsmTransitionError,
@@ -8,6 +9,8 @@ import {
 } from '../../common/errors/domain-errors';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LivekitService } from '../livekit/livekit.service';
+
+import { assertTransition } from './fsm/meeting-fsm';
 
 /**
  * Сервис host-controls: mute/unmute, kick, lower-hand, finish.
@@ -85,24 +88,65 @@ export class HostControlsService {
   }
 
   /**
-   * Завершить встречу. Удаляем LiveKit-room — webhook `room_finished`
-   * довершит FSM-переход active → completed (см. LivekitEventsHandler).
+   * Завершить встречу (устойчиво к потере вебхука room_started — ТЗ Ф5/Р1).
+   *   active     → deleteRoom; вебхук room_finished довершит active→completed.
+   *   scheduled  → записи физически нет (egress стартует в room_started) →
+   *                scheduled→failed(ended_before_start), 200 (не 409); deleteRoom best-effort.
+   *   иное       → идемпотентный no-op 200 (уже завершается/завершена), без 409/5xx.
    */
-  async finish(meetingId: string, hostUserId: string): Promise<void> {
+  async finish(
+    meetingId: string,
+    hostUserId: string,
+  ): Promise<{ status: MeetingStatus; failureReason: string | null }> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
     if (meeting.ownerId !== hostUserId) {
       throw new NotAuthorizedError('not_meeting_host');
     }
-    if (meeting.status !== 'active') {
-      // FSM не разрешит active→completed из других статусов; здесь — явная ошибка
-      // для UX (хост видит «нельзя завершить уже завершённую»).
-      throw new InvalidFsmTransitionError(meeting.status, 'completed');
+
+    if (meeting.status === 'active') {
+      await this.livekit.deleteRoom({ id: meetingId });
+      await this.recordEvent(meetingId, 'host_action:finish', {
+        hostUserId,
+        fromStatus: 'active',
+      });
+      this.logger.log({ meetingId, hostUserId }, 'Хост запросил завершение активной встречи');
+      return { status: meeting.status, failureReason: meeting.failureReason ?? null };
     }
 
-    await this.livekit.deleteRoom({ id: meetingId });
-    await this.recordEvent(meetingId, 'host_action:finish', { hostUserId });
-    this.logger.log({ meetingId, hostUserId }, 'Хост запросил завершение встречи');
+    if (meeting.status === 'scheduled') {
+      // room_started потерян → записи нет. Завершаем как «не состоялась».
+      try {
+        await this.livekit.deleteRoom({ id: meetingId });
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err },
+          'deleteRoom для scheduled-finish — best-effort (room могла не существовать)',
+        );
+      }
+      assertTransition('scheduled', 'failed');
+      await this.prisma.meeting.update({
+        where: { id: meetingId },
+        data: { status: 'failed', failureReason: 'ended_before_start' },
+      });
+      await this.recordEvent(meetingId, 'host_action:finish', {
+        hostUserId,
+        fromStatus: 'scheduled',
+        outcome: 'ended_before_start',
+      });
+      this.logger.log(
+        { meetingId, hostUserId },
+        'Завершение scheduled-встречи без записи (ended_before_start)',
+      );
+      return { status: 'failed', failureReason: 'ended_before_start' };
+    }
+
+    // Терминальные/в обработке — идемпотентный no-op (Р1).
+    this.logger.log(
+      { meetingId, status: meeting.status },
+      'finish: встреча уже завершается/завершена — no-op',
+    );
+    return { status: meeting.status, failureReason: meeting.failureReason ?? null };
   }
 
   // ─────────────────────────── helpers ───────────────────────────────────

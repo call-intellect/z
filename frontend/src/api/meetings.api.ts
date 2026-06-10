@@ -416,7 +416,7 @@ export const meetingsApi = {
     ),
 
   finish: (id: string) =>
-    apiClient.post<{ ok: true }>(
+    apiClient.post<{ ok: true; status: string; failureReason: string | null }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/finish`,
     ),
 

@@ -337,9 +337,9 @@ export class MeetingsController {
   async finish(
     @Param('id') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true }> {
-    await this.hostControls.finish(meetingId, user.id);
-    return { ok: true };
+  ): Promise<{ ok: true; status: string; failureReason: string | null }> {
+    const result = await this.hostControls.finish(meetingId, user.id);
+    return { ok: true, status: result.status, failureReason: result.failureReason };
   }
 
   /**

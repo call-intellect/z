@@ -70,6 +70,24 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🐞 2026-06-10 — Фикс открытых багов retest3 (Ф1–Ф9, кроме #20/#24/#17/#26)
+
+> Контракт: `plans/tz/2026-06-10-bugfix-fleet-retest3.md`. Коммиты: Ф1 `e696d831` · Ф2 `a442fc37` · Ф5 `5781b43f` · Ф6 `1f035158` · Ф7 `73af1791` · Ф4 `9550d382` · Ф3 `0652c365` · Ф8 `a9289d54` · Ф9 `048be10e`.
+>
+> **Зачем для прода:** pulse-patterns 500 → 200; json-режим LLM (quality-score/extract-actions/secondary-каскад) перестаёт падать; главный отчёт идёт через DeepSeek (кэш + pro); чат больше не светит служебные маркеры; локализация (русский 404, resourceType, заголовки, отчёт); диагностика пустых дорожек + гард абсурдных метрик диаризации. **Миграций БД НЕТ.** **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (обе с дефолтами — действий владельца НЕ требуют):**
+  - `LLM_MAIN_REPORT_PRIMARY` (enum `minimax`/`deepseek`, **default `deepseek`**, Ф5/#51). Откат на прежний канал: `=minimax` в `.env` + рестарт.
+  - `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (**default сменён OFF→ON**, Ф2/#56). Аварийный откат: `=false`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback есть — действий НЕ требует):** `transcribe.minAudioBytes` (порог «битого» аудио для ре-submit пустой дорожки, default 1024, Ф3/#74).
+- **Шаг 9 — Re-run скрипта (Ф8/#83):** `migrate-task-to-issue.ts` уже в `apply-prod-deploy STEPS` — прогон агрегатора обновит описание виртуального проекта «Из встреч». Идемпотентно.
+- **Кэш-сброс (ожидаемо):** правки SYSTEM-промптов `meeting-quality-score` и `daily-digest` разово инвалидируют prompt-cache DeepSeek/MiniMax — деньги на 1 прогон, дальше кэш восстановится.
+- **Шаг 11 — Docker rebuild:** `docker compose up -d --build backend frontend`.
+- **ОТЛОЖЕНО (не в этом выкате):** #26 (тайминги Vox — нужен прод-smoke), #20/#24 (Sidebar UX — отдельный ТЗ), #17 (прод-ретест смены пароля). См. `second-brain/04_не-сделано/README.md`.
+
+---
+
 ### 🛟 2026-06-09 — Встроенная служба поддержки + закрытый контур + самообучающийся клон (Ф1–Ф4)
 
 > Контракт: `plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.

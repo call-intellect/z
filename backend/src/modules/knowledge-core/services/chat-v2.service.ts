@@ -239,6 +239,33 @@ function dedupe(items: string[]): string[] {
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
 
 /**
+ * §1 Ф5 (2026-06-11) — вырезает технические маркеры цитат из текста ответа
+ * AI-чата (chat-v2), чтобы они не утекали в UI. Цитаты сохраняются отдельно
+ * (массив `citations`), поэтому из видимого текста маркеры можно удалить.
+ *
+ * Режем только маркеры в квадратных скобках строго заданных форм:
+ *   - [CONTRADICTING BLOCK ...]      — counter-evidence тег (W3.3)
+ *   - [REASONING CHAIN FOR BLOCK ...]— тег цепочки обоснований (W3.2)
+ *   - [BLOCK:<id>]                   — ссылка на блок (id = lowercase alnum cuid)
+ * Обычный markdown ответа (списки, **жирный**, ссылки `[текст](url)`) не трогаем.
+ *
+ * ВАЖНО: чистая функция без сайд-эффектов (свежие regex-литералы, без общего
+ * lastIndex) — применять ТОЛЬКО к возвращаемому `message`, после того как
+ * citations/usedBlockIds уже распарсены из СЫРОГО текста.
+ */
+export function stripBlockMarkers(text: string): string {
+  return text
+    .replace(/\[CONTRADICTING BLOCK[^\]]*\]/gi, '')
+    .replace(/\[REASONING CHAIN FOR BLOCK[^\]]*\]/gi, '')
+    .replace(/\[BLOCK:[a-z0-9]+\]/gi, '')
+    .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
+    .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
+    .replace(/[ \t]+\n/g, '\n') // убрать trailing-пробел перед переводом строки
+    .replace(/\n{3,}/g, '\n\n') // не плодить пустые строки
+    .trim();
+}
+
+/**
  * KC-Temporal W3.2 (2026-05-25) — бюджет символов на ВСЕ reasoning chain'ы
  * вместе (3 чейна по 3 узла depth=2). При превышении — fallback на depth=1.
  * 4000 символов ≈ 1000 токенов — допустимо при общем prompt-бюджете 8-16K.
@@ -561,7 +588,9 @@ export class ChatV2Service {
     const usedBlockIds = this.parseUsedBlockIds(result.text, contextBlocks);
 
     return {
-      message: result.text,
+      // §1 Ф5 — strip технических маркеров из видимого текста; парс цитат выше
+      // уже сделан на СЫРОМ result.text (с маркерами), поэтому citations целы.
+      message: stripBlockMarkers(result.text),
       citations,
       modelUsed: result.modelUsed,
       usedBlockIds,

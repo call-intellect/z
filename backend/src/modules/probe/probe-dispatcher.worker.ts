@@ -31,6 +31,7 @@ import {
   PROBE_REASON_LABEL,
   PROBE_REASON_LABEL_DEFAULT,
 } from './probe-reason-labels';
+import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
 import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
 
@@ -255,6 +256,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         status: 'dispatched',
       });
       this.metrics.incProbeDispatched({ kind: 'in_app' });
+      // Probe Фаза 5 (R9) — topic cooldown: тема поднята → не доставать тем же
+      // вопросом сразу повторно. Best-effort, не валит dispatch.
+      await this.setTopicCooldown(probe.tenantId, probe.contentHash);
       this.logger.log(
         `probe dispatched: id=${probe.id} userId=${selectedUserId} reason=${probe.reason}`,
       );
@@ -353,6 +357,33 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'probe-dispatcher: probe-formulate fallback',
       );
       return fallback;
+    }
+  }
+
+  /**
+   * Probe Фаза 5 — поставить тему (`contentHash`) на cooldown в Redis на
+   * `probe.topicCooldownHours`. Best-effort: ошибки настройки/Redis не валят
+   * dispatch (cooldown просто не применится).
+   */
+  private async setTopicCooldown(
+    tenantId: string,
+    contentHash: string,
+  ): Promise<void> {
+    try {
+      const cooldownHours = await this.cfg.getDynamic<number>(
+        'probe.topicCooldownHours',
+        undefined,
+        48,
+      );
+      const ttlSec = Math.max(1, Math.round(cooldownHours * 3600));
+      await this.redis.client.set(
+        probeTopicCooldownRedisKey(tenantId, contentHash),
+        '1',
+        'EX',
+        ttlSec,
+      );
+    } catch {
+      // graceful — cooldown не применится.
     }
   }
 

@@ -1,8 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
+import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
+
+import {
+  PROBE_ENGAGEMENT_TTL_SEC,
+  probeEngagementRedisKey,
+  probeTopicCooldownRedisKey,
+} from './probe-fatigue.util';
 
 /**
  * SBA β-5 — ProbePriorityCron (Layer 6).
@@ -26,6 +34,8 @@ export class ProbePriorityCron {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(RedisService) private readonly redis: RedisService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   @Cron('*/15 * * * *')
@@ -47,9 +57,21 @@ export class ProbePriorityCron {
           status: 'pending',
           expiresAt: { lt: now },
         },
-        select: { id: true, dispatchedNotificationId: true },
+        select: {
+          id: true,
+          dispatchedNotificationId: true,
+          // Probe Фаза 5 — для исход-сигнала (ignored) и cooldown темы.
+          reason: true,
+          tenantId: true,
+          contentHash: true,
+        },
       });
-      const expirableIds: string[] = [];
+      const expirable: Array<{
+        id: string;
+        reason: string;
+        tenantId: string;
+        contentHash: string;
+      }> = [];
       for (const cand of expiredCandidates) {
         if (cand.dispatchedNotificationId) {
           const n = await this.prisma.notification.findUnique({
@@ -58,16 +80,25 @@ export class ProbePriorityCron {
           });
           if (n?.respondedAt) continue; // уже закрыт пользователем — пропускаем
         }
-        expirableIds.push(cand.id);
+        expirable.push({
+          id: cand.id,
+          reason: cand.reason,
+          tenantId: cand.tenantId,
+          contentHash: cand.contentHash,
+        });
       }
       let expiredCount = 0;
-      if (expirableIds.length > 0) {
+      if (expirable.length > 0) {
         const expired = await this.prisma.probeEvent.updateMany({
-          where: { id: { in: expirableIds }, status: 'pending' },
+          where: { id: { in: expirable.map((e) => e.id) }, status: 'pending' },
           data: { status: 'expired' },
         });
         expiredCount = expired.count;
         for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
+        // Probe Фаза 5 (R10): истёкший без ответа = исход «ignored» (сигнал
+        // калибровки Фазы 2). Тему ставим на cooldown — не доставать человека
+        // тем же вопросом в течение probe.topicCooldownHours.
+        await this.recordIgnoredOutcomes(expirable);
       }
 
       // 2. engagement_rate per recipient.
@@ -101,6 +132,18 @@ export class ProbePriorityCron {
         });
         const rate = answeredCount / sentCount;
         this.metrics.setProbeRecipientEngagementRate({ userId, rate });
+        // Probe Фаза 5 — снимок engagement в Redis: filterByRateLimit режет
+        // бюджет низко-отзывчивым (adaptive fatigue). Best-effort.
+        try {
+          await this.redis.client.set(
+            probeEngagementRedisKey(userId),
+            String(rate),
+            'EX',
+            PROBE_ENGAGEMENT_TTL_SEC,
+          );
+        } catch {
+          // Redis down — adaptive просто не применится (graceful).
+        }
         usersDone += 1;
       }
 
@@ -113,6 +156,43 @@ export class ProbePriorityCron {
         { err: err instanceof Error ? err.message : String(err) },
         'probe-priority: ошибка прохода — пропускаю',
       );
+    }
+  }
+
+  /**
+   * Probe Фаза 5 — для каждого истёкшего без ответа probe:
+   *   - метрика `probe_outcome_total{outcome=ignored, reason}` (калибровка Фазы 2);
+   *   - cooldown темы (`contentHash`) в Redis на `probe.topicCooldownHours` —
+   *     не доставать человека тем же вопросом сразу после игнора.
+   * Best-effort: ошибки Redis/настроек не валят sweep.
+   */
+  private async recordIgnoredOutcomes(
+    expired: Array<{ reason: string; tenantId: string; contentHash: string }>,
+  ): Promise<void> {
+    for (const e of expired) {
+      this.metrics.incProbeOutcome({ outcome: 'ignored', reason: e.reason });
+    }
+    try {
+      const cooldownHours = await this.cfg.getDynamic<number>(
+        'probe.topicCooldownHours',
+        undefined,
+        48,
+      );
+      const ttlSec = Math.max(1, Math.round(cooldownHours * 3600));
+      for (const e of expired) {
+        try {
+          await this.redis.client.set(
+            probeTopicCooldownRedisKey(e.tenantId, e.contentHash),
+            '1',
+            'EX',
+            ttlSec,
+          );
+        } catch {
+          // Redis down — cooldown просто не применится (graceful).
+        }
+      }
+    } catch {
+      // настройка недоступна — пропускаем cooldown.
     }
   }
 }

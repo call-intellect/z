@@ -35,8 +35,12 @@ function makeService(): {
     client: {
       // dedup SET NX → '1' (не дубль, проходим дальше).
       set: vi.fn().mockResolvedValue('1'),
-      // rate-limit GET → счётчики выше лимита → бюджет исчерпан.
-      get: vi.fn().mockResolvedValue('99'),
+      // GET зависит от ключа: rate-limit-счётчики выше лимита (бюджет исчерпан),
+      // cooldown/engagement — отсутствуют (null), чтобы не было ложного drop.
+      get: vi.fn().mockImplementation(async (key: string) => {
+        if (key.includes(':ratelimit:')) return '99';
+        return null;
+      }),
     },
   } as unknown as RedisService;
 
@@ -53,6 +57,8 @@ function makeService(): {
       expiryDays: 14,
       coldStartModeHours: 0,
     },
+    // Probe Фаза 5 — filterByRateLimit читает probe.adaptiveFatigueEnabled.
+    getDynamic: vi.fn().mockResolvedValue(true),
   } as unknown as TypedConfigService;
 
   const metrics = {

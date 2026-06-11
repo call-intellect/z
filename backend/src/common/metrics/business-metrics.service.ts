@@ -625,6 +625,8 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify ──
   private probeResponseClassifiedTotal!: Counter<'confidence_bucket'>;
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
+  // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
+  private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
   private promptFeedbackTotal!: Counter<'prompt_key' | 'has_edit'>;
   private autoruleExtractedTotal!: Counter<'prompt_key' | 'rule_type'>;
@@ -2619,6 +2621,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_response_unclear_total',
       help: 'Agents v2 Фаза 0.1 — сколько ответов на probe признано непонятными (confidence < min). Метка original_reason — reason эмиттера, чтобы видеть, какие probe чаще получают «мусорный» ответ.',
       labelNames: ['original_reason'] as const,
+    });
+    // ── Probe Фаза 5 (2026-06-11) — исход probe для калибровки Фазы 2 ──
+    this.probeOutcomeTotal = this.getOrCreateCounter({
+      name: 'probe_outcome_total',
+      help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
+      labelNames: ['outcome', 'reason'] as const,
     });
 
     // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
@@ -6066,6 +6074,17 @@ export class BusinessMetricsService implements OnModuleInit {
     this.probeResponseUnclearTotal.inc({
       original_reason: args.originalReason,
     });
+  }
+
+  /**
+   * Probe Фаза 5 — исход probe (answered|ignored) по reason. Калибровочный
+   * сигнал для будущего LLM-judge ценности вопроса (Фаза 2).
+   */
+  incProbeOutcome(args: {
+    outcome: 'answered' | 'ignored';
+    reason: string;
+  }): void {
+    this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

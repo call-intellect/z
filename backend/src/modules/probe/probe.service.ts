@@ -9,6 +9,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 
+import {
+  PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR,
+  PROBE_LOW_ENGAGEMENT_THRESHOLD,
+  probeEngagementRedisKey,
+  probeTopicCooldownRedisKey,
+} from './probe-fatigue.util';
 import { probeWindow } from './probe-reason-policy';
 import type {
   ProbeSuggestInput,
@@ -72,6 +78,26 @@ export class ProbeService {
         reason: input.reason,
         payload: input.payload,
       });
+
+      // Probe Фаза 5 (R9) — topic cooldown: не повторять ту же тему
+      // (contentHash) сразу после dispatch/игнора. Ключ ставят dispatcher (на
+      // dispatch) и priority-cron (на ignored) на probe.topicCooldownHours.
+      try {
+        const cooling = await this.redis.client.get(
+          probeTopicCooldownRedisKey(input.tenantId, contentHash),
+        );
+        if (cooling) {
+          this.metrics.incProbeDedupDropped({ reason: input.reason });
+          this.metrics.incProbeEvent({
+            emittedByService: input.emittedByService,
+            reason: input.reason,
+            status: 'dropped_dedup',
+          });
+          return { dropped: 'dedup' };
+        }
+      } catch {
+        // Redis down — пропускаем cooldown (не блокируем probe).
+      }
 
       // 1. Redis dedup check
       const dedupKey = `probe:dedup:${input.tenantId}:${contentHash}`;
@@ -253,16 +279,47 @@ export class ProbeService {
   ): Promise<string[]> {
     const limitHour = this.cfg.probe.rateLimitPerHour;
     const limitDay = this.cfg.probe.rateLimitPerDay;
+    // Probe Фаза 5 (R9) — adaptive fatigue: тем, кто почти не отвечает (низкий
+    // engagement_rate, снимок пишет priority-cron), режем эффективный бюджет.
+    // Простое правило без LLM. Kill-switch probe.adaptiveFatigueEnabled.
+    let adaptiveOn = true;
+    try {
+      adaptiveOn = await this.cfg.getDynamic<boolean>(
+        'probe.adaptiveFatigueEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      adaptiveOn = true;
+    }
     const available: string[] = [];
     for (const userId of recipientCandidates) {
       try {
-        const [hourCount, dayCount] = await Promise.all([
+        const [hourCount, dayCount, engagementRaw] = await Promise.all([
           this.redis.client.get(this.hourKey(userId)),
           this.redis.client.get(this.dayKey(userId)),
+          adaptiveOn
+            ? this.redis.client.get(probeEngagementRedisKey(userId))
+            : Promise.resolve(null),
         ]);
+        let effHour = limitHour;
+        let effDay = limitDay;
+        if (adaptiveOn && engagementRaw != null) {
+          const eng = Number(engagementRaw);
+          if (Number.isFinite(eng) && eng < PROBE_LOW_ENGAGEMENT_THRESHOLD) {
+            effHour = Math.max(
+              1,
+              Math.floor(limitHour * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
+            );
+            effDay = Math.max(
+              1,
+              Math.floor(limitDay * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
+            );
+          }
+        }
         if (
-          (hourCount && Number(hourCount) >= limitHour) ||
-          (dayCount && Number(dayCount) >= limitDay)
+          (hourCount && Number(hourCount) >= effHour) ||
+          (dayCount && Number(dayCount) >= effDay)
         ) {
           continue;
         }

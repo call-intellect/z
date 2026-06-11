@@ -92,6 +92,7 @@ function makeMocks(): Mocks {
     incProbeClosed: vi.fn(),
     incProbeResponseClassified: vi.fn(),
     incProbeResponseUnclear: vi.fn(),
+    incProbeOutcome: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const ingestAdapter = {

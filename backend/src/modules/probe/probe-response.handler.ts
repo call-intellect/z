@@ -119,6 +119,9 @@ export class ProbeResponseHandler {
         tenantTop: this.normalizeTenantTop(event.tenantId),
         source: kind ?? 'unknown',
       });
+      // Probe Фаза 5 (R10): человек ответил = исход «answered» (калибровочный
+      // сигнал для Фазы 2, парный к «ignored» из priority-cron).
+      this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
 
       this.logger.log(
         `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} (closing-loop applied)`,

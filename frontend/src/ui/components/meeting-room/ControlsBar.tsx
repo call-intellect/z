@@ -136,7 +136,7 @@ export function ControlsBar({
           <span>{isScreenShareEnabled ? 'Стоп' : 'Экран'}</span>
         </TrackToggle>
 
-        <div className="mx-2 h-10 w-px bg-slate-600" />
+        <div className="mx-2 h-10 w-px bg-border" />
 
         {/* Interaction controls */}
         <RaiseHandButton />
@@ -151,7 +151,7 @@ export function ControlsBar({
 
         {isHost && (
           <>
-            <div className="mx-2 h-10 w-px bg-slate-600" />
+            <div className="mx-2 h-10 w-px bg-border" />
 
             <IconBtn
               icon={<Copy size={20} strokeWidth={1.75} />}

@@ -69,6 +69,24 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
+  {
+    taskType: 'process-marker-detect',
+    playbookSection:
+      '«clone-method Э2.1» — детектор конструктивных маркеров процесса (третий проход rebuild 3.7), дешёвый частый — flash; ollama только tertiary safety-net',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+    ],
+  },
 ];
 
 interface SeedStats {

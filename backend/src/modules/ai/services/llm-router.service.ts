@@ -185,6 +185,12 @@ export type LlmTaskType =
   //   rebuild 3.7 пишет SkillTrait layer=value|motivation (clone-method Э1.3),
   //   дешёвый частый — flash.
   | 'value-motivation-detect'
+  // TZ clone-method Э2.1 (2026-06-12) — детектор маркеров процесса:
+  //   из reasoning-цитат извлекает повторяемый конструктивный ПРИЁМ
+  //   проработки решений («перечисляет критерии», «перепроверяет данными»);
+  //   третий проход rebuild 3.7 пишет SkillTrait layer=process_marker,
+  //   дешёвый — flash.
+  | 'process-marker-detect'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -677,6 +683,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'role-principle-synthesize',
   // TZ clone-method Э1.3 — детектор ценностей/мотивации из trade-off, дешёвый частый — flash
   'value-motivation-detect',
+  // TZ clone-method Э2.1 — детектор маркеров процесса (clone-method Э2.1), дешёвый — flash
+  'process-marker-detect',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

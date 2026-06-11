@@ -1115,9 +1115,11 @@ export class TypedConfigService {
    * Параметры `PracticeSkillExtractor`/`Retrieval`/`Evaluator` сервисов
    * (Agents v2 §C1).
    *
-   *   - `enabled` — мастер-флаг retrieval'а в clone-respond. Default false;
-   *     extraction-cron всё равно работает (наполняет shadow), но в промпт
-   *     skill'ы не подмешиваются, пока флаг не включат.
+   *   - `enabled` — аварийный рубильник (kill-switch) retrieval'а в
+   *     clone-respond. Default true (ТЗ clone-persona-method-layer Э2.1 —
+   *     Ship-On активация): активные процедуры подмешиваются в ответы клона.
+   *     Выкл → retrieval перестаёт подмешивать; extraction/evaluator
+   *     продолжают копить shadow (этим флагом не гейтятся).
    *   - `minTraitsForExtract` — минимум активных SkillTrait в концепте,
    *     ниже которого extractor пропускает concept (рано извлекать procedure).
    *   - `shadowTrafficShare` — стартовый `trafficShare` для новых skill'ов.
@@ -1754,6 +1756,12 @@ export class TypedConfigService {
       valueMotivationDetectEnabled: this.resolveSync<boolean>(
         'knowledge.valueMotivationDetectEnabled',
         'VALUE_MOTIVATION_DETECT_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method Э2.1 — детектор маркеров процесса (kill-switch, ON) ──
+      processMarkerDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.processMarkerDetectEnabled',
+        'PROCESS_MARKER_DETECT_ENABLED',
         true,
       ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──

@@ -21,6 +21,12 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import {
+  PROCESS_MARKER_DETECT_JSON_SCHEMA,
+  PROCESS_MARKER_DETECT_SCHEMA_NAME,
+  PROCESS_MARKER_DETECT_SYSTEM_PROMPT,
+  PROCESS_MARKER_DETECT_USER_TEMPLATE,
+} from '../prompts/process-marker-detect.prompt';
+import {
   SKILL_TRAIT_DETECT_JSON_SCHEMA,
   SKILL_TRAIT_DETECT_SCHEMA_NAME,
   SKILL_TRAIT_DETECT_SYSTEM_PROMPT,
@@ -85,6 +91,23 @@ export class Specialist37Service {
   private static readonly MAX_BLOCKS_PER_REBUILD = 200;
   /** Максимум групп, обрабатываемых LLM за один rebuild. */
   private static readonly MAX_GROUPS_PER_REBUILD = 12;
+  /**
+   * TZ clone-method Э2.1 — код-гард детектора маркеров процесса (как гард
+   * Э1.2 в RolePrincipleSynthesisService): statement с любым из стоп-маркеров
+   * оценочных осей («избегает решений», «не решает сам», …) отбрасывается
+   * независимо от того, что решила модель. Сверка по нижнему регистру,
+   * намеренно консервативная (substring) — лучше потерять маркер, чем
+   * пропустить кадрово-токсичный приговор.
+   */
+  private static readonly PROCESS_MARKER_STOP_MARKERS: readonly string[] = [
+    'избегает',
+    'не решает сам',
+    'зависим',
+    'нерешителен',
+    'медлителен',
+    'не способен',
+    'боится',
+  ];
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -404,6 +427,29 @@ export class Specialist37Service {
             profile,
             draft,
             layer: draft.layer,
+          });
+          if (result === 'created') createdNew++;
+          else if (result === 'merged') mergedCount++;
+          else if (result === 'superseded') supersededCount++;
+        }
+      }
+
+      // TZ clone-method Э2.1 — детектор конструктивных маркеров процесса.
+      // Третий проход по тем же группам; пишет SkillTrait layer=process_marker.
+      // Kill-switch: cfg.skill.processMarkerDetectEnabled.
+      if (this.cfg.skill.processMarkerDetectEnabled) {
+        for (const group of eligibleGroups) {
+          const draft = await this.detectProcessMarker({
+            profile,
+            personName: profile.person.name,
+            group,
+          });
+          if (!draft) continue;
+
+          const result = await this.mergeOrCreate({
+            profile,
+            draft,
+            layer: 'process_marker',
           });
           if (result === 'created') createdNew++;
           else if (result === 'merged') mergedCount++;
@@ -836,6 +882,114 @@ export class Specialist37Service {
     // Пустой sourceBlockIds = «решающего момента нет» — норма, не failure.
     if (draft.sourceBlockIds.length === 0) return null;
     return draft;
+  }
+
+  /**
+   * TZ clone-method Э2.1 — LLM-extraction конструктивного МАРКЕРА ПРОЦЕССА
+   * (повторяемого приёма проработки решений) из той же группы
+   * reasoning-блоков. Близнец detectValueMotivation: тот же injection-guard,
+   * но taskType `process-marker-detect`; layer из LLM НЕ приходит — слой
+   * фиксирован детектором ('process_marker'). Поверх парса — код-гард
+   * стоп-маркеров оценочных осей (как гард Э1.2): «избегает», «не решает
+   * сам» и т.п. в statement → null + warn. Нет повторяемого приёма
+   * (sourceBlockIds=[]) → null — это НОРМА, не ошибка. Best-effort.
+   */
+  private async detectProcessMarker(args: {
+    profile: SkillProfile;
+    personName: string;
+    group: Array<{
+      blockId: string;
+      quote: string;
+      createdAt?: Date;
+    }>;
+  }): Promise<(TraitDraft & { layer: 'process_marker' }) | null> {
+    const quotesForLlm = args.group
+      .slice(0, 12)
+      .map((b) => ({
+        blockId: b.blockId,
+        quote: b.quote,
+        observedAt: (b.createdAt ?? new Date()).toISOString(),
+      }));
+
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
+    const guardOnDetect = this.isPromptInjectionGuardEnabled();
+    const rawUserDetect = PROCESS_MARKER_DETECT_USER_TEMPLATE({
+      personName: args.personName,
+      personRole: null,
+      quotes: quotesForLlm,
+    });
+    let result: LlmCallResult;
+    try {
+      result = await this.llm.call({
+        taskType: 'process-marker-detect',
+        systemPrompt: guardOnDetect
+          ? withInjectionGuard(PROCESS_MARKER_DETECT_SYSTEM_PROMPT)
+          : PROCESS_MARKER_DETECT_SYSTEM_PROMPT,
+        userMessage: guardOnDetect ? wrapUserData(rawUserDetect) : rawUserDetect,
+        tenantId: args.profile.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: PROCESS_MARKER_DETECT_SCHEMA_NAME,
+          schema: PROCESS_MARKER_DETECT_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'skill_profile', id: args.profile.id },
+        dataClass: 'internal',
+      });
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'process_marker',
+        reason: 'llm_error',
+      });
+      this.logger.warn(
+        {
+          profileId: args.profile.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-7.detectProcessMarker: LLM упал — skip',
+      );
+      return null;
+    }
+
+    if (result.modelUsed) {
+      this.metrics.incCoreSpecialistLlmTokens({
+        type: 'process_marker',
+        model: result.modelUsed,
+        tier: result.tier ?? 'primary',
+        tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+      });
+    }
+
+    // layer из LLM не приходит (схема без layer) — переиспользуем parseTraitDraft.
+    const draft = parseTraitDraft(result.text, (reason) => {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'process_marker',
+        reason,
+      });
+    });
+    if (!draft) return null;
+    // Пустой sourceBlockIds = «повторяемого приёма нет» — норма, не failure.
+    if (draft.sourceBlockIds.length === 0) return null;
+
+    // Код-гард (как Э1.2): оценочно-диагностическая лексика → отбросить.
+    const lower = draft.statement.toLowerCase();
+    const stopMarker = Specialist37Service.PROCESS_MARKER_STOP_MARKERS.find(
+      (m) => lower.includes(m),
+    );
+    if (stopMarker) {
+      this.logger.warn(
+        {
+          profileId: args.profile.id,
+          marker: stopMarker,
+          category: draft.category,
+        },
+        'specialist-3-7.detectProcessMarker: оценочная лексика в statement — отбрасываю (rejected_guard)',
+      );
+      return null;
+    }
+
+    // Слой фиксирован детектором — LLM его не присылает.
+    return { ...draft, layer: 'process_marker' };
   }
 
   /**

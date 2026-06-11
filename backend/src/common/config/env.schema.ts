@@ -1299,6 +1299,17 @@ const SkillSchema = z.object({
    * наполняется только layer='skill' чертами (как до Э1.3).
    */
   VALUE_MOTIVATION_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э2.1 (2026-06-12) — детектор маркеров процесса ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора конструктивных
+   * маркеров процесса: третий проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет повторяемый ПРИЁМ проработки решений
+   * («перечисляет критерии перед выбором», «перепроверяет оценки
+   * данными») и пишет SkillTrait layer='process_marker'. Оценочные оси
+   * («избегает решений», «не решает сам») запрещены промптом и
+   * код-гардом. Выкл → профиль без process_marker-черт (как до Э2.1).
+   */
+  PROCESS_MARKER_DETECT_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит
@@ -1886,8 +1897,12 @@ const TrackerSchema = z.object({
   // Сложены сюда, в TrackerSchema, чтобы не удлинять `.merge` цепочку EnvSchema
   // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.practiceSkills`.
   //
-  //   - PRACTICE_SKILLS_ENABLED — мастер-флаг retrieval'а в clone-respond.
-  //     Default false — включаем после ручной валидации extraction на одной Org.
+  //   - PRACTICE_SKILLS_ENABLED — аварийный рубильник (kill-switch, тип A)
+  //     retrieval'а PracticeSkill в clone-respond. Фича ВКЛ (default true):
+  //     retrieval подмешивает активные процедуры в ответы клона. Выкл →
+  //     retrieval перестаёт подмешивать процедуры, extraction/evaluator
+  //     продолжают копить shadow (они этим флагом не гейтятся).
+  //     (ТЗ clone-persona-method-layer Э2.1 — Ship-On активация)
   //   - PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT — минимум активных SkillTrait
   //     внутри concept'а, ниже которого extractor пропускает concept.
   //   - PRACTICE_SKILLS_SHADOW_TRAFFIC — стартовый trafficShare для status='shadow'.
@@ -1900,7 +1915,7 @@ const TrackerSchema = z.object({
   //     превышать baseline, чтобы promote из shadow в active.
   //   - PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA — на сколько composite score должен
   //     быть ХУЖЕ baseline, чтобы archive скилл.
-  PRACTICE_SKILLS_ENABLED: zBool(false),
+  PRACTICE_SKILLS_ENABLED: zBool(true),
   PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT: z.coerce.number().int().positive().default(5),
   PRACTICE_SKILLS_SHADOW_TRAFFIC: z.coerce.number().min(0).max(1).default(0.1),
   PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),

@@ -211,7 +211,7 @@ enum SkillTraitLayer {
 - **Acceptance:** на цитатах с явным trade-off извлекается value/motivation-черта с `sourceBlockIds`; на цитатах без выбора-в-ущерб — пусто; layer проставлен; spec + `build` зелёные.
 - **Закрывает:** R5.
 
-### [ ] Фаза Э2.1 — Активация PracticeSkill (RPD) + детектор маркеров процесса
+### [x] Фаза Э2.1 — Активация PracticeSkill (RPD) + детектор маркеров процесса
 - **Картография:** `PracticeSkill` extraction/evaluator (существуют), флаг PracticeSkill, `process-marker-detect` (новый, образец skill-trait-detect).
 - **Входит:** включить extraction/evaluator `PracticeSkill` (kill-switch ON); детектор `process-marker-detect` → SkillTrait `layer=process_marker` (только конструктивные оси).
 - **Не входит:** новая модель под RPD (reuse PracticeSkill); оценочные оси.

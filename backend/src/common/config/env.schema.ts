@@ -1323,6 +1323,21 @@ const SkillSchema = z.object({
    * `knowledge.cdmInterviewCooldownDays`, default 7).
    */
   CDM_INTERVIEW_ENABLED: zBool(true),
+  // ── TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) еженедельной поведенческой
+   * валидации persona (`PersonaLayerValidationCron`, вс 07:00 — после
+   * persona-build 06:00 SUN): на реальных кейсах роли (свежие
+   * reasoning-блоки с trustedAnswer) сравнивает ответы клона с persona v1
+   * (baseline «только черты», deprecated v1-промпт) и v2 (все слои метода)
+   * через LLM-judge `persona-behavior-judge`. Результат — только метрика
+   * `clone_persona_layer_score{variant}` + лог: ничего не блокирует и не
+   * меняет (persona v2 уже активна по Ship-On; R10 — без
+   * human-approval-гейтов). Выкл → еженедельная оценка не запускается;
+   * на работу клона не влияет. Число кейсов на роль — НЕ здесь, а в
+   * AdminSetting (`knowledge.personaValidationCasesPerRole`, default 3).
+   */
+  PERSONA_LAYER_VALIDATION_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит

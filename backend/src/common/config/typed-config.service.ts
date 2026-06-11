@@ -1770,6 +1770,12 @@ export class TypedConfigService {
         'CDM_INTERVIEW_ENABLED',
         true,
       ),
+      // ── TZ clone-method ВАЛ.1 — поведенческая валидация persona v1-vs-v2 (kill-switch, ON) ──
+      personaLayerValidationEnabled: this.resolveSync<boolean>(
+        'knowledge.personaLayerValidationEnabled',
+        'PERSONA_LAYER_VALIDATION_ENABLED',
+        true,
+      ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',

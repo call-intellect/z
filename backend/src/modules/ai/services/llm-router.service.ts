@@ -196,6 +196,11 @@ export type LlmTaskType =
   //   не наводящий вопрос ретроспективного разбора (Critical Decision
   //   Method); вопрос уходит носителю через probe. Редкий — capable.
   | 'cdm-case-interview'
+  // TZ clone-method ВАЛ.1 (2026-06-12) — LLM-judge поведенческой верности
+  //   клона: еженедельный cron на реальных кейсах роли сравнивает ответы
+  //   клона с persona v1 (baseline «только черты») vs v2 (все слои метода);
+  //   оценивает ТОЛЬКО поведенческий ход. Дешёвый — flash.
+  | 'persona-behavior-judge'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -692,6 +697,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'process-marker-detect',
   // TZ clone-method Э3.1 — формулировка CDM-вопроса по кейсу (clone-method Э3.1), редкий — capable
   'cdm-case-interview',
+  // TZ clone-method ВАЛ.1 — LLM-judge поведенческой верности клона (clone-method ВАЛ.1), дешёвый — flash
+  'persona-behavior-judge',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

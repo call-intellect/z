@@ -30,6 +30,8 @@ import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
+// TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona v1-vs-v2.
+import { PersonaLayerValidationService } from './services/persona-layer-validation.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
@@ -208,6 +210,10 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // процесса должности (`RolePrinciple`) из reasoning-блоков носителей.
     // Cron-вызыватель (RolePrincipleSynthesisCron) живёт в WorkersModule.
     RolePrincipleSynthesisService,
+    // TZ clone-method ВАЛ.1 — поведенческая валидация persona v1-vs-v2 на
+    // реальных кейсах роли (LLM-judge, только метрики/лог — R10).
+    // Cron-вызыватель (PersonaLayerValidationCron) живёт в WorkersModule.
+    PersonaLayerValidationService,
     // W4.1 (2026-05-25 KC-Temporal) — DataClassPolicyService.
     // Single source of truth для DataClass derive. На W4.1 работает в
     // shadow-режиме: специалисты вызывают `compareWithLegacy` рядом с
@@ -356,6 +362,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // TZ clone-method Э1.2 — экспортируется для RolePrincipleSynthesisCron
     // (WorkersModule) и тестов.
     RolePrincipleSynthesisService,
+    // TZ clone-method ВАЛ.1 — экспортируется для PersonaLayerValidationCron
+    // (WorkersModule) и тестов.
+    PersonaLayerValidationService,
     // W4.1 — экспортируется для специалистов 3.1–3.6 (shadow-вызовы) и
     // будущих enforce-call'ов на W4.2 + W4.3.
     DataClassPolicyService,

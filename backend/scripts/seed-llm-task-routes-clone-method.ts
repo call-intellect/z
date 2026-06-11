@@ -105,6 +105,24 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
+  {
+    taskType: 'persona-behavior-judge',
+    playbookSection:
+      '«clone-method ВАЛ.1» — LLM-judge поведенческой верности клона (еженедельный офлайн-прогон persona v1-vs-v2 на кейсах роли), дешёвый — flash; ollama только tertiary safety-net',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+    ],
+  },
 ];
 
 interface SeedStats {

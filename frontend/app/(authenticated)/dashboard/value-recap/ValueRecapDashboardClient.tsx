@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { valueRecapApi, type ValueRecapTeamApi } from '@/api/value-recap.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -96,7 +96,7 @@ export function ValueRecapDashboardClient() {
       URL.revokeObjectURL(url);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось выгрузить слайды.';
+        humanizeApiError(e, 'Не удалось выгрузить слайды.');
       toast.error(msg);
     } finally {
       setExporting(false);

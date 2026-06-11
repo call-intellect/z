@@ -74,6 +74,8 @@ export const RESOURCE_TYPES = [
   'process',
   'process-step',
   'regulation',
+  // A12 (Волна 6) — «Инструкция»: пошаговое «как сделать X» для одной роли.
+  'instruction',
   'policy',
   'tool',
   'metric',

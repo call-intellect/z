@@ -9,10 +9,14 @@ import {
   mapTelegramChannelEntry,
   type TelegramChannelStatus,
 } from '@/domain/me-channels';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+} from '@/ui/components/dashboard/modern';
 
 /**
  * Ф2 (2026-06-05) — карточка «Telegram» на странице «Я» (`/me`).
@@ -21,6 +25,10 @@ import { Skeleton } from '@/ui/shadcn/skeleton';
  * мастер привязки. Здесь НЕТ кода/deep-link — только бейдж статуса и CTA.
  * Статус берётся из общего SWR-ключа `['me-channels', orgId]` (тот же, что
  * переиспользует баннер Ф4) через `mapTelegramChannelEntry`.
+ *
+ * Ф3 редизайна (2026-06-09) — современный визуальный язык: стеклянная карточка
+ * `GlassCard` вместо shadcn `Card`. Якорь `id="me-card-telegram"` сохранён через
+ * обёртку-div (GlassCard не пробрасывает `id`).
  */
 export function MyTelegramCard({ orgId }: { orgId: string }) {
   const swr = useSWR(['me-channels', orgId], async () => {
@@ -34,24 +42,24 @@ export function MyTelegramCard({ orgId }: { orgId: string }) {
   });
 
   return (
-    <Card id="me-card-telegram" className="mb-6">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Send size={16} /> Telegram
+    <div id="me-card-telegram" className="mb-6 scroll-mt-24">
+      <GlassCard>
+        <CardTitle icon={<Send size={16} />} grad={GRAD.blue}>
+          Telegram
         </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {swr.isLoading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : swr.error ? (
-          <p className="text-sm text-fg-tertiary">
-            Статус Telegram недоступен. Попробуйте позже.
-          </p>
-        ) : (
-          <TelegramStatus status={swr.data?.status ?? 'not_linked'} />
-        )}
-      </CardContent>
-    </Card>
+        <div className="mt-4">
+          {swr.isLoading ? (
+            <Skeleton className="h-16 w-full" />
+          ) : swr.error ? (
+            <p className="text-sm" style={{ color: CHART.faint }}>
+              Статус Telegram недоступен. Попробуйте позже.
+            </p>
+          ) : (
+            <TelegramStatus status={swr.data?.status ?? 'not_linked'} />
+          )}
+        </div>
+      </GlassCard>
+    </div>
   );
 }
 
@@ -59,14 +67,15 @@ function TelegramStatus({ status }: { status: TelegramChannelStatus }) {
   const linked = status === 'linked';
   const notConfigured = status === 'channel_not_configured';
 
-  const badgeVariant: 'success' | 'secondary' | 'warning' | 'danger' =
+  // Цвет плашки статуса в палитре современного языка (mint/amber/red/dim).
+  const badgeColor =
     status === 'linked'
-      ? 'success'
+      ? CHART.mint
       : status === 'bot_blocked'
-        ? 'warning'
+        ? CHART.amber
         : status === 'channel_disabled'
-          ? 'danger'
-          : 'secondary';
+          ? CHART.red
+          : CHART.dim;
 
   const badgeLabel =
     status === 'linked'
@@ -92,8 +101,15 @@ function TelegramStatus({ status }: { status: TelegramChannelStatus }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="space-y-1">
-        <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-        <p className="text-sm text-fg-secondary">{hint}</p>
+        <span
+          className="inline-block rounded-full px-3 py-1 text-xs font-medium"
+          style={{ color: badgeColor, background: 'oklch(1 0 0 / 0.06)' }}
+        >
+          {badgeLabel}
+        </span>
+        <p className="text-sm" style={{ color: CHART.dim }}>
+          {hint}
+        </p>
       </div>
       {!notConfigured && (
         <Button asChild variant={linked ? 'outline' : 'default'} size="sm">

@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { feedbackApi } from '@/api/feedback.api';
 import { toFeedbackLimit, type FeedbackLimit } from '@/domain/feedback';
 import { Button } from '@/ui/shadcn/button';
@@ -74,8 +74,8 @@ export function FeedbackForm() {
       } catch (err) {
         if (err instanceof ApiError) {
           // 429 от FeedbackRateLimitGuard / любой иной error-payload —
-          // показываем именно серверное сообщение (оно на русском).
-          toast.error(err.message);
+          // показываем серверное русское сообщение (или фолбэк по коду).
+          toast.error(humanizeApiError(err));
           // На всякий случай перечитаем лимит, чтобы кнопка заблокировалась.
           await mutate('feedback-limit');
         } else {

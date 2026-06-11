@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
@@ -229,9 +230,13 @@ describe('LlmFallbackService.complete: cacheControl на system выставля
       }),
     } as unknown as MinimaxService;
     const openai = { complete: vi.fn() } as unknown as OpenAiProxyService;
+    const deepseek = { complete: vi.fn() } as unknown as DeepSeekService;
+    // Ветка minimax (kill-switch-откат): MiniMax — основной, DeepSeek не зовётся.
+    const cfg = {
+      ai: { mainReport: { primary: 'minimax' } },
+    } as unknown as TypedConfigService;
 
-    // Anthropic выведен из каскада — primary теперь MiniMax.
-    const fallback = new LlmFallbackService(minimax, openai);
+    const fallback = new LlmFallbackService(cfg, deepseek, minimax, openai);
 
     await fallback.complete({
       system: { text: 'sys prompt' },
@@ -262,8 +267,12 @@ describe('LlmFallbackService.complete: cacheControl на system выставля
       }),
     } as unknown as MinimaxService;
     const openai = { complete: vi.fn() } as unknown as OpenAiProxyService;
+    const deepseek = { complete: vi.fn() } as unknown as DeepSeekService;
+    const cfg = {
+      ai: { mainReport: { primary: 'minimax' } },
+    } as unknown as TypedConfigService;
 
-    const fallback = new LlmFallbackService(minimax, openai);
+    const fallback = new LlmFallbackService(cfg, deepseek, minimax, openai);
 
     await fallback.complete({
       system: { text: 'sys prompt', cacheControl: 'ephemeral' },

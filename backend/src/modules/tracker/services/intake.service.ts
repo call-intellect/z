@@ -39,6 +39,14 @@ export interface IntakeResponseDto {
   suggestedProjectId: string | null;
   suggestedAssigneeId: string | null;
   suggestedGoalId: string | null;
+  /**
+   * Человекочитаемые имена для suggested* (резолвятся только в списке `findAll`).
+   * В одиночных ответах (create/update/triage) — null, чтобы не плодить запросы.
+   * Если запись не найдена/удалена — остаётся null (сырой cuid не протекает в UI).
+   */
+  suggestedProjectName: string | null;
+  suggestedAssigneeName: string | null;
+  suggestedGoalTitle: string | null;
   suggestedPriority: string | null;
   suggestedDueDate: string | null;
   suggestedLabels: string[];
@@ -57,6 +65,18 @@ export interface ListIntakeResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+/**
+ * Карты id→имя для обогащения suggested*-полей в списке intake.
+ * - projectNames: projectId → Project.name
+ * - goalTitles: goalId → Goal.name
+ * - assigneeNames: userId → Person.name
+ */
+interface SuggestedNameMaps {
+  projectNames: Map<string, string>;
+  goalTitles: Map<string, string>;
+  assigneeNames: Map<string, string>;
 }
 
 export interface TriageIntakeResult {
@@ -163,12 +183,67 @@ export class IntakeService {
       }),
       this.prisma.intakeIssue.count({ where }),
     ]);
+    const names = await this.resolveSuggestedNames(tenantId, items);
     return {
-      items: items.map((i) => this.toResponse(i)),
+      items: items.map((i) => this.toResponse(i, names)),
       total,
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Батч-резолв человекочитаемых имён для suggested*-полей списка intake.
+   * Ровно 3 запроса (project / goal / person), все с фильтром по tenantId.
+   * - suggestedProjectId → Project.name
+   * - suggestedGoalId → Goal.name (в схеме поле названия цели — `name`)
+   * - suggestedAssigneeId — это userId → Person.name (по Person.userId)
+   * Отсутствующие/удалённые записи в карты не попадают → имя останется null.
+   */
+  private async resolveSuggestedNames(
+    tenantId: string,
+    items: IntakeIssue[],
+  ): Promise<SuggestedNameMaps> {
+    const projectIds = new Set<string>();
+    const goalIds = new Set<string>();
+    const assigneeUserIds = new Set<string>();
+    for (const i of items) {
+      if (i.suggestedProjectId) projectIds.add(i.suggestedProjectId);
+      if (i.suggestedGoalId) goalIds.add(i.suggestedGoalId);
+      if (i.suggestedAssigneeId) assigneeUserIds.add(i.suggestedAssigneeId);
+    }
+
+    const [projects, goals, persons] = await Promise.all([
+      projectIds.size > 0
+        ? this.prisma.project.findMany({
+            where: { id: { in: [...projectIds] }, tenantId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([] as { id: string; name: string }[]),
+      goalIds.size > 0
+        ? this.prisma.goal.findMany({
+            where: { id: { in: [...goalIds] }, tenantId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([] as { id: string; name: string }[]),
+      assigneeUserIds.size > 0
+        ? this.prisma.person.findMany({
+            where: { userId: { in: [...assigneeUserIds] }, tenantId },
+            select: { userId: true, name: true },
+          })
+        : Promise.resolve([] as { userId: string | null; name: string }[]),
+    ]);
+
+    const projectNames = new Map<string, string>();
+    for (const p of projects) projectNames.set(p.id, p.name);
+    const goalTitles = new Map<string, string>();
+    for (const g of goals) goalTitles.set(g.id, g.name);
+    const assigneeNames = new Map<string, string>();
+    for (const p of persons) {
+      if (p.userId) assigneeNames.set(p.userId, p.name);
+    }
+
+    return { projectNames, goalTitles, assigneeNames };
   }
 
   /** PATCH полей intake (extraction overrides / suggestions). */
@@ -380,7 +455,10 @@ export class IntakeService {
     return i;
   }
 
-  private toResponse(i: IntakeIssue): IntakeResponseDto {
+  private toResponse(
+    i: IntakeIssue,
+    names?: SuggestedNameMaps,
+  ): IntakeResponseDto {
     return {
       id: i.id,
       tenantId: i.tenantId,
@@ -396,6 +474,17 @@ export class IntakeService {
       suggestedProjectId: i.suggestedProjectId,
       suggestedAssigneeId: i.suggestedAssigneeId,
       suggestedGoalId: i.suggestedGoalId,
+      suggestedProjectName:
+        (i.suggestedProjectId &&
+          names?.projectNames.get(i.suggestedProjectId)) ||
+        null,
+      suggestedAssigneeName:
+        (i.suggestedAssigneeId &&
+          names?.assigneeNames.get(i.suggestedAssigneeId)) ||
+        null,
+      suggestedGoalTitle:
+        (i.suggestedGoalId && names?.goalTitles.get(i.suggestedGoalId)) ||
+        null,
       suggestedPriority: i.suggestedPriority,
       suggestedDueDate: i.suggestedDueDate?.toISOString() ?? null,
       suggestedLabels: i.suggestedLabels,

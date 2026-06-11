@@ -13,6 +13,7 @@ import type {
   WeeklyOperationsDigestDto,
   WeeklySectionDeltasDto,
   WeeklyTeamDynamicsRowDto,
+  WeeklyDigestTrendPointDto,
 } from '../dto/weekly-digest.dto';
 import {
   WEEKLY_DIGEST_PROMPT_VERSION,
@@ -22,6 +23,41 @@ import {
   type WeeklyDigestAggregates,
 } from '../prompts/weekly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
+
+/**
+ * Ф1b редизайна дашбордов — чистый маппер persisted-снимков weekly-дайджеста
+ * в трендовые точки. Принимает строки в порядке DESC по `weekStart`
+ * (как их отдаёт `findMany orderBy desc`) и возвращает точки в порядке
+ * old→new (через `.reverse()`). `metricsJson` парсится безопасно: blockers
+ * считаются как сумма `topBlockers[].count`, hangingDecisions — длина массива;
+ * любые отсутствующие/невалидные поля деградируют в 0.
+ */
+export function mapWeeklyDigestRowsToTrend(
+  rowsDesc: Array<{ weekStart: string; metricsJson: unknown }>,
+): WeeklyDigestTrendPointDto[] {
+  return rowsDesc
+    .map((r) => {
+      const m = (r.metricsJson ?? {}) as Record<string, any>;
+      const goals = (m.goals ?? {}) as Record<string, any>;
+      const topBlockers = Array.isArray(m.topBlockers) ? m.topBlockers : [];
+      return {
+        weekStart: r.weekStart,
+        totalCheckIns: Number(m.totalCheckIns ?? 0),
+        greenShare: Number(m.greenShare ?? 0),
+        redShare: Number(m.redShare ?? 0),
+        goalsCompleted: Number(goals.completed ?? 0),
+        goalsFailed: Number(goals.failed ?? 0),
+        blockers: topBlockers.reduce(
+          (s: number, b: any) => s + (Number(b?.count) || 0),
+          0,
+        ),
+        hangingDecisions: Array.isArray(m.hangingDecisions)
+          ? m.hangingDecisions.length
+          : 0,
+      };
+    })
+    .reverse();
+}
 
 /**
  * SBA β-8.1 — WeeklyDigestService.
@@ -445,6 +481,31 @@ export class WeeklyDigestService {
     return { metrics, sources };
   }
 
+  /**
+   * Ф1b — исторический тренд weekly-дайджеста из уже persisted-снимков.
+   * Берём до `weeks` последних строк за неделю ≤ текущей (`lte`), сортируем
+   * DESC по `weekStart` (строки YYYY-MM-DD лексикографически сортируемы),
+   * затем чистый маппер разворачивает их в old→new. Best-effort: любая
+   * ошибка БД → пустой тренд (не ломаем выдачу дайджеста).
+   */
+  private async buildWeeklyTrend(
+    tenantId: string,
+    weekStart: string,
+    weeks = 12,
+  ): Promise<WeeklyDigestTrendPointDto[]> {
+    try {
+      const rows = await this.prisma.weeklyOperationsDigest.findMany({
+        where: { tenantId, weekStart: { lte: weekStart } },
+        orderBy: { weekStart: 'desc' },
+        take: weeks,
+        select: { weekStart: true, metricsJson: true },
+      });
+      return mapWeeklyDigestRowsToTrend(rows);
+    } catch {
+      return [];
+    }
+  }
+
   /** Преобразование Prisma-row в DTO.
    *
    *  Pulse Wave 2 §2.2: 3 расширенных секции (kpiDeltas/teamDynamics/forecast)
@@ -481,6 +542,8 @@ export class WeeklyDigestService {
       // ТЗ-2 Ф3 — посекционные дельты, заполняются в enrichDto(). Пустой
       // дефолт type-корректен для ветки без enrich (unit-тесты).
       sectionDeltas: emptySectionDeltas(),
+      // Ф1b — реально заполняется enrichDto() → buildWeeklyTrend().
+      trend: [],
     };
   }
 
@@ -499,7 +562,10 @@ export class WeeklyDigestService {
         weekStart: dto.weekStart,
         weekEnd: dto.weekEnd,
       });
-      return { ...dto, ...sections };
+      // Ф1b — исторический тренд кладём в тот же ответ (один вызов фронта).
+      // buildWeeklyTrend сам глотает ошибку → [], так что enrich не падает.
+      const trend = await this.buildWeeklyTrend(dto.tenantId, dto.weekStart);
+      return { ...dto, ...sections, trend };
     } catch (err) {
       this.logger.warn(
         {

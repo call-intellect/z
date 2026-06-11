@@ -9,18 +9,21 @@ import {
   AlertCircle,
   ArrowRight,
   Brain,
+  Clock,
+  Handshake,
   HelpCircle,
   LayoutDashboard,
   Loader2,
   MessageCircle,
   RefreshCcw,
+  Smile,
   Sparkles,
   Target,
   TrendingUp,
   Users,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { orgsApi } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -53,7 +56,6 @@ import {
 } from '@/domain/director-dashboard';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
@@ -74,7 +76,16 @@ import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
 import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
 import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
-import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
+import {
+  CardTitle as ModernCardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+  MODERN_PAGE_BG,
+  StatCard,
+  glass,
+  kpiTone,
+} from '@/ui/components/dashboard/modern';
 import { GoalsTreeView } from '../goals/GoalsTreeView';
 import { ChatUsageWidget } from './widgets/ChatUsageWidget';
 import { GoalVectorVerdictWidget } from './widgets/GoalVectorVerdictWidget';
@@ -130,7 +141,7 @@ export function DirectorDashboardClient() {
         setData(directorDashboardFromApi(res));
       } catch (e) {
         const message =
-          e instanceof ApiError ? e.message : 'Не удалось загрузить дашборд';
+          humanizeApiError(e, 'Не удалось загрузить дашборд');
         setError(message);
       } finally {
         setLoading(false);
@@ -451,36 +462,65 @@ export function DirectorDashboardClient() {
             />
             <ChatUsageWidget />
 
-            {/* 2–4. Настроение · Обещания · Висящие решения. */}
+            {/* 2–4. Настроение · Обещания · Висящие решения (StatCard нового
+                визуального языка). */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <KpiHero
-                label="Настроение"
-                value={data?.kpiSentimentIndex?.value ?? 0}
-                numericValue={data?.kpiSentimentIndex?.value ?? 0}
-                sparkline={data?.kpiSentimentIndex?.sparkline}
-                trend={data?.kpiSentimentIndex?.trend}
-                threshold={{ green: 30, yellow: 0 }}
-                href="/dashboard/operations"
-              />
-              <KpiHero
-                label="Обещания"
-                value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
-                numericValue={data?.kpiCommitmentReliability?.value ?? 0}
-                format={(n) => `${Math.round(n)}%`}
-                sparkline={data?.kpiCommitmentReliability?.sparkline}
-                delta={data?.kpiCommitmentReliability?.delta}
-                deltaLabel="за 14 дней"
-                threshold={{ green: 80, yellow: 60 }}
-                href="/me?tab=promises"
-              />
-              <KpiHero
-                label="Висящие решения"
-                value={data?.kpiHangingDecisions?.value ?? 0}
-                numericValue={data?.kpiHangingDecisions?.value ?? 0}
-                sparkline={data?.kpiHangingDecisions?.sparkline}
-                threshold={{ green: 2, yellow: 5, inverted: true }}
-                href="/decisions?status=hanging"
-              />
+              {(() => {
+                const sentiment = data?.kpiSentimentIndex?.value ?? 0;
+                return (
+                  <StatCard
+                    icon={<Smile size={20} />}
+                    grad={GRAD.teal}
+                    label="Настроение"
+                    value={String(sentiment)}
+                    tone={kpiTone(sentiment, { green: 30, yellow: 0 })}
+                    spark={(data?.kpiSentimentIndex?.sparkline ?? []).map((v, i) => ({
+                      i,
+                      v: v ?? 0,
+                    }))}
+                    href="/dashboard/operations"
+                  />
+                );
+              })()}
+              {(() => {
+                const reliability = data?.kpiCommitmentReliability?.value ?? 0;
+                const d = data?.kpiCommitmentReliability?.delta;
+                const deltaStr =
+                  d != null
+                    ? `${d >= 0 ? '+' : ''}${Math.round(d)}`
+                    : undefined;
+                return (
+                  <StatCard
+                    icon={<Handshake size={20} />}
+                    grad={GRAD.blue}
+                    label="Обещания"
+                    value={`${reliability}%`}
+                    tone={kpiTone(reliability, { green: 80, yellow: 60 })}
+                    delta={deltaStr}
+                    up={d != null ? d >= 0 : undefined}
+                    spark={(data?.kpiCommitmentReliability?.sparkline ?? []).map(
+                      (v, i) => ({ i, v: v ?? 0 }),
+                    )}
+                    href="/me?tab=promises"
+                  />
+                );
+              })()}
+              {(() => {
+                const hanging = data?.kpiHangingDecisions?.value ?? 0;
+                return (
+                  <StatCard
+                    icon={<Clock size={20} />}
+                    grad={GRAD.amber}
+                    label="Висящие решения"
+                    value={String(hanging)}
+                    tone={kpiTone(hanging, { green: 2, yellow: 5, inverted: true })}
+                    spark={(data?.kpiHangingDecisions?.sparkline ?? []).map(
+                      (v, i) => ({ i, v: v ?? 0 }),
+                    )}
+                    href="/decisions?status=hanging"
+                  />
+                );
+              })()}
             </div>
 
             {/* 5–7. Компас (факт) · AI-сводка · Top-1 риск. */}
@@ -492,18 +532,22 @@ export function DirectorDashboardClient() {
                 goalsPulse={data?.goalsPulse ?? null}
               />
 
-              {/* 6. AI-сводка. */}
-              <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
-                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
+              {/* 6. AI-сводка. Богатый AiNarrativeWithSources (источники,
+                  кликабельные блоки) не помещается в AiCard (text:string), поэтому
+                  используем GlassCard glow со свечением — тот же визуальный язык. */}
+              <GlassCard glow className="p-4">
+                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest" style={{ color: CHART.violet }}>
                   <Sparkles size={12} aria-hidden />
                   <span>Сводка Коры</span>
                 </div>
                 {data?.narrativeSummary ? (
                   <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
                 ) : (
-                  <p className="text-xs text-fg-tertiary">Сводка Коры появится после первой встречи или анализа знаний.</p>
+                  <p className="text-xs" style={{ color: CHART.faint }}>
+                    Сводка Коры появится после первой встречи или анализа знаний.
+                  </p>
                 )}
-              </div>
+              </GlassCard>
 
               {/* 7. Top-1 риск. */}
               <TopRiskCard
@@ -756,8 +800,11 @@ function KnowledgeTab({
       </div>
 
       {/* Drill-down: остальные срезы знаний свёрнуты по умолчанию. */}
-      <details className="group mb-6 rounded-2xl border border-border-subtle/60 bg-bg-card">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium text-fg-secondary transition-colors hover:text-fg-primary">
+      <details className="group mb-6 overflow-hidden" style={glass()}>
+        <summary
+          className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium transition-colors"
+          style={{ color: CHART.dim }}
+        >
           <span>Подробнее: сигналы, темы, сущности, идеи</span>
           <ArrowRight
             size={16}
@@ -923,58 +970,64 @@ function SignalCountersWidget({
   }, [counters]);
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <TrendingUp size={16} className="text-accent" />
+    <GlassCard className="p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <ModernCardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
           Сигналы клиентов
-        </CardTitle>
+        </ModernCardTitle>
         {!loading && counters && (
-          <Badge variant="secondary">{total}</Badge>
-        )}
-      </CardHeader>
-      <CardContent>
-        {loading && <SkeletonList />}
-        {!loading && counters && total === 0 && (
-          <EmptyHint text="Сигналов от клиентов за период не зафиксировано." />
-        )}
-        {!loading && counters && total > 0 && (
-          <ul className="space-y-2">
-            {SIGNAL_COUNTERS_BUCKET_ORDER.map((key) => {
-              const v = counters[key] ?? 0;
-              const pct = max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 0;
-              return (
-                <li key={key} className="flex items-center gap-3 text-sm">
-                  <div className="w-32 shrink-0 truncate text-fg-secondary">
-                    {SIGNAL_COUNTERS_BUCKET_LABELS[key]}
-                  </div>
-                  <div className="relative flex-1 overflow-hidden rounded-full bg-bg-overlay/60">
-                    <div
-                      className={cn(
-                        'h-2 rounded-full',
-                        SIGNAL_COUNTERS_BUCKET_COLORS[key],
-                      )}
-                      style={{ width: v > 0 ? `${pct}%` : '0%' }}
-                    />
-                  </div>
-                  <div className="w-8 shrink-0 text-right text-xs tabular-nums text-fg-secondary">
-                    {v}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {!loading && counters && total > 0 && (
-          <p
-            className="mt-3 text-xs text-fg-tertiary"
-            title="Открытие подборки по типу сигнала появится в следующих версиях"
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
           >
-            Подборка по типу сигнала — vNext.
-          </p>
+            {total}
+          </span>
         )}
-      </CardContent>
-    </Card>
+      </div>
+      {loading && <SkeletonList />}
+      {!loading && counters && total === 0 && (
+        <EmptyHint text="Сигналов от клиентов за период не зафиксировано." />
+      )}
+      {!loading && counters && total > 0 && (
+        <ul className="space-y-2">
+          {SIGNAL_COUNTERS_BUCKET_ORDER.map((key) => {
+            const v = counters[key] ?? 0;
+            const pct = max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 0;
+            return (
+              <li key={key} className="flex items-center gap-3 text-sm">
+                <div className="w-32 shrink-0 truncate" style={{ color: CHART.dim }}>
+                  {SIGNAL_COUNTERS_BUCKET_LABELS[key]}
+                </div>
+                <div
+                  className="relative flex-1 overflow-hidden rounded-full"
+                  style={{ background: 'oklch(1 0 0 / 0.06)' }}
+                >
+                  <div
+                    className={cn('h-2 rounded-full', SIGNAL_COUNTERS_BUCKET_COLORS[key])}
+                    style={{ width: v > 0 ? `${pct}%` : '0%' }}
+                  />
+                </div>
+                <div
+                  className="w-8 shrink-0 text-right text-xs tabular-nums"
+                  style={{ color: CHART.dim }}
+                >
+                  {v}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!loading && counters && total > 0 && (
+        <p
+          className="mt-3 text-xs"
+          style={{ color: CHART.faint }}
+          title="Открытие подборки по типу сигнала появится в следующих версиях"
+        >
+          Подборка по типу сигнала — vNext.
+        </p>
+      )}
+    </GlassCard>
   );
 }
 
@@ -988,15 +1041,21 @@ function ActiveThemesWidget({
   themes: DirectorDashboardThemeDomain[];
 }) {
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <TrendingUp size={16} className="text-accent" />
+    <GlassCard className="p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <ModernCardTitle icon={<TrendingUp size={16} />} grad={GRAD.teal}>
           Активные темы
-        </CardTitle>
-        {!loading && <Badge variant="secondary">{themes.length}</Badge>}
-      </CardHeader>
-      <CardContent className="space-y-1">
+        </ModernCardTitle>
+        {!loading && (
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+          >
+            {themes.length}
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
         {loading && <SkeletonList />}
         {!loading && themes.length === 0 && (
           <EmptyHint text="Растущих тем сейчас нет." />
@@ -1006,10 +1065,10 @@ function ActiveThemesWidget({
             <Link
               key={t.id}
               href={`/themes/${encodeURIComponent(t.id)}`}
-              className="block rounded-md p-2 text-sm hover:bg-bg-overlay"
+              className="block rounded-lg p-2 text-sm transition-colors hover:bg-[oklch(1_0_0_/_0.06)]"
             >
               <div className="flex items-center gap-2">
-                <span className="truncate font-medium text-fg-primary">
+                <span className="truncate font-medium" style={{ color: CHART.text }}>
                   {t.name}
                 </span>
                 {t.dynamic === 'growing' && (
@@ -1018,7 +1077,10 @@ function ActiveThemesWidget({
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 flex items-center gap-2 text-xs text-fg-tertiary">
+              <div
+                className="mt-0.5 flex items-center gap-2 text-xs"
+                style={{ color: CHART.faint }}
+              >
                 {t.branch && (
                   <span>{THEME_BRANCH_LABELS[t.branch as ThemeBranch]}</span>
                 )}
@@ -1027,15 +1089,17 @@ function ActiveThemesWidget({
             </Link>
           ))}
         {!loading && themes.length > 0 && (
-          <Button asChild variant="ghost" size="sm" className="w-full justify-between">
-            <Link href="/themes">
-              Все темы
-              <ArrowRight size={14} />
-            </Link>
-          </Button>
+          <Link
+            href="/themes"
+            className="mt-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition-colors hover:bg-[oklch(1_0_0_/_0.06)]"
+            style={{ color: CHART.dim }}
+          >
+            Все темы
+            <ArrowRight size={14} />
+          </Link>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -1049,15 +1113,21 @@ function HotEntitiesWidget({
   entities: DirectorDashboardEntityDomain[];
 }) {
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users size={16} className="text-accent" />
+    <GlassCard className="p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <ModernCardTitle icon={<Users size={16} />} grad={GRAD.violet}>
           Главные сущности
-        </CardTitle>
-        {!loading && <Badge variant="secondary">{entities.length}</Badge>}
-      </CardHeader>
-      <CardContent className="space-y-1">
+        </ModernCardTitle>
+        {!loading && (
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+          >
+            {entities.length}
+          </span>
+        )}
+      </div>
+      <div className="space-y-1">
         {loading && <SkeletonList />}
         {!loading && entities.length === 0 && (
           <EmptyHint text="Сущностей с заметным ростом упоминаний за период нет." />
@@ -1066,24 +1136,24 @@ function HotEntitiesWidget({
           entities.slice(0, 10).map((e) => (
             <div
               key={e.id}
-              className="flex items-center justify-between gap-2 rounded-md p-2 text-sm"
+              className="flex items-center justify-between gap-2 rounded-lg p-2 text-sm"
               title="Страница сущности — vNext"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium text-fg-primary">
+                <span className="truncate font-medium" style={{ color: CHART.text }}>
                   {e.canonicalName}
                 </span>
                 <Badge variant="outline" className="text-[10px]">
                   {entityTypeLabel(e.type)}
                 </Badge>
               </div>
-              <span className="shrink-0 text-xs text-fg-tertiary">
+              <span className="shrink-0 text-xs" style={{ color: CHART.faint }}>
                 {e.recentMentions} упом.
               </span>
             </div>
           ))}
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -1097,15 +1167,21 @@ function OpenQuestionsWidget({
   questions: DirectorDashboardOpenQuestionDomain[];
 }) {
   return (
-    <Card className="lg:col-span-2">
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <HelpCircle size={16} className="text-accent" />
+    <GlassCard className="p-5 lg:col-span-2">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <ModernCardTitle icon={<HelpCircle size={16} />} grad={GRAD.amber}>
           Открытые вопросы
-        </CardTitle>
-        {!loading && <Badge variant="secondary">{questions.length}</Badge>}
-      </CardHeader>
-      <CardContent className="space-y-2">
+        </ModernCardTitle>
+        {!loading && (
+          <span
+            className="rounded-full px-2 py-0.5 text-xs font-medium"
+            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+          >
+            {questions.length}
+          </span>
+        )}
+      </div>
+      <div className="space-y-2">
         {loading && <SkeletonList />}
         {!loading && questions.length === 0 && (
           <EmptyHint text="Открытых вопросов (knowledge_gap) пока нет." />
@@ -1114,12 +1190,13 @@ function OpenQuestionsWidget({
           questions.slice(0, 10).map((q) => (
             <div
               key={q.id}
-              className="rounded-md border border-border-subtle/60 p-3 text-sm"
+              className="rounded-xl p-3 text-sm"
+              style={{ background: 'oklch(1 0 0 / 0.04)', border: '1px solid oklch(1 0 0 / 0.08)' }}
             >
-              <p className="font-medium text-fg-primary">
+              <p className="font-medium" style={{ color: CHART.text }}>
                 {q.criticalQuestion || q.name}
               </p>
-              <p className="mt-1 text-xs text-fg-tertiary">
+              <p className="mt-1 text-xs" style={{ color: CHART.faint }}>
                 Зафиксировано{' '}
                 {q.createdAt.toLocaleDateString('ru', {
                   day: '2-digit',
@@ -1128,8 +1205,8 @@ function OpenQuestionsWidget({
               </p>
             </div>
           ))}
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   personsDomainApi,
   rolesDomainApi,
@@ -111,7 +111,7 @@ export function Step3Client() {
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось сохранить сотрудников.';
+        humanizeApiError(e, 'Не удалось сохранить сотрудников.');
       toast.error(msg);
     } finally {
       setSubmitting(false);

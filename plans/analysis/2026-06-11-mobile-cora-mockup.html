@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кора — все мобильные экраны (руководитель + менеджер)</title>
+<style>
+  :root{
+    --bg:#0A0E14; --bg-2:#0d121b;
+    --surface:#141B27; --surface-2:#1b2433;
+    --border:rgba(255,255,255,.07); --border-2:rgba(255,255,255,.12);
+    --fg:#F2F5FA; --fg-2:#9AA6B6; --fg-3:#6b7787;
+    --violet:#7C5CFF; --violet-2:#9B7BFF; --mint:#34E2C0; --teal:#2DD4BF;
+    --red:#FF6B6B; --red-bg:rgba(255,107,107,.14);
+    --amber:#FFC247; --amber-bg:rgba(255,194,71,.14);
+    --green:#46E0A0; --green-bg:rgba(70,224,160,.14);
+    --shadow:0 28px 56px -22px rgba(0,0,0,.72);
+    font-synthesis:none;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:
+     radial-gradient(900px 600px at 12% -5%, rgba(124,92,255,.18), transparent 60%),
+     radial-gradient(900px 700px at 100% 0%, rgba(45,212,191,.10), transparent 55%),
+     var(--bg);
+    color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;line-height:1.45;min-height:100%}
+  .wrap{max-width:1280px;margin:0 auto;padding:38px 20px 90px}
+  .page-head{text-align:center;margin-bottom:6px}
+  .page-head .kicker{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--violet-2);
+    background:rgba(124,92,255,.10);border:1px solid rgba(124,92,255,.25);padding:6px 14px;border-radius:999px;font-weight:600}
+  .page-head h1{font-size:30px;font-weight:700;margin:18px 0 8px;letter-spacing:-.02em}
+  .page-head p{color:var(--fg-2);font-size:15.5px;max-width:740px;margin:0 auto}
+
+  .secband{max-width:1280px;margin:50px auto 6px;display:flex;align-items:center;gap:16px}
+  .secband h2{font-size:21px;font-weight:700;white-space:nowrap;letter-spacing:-.01em}
+  .secband .ln{flex:1;height:1px;background:var(--border-2)}
+  .secband .tag{font-size:12.5px;color:var(--fg-2);background:var(--surface);border:1px solid var(--border);padding:5px 12px;border-radius:999px;white-space:nowrap}
+
+  .stage{display:flex;gap:34px;justify-content:center;align-items:flex-start;flex-wrap:wrap;margin-top:26px}
+  .col{display:flex;flex-direction:column;align-items:center;gap:13px}
+  .col > .label{font-size:12.5px;color:var(--fg-3);text-align:center}
+  .col > .label b{color:var(--fg);font-size:14px;display:block;margin-bottom:1px}
+
+  .phone{width:320px;height:690px;border-radius:44px;padding:10px;background:linear-gradient(160deg,#222c3c,#0c1119);box-shadow:var(--shadow);position:relative;flex:0 0 auto}
+  .screen{position:relative;width:100%;height:100%;border-radius:35px;overflow:hidden;background:var(--bg-2);display:flex;flex-direction:column}
+  .notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:114px;height:24px;background:#05080d;border-radius:0 0 15px 15px;z-index:30}
+  .statusbar{height:40px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 21px 4px;font-size:12.5px;font-weight:600;color:var(--fg);z-index:20}
+  .statusbar .right{display:flex;gap:6px;align-items:center;opacity:.9}
+  .body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+  .scroll{flex:1;overflow:hidden;padding:6px 15px 0}
+
+  .apphead{display:flex;align-items:center;justify-content:space-between;padding:3px 2px 12px}
+  .apphead .hi{font-size:19px;font-weight:700;letter-spacing:-.02em}
+  .apphead .date{font-size:12px;color:var(--fg-3);margin-top:2px}
+  .brand{width:33px;height:33px;border-radius:11px;background:linear-gradient(150deg,var(--violet),var(--mint));display:grid;place-items:center;font-weight:800;color:#0b0f17;font-size:15px;flex:0 0 auto}
+
+  .scrhead{display:flex;align-items:center;justify-content:space-between;padding:3px 2px 13px}
+  .scrhead .ti{font-size:20px;font-weight:700;letter-spacing:-.01em}
+  .scrhead .ti small{display:block;font-size:11.5px;color:var(--fg-3);font-weight:500;margin-top:2px}
+  .backhead{display:flex;align-items:center;gap:11px;padding:3px 2px 13px}
+  .backhead .bk{width:33px;height:33px;border-radius:11px;background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;flex:0 0 auto}
+
+  .needstrip{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    background:linear-gradient(135deg,rgba(255,107,107,.16),rgba(124,92,255,.16));border:1px solid rgba(124,92,255,.30);border-radius:14px;padding:11px 13px;margin-bottom:12px}
+  .needstrip .l{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:700}
+  .needstrip .badge{min-width:22px;height:22px;padding:0 7px;border-radius:7px;background:var(--red);color:#2a0c0c;font-size:13px;font-weight:800;display:grid;place-items:center}
+  .needstrip .go{color:var(--violet-2);font-size:13px;font-weight:700;white-space:nowrap}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .zone{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:12px 13px;min-height:106px;display:flex;flex-direction:column;justify-content:space-between}
+  .zone .ztop{display:flex;align-items:center;justify-content:space-between}
+  .zone .lab{font-size:10.5px;letter-spacing:.10em;text-transform:uppercase;color:var(--fg-3);font-weight:700}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.red{background:var(--red);box-shadow:0 0 0 4px var(--red-bg)}
+  .dot.amber{background:var(--amber);box-shadow:0 0 0 4px var(--amber-bg)}
+  .dot.green{background:var(--green);box-shadow:0 0 0 4px var(--green-bg)}
+  .zone .big{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1;margin-top:7px;display:flex;align-items:baseline;gap:6px}
+  .zone .big small{font-size:12.5px;font-weight:600;color:var(--fg-2)}
+  .zone .sub{font-size:11.5px;color:var(--fg-3);margin-top:7px;line-height:1.35}
+  .zone .sub .up{color:var(--green);font-weight:700}
+  .gaugewrap{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .gaugewrap .gv{font-size:23px;font-weight:800}
+
+  .wide{background:linear-gradient(135deg,rgba(52,226,192,.10),rgba(124,92,255,.10));border:1px solid rgba(52,226,192,.22);border-radius:16px;padding:12px 14px;margin-top:10px;display:flex;align-items:center;gap:12px}
+  .wide .ic{width:33px;height:33px;border-radius:10px;background:rgba(52,226,192,.16);display:grid;place-items:center;flex:0 0 auto}
+  .wide .tx .h{font-size:11.5px;color:var(--fg-2);font-weight:600}
+  .wide .tx .n{font-size:12.5px;color:var(--fg);font-weight:700;margin-top:2px}
+
+  .ask{margin:13px 0 6px;display:flex;align-items:center;gap:11px;border-radius:16px;padding:12px 13px;
+    background:linear-gradient(135deg,rgba(52,226,192,.16),rgba(124,92,255,.16));border:1px solid rgba(124,92,255,.30)}
+  .ask .mic{width:37px;height:37px;border-radius:12px;background:linear-gradient(150deg,var(--mint),var(--teal));display:grid;place-items:center;flex:0 0 auto}
+  .ask .ph{font-size:13px;color:var(--fg-2)}
+  .ask .ph b{color:var(--fg);font-weight:700;display:block;font-size:13.5px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}
+  .chip{font-size:11.5px;color:var(--fg-2);background:var(--surface);border:1px solid var(--border-2);padding:7px 11px;border-radius:999px}
+
+  .sectitle{font-size:11px;letter-spacing:.10em;text-transform:uppercase;color:var(--fg-3);font-weight:700;margin:15px 2px 9px}
+
+  .minibar{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:11px 13px;margin-bottom:12px;display:flex;align-items:center}
+  .minibar .a{font-size:13px;font-weight:700}
+  .minibar .b{font-size:13px;font-weight:800;color:var(--green)}
+  .minibar .bar{flex:1;height:7px;border-radius:999px;background:rgba(255,255,255,.08);margin:0 12px;overflow:hidden}
+  .minibar .bar > i{display:block;height:100%;width:82%;border-radius:999px;background:linear-gradient(90deg,var(--teal),var(--green))}
+
+  .segs{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap}
+  .seg{font-size:12px;font-weight:600;padding:8px 11px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--fg-2)}
+  .seg.on{background:rgba(124,92,255,.16);border-color:rgba(124,92,255,.30);color:var(--violet-2)}
+
+  .litem{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:11px 12px;display:flex;align-items:center;gap:11px;margin-bottom:9px}
+  .litem .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(150deg,#34405a,#1b2433);display:grid;place-items:center;font-weight:700;font-size:12.5px;color:var(--fg-2);flex:0 0 auto}
+  .litem .m{flex:1;min-width:0}
+  .litem .m .t{font-size:13.5px;font-weight:600}
+  .litem .m .s{font-size:12px;color:var(--fg-3);margin-top:2px}
+  .pill{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;flex:0 0 auto}
+  .pill.red{color:var(--red);background:var(--red-bg)}
+  .pill.amber{color:var(--amber);background:var(--amber-bg)}
+  .pill.green{color:var(--green);background:var(--green-bg)}
+  .pill.soft{color:var(--fg-2);background:var(--surface-2)}
+
+  .goalhero{background:linear-gradient(150deg,rgba(124,92,255,.20),rgba(45,212,191,.12));border:1px solid rgba(124,92,255,.30);border-radius:20px;padding:15px;display:flex;gap:13px;align-items:center;margin-bottom:14px}
+  .goalhero .gv{font-size:30px;font-weight:800}
+  .goalhero .gt{font-size:13.5px;font-weight:700;line-height:1.3}
+  .goalhero .gt small{display:block;font-size:12px;color:var(--amber);font-weight:600;margin-top:4px}
+  .kr{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 13px;margin-bottom:9px}
+  .kr .r{display:flex;justify-content:space-between;align-items:baseline}
+  .kr .r .t{font-size:13px;font-weight:600}
+  .kr .r .p{font-size:13px;font-weight:800}
+  .kr .bar2{height:7px;border-radius:999px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+  .kr .bar2 > i{display:block;height:100%;border-radius:999px}
+
+  .chat{display:flex;flex-direction:column;gap:9px;padding-top:2px}
+  .msg{max-width:85%;padding:10px 13px;border-radius:16px;font-size:13px;line-height:1.5}
+  .msg.user{align-self:flex-end;background:linear-gradient(135deg,var(--violet),#5a45e0);color:#fff;border-bottom-right-radius:5px}
+  .msg.bot{align-self:flex-start;background:var(--surface);border:1px solid var(--border);border-bottom-left-radius:5px}
+  .cite{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:11px;color:var(--mint);background:rgba(52,226,192,.10);border:1px solid rgba(52,226,192,.22);padding:4px 9px;border-radius:999px}
+  .sugg{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .sugg .s{background:var(--surface);border:1px solid var(--border-2);border-radius:13px;padding:12px 13px;font-size:13px;color:var(--fg);display:flex;align-items:center;justify-content:space-between}
+  .sugg .s .ar{color:var(--fg-3)}
+  .inputbar{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border-2);border-radius:14px;padding:10px 11px;margin-top:11px}
+  .inputbar .pl{flex:1;font-size:12.5px;color:var(--fg-3)}
+  .inputbar .m{width:31px;height:31px;border-radius:9px;background:linear-gradient(150deg,var(--mint),var(--teal));display:grid;place-items:center;flex:0 0 auto}
+
+  .gostrip{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(52,226,192,.12));border:1px solid rgba(124,92,255,.28);border-radius:14px;padding:11px 13px;margin-bottom:13px}
+  .gostrip .l{font-size:13.5px;font-weight:700}
+  .gostrip .l small{display:block;font-weight:500;color:var(--fg-2);font-size:11.5px;margin-top:1px}
+  .gostrip .go{color:var(--violet-2);font-size:18px;font-weight:700}
+
+  .checkin{border-radius:18px;padding:15px;background:linear-gradient(150deg,#7C5CFF,#5a45e0);position:relative;overflow:hidden}
+  .checkin::after{content:"";position:absolute;left:-30px;bottom:-50px;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,rgba(52,226,192,.45),transparent 65%);opacity:.5}
+  .checkin .q{font-size:15px;font-weight:700;color:#fff;position:relative;z-index:2}
+  .checkin .field{margin-top:11px;display:flex;align-items:center;gap:9px;background:rgba(8,10,18,.55);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:11px 12px;position:relative;z-index:2}
+  .checkin .field .pl{flex:1;font-size:13px;color:rgba(255,255,255,.62)}
+  .checkin .field .m{width:30px;height:30px;border-radius:9px;background:rgba(52,226,192,.9);display:grid;place-items:center}
+  .checkin .hint{font-size:11.5px;color:rgba(255,255,255,.72);margin-top:8px;position:relative;z-index:2}
+  .softcard{background:var(--surface);border:1px dashed var(--border-2);border-radius:14px;padding:13px;color:var(--fg-3);font-size:13px;display:flex;align-items:center;gap:10px;margin-top:10px}
+  .dayitem{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:10px 12px;margin-bottom:8px}
+  .dayitem .dt{font-size:12.5px;font-weight:700;width:62px;color:var(--fg-2)}
+  .dayitem .st{font-size:12.5px;color:var(--fg-2);flex:1}
+  .dayitem .ok{color:var(--green);font-weight:700}
+
+  .progress{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}
+  .progress .row1{display:flex;justify-content:space-between;align-items:baseline}
+  .progress .row1 .a{font-size:14px;font-weight:700}
+  .progress .row1 .b{font-size:13px;font-weight:700;color:var(--green)}
+  .bar{height:9px;border-radius:999px;background:rgba(255,255,255,.08);margin-top:10px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:80%;border-radius:999px;background:linear-gradient(90deg,var(--teal),var(--green))}
+  .progress .sub{font-size:12.5px;color:var(--fg-2);margin-top:9px}
+  .progress .sub b{color:var(--fg)}
+  .stack{display:flex;flex-direction:column;gap:9px}
+  .todo{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 13px;display:flex;align-items:center;gap:11px;overflow:hidden}
+  .todo .swipehint{position:absolute;right:0;top:0;bottom:0;width:82px;background:linear-gradient(90deg,transparent,var(--green-bg));display:flex;align-items:center;justify-content:flex-end;padding-right:13px;font-size:11px;color:var(--green);font-weight:700}
+  .todo .check{width:21px;height:21px;border-radius:7px;border:2px solid var(--border-2);flex:0 0 auto}
+  .todo.done .check{background:var(--green);border-color:var(--green)}
+  .todo .tt{flex:1}
+  .todo .tt .t{font-size:13.5px;font-weight:600}
+  .todo .tt .s{font-size:12px;color:var(--fg-3);margin-top:2px}
+  .recog{display:flex;align-items:center;gap:10px;background:rgba(52,226,192,.08);border:1px solid rgba(52,226,192,.18);border-radius:14px;padding:11px 13px;margin-top:12px}
+  .recog .ic{width:30px;height:30px;border-radius:9px;background:rgba(52,226,192,.16);display:grid;place-items:center;flex:0 0 auto}
+  .recog .tx{font-size:12.5px;color:var(--fg-2)}
+  .recog .tx b{color:var(--fg)}
+
+  .searchbar{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border-2);border-radius:13px;padding:10px 12px;margin-bottom:14px}
+  .searchbar .pl{flex:1;font-size:13px;color:var(--fg-3)}
+  .feeditem{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 13px;margin-bottom:9px}
+  .ftag{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:6px}
+  .ftag.dec{color:var(--violet-2);background:rgba(124,92,255,.13)}
+  .ftag.agr{color:var(--mint);background:rgba(52,226,192,.13)}
+  .feeditem .t{font-size:13.5px;font-weight:600;margin-top:8px;line-height:1.35}
+  .feeditem .s{font-size:11.5px;color:var(--fg-3);margin-top:4px}
+
+  .tabbar{height:60px;border-top:1px solid var(--border);background:rgba(10,14,20,.84);backdrop-filter:blur(12px);display:flex;align-items:stretch;z-index:20}
+  .tabbar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:9.5px;color:var(--fg-3);text-decoration:none;font-weight:600}
+  .tabbar a.on{color:var(--mint)}
+  .tabbar a svg{width:20px;height:20px}
+  .fade{height:16px;background:linear-gradient(transparent,var(--bg-2));margin-top:-16px;position:relative;z-index:5}
+
+  .note{max-width:840px;margin:24px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:15px 20px;color:var(--fg-2);font-size:13.5px;text-align:center}
+  .note b{color:var(--fg)}
+  .foot{max-width:900px;margin:24px auto 0;color:var(--fg-3);font-size:12px;text-align:center}
+  @media(max-width:680px){.page-head h1{font-size:23px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="page-head">
+    <span class="kicker">● Полный набор экранов · макет для обсуждения</span>
+    <h1>Кора на телефоне — всё приложение</h1>
+    <p>Сверху — <b>5 экранов руководителя</b> (вкладки снизу: Обзор · Команда · Дела · Цели · Спросить). Ниже — <b>4 экрана менеджера</b> (Моё · Чек-ин · Спросить · Память). Полные сводные страницы и настройки остаются на компьютере.</p>
+  </div>
+
+  <!-- ════════════════════ РУКОВОДИТЕЛЬ ════════════════════ -->
+  <div class="secband"><h2>Руководитель</h2><span class="ln"></span><span class="tag">5 экранов · картина компании → вглубь</span></div>
+  <div class="stage">
+
+    <!-- 1. ОБЗОР -->
+    <div class="col">
+      <div class="label"><b>1 · Обзор</b>картина компании</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:04</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="apphead"><div><div class="hi">Компания сегодня</div><div class="date">Среда, 11 июня · доброе утро, Сергей</div></div><div class="brand">К</div></div>
+          <div class="needstrip"><div class="l"><span class="badge">3</span>Требует тебя сейчас</div><span class="go">смотреть →</span></div>
+          <div class="grid">
+            <div class="zone"><div class="ztop"><span class="lab">Команда</span><span class="dot green"></span></div><div class="big">18<small>/ 20 в строю</small></div><div class="sub">Настроение ровное · <span style="color:var(--amber)">2 — нужна помощь</span></div></div>
+            <div class="zone"><div class="ztop"><span class="lab">Дела</span><span class="dot amber"></span></div><div class="big">82%<small>слово</small></div><div class="sub"><span class="up">↑ за неделю</span> · просрочено 5</div></div>
+            <div class="zone"><div class="ztop"><span class="lab">Главная цель</span><span class="dot amber"></span></div><div class="gaugewrap"><svg width="68" height="37" viewBox="0 0 96 52"><path d="M8 48 A40 40 0 0 1 88 48" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="9" stroke-linecap="round"/><path d="M8 48 A40 40 0 0 1 74 14" fill="none" stroke="#FFC247" stroke-width="9" stroke-linecap="round"/></svg><span class="gv">64%</span></div><div class="sub">Идём с отставанием</div></div>
+            <div class="zone"><div class="ztop"><span class="lab">Что мешает</span><span class="dot red"></span></div><div class="big">3<small>блокера</small></div><div class="sub">Топ: поставка, 4-й день</div></div>
+          </div>
+          <div class="wide"><div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5L12 16l-5 2.7 1-5.5-4-3.9 5.5-.8z"/></svg></div><div class="tx"><div class="h">Кора сделала за неделю</div><div class="n">12 встреч · 47 задач · 30 ответов</div></div></div>
+          <div class="ask"><div class="mic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0b0f17" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></div><div class="ph"><b>Спросить Кору</b>по памяти компании</div></div>
+          <div class="chips"><span class="chip">Сводка за неделю</span><span class="chip">Риски по проекту</span></div><div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Обзор</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17.5" cy="9" r="2.5"/></svg>Команда</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Дела</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Цели</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 2. КОМАНДА -->
+    <div class="col">
+      <div class="label"><b>2 · Команда</b>люди и настроение</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:05</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Команда<small>18 из 20 в строю · 2 нужна помощь</small></div><div class="brand">К</div></div>
+          <div class="segs"><span class="seg on">Нужна помощь · 2</span><span class="seg">Все · 20</span><span class="seg">Отделы</span></div>
+          <div class="litem"><div class="av">ПС</div><div class="m"><div class="t">Пётр Седов</div><div class="s">Менеджер · молчит 3 дня</div></div><span class="dot red"></span></div>
+          <div class="litem"><div class="av">ИК</div><div class="m"><div class="t">Иван Котов</div><div class="s">Руков. продаж · настроение ↓ · слово 70%</div></div><span class="dot amber"></span></div>
+          <div class="sectitle">Остальные</div>
+          <div class="litem"><div class="av">МД</div><div class="m"><div class="t">Мария Дрозд</div><div class="s">Маркетолог · держит слово 95%</div></div><span class="dot green"></span></div>
+          <div class="litem"><div class="av">АН</div><div class="m"><div class="t">Антон Новак</div><div class="s">Разработчик · перегружен</div></div><span class="dot amber"></span></div>
+          <div class="litem"><div class="av">ЕВ</div><div class="m"><div class="t">Елена Власова</div><div class="s">Дизайнер · в порядке</div></div><span class="dot green"></span></div>
+          <div class="litem"><div class="av">ОП</div><div class="m"><div class="t">Ольга Панина</div><div class="s">Бухгалтер · в порядке</div></div><span class="dot green"></span></div>
+          <div style="font-size:11px;color:var(--fg-3);text-align:center;margin-top:4px">Нажми человека → его карточка, чем помочь</div><div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Обзор</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17.5" cy="9" r="2.5"/></svg>Команда</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Дела</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Цели</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 3. ДЕЛА -->
+    <div class="col">
+      <div class="label"><b>3 · Дела</b>исполнение, кто держит слово</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:05</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Дела<small>исполнение по команде</small></div><div class="brand">К</div></div>
+          <div class="minibar"><span class="a">Держат слово</span><span class="bar"><i></i></span><span class="b">82%</span></div>
+          <div class="segs"><span class="seg on">Просрочено · 5</span><span class="seg">Сегодня · 9</span><span class="seg">Неделя</span></div>
+          <div class="litem"><div class="av">ПС</div><div class="m"><div class="t">Смета по «Северному»</div><div class="s">Пётр С. · просрочено 2 дня</div></div><span class="pill red">−2 дня</span></div>
+          <div class="litem"><div class="av">ИК</div><div class="m"><div class="t">Отчёт для совета</div><div class="s">Иван К. · срок был вчера</div></div><span class="pill red">−1 день</span></div>
+          <div class="litem"><div class="av">ЕВ</div><div class="m"><div class="t">Вопрос с доступами</div><div class="s">Елена В. · обещано 5 июня</div></div><span class="pill red">−4 дня</span></div>
+          <div class="litem"><div class="av">МД</div><div class="m"><div class="t">Договор с подрядчиком</div><div class="s">Мария Д. · обещано на пн</div></div><span class="pill amber">горит</span></div>
+          <div class="litem"><div class="av">АН</div><div class="m"><div class="t">Согласовать бюджет</div><div class="s">Антон Н. · обещано на вт</div></div><span class="pill amber">горит</span></div>
+          <div style="font-size:11px;color:var(--fg-3);text-align:center;margin-top:4px">Нажми строку → детали, кому написать, перенести срок</div><div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Обзор</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17.5" cy="9" r="2.5"/></svg>Команда</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Дела</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Цели</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 4. ЦЕЛИ -->
+    <div class="col">
+      <div class="label"><b>4 · Цели</b>идём ли к главной</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:06</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Цели<small>1 главная · 4 ключевых результата</small></div><div class="brand">К</div></div>
+          <div class="goalhero">
+            <svg width="78" height="42" viewBox="0 0 96 52"><path d="M8 48 A40 40 0 0 1 88 48" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="9" stroke-linecap="round"/><path d="M8 48 A40 40 0 0 1 74 14" fill="none" stroke="#FFC247" stroke-width="9" stroke-linecap="round"/></svg>
+            <div><div class="gv" style="color:var(--amber)">64%</div><div class="gt">Выручка 80 млн ₽ к декабрю<small>Идём с отставанием · нужно +6% в мес.</small></div></div>
+          </div>
+          <div class="sectitle">Ключевые результаты</div>
+          <div class="kr"><div class="r"><span class="t">Выручка, ₽</span><span class="p" style="color:var(--amber)">64%</span></div><div class="bar2"><i style="width:64%;background:linear-gradient(90deg,#e0a83a,var(--amber))"></i></div></div>
+          <div class="kr"><div class="r"><span class="t">Новые клиенты</span><span class="p" style="color:var(--green)">72%</span></div><div class="bar2"><i style="width:72%;background:linear-gradient(90deg,var(--teal),var(--green))"></i></div></div>
+          <div class="kr"><div class="r"><span class="t">Запуск нового продукта</span><span class="p" style="color:var(--red)">40%</span></div><div class="bar2"><i style="width:40%;background:linear-gradient(90deg,#d65a5a,var(--red))"></i></div></div>
+          <div class="kr"><div class="r"><span class="t">Удержание клиентов</span><span class="p" style="color:var(--green)">88%</span></div><div class="bar2"><i style="width:88%;background:linear-gradient(90deg,var(--teal),var(--green))"></i></div></div>
+          <div style="font-size:11px;color:var(--fg-3);text-align:center;margin-top:6px">Нажми результат → вклад отделов и что тормозит</div><div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Обзор</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17.5" cy="9" r="2.5"/></svg>Команда</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Дела</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Цели</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 5. СПРОСИТЬ -->
+    <div class="col">
+      <div class="label"><b>5 · Спросить</b>помощник по памяти</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:07</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Помощник компании<small>помнит за всю команду</small></div><div class="brand">К</div></div>
+          <div class="chat">
+            <div class="msg user">Что решили по поставке из Китая?</div>
+            <div class="msg bot">Перешли на другого поставщика и заложили +2 недели на логистику. Ответственный — Иван.<br><span class="cite">⛓ из встречи 6 июня</span></div>
+          </div>
+          <div class="sectitle">Спросить быстро</div>
+          <div class="sugg">
+            <div class="s">Сводка за неделю<span class="ar">→</span></div>
+            <div class="s">Риски по проекту «Альфа»<span class="ar">→</span></div>
+            <div class="s">Кто не сдал обещание<span class="ar">→</span></div>
+          </div>
+          <div class="inputbar"><span class="pl">Спросите голосом или текстом…</span><span class="m"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0b0f17" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span></div>
+          <div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Обзор</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><circle cx="17.5" cy="9" r="2.5"/></svg>Команда</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Дела</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Цели</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+        </div>
+      </div></div></div>
+    </div>
+
+  </div>
+
+  <!-- ════════════════════ МЕНЕДЖЕР ════════════════════ -->
+  <div class="secband"><h2>Менеджер / сотрудник</h2><span class="ln"></span><span class="tag">4 экрана · мой день, без слежки</span></div>
+  <div class="stage">
+
+    <!-- 1. МОЁ -->
+    <div class="col">
+      <div class="label"><b>1 · Моё</b>мой день и прогресс</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:04</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="apphead"><div><div class="hi">Доброе утро, Анна</div><div class="date">Среда, 11 июня</div></div><div class="brand">К</div></div>
+          <div class="gostrip"><div class="l">Сделать чек-ин дня<small>30 секунд — что в фокусе</small></div><span class="go">→</span></div>
+          <div class="sectitle">Ты на этой неделе</div>
+          <div class="progress"><div class="row1"><span class="a">Держишь слово</span><span class="b">4 из 5</span></div><div class="bar"><i></i></div><div class="sub">Осталось закрыть <b>1</b>. Дальше: отчёт по клиенту ниже — срок завтра.</div></div>
+          <div class="sectitle">Под рукой — сегодня</div>
+          <div class="stack">
+            <div class="todo"><span class="check"></span><div class="tt"><div class="t">Отчёт по клиенту «Северный»</div><div class="s">Срок завтра · обещано на встрече</div></div><span class="pill amber">завтра</span><div class="swipehint">✓ готово</div></div>
+            <div class="todo"><span class="check"></span><div class="tt"><div class="t">Согласовать макет</div><div class="s">Сегодня</div></div><span class="pill soft">сегодня</span></div>
+            <div class="todo done"><span class="check"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0b0f17" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-11"/></svg></span><div class="tt"><div class="t" style="color:var(--fg-3);text-decoration:line-through">Отправить смету</div></div><span class="pill soft">готово</span></div>
+          </div>
+          <div style="font-size:11px;color:var(--fg-3);margin-top:8px;text-align:center">Смахни вправо — «готово», влево — «перенести»</div>
+          <div class="recog"><div class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5L12 16l-5 2.7 1-5.5-4-3.9 5.5-.8z"/></svg></div><div class="tx"><b>Кора отметила:</b> твой чек-ин вчера прочитал руководитель</div></div>
+          <div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Моё</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Чек-ин</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Память</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 2. ЧЕК-ИН -->
+    <div class="col">
+      <div class="label"><b>2 · Чек-ин</b>ритуал утро / вечер</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:04</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Чек-ин дня<small>утром — план · вечером — итог</small></div><div class="brand">К</div></div>
+          <div class="checkin">
+            <div class="q">Что в фокусе сегодня?</div>
+            <div class="field"><div class="pl">Наговори или напиши 1–2 строки…</div><div class="m"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0b0f17" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></div></div>
+            <div class="hint">Без кнопок-вариантов — просто своими словами</div>
+          </div>
+          <div class="softcard"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--fg-3)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Вечерний чек-ин «Как прошёл день?» откроется в 18:00</div>
+          <div class="sectitle">Недавние</div>
+          <div class="dayitem"><span class="dt">Вт 10 июн</span><span class="st">План и итог</span><span class="ok">✓ на связи</span></div>
+          <div class="dayitem"><span class="dt">Пн 9 июн</span><span class="st">План и итог</span><span class="ok">✓ на связи</span></div>
+          <div class="dayitem"><span class="dt">Пт 6 июн</span><span class="st">Только утро</span><span style="color:var(--fg-3)">— </span></div>
+          <div style="font-size:11.5px;color:var(--mint);text-align:center;margin-top:6px">🌱 На связи стабильно — спасибо</div>
+          <div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Моё</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Чек-ин</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Память</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 3. СПРОСИТЬ -->
+    <div class="col">
+      <div class="label"><b>3 · Спросить</b>помощник и клон должности</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:05</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Спросить<small>помощник и клон твоей должности</small></div><div class="brand">К</div></div>
+          <div class="chat">
+            <div class="msg user">Как у нас оформляют отпуск?</div>
+            <div class="msg bot">Заявление за 2 недели руководителю, затем согласование с бухгалтерией. Шаблон — в разделе «Документы».<br><span class="cite">⛓ регламент, обновлён 3 июня</span></div>
+          </div>
+          <div class="sectitle">Спросить быстро</div>
+          <div class="sugg">
+            <div class="s">Что решили по проекту «Б»<span class="ar">→</span></div>
+            <div class="s">Кто отвечает за доступы<span class="ar">→</span></div>
+            <div class="s">Спросить клон моей должности<span class="ar">→</span></div>
+          </div>
+          <div class="inputbar"><span class="pl">Спросите голосом или текстом…</span><span class="m"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0b0f17" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span></div>
+          <div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Моё</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Чек-ин</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Память</a>
+        </div>
+      </div></div></div>
+    </div>
+
+    <!-- 4. ПАМЯТЬ -->
+    <div class="col">
+      <div class="label"><b>4 · Память</b>решения и договорённости</div>
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="statusbar"><span>9:06</span><span class="right">5G&nbsp;&nbsp;■■■&nbsp;&nbsp;84%</span></div>
+        <div class="body"><div class="scroll">
+          <div class="scrhead"><div class="ti">Память компании<small>что важного решили</small></div><div class="brand">К</div></div>
+          <div class="searchbar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--fg-3)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><span class="pl">Найти решение, договорённость, факт…</span></div>
+          <div class="sectitle">Свежее</div>
+          <div class="feeditem"><span class="ftag dec">Решение</span><div class="t">Переходим на новый процесс согласования счетов</div><div class="s">9 июня · из планёрки · ответственный — Ольга</div></div>
+          <div class="feeditem"><span class="ftag agr">Договорённость</span><div class="t">Отчёты сдаём до пятницы 18:00</div><div class="s">6 июня · касается всей команды</div></div>
+          <div class="feeditem"><span class="ftag dec">Решение</span><div class="t">Новый поставщик для поставок из Китая</div><div class="s">6 июня · +2 недели на логистику</div></div>
+          <div class="feeditem"><span class="ftag agr">Договорённость</span><div class="t">Дизайн-ревью по вторникам</div><div class="s">4 июня · команда продукта</div></div>
+          <div style="height:12px"></div>
+        </div><div class="fade"></div>
+        <div class="tabbar">
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Моё</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7H3V5h12"/></svg>Чек-ин</a>
+          <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8 8 0 0 1-11 7L4 21l1.5-5A8 8 0 1 1 21 11.5z"/></svg>Спросить</a>
+          <a class="on" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Память</a>
+        </div>
+      </div></div></div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>Навигация — вкладками снизу, не «листанием».</b> Руководитель: Обзор → Команда / Дела / Цели — проваливаешься по нажатию, назад стрелкой. Менеджер: Моё / Чек-ин / Спросить / Память. На обоих сторонах «Спросить» — память компании голосом или текстом (ответ только текстом). Свайп используем лишь внутри экрана (смахнуть карточку, листать недели), не для перехода между разделами.
+  </div>
+  <div class="foot">Макет к аналитике <b>plans/analysis/2026-06-11-mobile-cora-exec-manager-value.md</b>. Цвета, иконки и числа — черновые, для обсуждения сути.</div>
+
+</div>
+</body>
+</html>

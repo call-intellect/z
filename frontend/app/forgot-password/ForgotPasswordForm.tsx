@@ -5,7 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
 import { accountsApi } from '@/api/accounts.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -29,7 +29,7 @@ export function ForgotPasswordForm() {
       setSubmitted(true);
     } catch (err) {
       if (err instanceof ApiError) {
-        toast.error(err.message);
+        toast.error(humanizeApiError(err));
       } else {
         toast.error('Не удалось отправить запрос. Попробуйте ещё раз.');
       }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   insightsApi,
   type InsightDynamicApi,
@@ -48,7 +48,7 @@ export function InsightsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -155,7 +155,7 @@ function InsightsListContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);
@@ -176,7 +176,7 @@ function InsightsListContent() {
       setDetail(mapped);
       setMitigationDraft(mapped.mitigationPlan ?? '');
     } catch (e) {
-      setDetailError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setDetailError(humanizeApiError(e, 'Ошибка загрузки'));
     } finally {
       setDetailLoading(false);
     }

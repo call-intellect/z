@@ -169,6 +169,20 @@ export function SprintsListClient() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
 
+  // Мобильный ли вьюпорт. ВАЖНО: превью-Sheet (с затемняющим оверлеем) должен
+  // открываться ТОЛЬКО на мобильном. На desktop превью живёт в правой колонке;
+  // если бы Sheet открывался и на desktop, его полноэкранный оверлей
+  // (bg-black/60 backdrop-blur) затемнял бы весь экран («мутный экран»).
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
   // Состояние из URL
   const filters = useMemo(
     () => parseFilters(new URLSearchParams(searchParams?.toString() ?? '')),
@@ -315,9 +329,10 @@ export function SprintsListClient() {
         </div>
       </div>
 
-      {/* Mobile sheet с preview */}
+      {/* Mobile sheet с preview — только на мобильном вьюпорте (на desktop
+          превью в правой колонке; иначе оверлей Sheet затемнит весь экран). */}
       <Sheet
-        open={Boolean(selectedSprint) && typeof window !== 'undefined'}
+        open={isMobile && Boolean(selectedSprint)}
         onOpenChange={(o) => {
           if (!o) updateFilters({ selected: null });
         }}

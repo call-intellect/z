@@ -18,10 +18,20 @@ export const TOOL_NAME = 'extract_team';
 export const SCHEMA = z
   .object({
     discussed: z.array(z.string()),
-    decisions: z.array(z.string()),
+    decisions: z.array(
+      z
+        .object({
+          text: z.string(),
+          speaker: z.string().nullable(),
+          changes_what: z.string().nullable(),
+        })
+        .strict(),
+    ),
     tasks: z.array(TaskItemSchema),
     blockers: z.array(z.string()),
     next_step: z.string().nullable(),
+    ideas: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -30,11 +40,21 @@ export type TeamReport = z.infer<typeof SCHEMA>;
 const SYSTEM = `Ты — деловой ассистент. Это командная встреча.
 Извлеки структурированный отчёт. Все поля — на русском, без оценочных суждений.
 - "discussed": темы, которые обсуждались (список коротких пунктов).
-- "decisions": принятые решения (список).
+- "decisions": принятые решения — список объектов { text, speaker, changes_what }:
+  - text — формулировка решения;
+  - speaker — кто принял решение (имя/роль) или null, если не названо;
+  - changes_what — что меняет это решение (на что влияет) или null, если не ясно.
 - "tasks": задачи с ответственными и сроками. assignee/dueDate — null, если не названы.
 - "blockers": блокеры/риски, упомянутые на встрече.
 - "next_step": следующий шаг команды или null, если не определён.
-Если поле пустое — вернуть пустой массив (для строковых null допустим только если так указано).`;
+Если поле пустое — вернуть пустой массив (для строковых null допустим только если так указано).
+
+Само-проверка и различения:
+Различай: «решили» (зафиксированное решение) ≠ «обсудили» (вариант без фиксации) ≠ «предложили» (идея). Задача — только обязательство с ответственным; идея/пожелание задачей не считается. Если ответственный/срок не назван — пиши «не уточнено» (это сигнал, не выдумывай). Не было решений/задач — честно «не зафиксировано», не натягивай структуру.
+
+Дополнительно:
+- "ideas": идеи и предложения, которые прозвучали, но НЕ стали задачами и НЕ были зафиксированы как решения (пожелания, «надо бы», варианты на будущее). Пустой массив, если таких не было.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -48,7 +68,19 @@ export const TOOL = buildExtractTool(
   'Извлечь структурированный отчёт командной встречи',
   {
     discussed: fieldStringArray,
-    decisions: fieldStringArray,
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: fieldString,
+          speaker: fieldNullableString,
+          changes_what: fieldNullableString,
+        },
+        required: ['text', 'speaker', 'changes_what'],
+        additionalProperties: false,
+      },
+    },
     tasks: {
       type: 'array',
       items: {
@@ -64,6 +96,16 @@ export const TOOL = buildExtractTool(
     },
     blockers: fieldStringArray,
     next_step: fieldNullableString,
+    ideas: fieldStringArray,
+    data_quality: fieldNullableString,
   },
-  ['discussed', 'decisions', 'tasks', 'blockers', 'next_step'],
+  [
+    'discussed',
+    'decisions',
+    'tasks',
+    'blockers',
+    'next_step',
+    'ideas',
+    'data_quality',
+  ],
 );

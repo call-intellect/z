@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { tagsApi, type TagApi } from '@/api/tags.api';
 import { toast } from 'sonner';
 import { EmptyState } from '@/ui/components/shared/EmptyState';
@@ -51,7 +51,7 @@ export function TagsClient() {
       const res = await tagsApi.list();
       setTags(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить теги');
+      setError(humanizeApiError(e, 'Не удалось загрузить теги'));
     } finally {
       setLoading(false);
     }
@@ -75,7 +75,7 @@ export function TagsClient() {
         setTags((prev) => prev.filter((t) => t.id !== id));
         toast.success('Тег удалён');
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+        toast.error(humanizeApiError(e, 'Не удалось удалить'));
       }
     },
     [ask],
@@ -215,7 +215,7 @@ function TagDialog({
       }
       onClose();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSubmitting(false);
     }

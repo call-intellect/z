@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import Link from 'next/link';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   companyApi,
   type CompanyProfileApi,
@@ -39,7 +39,7 @@ export function CompanyClient(): JSX.Element {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -81,7 +81,7 @@ function CompanyContent({
       setStrategy(d.strategyContentMd ?? '');
       setStage(d.stage ?? '');
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось загрузить профиль';
+      const msg = humanizeApiError(err, 'Не удалось загрузить профиль');
       setError(msg);
     } finally {
       setLoading(false);
@@ -110,7 +110,7 @@ function CompanyContent({
       setRaw(r);
       setProfile(toCompanyProfileDomain(r));
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось сохранить профиль';
+      const msg = humanizeApiError(err, 'Не удалось сохранить профиль');
       setError(msg);
     } finally {
       setSaving(false);

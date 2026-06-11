@@ -16,8 +16,19 @@ export const RegulationKindSchema = z.enum([
   'process',
   'policy',
   'standard',
+  // A12 (Волна 6) — «Инструкция»: пошаговое «как сделать X» для одной роли.
+  // Хранится в отдельной таблице `instructions` (см. RegulationsService.list).
+  'instruction',
 ]);
 export type RegulationKindDto = z.infer<typeof RegulationKindSchema>;
+
+/**
+ * A12 — статус существования карточки знаний (для instruction; на будущее —
+ * и для прочих kind). Стабильные API-коды (англ.), маппинг из русских ярлыков
+ * LLM см. `EXTRACTION_STATUS_RU_TO_API` в ai/services/prompts/common.
+ */
+export const ExtractionStatusSchema = z.enum(['exists', 'needed', 'discussed']);
+export type ExtractionStatusDto = z.infer<typeof ExtractionStatusSchema>;
 
 /**
  * Status — общий для Regulation/Process/Policy (Prisma enum `ProcessStatus`).
@@ -113,6 +124,14 @@ export interface RegulationListItemDto {
   status: RegulationStatusDto;
   ownerPersonId: string | null;
   confidence: number | null;
+  /**
+   * A12 (Волна 6) — статус существования. Заполняется только для
+   * kind='instruction' (выводится из Instruction.status: active→exists,
+   * deprecated→discussed). Для остальных kind — null.
+   */
+  extractionStatus?: ExtractionStatusDto | null;
+  /** A12 — роль-владелец инструкции (Instruction.forRole). Для остальных kind — null. */
+  forRole?: string | null;
   /** Уровень доверия актуальной версии карточки (лестница доверия A1). */
   trustTier: TrustTierDto;
   lastConfirmedAt: string | null;

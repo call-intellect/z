@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   personsApi,
   type ListPersonsResultApi,
@@ -32,7 +32,7 @@ export function PersonsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -58,7 +58,7 @@ function PersonsListContent({ orgId }: { orgId: string }) {
       setData(dto);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'forbidden') setForbidden(true);
-      else setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      else setError(humanizeApiError(e, 'Ошибка загрузки'));
     } finally {
       setIsLoading(false);
     }

@@ -53,6 +53,28 @@ type: architecture
 
 **Поле `card_id`** — опциональная привязка к CRM-карточке (см. [[../01_projects/cards]]). `onDelete: SetNull` — при удалении карточки встреча сохраняется, привязка обнуляется. Один `card_id` (one-to-many от Card к Meeting). Несколько карточек на встречу — vNext.
 
+**Поле `visibilityScope String @default("participants") @db.VarChar(16)`** (миграция `20260610130000_meeting_visibility`, ТЗ meeting-visibility-who-can-see) — «Кому видно» встречу: кто видит её страницу (а с ней — видео/запись/расшифровку/отчёт). Значения: `owner_only` (только создатель + bypass-роли) · `participants` (ДЕФОЛТ — создатель + участники с `Participant.userId`) · `custom` (участники + явные гранты `MeetingAccessGrant`) · `org` (вся компания одного tenant). Источник правды доступа к READ-поверхностям встречи (предикат `MeetingVisibilityService.canView`). **Отдельная подсистема от графа знаний** — `visibilityScope` НЕ читается ingest-конвейером/`block-access-deriver` (тот читает `closedGroupKind`/тип/участников). Управление встречей остаётся host-only. Kill-switch `MEETING_VISIBILITY_ENABLED` (=false → legacy owner-only). Back-relation: `accessGrants MeetingAccessGrant[]`.
+
+### MeetingAccessGrant
+
+```json
+{
+  "id": "ckxxxxxxxxxxxx",
+  "tenantId": "cmp...",
+  "meetingId": "meeting_123",
+  "granteeType": "person",
+  "granteeId": "person_456",
+  "grantedById": "user_abc",
+  "created_at": "2026-06-10T12:00:00Z"
+}
+```
+
+Явный грант доступа к встрече при `visibilityScope='custom'` — кому хост открыл руками (миграция `20260610130000_meeting_visibility`).
+- `granteeType String @db.VarChar(8)` — `'person'` (грант человеку, `granteeId` = `Person.id`) или `'group'` (грант группе, `granteeId` = `KnowledgeGroup.id`; срабатывает по **ПРЯМОМУ** членству, БЕЗ матрицы видимости отделов).
+- `grantedById` — `User.id` хоста, выдавшего доступ.
+- `tenantId` — денормализован скаляром для индекса `(tenantId, meetingId)`; FK/каскад идёт через `Meeting` (`onDelete: Cascade` — при удалении встречи гранты удаляются), НЕ через `Org`.
+- Индексы: unique `(meetingId, granteeType, granteeId)` (идемпотентность PATCH), `(tenantId, meetingId)`, `(granteeType, granteeId)`.
+
 ### Card (CRM)
 
 ```json
@@ -191,7 +213,9 @@ transcription_processing
 ai_processing → ai_ready
 ```
 
-Параллельная ветка: `failed` (с любого этапа, с указанием причины).
+Параллельная ветка: `failed` (с любого этапа, с указанием причины в `failureReason`). Известные коды `failureReason` для «встреча технически не состоялась» (2026-06-10, ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md)):
+- **`ended_before_start`** — хост нажал «Завершить», когда встреча ещё в `scheduled` (вебхук `room_started` потерян, записи нет): `finish` переводит `scheduled → failed`, отвечает 200 (не 409); UI показывает нейтральный текст «Встреча завершена (запись не велась)», не «ошибка» (`host-controls.service.finish`, Р1).
+- **`never_activated`** — брошенную `scheduled` старше `max(idle.timeoutMinutes, 30)` мин подбирает idle-cron: если LiveKit-room пуста/нет — `scheduled → failed('never_activated')`; если в room есть живые участники (значит `room_started` потерян, но встреча идёт) — наоборот `scheduled → active` + попытка стартовать запись (recovery) (`idle-meeting.cron`, Р2).
 
 ## Таблицы для аудио-дорожек
 
@@ -641,7 +665,7 @@ erDiagram
 ### Группа А (с UI)
 - `Department(id, tenantId, name, parentDepartmentId?, deletedAt?)` — иерархия в схеме, UI плоский.
 - `Role(id, tenantId, name, departmentId?, tags[], deletedAt?)` — бизнес-должность.
-- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК.
+- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК. **Partial unique по email (2026-06-10, в `postgres-init.sql`, не в schema):** `persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''` — не более одной активной карточки на email в Org. (Schema-уровневый `@@unique([tenantId, email, deletedAt])` бесполезен: `NULL ≠ NULL` в PG пропускает несколько активных дублей с `deletedAt IS NULL`.) Индекс с **self-skip** при существующих дублях (встаёт после backfill `backfill-merge-duplicate-persons.ts`); при создании `Person` дедуп по email идёт ещё до вставки (`persons.service.create` → 409 `person_email_taken` либо линковка безличной карточки). ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md) Ф2–Ф4.
 - `PersonRole(id, tenantId, personId, roleId, validFrom, validTo?)` — M:M Person↔Role с временем.
 - `JobDescription(id, tenantId, roleId, contentMd, sourceDocumentId?, version, deletedAt?)`.
 - `Skill(id, tenantId, name, description?, deletedAt?)`.
@@ -651,6 +675,7 @@ erDiagram
 ### Группа Б (без UI в Фазе 0)
 - `Mission, Vision, Strategy` — Уровень 1.
 - `Process, ProcessStep, Regulation, Policy` — Уровень 3. **SBA α-7** (2026-05-22) расширил эти модели in-place: `entityId @unique?`, `scope`, `ownerPersonId` (для Regulation/Policy), `currentVersionId → CardVersion`, `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `embedding Unsupported("vector(1536)")?`, `lastConfirmedAt`. Для `Regulation` дополнительно — `statement` (структурированное утверждение, альтернатива `contentMd` для дедупа/chat-v2), `supersedesId` (self-relation для версионирования). Для `Process` — `inputs`/`outputs`/`metricsJson` (JSON, не путать с моделью `Metric`). UI на `/regulations` (master-detail с фильтром `kind`).
+- **`Instruction`** (мастер-ТЗ промптов, Волна 6 A10, миграция `20260610120000_add_instruction`, `@@map("instructions")`) — first-class сущность **«Инструкция»**: пошаговое руководство «как сделать X» для **одной** роли. Полностью **зеркалит `Regulation`** + добавляет single-role признак `forRole String? @db.VarChar(120)`. Поля как у Regulation: `name @db.VarChar(300)`, `contentMd @db.Text`, `status ProcessStatus`, `version`, `confidence?`, `statement?` (структурированная суть для дедупа/retrieval), `scope?`, `ownerPersonId?` (FK Person, relation `InstructionOwnerPerson`), `supersedesId?` (self-relation `InstructionSupersedes` — версионирование), `currentVersionId? → CardVersion` (`InstructionCurrentVersion`), `entityId @unique?` (связка с графом), `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `dataClassAudit Json?`, `embedding Unsupported("vector(1536)")?` (name+statement, для KNN-дедупа), `lastConfirmedAt?`. Индексы btree: `@@unique([tenantId, name])`, `[tenantId, status]`, `[tenantId, forRole]`, `[tenantId, ownerPersonId]`, `[currentVersionId]`. HNSW `instructions_embedding_hnsw_cosine_idx` (cosine, `WHERE embedding IS NOT NULL`) — в `postgres-init.sql`, не в schema. Читается через тот же `/regulations` API с `kind=instruction` (см. api-layer.md). Извлечение/storage-роутинг — specialist-3-1-regulations + specialists-combined (`forRole` из `scope=role:<id>` или `roles[0]`).
 - `Tool` — Уровень 4.
 - `Metric` — Уровень 5.
 - `Decision` — миграционный долг.
@@ -1453,10 +1478,12 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 ### `SourceType += chatbox`
 
 ```prisma
-enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox }
+enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox daily_checkin }
 ```
 
 Сессия клиентского чата → `RawEvent(sourceType='chatbox', sourceExternalId=<sessionId>, dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений).
+
+> **`SourceType += daily_checkin` (2026-06-10).** Ежедневный чек-ин сотрудника (план/отчёт) → knowledge-core. Мост `CheckinIngestService` пишет `RawEvent(sourceType='daily_checkin', sourceExternalId=<checkInId>, dataClass='sensitive')` на событие `checkin.created`. Enum-значение добавлено **отдельной** миграцией `20260610140000_source_type_daily_checkin` (`ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'daily_checkin'` — `ADD VALUE` нельзя выполнять в одной транзакции с использованием значения), применяется авто через `migrate deploy`. ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md); детали моста — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
 
 ### 8 моделей домена (все tenant-scoped, upsert по `@@unique([tenantId, externalId])`)
 
@@ -1610,5 +1637,28 @@ enum SkillTraitStatus {
   - `assignment UploadSpeakerAssignment @default(unassigned)`, `personId String?` (FK `Person`, SetNull) ИЛИ внешний `externalName`/`externalCompany`/`externalPosition VarChar(200)`.
   - `mergedIntoLabel String?` — слияние двух дорожек в одного человека (без удаления записи, сохраняет провенанс), `participantId String?`.
   - `@@unique([meetingId, label])`, `@@index([meetingId])`.
+
+[[../index|← index]]
+
+## Служба поддержки — деск + закрытый контур + клон (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
+
+### Расширение существующих сущностей (миграция `_phase1`)
+
+- **`enum KnowledgeGroupKind += support`** — закрытый контур техподдержки (синглтон per вендор-Org, `refId=null`). Было 4 вида (department/leadership/council/personal). ⚠ `ALTER TYPE ... ADD VALUE` не-транзакционна (нормально).
+- **`Issue` += support-поля** (все nullable, заполняются ТОЛЬКО для тикетов поддержки — cross-tenant: клиент из другой Org):
+  - `supportCustomerOrgId String?` (Org клиента), `supportCustomerUserId String?` (глобальный `User.id`), `supportCustomerContact VarChar(320)?` (email/имя для деска).
+  - SLA-поля: `firstResponseDueAt`/`resolutionDueAt`/`firstRespondedAt`/`slaBreachedAt DateTime?`.
+  - Индексы `@@index([tenantId, supportCustomerUserId])`, `@@index([tenantId, firstResponseDueAt])`.
+- **`IssueComment` += провенанс/черновик клона** (поле `access` `"internal"|"external"` уже было — переиспользуется как видимость клиенту, R-INV-3):
+  - `authorType String @default("human")` (human|clone|system), `draftState String?` (null|pending|accepted|edited|rejected — только для clone), `cloneConfidence Decimal(4,3)?` (калиброванная уверенность), `groundednessScore Decimal(4,3)?` (результат critic).
+
+### Новые модели
+
+- **`SupportSlaPolicy`** (миграция `_phase1`) — синглтон SLA-политики per вендор-Org: `tenantId @unique`, `firstResponseMins Int @default(60)`, `resolutionMins Int @default(480)`, `businessHoursOnly Boolean @default(false)`.
+- **`IssueRating`** (миграция `_phase1`) — CSAT/оценка клиента (чистый сигнал для петли обучения): `issueId @unique`, `score Int` (1..5), `comment Text?`, `ratedByUserId String?`, `@@index([tenantId, createdAt])`.
+- **`SupportDraftOutcome`** (миграция `_draft_outcome`) — обучающий сигнал (R-INV-2), пара черновик→финал + тип правки: `issueId`, `draftCommentId String?`, `taskType @default("support-clone-draft")`, `draftText`/`finalText Text` (finalText null если отклонён), `outcome` (accepted|edited|rejected), `editType String?` (factual|tone|policy|empty), `cloneConfidence`/`groundednessScore Decimal(4,3)?`, `promotedToContour Boolean @default(false)` (прошёл ли гейт качества → в контур), `@@index([tenantId, taskType, createdAt])`, `@@index([tenantId, issueId])`.
+- **`SupportCuratorAction`** (миграция `_curator_action`) — аудит решений ночного куратора контура (что/почему/verdict debate; soft-archive only).
 
 [[../index|← index]]

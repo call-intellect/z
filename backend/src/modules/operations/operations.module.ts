@@ -19,6 +19,7 @@ import { PersonalRelationsController } from './controllers/personal-relations.co
 import { WeeklyDigestController } from './controllers/weekly-digest.controller';
 import { WeeklyPerPersonController } from './controllers/weekly-per-person.controller';
 import { BlockerSynthesisService } from './services/blocker-synthesis.service';
+import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
 import { DecisionImplementationService } from './services/decision-implementation.service';
@@ -43,6 +44,7 @@ import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
 import { BlockerSynthesisCron } from './workers/blocker-synthesis.cron';
 import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.cron';
+import { CheckinGraphIngestListener } from './workers/checkin-graph-ingest.listener';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
@@ -139,6 +141,10 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     GoalCascadeService,
     CheckinParserService,
     CheckinResponseHandler,
+    // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core
+    // (сервис) + подписчик `checkin.created` (рядом с sentiment-worker).
+    CheckinIngestService,
+    CheckinGraphIngestListener,
     DailyCheckInPromptCron,
     // SBA β-8.1 — voiceless над основными сервисами β-8.
     WeeklyDigestService,

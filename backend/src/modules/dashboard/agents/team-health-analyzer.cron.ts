@@ -4,6 +4,10 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withPeopleHypothesisGuard,
+  withToneConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 import { TeamHealthService, type TeamHealthRowDto } from '../services/team-health.service';
 
 /**
@@ -28,7 +32,16 @@ import { TeamHealthService, type TeamHealthRowDto } from '../services/team-healt
  * Master-flag: пока нет — фича дешёвая (1 вызов per dept ≤ 1 раз в сутки),
  * можно включить kill-switch отдельным config'ом позже.
  */
-const TEAM_HEALTH_SYSTEM_PROMPT = `Ты — аналитик корпоративной культуры. На вход — сводка по отделу за последние 14 дней. Оцени 5 факторов вовлечённости команды по шкале low/medium/high:
+// A9 (2026-06-10): факторы вовлечённости — оценка ТОНА/настроения команды по
+// наблюдаемым сигналам. Тональная шкала уверенности (`withToneConfidenceCalibration`)
+// дописывается в КОНЕЦ SYSTEM (cache-friendly): даёт модели правило
+// «тон — наблюдаемое поведение, не диагноз; при сомнении снижай оценку».
+// A5 (2026-06-10): факторы вовлечённости — это оценка людей (команды/руководителя),
+// поэтому поверх тональной шкалы дописываем `withPeopleHypothesisGuard` в самый
+// КОНЕЦ SYSTEM (cache-friendly) — оценки человека остаются гипотезами по
+// наблюдаемому поведению, а не вердиктом.
+const TEAM_HEALTH_SYSTEM_PROMPT = withPeopleHypothesisGuard(
+  withToneConfidenceCalibration(`Ты — аналитик корпоративной культуры. На вход — сводка по отделу за последние 14 дней. Оцени 5 факторов вовлечённости команды по шкале low/medium/high:
 
 1. manager_support — есть ли поддержка от руководителя (recognition, 1-on-1, четкий приоритет)
 2. workload_fairness — справедливое распределение нагрузки (нет переработок, monologue)
@@ -39,7 +52,8 @@ const TEAM_HEALTH_SYSTEM_PROMPT = `Ты — аналитик корпорати�
 Жёсткие правила:
 - Опирайся ТОЛЬКО на данные в сводке. Не додумывай.
 - Верни строго JSON: { factors: { manager_support, workload_fairness, communication, time_pressure, role_clarity }, summary: "1-2 предложения на русском" }.
-- summary — НЕ называй имена сотрудников, говори общими формулировками («команда», «руководитель», «несколько участников»).`;
+- summary — НЕ называй имена сотрудников, говори общими формулировками («команда», «руководитель», «несколько участников»).`),
+);
 
 const TEAM_HEALTH_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

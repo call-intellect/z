@@ -243,6 +243,15 @@ p, owner, *, *, regulation, delete
 p, admin, *, *, regulation, read
 p, manager, *, *, regulation, read
 
+# A12 (Волна 6) — instruction (пошаговое «как сделать X» для одной роли).
+# Зеркалит права process: owner r/w/d; admin read; manager read (видят
+# инструкции своей роли по умолчанию). coo / demo_observer read — ниже в их блоках.
+p, owner, *, *, instruction, read
+p, owner, *, *, instruction, write
+p, owner, *, *, instruction, delete
+p, admin, *, *, instruction, read
+p, manager, *, *, instruction, read
+
 p, owner, *, *, policy, read
 p, owner, *, *, policy, write
 p, owner, *, *, policy, delete
@@ -666,6 +675,7 @@ p, coo, *, *, role, read
 p, coo, *, *, process, read
 p, coo, *, *, process_template, read
 p, coo, *, *, regulation, read
+p, coo, *, *, instruction, read
 p, coo, *, *, policy, read
 p, coo, *, *, decision, read
 p, coo, *, *, insight, read
@@ -1093,6 +1103,7 @@ p, demo_observer, *, *, document, read
 p, demo_observer, *, *, role-profile, read
 p, demo_observer, *, *, process, read
 p, demo_observer, *, *, regulation, read
+p, demo_observer, *, *, instruction, read
 p, demo_observer, *, *, policy, read
 p, demo_observer, *, *, decision, read
 p, demo_observer, *, *, idea, read

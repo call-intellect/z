@@ -12,8 +12,10 @@
  */
 
 import type {
+  ExtractionStatusApi,
   PolicySeverityApi,
   ProcessStepApi,
+  RegulationChangeSourceApi,
   RegulationDetailApi,
   RegulationHistoryResponseApi,
   RegulationKindApi,
@@ -27,18 +29,38 @@ export type RegulationKind = RegulationKindApi;
 export type RegulationStatus = RegulationStatusApi;
 export type PolicySeverity = PolicySeverityApi;
 export type TrustTier = TrustTierApi;
+export type ExtractionStatus = ExtractionStatusApi;
+export type RegulationChangeSource = RegulationChangeSourceApi;
 
 export const REGULATION_KIND_LABEL: Record<RegulationKind, string> = {
   regulation: 'Регламент',
   process: 'Процесс',
   policy: 'Политика',
   standard: 'Стандарт',
+  instruction: 'Инструкция',
 };
 
 export const REGULATION_STATUS_LABEL: Record<RegulationStatus, string> = {
   active: 'Действует',
   deprecated: 'Устарел',
   archived: 'В архиве',
+};
+
+/** Лейблы статуса извлечения (B2.2). */
+export const EXTRACTION_STATUS_LABEL: Record<ExtractionStatus, string> = {
+  exists: 'Существует',
+  needed: 'Нужен',
+  discussed: 'Обсуждается',
+};
+
+/** Лейблы источника изменения (B2.5). */
+export const REGULATION_CHANGE_SOURCE_LABEL: Record<
+  RegulationChangeSource,
+  string
+> = {
+  agent: 'Извлечено Корой',
+  manual: 'Изменено вручную',
+  imported: 'Импортировано',
 };
 
 export const POLICY_SEVERITY_LABEL: Record<PolicySeverity, string> = {
@@ -59,9 +81,21 @@ export interface RegulationListItem {
   ownerPersonId: string | null;
   confidence: number | null;
   trustTier: TrustTier;
+  /** Статус извлечения (B2.2). null — поле не пришло с бэка. */
+  extractionStatus: ExtractionStatus | null;
   lastConfirmedAt: Date | null;
   updatedAt: Date;
   createdAt: Date;
+}
+
+/**
+ * Запись считается черновиком/обсуждаемой (B2.3): для неё нельзя показывать
+ * lifecycle-статус «Действует».
+ */
+export function isDraftExtraction(
+  extractionStatus: ExtractionStatus | null,
+): boolean {
+  return extractionStatus === 'needed' || extractionStatus === 'discussed';
 }
 
 export interface RegulationDetail extends RegulationListItem {
@@ -86,7 +120,13 @@ export interface RegulationVersion {
   version: number;
   previousVersionId: string | null;
   payload: Record<string, unknown>;
+  /**
+   * Причина изменения (B2.5). Для process бэк присылает `changeNote` —
+   * маппер сводит оба источника в это единое поле.
+   */
   changeReason: string | null;
+  /** Источник изменения (B2.5). null — поле не пришло. */
+  source: RegulationChangeSource | null;
   createdAt: Date;
   createdByUserId: string | null;
 }
@@ -99,6 +139,7 @@ export function mapRegulationListItem(
   return {
     ...api,
     trustTier: api.trustTier ?? 'human',
+    extractionStatus: api.extractionStatus ?? null,
     lastConfirmedAt: api.lastConfirmedAt ? new Date(api.lastConfirmedAt) : null,
     updatedAt: new Date(api.updatedAt),
     createdAt: new Date(api.createdAt),
@@ -139,7 +180,9 @@ export function mapVersionItem(api: RegulationVersionItemApi): RegulationVersion
     version: api.version,
     previousVersionId: api.previousVersionId,
     payload: api.payload,
-    changeReason: api.changeReason,
+    // process → changeNote, regulation/policy → changeReason; сводим в одно.
+    changeReason: api.changeReason ?? api.changeNote ?? null,
+    source: api.source ?? null,
     createdAt: new Date(api.createdAt),
     createdByUserId: api.createdByUserId,
   };

@@ -34,6 +34,7 @@ export interface MeetingForUserDto {
   failureReason: string | null;
   createdAt: string;
   customPrompt: string | null;
+  visibilityScope: string;
   participants: Array<{
     id: string;
     name: string;

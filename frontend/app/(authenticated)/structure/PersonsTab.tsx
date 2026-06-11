@@ -14,7 +14,7 @@ import {
 import useSWR from 'swr';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   departmentsApi,
   personsDomainApi,
@@ -174,7 +174,7 @@ export function PersonsTab({
       toast.success('Приглашение отправлено.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось пригласить.');
+      toast.error(humanizeApiError(e, 'Не удалось пригласить.'));
     }
   };
 
@@ -187,7 +187,7 @@ export function PersonsTab({
       toast.success('Системная роль обновлена.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось изменить роль.');
+      toast.error(humanizeApiError(e, 'Не удалось изменить роль.'));
     }
   };
 
@@ -205,7 +205,7 @@ export function PersonsTab({
       toast.success('Участник удалён из компании.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
+      toast.error(humanizeApiError(e, 'Не удалось удалить.'));
     }
   };
 
@@ -227,7 +227,7 @@ export function PersonsTab({
       refresh();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось сбросить привязку.',
+        humanizeApiError(e, 'Не удалось сбросить привязку.'),
       );
     }
   };
@@ -241,7 +241,7 @@ export function PersonsTab({
       toast.success('Приглашение перевыпущено — обновите ссылку у сотрудника.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось перевыпустить.');
+      toast.error(humanizeApiError(e, 'Не удалось перевыпустить.'));
     }
   };
 
@@ -257,7 +257,7 @@ export function PersonsTab({
       toast.success('Приглашение отозвано.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать.');
+      toast.error(humanizeApiError(e, 'Не удалось отозвать.'));
     }
   };
 

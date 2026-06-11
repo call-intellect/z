@@ -106,6 +106,15 @@ webhook (LiveKit не гарантирует доставку). Добавлен
 
 См. [[workers-queues]] (cron + очередь), [[ai-jobs]] (faststart-воркер).
 
+## Устойчивость к потере вебхука `room_started` (2026-06-10)
+
+ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md) (Ф5/Ф6). Единичная потеря вебхука LiveKit вешала встречу навсегда в `scheduled`: `scheduled → active` делал только `room_started`, `finish` требовал `active` (иначе 409), idle-cron смотрел только `active`. Авто-запись стартует в `room_started` — без него записи нет, AI нечего обрабатывать.
+
+- **`finish` устойчив (Ф5, `host-controls.service.finish`):** из `scheduled` — best-effort `deleteRoom` + `scheduled → failed('ended_before_start')`, ответ 200 (не 409); из терминальных (`completed`/`*_ready`/`failed`) — идемпотентный no-op; из `active` — как раньше (deleteRoom → вебхук довершит). Фронт показывает нейтральный тост «Встреча завершена (запись не велась)».
+- **idle-cron reconcile брошенных `scheduled` (Ф6, `idle-meeting.cron`):** второй проход подбирает `scheduled` старше `max(idle.timeoutMinutes, 30)` мин и сверяет с `livekit.listParticipants`: пусто/нет room → `scheduled → failed('never_activated')`; есть живые участники (встреча идёт, вебхук потерян) → `scheduled → active` (`startedAt=now`) + при `recordByDefault` попытка стартовать запись (recovery).
+
+> Ф5/Ф6 — **страховка устойчивости**, а не лечение корня: саму доставку вебхуков LiveKit→backend после переезда на korateam.ru чинит владелец (инфра, см. [[../04_не-сделано/README]] и ТЗ §4). Коды `failureReason` — в [[../02_architecture/data-model]] §«Статусы встречи (FSM)».
+
 ## Архитектурное правило
 
 LiveKit Egress держим **отдельно** от LiveKit SFU. Запись съедает CPU; на одной ноде роняет качество звонков.

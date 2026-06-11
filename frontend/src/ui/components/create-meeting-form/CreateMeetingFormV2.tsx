@@ -9,7 +9,7 @@
  * После создания — модалка с deep-link встречи.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -19,6 +19,7 @@ import {
   Check,
   ClipboardList,
   Copy,
+  Eye,
   ExternalLink,
   FolderKanban,
   Headphones,
@@ -39,14 +40,22 @@ import type { LucideIcon } from 'lucide-react';
 import { cardsApi } from '@/api/cards.api';
 import { meetingsApi } from '@/api/meetings.api';
 import { templatesApi } from '@/api/templates.api';
-import { ApiError } from '@/api/api-error';
+import { knowledgeAccessApi } from '@/api/knowledge-access.api';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { templateFromApi, type TemplateDomain } from '@/domain/template';
 import { MEETING_TYPES, type MeetingType } from '@/domain/enums';
 import {
   CLOSED_GROUP_OPTIONS,
   detectConfidentiality,
+  toKnowledgeGroup,
   type ClosedGroupKind,
+  type KnowledgeGroupDomain,
 } from '@/domain/knowledge-access';
+import {
+  VISIBILITY_SCOPE_OPTIONS,
+  type GranteeType,
+  type VisibilityScope,
+} from '@/domain/meeting';
 import { t } from '@/lib/i18n';
 
 import { Button } from '@/ui/shadcn/button';
@@ -144,8 +153,59 @@ export function CreateMeetingFormV2() {
   const [customPrompt, setCustomPrompt] = useState('');
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [invitees, setInvitees] = useState<ParticipantPickerValue[]>([]);
+  // ТЗ Ф4 «Кому видно» — режим видимости знаний встречи. Дефолт «Участникам».
+  const [visibilityScope, setVisibilityScope] =
+    useState<VisibilityScope>('participants');
+  const [visPeople, setVisPeople] = useState<ParticipantPickerValue[]>([]);
+  const [visGroupIds, setVisGroupIds] = useState<Set<string>>(new Set());
+  const [visGroups, setVisGroups] = useState<KnowledgeGroupDomain[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
+
+  // Группы доступа подгружаем лениво — только когда выбран режим «Выбрать людей
+  // и группы». Ошибку глотаем: пикер групп просто не покажется.
+  useEffect(() => {
+    if (visibilityScope !== 'custom' || visGroups.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await knowledgeAccessApi.listGroups();
+        if (!cancelled) setVisGroups(res.items.map(toKnowledgeGroup));
+      } catch {
+        if (!cancelled) setVisGroups([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visibilityScope, visGroups.length]);
+
+  // Гранты для setVisibility (только в custom-режиме).
+  const visGrants = useMemo(
+    () => [
+      ...visPeople
+        .filter((p) => p.type === 'person')
+        .map((p) => ({
+          granteeType: 'person' as GranteeType,
+          granteeId: p.type === 'person' ? p.personId : '',
+        })),
+      ...Array.from(visGroupIds).map((id) => ({
+        granteeType: 'group' as GranteeType,
+        granteeId: id,
+      })),
+    ],
+    [visPeople, visGroupIds],
+  );
+
+  const visCustomEmpty = visibilityScope === 'custom' && visGrants.length === 0;
+
+  const toggleVisGroup = (id: string) =>
+    setVisGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const onPick = (c: TemplateCard) => {
     setSelected(c);
@@ -162,6 +222,10 @@ export function CreateMeetingFormV2() {
     if (!selected) return;
     if (!title.trim()) {
       toast.error('Введите название встречи');
+      return;
+    }
+    if (visCustomEmpty) {
+      toast.error('Выберите, кому видна встреча: хотя бы одного человека или группу');
       return;
     }
     setSubmitting(true);
@@ -194,9 +258,28 @@ export function CreateMeetingFormV2() {
           ? { closed_group_kind: closedGroupKind }
           : {}),
       });
+
+      // ТЗ Ф4 «Кому видно». Бэкенд-дефолт = 'participants', поэтому для дефолта
+      // ничего не шлём. Иначе — задаём видимость ДО навигации. Best-effort:
+      // ошибка PATCH не блокирует вход — показываем тост, но продолжаем.
+      if (visibilityScope !== 'participants') {
+        try {
+          await meetingsApi.setVisibility(result.id, {
+            scope: visibilityScope,
+            ...(visibilityScope === 'custom' ? { grants: visGrants } : {}),
+          });
+        } catch (ve) {
+          const vmsg =
+            ve instanceof ApiError
+              ? ve.message
+              : 'Не удалось задать доступ к встрече — поменяйте его на странице встречи.';
+          toast.error(vmsg);
+        }
+      }
+
       setCreated(result);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка создания';
+      const msg = humanizeApiError(e, 'Ошибка создания');
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -389,6 +472,85 @@ export function CreateMeetingFormV2() {
           </div>
 
           <div className="flex flex-col gap-2">
+            <Label className="flex items-center gap-1.5">
+              <Eye size={14} className="text-fg-tertiary" />
+              Кому видно
+            </Label>
+            <Select
+              value={visibilityScope}
+              onValueChange={(v) => setVisibilityScope(v as VisibilityScope)}
+            >
+              <SelectTrigger id="meeting-visibility">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VISIBILITY_SCOPE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-fg-tertiary">
+              {VISIBILITY_SCOPE_OPTIONS.find((o) => o.value === visibilityScope)
+                ?.hint ?? ''}
+            </p>
+
+            {visibilityScope === 'custom' && (
+              <div className="mt-1 flex flex-col gap-4 rounded-md border border-border-subtle bg-bg-overlay p-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="visibility-people">Люди</Label>
+                  <ParticipantPicker
+                    value={visPeople}
+                    onChange={setVisPeople}
+                    placeholder="Найти человека по имени или почте"
+                  />
+                  <p className="text-xs text-fg-tertiary">
+                    Доступ получат выбранные люди.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label>Группы доступа</Label>
+                  {visGroups.length === 0 ? (
+                    <p className="text-xs text-fg-tertiary">
+                      Групп доступа в компании пока нет.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {visGroups.map((g) => (
+                        <label
+                          key={g.id}
+                          className="flex items-center gap-2.5 rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
+                        >
+                          <Checkbox
+                            checked={visGroupIds.has(g.id)}
+                            onCheckedChange={() => toggleVisGroup(g.id)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium text-fg-primary">
+                              {g.name}
+                            </span>
+                            <span className="ml-2 text-xs text-fg-tertiary">
+                              {g.kindLabel}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {visCustomEmpty && (
+                  <p className="text-xs text-chip-warning-fg">
+                    Выберите хотя бы одного человека или группу.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label>Что включить в отчёт</Label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <RowItem
@@ -440,7 +602,7 @@ export function CreateMeetingFormV2() {
             >
               Назад
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || visCustomEmpty}>
               {submitting && <Loader2 className="animate-spin" size={14} />}
               Создать встречу
             </Button>

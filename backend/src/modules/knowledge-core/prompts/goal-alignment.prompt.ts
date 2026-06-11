@@ -115,18 +115,25 @@ const CRITICAL_QUESTION_TRUNCATE = 240;
 const MAX_BLOCKS_IN_PROMPT = 50;
 
 /**
- * Строит system + user сообщения. Если `daysUntilTarget <= 7` — добавляет
- * к system пометку «Дедлайн близок». В остальных случаях используется
- * базовый system.
+ * Строит system + user сообщения.
+ *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8): SYSTEM —
+ * СТАБИЛЬНАЯ константа `GOAL_ALIGNMENT_SYSTEM_PROMPT`, его БОЛЬШЕ НЕ мутируем
+ * при «дедлайн близок» (`daysUntilTarget <= 7`). Раньше переменное число дней
+ * вшивалось в SYSTEM, ломая prompt-cache на каждый goal. Теперь пометка
+ * «дедлайн близок» едет в user-сообщении (значение `daysUntilTarget` там уже
+ * есть строкой «Осталось до дедлайна: N дн.»). См. feedback
+ * `LLM-промпты — обязательно cache-friendly`.
  */
 export function buildGoalAlignmentMessages(input: GoalAlignmentInput): {
   systemPrompt: string;
   userMessage: string;
 } {
-  const systemPrompt =
-    input.daysUntilTarget !== null && input.daysUntilTarget <= 7
-      ? `${GOAL_ALIGNMENT_SYSTEM_PROMPT}\n\nДополнительный контекст: дедлайн близок (осталось ${Math.max(0, input.daysUntilTarget)} дн.). Учитывай это в объяснении и фокусируйся на реальной готовности.`
-      : GOAL_ALIGNMENT_SYSTEM_PROMPT;
+  const systemPrompt = GOAL_ALIGNMENT_SYSTEM_PROMPT;
+
+  // «Дедлайн близок» — переменный акцент, идёт в user (не в SYSTEM).
+  const deadlineSoon =
+    input.daysUntilTarget !== null && input.daysUntilTarget <= 7;
 
   const themesBlock =
     input.themes.length === 0
@@ -154,7 +161,11 @@ export function buildGoalAlignmentMessages(input: GoalAlignmentInput): {
     `Цель: ${input.goalName}`,
     `Описание: ${input.goalDescription}`,
     input.daysUntilTarget !== null
-      ? `Осталось до дедлайна: ${input.daysUntilTarget} дн.`
+      ? `Осталось до дедлайна: ${input.daysUntilTarget} дн.${
+          deadlineSoon
+            ? ' — ДЕДЛАЙН БЛИЗОК: учитывай это в объяснении и фокусируйся на реальной готовности.'
+            : ''
+        }`
       : 'Дедлайн не задан.',
     `Окно анализа: ${input.windowDays} дн.`,
     '',

@@ -126,6 +126,14 @@ const LlmRouterSchema = z.object({
     .int()
     .positive()
     .default(300_000),
+  /**
+   * retest3 Ф5 #51/Р3 — основной провайдер ГЛАВНОГО отчёта встречи
+   * (`LlmFallbackService`, потребитель — `analyze.worker`). `deepseek` (Ship-On:
+   * фича готова → включена; работает кэш DeepSeek + per-agent pro-модель) с
+   * каскадом DeepSeek→MiniMax→OpenAI. `minimax` оставлен как kill-switch-откат
+   * (дословно прежний каскад MiniMax→OpenAI).
+   */
+  LLM_MAIN_REPORT_PRIMARY: z.enum(['minimax', 'deepseek']).default('deepseek'),
 });
 
 const VoxSchema = z.object({
@@ -149,11 +157,12 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
   // ТЗ-3 Фаза 3 — форсить вызов synthetic-tool (`tool_choice:{type:function}`)
   // вместо 'auto' при autoConvert (json_schema → tool) для НЕ-thinking
-  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу. ДЕФОЛТ OFF:
-  // forced tool_choice — внешне-наблюдаемое поведение LLM-API, требует прод-пробу
-  // agent-lia; включает владелец после пробы. При OFF поведение = текущее ('auto').
-  // Guard в deepseek.service сам откатывает на 'auto' при format-400 от прокси.
-  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
+  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу.
+  // ДЕФОЛТ ON (Ship-On, retest3 #56/Р2): фича готова — выкатываем включённой.
+  // Это kill-switch: при инциденте можно выставить false, действий владельца не
+  // требует. Guard в deepseek.service сам откатывает на 'auto' при format-400
+  // от прокси (и не форсит thinking-модели — они 400'ят на forced tool_choice).
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(true),
 });
 
 const OllamaSchema = z.object({
@@ -398,6 +407,24 @@ const AiFeatureFlagsSchema = z.object({
    * выставить `false` — `−1` LLM-вызов MiniMax (ops-решение).
    */
   SUMMARY_AGENT_ENABLED: zBool(true),
+  /**
+   * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+   * (нейтральный ПРОТОКОЛ встречи наружу для клиента, free-text). При `true`
+   * (default) для клиентских типов встреч (sales/customer_success/partner/
+   * custdev) `analyze.worker` дополнительно генерит протокол и мержит его в
+   * `AiResult.structuredData.client_protocol_md`. При `false` — пропуск (не
+   * валит основной отчёт). Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  CLIENT_PROTOCOL_ENABLED: zBool(true),
+  /**
+   * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+   * орг-документа (`compile-org-document`). При `true` (default) на verdict
+   * merge/extension от regulation-dedupe специалист 3.1 собирает структурный
+   * `contentMd` через компилятор (вместо plain-update поля). При `false` —
+   * legacy plain-update (фича не валит dedupe-путь). Аварийный рубильник: фича
+   * готова и выкатывается ON.
+   */
+  DOC_COMPILER_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -630,30 +657,16 @@ const KnowledgeCoreSchema = z.object({
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 
-  // ── Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0) ──
-  /**
-   * Master-флаг v2-агентов. По умолчанию `false`, чтобы legacy
-   * `tasks-extract.worker`/`chapters.worker` остались единственным источником
-   * данных в UI. При `true` — `meeting-analyze-v2.cron` начинает enqueue'ить
-   * jobs, которые пишут в `Task.evidenceBlockIds`/`MeetingChapter.evidenceBlockIds`/
-   * `AiResult.summaryV2` — параллельно legacy.
-   *
-   * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
-   * фаза после ручного решения владельца продукта (см. decisions-log).
-   */
+  // ── DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2 + extractor-v2) удалён ──
+  // Воркер/cron/очередь/extractor-сервисы снесены как мёртвый код (прод никогда
+  // не включал `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`). ENV-ключи оставлены инертными,
+  // чтобы не трогать env-валидацию/admin-registry; ничего больше их не читает.
+  // Колонки `AiResult.summaryV2*`/`Meeting.analyzeV2*` тоже остались в БД (без миграции).
+  /** @deprecated инертный флаг снятого v2-стека — больше не влияет ни на что. */
   KNOWLEDGE_CORE_V2_AGENTS_ENABLED: zBool(false),
-  /**
-   * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
-   * Cron-выражение в декораторе литералом, ENV-значение для логов и для
-   * будущей перерегистрации через `SchedulerRegistry`.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_CRON: z.string().min(1).default('*/10 * * * *'),
-  /**
-   * Дебаунс enqueue в `core.meeting-analyze-v2`: после `meeting.status='ai_ready'`
-   * мы ждём 2 минуты, чтобы block-ingest/distill успели стабилизироваться
-   * (canonical-блоки могут «доезжать» спустя несколько секунд после ai_ready).
-   * Несколько событий по одной встрече за окно складываются в один job.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
 
   // ── ТЗ 2026-05-25: meeting-report-fast (объединённый отчёт по сырому транскрипту) ──
@@ -667,9 +680,6 @@ const KnowledgeCoreSchema = z.object({
    *
    * Default `true` — на dev включаем сразу; на prod выключать через ENV
    * до явного подтверждения качества (kill-switch).
-   *
-   * Старая цепочка `meeting-analyze-v2` НЕ переключается этим флагом —
-   * она имеет собственный `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`.
    */
   MEETING_REPORT_FAST_ENABLED: zBool(true),
 
@@ -1321,6 +1331,11 @@ const DialogLayerSchema = z.object({
   CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
   SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
   MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — kill-switch извлечения
+  // плана запроса (QueryPlanExtractorService). ON: chat-v2 понимает структуру
+  // вопроса (период/типы/темы/сущности/«я»). Аварийный рубильник — OFF при
+  // инциденте отключает извлечение, retrieval работает как раньше.
+  QUERY_PLAN_EXTRACTION_ENABLED: zBool(true),
   DIALOG_SUMMARIZER_CRON: z.string().min(1).default('*/30 * * * *'),
   DIALOG_SUMMARIZER_KEEP_LAST: z.coerce.number().int().positive().default(6),
   DIALOG_SUMMARIZER_STALENESS_HOURS: z.coerce.number().int().positive().default(12),
@@ -1474,6 +1489,10 @@ const BetaOpsSchema = z.object({
   //   - COO_WEEKLY_DIGEST_LOCAL_DAY — день недели (0=воскресенье,
   //     1=понедельник, default 1).
   COO_SENTIMENT_ENABLED: zBool(true),
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста чек-ин →
+  // knowledge-core (CheckinIngestService). ON по умолчанию (Ship-On, Р-B5);
+  // рубильник на случай инцидента в block-ingest, действий владельца не требует.
+  CHECKIN_GRAPH_INGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_LOCAL_HOUR: z.coerce
     .number()
@@ -1664,6 +1683,21 @@ const BudgetSchema = z.object({
 const TrackerSchema = z.object({
   WEBHOOK_HMAC_PREFIX: z.string().min(1).default('kora_wh_'),
   TRACKER_INGEST_QUEUE: z.string().min(1).default('core.raw-events'),
+  // ── Support desk (TZ 2026-06-09 support-desk-clone Ф1) ───────────────
+  // Аварийный kill-switch вендорской службы поддержки. Дефолт ON (Ship-On):
+  // при false `POST /support/tickets` отдаёт 503 SUPPORT_DESK_DISABLED, а
+  // SLA-cron — no-op. Складка в TrackerSchema, чтобы не удлинять `.merge`
+  // цепочку EnvSchema (TS2589). Читается через `cfg.supportDesk.enabled`
+  // (resolveSync: AdminSetting `support_desk.enabled` → ENV → default).
+  SUPPORT_DESK_ENABLED: zBool(true),
+  // Аварийный kill-switch ночного куратора контура поддержки (TZ Ф4). Дефолт ON
+  // (Ship-On): при false `SupportCuratorCron` — no-op. Читается через
+  // `cfg.supportDesk.curatorEnabled` (resolveSync: AdminSetting
+  // `support_desk.curator_enabled` → ENV → default).
+  SUPPORT_CURATOR_ENABLED: zBool(true),
+  // ТЗ 2026-06-10 meeting-visibility — kill-switch «Кому видно». true=действует (Ship-On),
+  // false=аварийный откат к legacy owner-only на всех READ-поверхностях встречи.
+  MEETING_VISIBILITY_ENABLED: zBool(true),
   IDEMPOTENCY_KEY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   TRACKER_WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
   TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS: z.coerce

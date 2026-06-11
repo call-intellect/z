@@ -8,6 +8,7 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import { wrapUserData } from '../../ai/services/prompts/common';
 import {
   SPRINT_REVIEW_SUMMARY_JSON_SCHEMA,
   SPRINT_REVIEW_SUMMARY_SCHEMA_NAME,
@@ -238,12 +239,21 @@ export class SprintReviewService {
         activeHints,
       });
 
+      // A2 анти-инъекция: userMessage содержит сырой пользовательский ввод
+      // (название/описание спринта, заголовки задач) рядом с derived-частями
+      // (блоки графа, активные подсказки) — оборачиваем весь блок в маркеры
+      // данных. SYSTEM уже несёт INJECTION_GUARD_NOTE (withInjectionGuard в
+      // промпте), поэтому оборачиваем ТОЛЬКО user (иначе нота задвоится и
+      // сломается prompt-кэш). Глобальный kill-switch тут не гейтит: у сервиса
+      // нет TypedConfigService.
+      const guardedUser = wrapUserData(userMessage);
+
       let result: LlmCallResult;
       try {
         result = await this.llm.call({
           taskType: 'sprint-review-summary',
           systemPrompt: SPRINT_REVIEW_SUMMARY_SYSTEM_PROMPT,
-          userMessage,
+          userMessage: guardedUser,
           tenantId: args.tenantId,
           responseFormat: {
             type: 'json_schema',

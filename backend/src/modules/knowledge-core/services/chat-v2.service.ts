@@ -13,6 +13,7 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import type { StructuralRetrievalFilters } from '../../dialog-layer/services/query-plan-extractor.service';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -69,6 +70,11 @@ export interface ChatV2Input {
    * `IdeaBlock.createdAt <= validAt` (см. ChatV2RetrievalService).
    */
   validAt?: Date | null;
+  /**
+   * Query Understanding Волна 1 — резолвнутые структурные recall-safe фильтры.
+   * Ф2 только переносит до RetrievalInput; SQL-фильтрацию делает Ф3.
+   */
+  structuralFilters?: StructuralRetrievalFilters | null;
   /**
    * SBA α-5 dialog-layer — заранее посчитанные blockIds (RetrievalCache hit).
    * Если задан — retrieval НЕ запускается, сразу loadContextBlocks.
@@ -148,7 +154,116 @@ interface ContextBlock {
   } | null;
 }
 
+/**
+ * Query Understanding Ф4 (R10) — карта signalType → человекочитаемый русский
+ * термин для честного ответа «в памяти нет по этим условиям». Несколько
+ * исходных типов могут схлопываться в один термин (например, любые задачи).
+ */
+const SIGNAL_TYPE_RU: Record<string, string> = {
+  decision: 'решения',
+  task_created: 'задачи/дела',
+  task_completed: 'задачи/дела',
+  commitment: 'задачи/дела',
+  plan_item: 'задачи/дела',
+  done_item: 'задачи/дела',
+  risk: 'риски',
+  churn_risk: 'риски',
+  blocker: 'блокеры',
+  idea: 'идеи',
+  client_request: 'запросы клиента',
+};
+
+/**
+ * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
+ * термин.
+ */
+const THEME_BRANCH_RU: Record<string, string> = {
+  marketing: 'маркетинг',
+  sales: 'продажи',
+  product: 'продукт',
+  finance: 'финансы',
+  team: 'команда',
+  operations: 'операции',
+  strategy: 'стратегия',
+  clients: 'клиенты',
+  technology: 'технологии',
+  production: 'производство',
+  partnerships: 'партнёрства',
+  legal: 'юридическое',
+};
+
+/** Человекочитаемое описание применённых структурных условий (для честного
+ *  ответа «в памяти нет по этим условиям»). Возвращает '' если описывать нечего. */
+export function describeStructuralFilters(
+  f: {
+    dateFrom: Date | null;
+    dateTo: Date | null;
+    signalTypes: string[];
+    entityIds: string[];
+    themeBranches: string[];
+    bitemporalActiveOnly: boolean;
+  },
+): string {
+  const parts: string[] = [];
+
+  if (f.dateFrom || f.dateTo) {
+    parts.push('период');
+  }
+
+  if (f.signalTypes.length) {
+    const terms = dedupe(f.signalTypes.map((t) => SIGNAL_TYPE_RU[t] ?? t));
+    parts.push(`тип: ${terms.join('/')}`);
+  }
+
+  if (f.themeBranches.length) {
+    const terms = dedupe(f.themeBranches.map((t) => THEME_BRANCH_RU[t] ?? t));
+    parts.push(`тема: ${terms.join('/')}`);
+  }
+
+  if (f.entityIds.length) {
+    parts.push('указанные сущности');
+  }
+
+  if (f.bitemporalActiveOnly) {
+    parts.push('действующие сейчас');
+  }
+
+  return parts.join(', ');
+}
+
+/** Дедупликация с сохранением порядка первого вхождения. */
+function dedupe(items: string[]): string[] {
+  return [...new Set(items)];
+}
+
 const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
+
+/**
+ * §1 Ф5 (2026-06-11) — вырезает технические маркеры цитат из текста ответа
+ * AI-чата (chat-v2), чтобы они не утекали в UI. Цитаты сохраняются отдельно
+ * (массив `citations`), поэтому из видимого текста маркеры можно удалить.
+ *
+ * Режем только маркеры в квадратных скобках строго заданных форм:
+ *   - [CONTRADICTING BLOCK ...]      — counter-evidence тег (W3.3)
+ *   - [REASONING CHAIN FOR BLOCK ...]— тег цепочки обоснований (W3.2)
+ *   - [BLOCK:<id>]                   — ссылка на блок (id = lowercase alnum cuid)
+ * Обычный markdown ответа (списки, **жирный**, ссылки `[текст](url)`) не трогаем.
+ *
+ * ВАЖНО: чистая функция без сайд-эффектов (свежие regex-литералы, без общего
+ * lastIndex) — применять ТОЛЬКО к возвращаемому `message`, после того как
+ * citations/usedBlockIds уже распарсены из СЫРОГО текста.
+ */
+export function stripBlockMarkers(text: string): string {
+  return text
+    .replace(/\[CONTRADICTING BLOCK[^\]]*\]/gi, '')
+    .replace(/\[REASONING CHAIN FOR BLOCK[^\]]*\]/gi, '')
+    .replace(/\[BLOCK:[a-z0-9]+\]/gi, '')
+    .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
+    .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
+    .replace(/[ \t]+\n/g, '\n') // убрать trailing-пробел перед переводом строки
+    .replace(/\n{3,}/g, '\n\n') // не плодить пустые строки
+    .trim();
+}
 
 /**
  * KC-Temporal W3.2 (2026-05-25) — бюджет символов на ВСЕ reasoning chain'ы
@@ -260,6 +375,11 @@ export class ChatV2Service {
         ? (this.accessResolver.buildAccessWhere(accessCtx) as Record<string, unknown>)
         : undefined;
 
+    // Query Understanding Волна 1 — применён ли структурный recall-safe фильтр.
+    this.metrics.incQueryPlanRetrievalFiltered({
+      filtered: input.structuralFilters ? 'yes' : 'no',
+    });
+
     // 1) Retrieval blockId'ов под scope.
     //
     // SBA α-5 dialog-layer:
@@ -294,6 +414,13 @@ export class ChatV2Service {
           graphHops,
           validAt: input.validAt ?? null,
           accessWhere,
+          // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
+          dateFrom: input.structuralFilters?.dateFrom ?? null,
+          dateTo: input.structuralFilters?.dateTo ?? null,
+          signalTypes: input.structuralFilters?.signalTypes,
+          entityIds: input.structuralFilters?.entityIds,
+          themeBranches: input.structuralFilters?.themeBranches,
+          bitemporalActiveOnly: input.structuralFilters?.bitemporalActiveOnly ?? false,
         });
         // Приоритет первой query (originalOrStandalone): её score
         // повышается за счёт rank-boost'а.
@@ -321,10 +448,24 @@ export class ChatV2Service {
     );
 
     // 3) Если контекст пуст — отвечаем без LLM.
+    //    Ф4 (R10): если применялся структурный фильтр — отвечаем честно,
+    //    называя условия, а не общим «Недостаточно данных».
     if (contextBlocks.length === 0) {
+      const desc = input.structuralFilters
+        ? describeStructuralFilters(input.structuralFilters)
+        : '';
+      const message = input.structuralFilters
+        ? desc
+          ? `По заданным условиям (${desc}) в памяти ничего не нашлось.`
+          : 'По заданным условиям в памяти ничего не нашлось.'
+        : 'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.';
+      // Query Understanding Волна 1 — применённый структурный фильтр дал пустой
+      // пул (misroute-proxy): честный ответ «в памяти нет».
+      if (input.structuralFilters) {
+        this.metrics.incQueryPlanEmptyPool({ result: 'empty' });
+      }
       return {
-        message:
-          'Недостаточно данных: я не нашёл подходящих блоков знаний по этому запросу.',
+        message,
         citations: [],
         modelUsed: 'none',
         usedBlockIds: [],
@@ -447,7 +588,9 @@ export class ChatV2Service {
     const usedBlockIds = this.parseUsedBlockIds(result.text, contextBlocks);
 
     return {
-      message: result.text,
+      // §1 Ф5 — strip технических маркеров из видимого текста; парс цитат выше
+      // уже сделан на СЫРОМ result.text (с маркерами), поэтому citations целы.
+      message: stripBlockMarkers(result.text),
       citations,
       modelUsed: result.modelUsed,
       usedBlockIds,

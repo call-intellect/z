@@ -17,13 +17,31 @@
 
 import { apiClient } from './api-client';
 
-export type RegulationKindApi = 'regulation' | 'process' | 'policy' | 'standard';
+export type RegulationKindApi =
+  | 'regulation'
+  | 'process'
+  | 'policy'
+  | 'standard'
+  | 'instruction';
 
 export type RegulationStatusApi = 'active' | 'deprecated' | 'archived';
 
 export type PolicySeverityApi = 'advisory' | 'mandatory' | 'blocking';
 
 export type TrustTierApi = 'auto' | 'provisional' | 'human';
+
+/**
+ * Статус извлечения сущности (Фронт B2.2).
+ *   - `exists`    — извлечено, сущность реально существует;
+ *   - `needed`    — нужно создать/доформулировать (черновик);
+ *   - `discussed` — пока только обсуждается.
+ *
+ * Поле опционально: если бэк его ещё не присылает — чип не показываем.
+ */
+export type ExtractionStatusApi = 'exists' | 'needed' | 'discussed';
+
+/** Источник изменения версии (Фронт B2.5). Опционально. */
+export type RegulationChangeSourceApi = 'agent' | 'manual' | 'imported';
 
 export interface RegulationListItemApi {
   id: string;
@@ -37,6 +55,12 @@ export interface RegulationListItemApi {
   ownerPersonId: string | null;
   confidence: number | null;
   trustTier: TrustTierApi;
+  /**
+   * Статус извлечения (B2.2). Опционально — бэк может ещё не присылать.
+   * Если ∈ {needed, discussed} — запись считается черновиком/обсуждаемой,
+   * lifecycle «Действует» для неё не показывается (B2.3).
+   */
+  extractionStatus?: ExtractionStatusApi | null;
   lastConfirmedAt: string | null;
   updatedAt: string;
   createdAt: string;
@@ -73,6 +97,14 @@ export interface RegulationVersionItemApi {
   previousVersionId: string | null;
   payload: Record<string, unknown>;
   changeReason: string | null;
+  /**
+   * Причина/заметка изменения процесса (B2.5). Для process бэк хранит её
+   * под именем `changeNote` — UI показывает оба под одним лейблом.
+   * Опционально.
+   */
+  changeNote?: string | null;
+  /** Источник изменения (B2.5). Опционально. */
+  source?: RegulationChangeSourceApi | null;
   createdAt: string;
   createdByUserId: string | null;
 }

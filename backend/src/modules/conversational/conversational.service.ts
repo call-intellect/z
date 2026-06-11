@@ -143,6 +143,11 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // не доходил до Telegram. Теперь бот-каналы приоритетны (мгновенный пинг),
   // in_app — fallback. Это включает доставку дневного чек-ина в Telegram.
   'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app'],
+  // ТЗ 2026-06-09 support-desk (Р-6) — дублирование обращения/ответа клиента
+  // сотруднику поддержки. Telegram + почта (мгновенный пинг + почтовый след),
+  // in_app — fallback. Приём от клиента — только виджет (не эти каналы).
+  'support.ticket_created': ['telegram_bot', 'email_smtp', 'in_app'],
+  'support.ticket_reply': ['telegram_bot', 'email_smtp', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];

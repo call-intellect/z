@@ -83,6 +83,24 @@ function participantFromApi(
   return { ...p };
 }
 
+/**
+ * #26 (retest3) — диаризация ВЫРОЖДЕНА: пословных/сегментных таймкодов нет, и
+ * merge.worker дал по одному псевдо-turn на ВСЮ дорожку. Тогда суммарная речь
+ * складывается из полностью накладывающихся дорожек и превышает длительность
+ * встречи в разы («Всего речи 130 мин» при встрече 44 мин), а «перекрёстная
+ * речь» ≈ всей речи, доли говорения у каждого ≈ 100%. Такие тоталы бессмысленны
+ * — UI должен показать «недоступно», а не абсурд. Эвристика по уже сервящимся
+ * полям (без новой БД-колонки — миграций в Ф3 нет): lowConfidence + суммарная
+ * речь сильно превышает длительность встречи (>1.5×). Реальная диаризация даёт
+ * totalSpeech ≤ ~длительности (сегменты почти не пересекаются).
+ */
+export function isDiarizationDegenerate(
+  m: BehaviorMeetingMetricsDomain | null,
+): boolean {
+  if (!m || !m.lowConfidence || m.totalDurationMs <= 0) return false;
+  return m.totalSpeechMs > m.totalDurationMs * 1.5;
+}
+
 // ──────────────────── Org aggregate ────────────────────
 
 export interface BehaviorOrgAggregateParticipantDomain {

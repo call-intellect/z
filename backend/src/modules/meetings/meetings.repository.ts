@@ -131,8 +131,8 @@ export class MeetingsRepository {
    *   - `status[]` / `type[]` — `IN`;
    *   - всегда `deletedAt: null` (soft-delete).
    */
-  async listByOwner(
-    ownerId: string,
+  async listVisible(
+    visibilityWhere: Prisma.MeetingWhereInput,
     filters: {
       page: number;
       limit: number;
@@ -153,7 +153,7 @@ export class MeetingsRepository {
         : undefined;
 
     const where: Prisma.MeetingWhereInput = {
-      ownerId,
+      ...visibilityWhere,
       deletedAt: null,
       ...(filters.status && filters.status.length > 0 ? { status: { in: filters.status } } : {}),
       ...(filters.type && filters.type.length > 0 ? { type: { in: filters.type } } : {}),

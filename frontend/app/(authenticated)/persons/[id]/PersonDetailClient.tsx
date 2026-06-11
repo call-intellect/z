@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Activity, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   appointmentsApi,
   type AppointmentTimelineItemApi,
@@ -68,7 +68,7 @@ export function PersonDetailClient({ entityId }: { entityId: string }) {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org. Попросите владельца пригласить вас."
+        description="Вы не состоите ни в одной организации. Попросите владельца пригласить вас."
       />
     );
   }
@@ -118,7 +118,7 @@ function PersonDetailContent({
         else if (e.code === 'entity_not_found' || e.code === 'http_404') {
           setNotFound(true);
         } else {
-          setError(e.message);
+          setError(humanizeApiError(e));
         }
       } else {
         setError('Ошибка загрузки');
@@ -137,7 +137,7 @@ function PersonDetailContent({
     return (
       <AdminForbidden
         title="Нет прав на просмотр"
-        description="Этот раздел доступен авторизованным сотрудникам Org."
+        description="Этот раздел доступен авторизованным сотрудникам организации."
       />
     );
   }
@@ -145,7 +145,7 @@ function PersonDetailContent({
     return (
       <AdminForbidden
         title="Персона не найдена"
-        description="Сущность не существует или не принадлежит вашей Org."
+        description="Сущность не существует или не принадлежит вашей организации."
       />
     );
   }
@@ -264,7 +264,7 @@ function PersonDetailContent({
 
       {!isOwner && isPerson && (
         <section className="rounded-lg border border-border-subtle bg-bg-overlay p-5 text-sm text-fg-tertiary">
-          Удаление личных данных доступно только владельцу Org.
+          Удаление личных данных доступно только владельцу организации.
         </section>
       )}
 
@@ -323,7 +323,7 @@ function ErasePersonDialog({
       onSuccess();
       router.push('/persons');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить данные');
+      toast.error(humanizeApiError(e, 'Не удалось удалить данные'));
     } finally {
       setSubmitting(false);
     }
@@ -482,7 +482,7 @@ function AppointmentsTimelineSection({
       } catch (e) {
         if (!cancelled) {
           setError(
-            e instanceof ApiError ? e.message : 'Не удалось загрузить назначения',
+            humanizeApiError(e, 'Не удалось загрузить назначения'),
           );
         }
       } finally {
@@ -614,7 +614,7 @@ function PersonCommitmentsSection({ entityId }: { entityId: string }) {
             setIncoming([]);
           } else {
             setError(
-              e instanceof ApiError ? e.message : 'Не удалось загрузить обещания',
+              humanizeApiError(e, 'Не удалось загрузить обещания'),
             );
           }
         }

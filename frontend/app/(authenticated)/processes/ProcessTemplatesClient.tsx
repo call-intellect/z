@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   crossFunctionalApi,
   processesApi,
@@ -75,7 +75,7 @@ export function ProcessTemplatesClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -153,7 +153,7 @@ function LocalContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);
@@ -172,7 +172,7 @@ function LocalContent() {
       const dto = await processesApi.get(selectedId);
       setDetail(mapProcessTemplateDetail(dto));
     } catch (e) {
-      setDetailError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setDetailError(humanizeApiError(e, 'Ошибка загрузки'));
     } finally {
       setDetailLoading(false);
     }
@@ -445,7 +445,7 @@ function CrossFunctionalContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(humanizeApiError(e, 'Ошибка загрузки'));
       }
     } finally {
       setIsLoading(false);

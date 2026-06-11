@@ -35,8 +35,6 @@ import { InsightClustererCron } from '../knowledge-core/workers/insight-clustere
 import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-clone-rebuild.cron';
 // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
 import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
-import { MeetingAnalyzeV2Cron } from '../knowledge-core/workers/meeting-analyze-v2.cron';
-import { MeetingAnalyzeV2Worker } from '../knowledge-core/workers/meeting-analyze-v2.worker';
 import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
@@ -81,6 +79,7 @@ import { TableSyncWorker } from '../tables/workers/table-sync.worker';
 import { TrackerModule } from '../tracker/tracker.module';
 
 import { AnthropicService } from './services/anthropic.service';
+import { DeepSeekService } from './services/deepseek.service';
 import { LlmFallbackService } from './services/llm-fallback.service';
 import { MinimaxService } from './services/minimax.service';
 import { OpenAiProxyService } from './services/openai-proxy.service';
@@ -152,6 +151,7 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     VoxService,
     LlmFallbackService,
     AnthropicService,
+    DeepSeekService,
     MinimaxService,
     OpenAiProxyService,
 
@@ -300,19 +300,14 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // SBA γ-1 — cron `0 9 * * MON`: weekly digest direct manager'ам про
     // новые SkillTrait'ы у подчинённых.
     SkillManagerDigestCron,
-    MeetingAnalyzeV2Worker,
-    MeetingAnalyzeV2Cron,
     // ТЗ 2026-05-25 — meeting-report-fast.
     // Consumer `core.meeting-report-fast`: один LLM-вызов по СЫРОМУ
     // транскрипту → chapters + tasks + summaryFast + qualityScore.
-    // На Фазе 2 producer не подключён (будет в Фазе 4) — воркер существует
-    // и слушает очередь, но автоматически jobs не появляются.
     MeetingReportFastWorker,
     // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined.
     // Consumer `core.specialists-combined`. Под flag-rollout
-    // `SPECIALISTS_COMBINED_ENABLED` (default false) работает ПАРАЛЛЕЛЬНО со
-    // старыми специалистами 3-1..3-9. Producer — `MeetingAnalyzeV2Cron` при
-    // включённом флаге.
+    // `SPECIALISTS_COMBINED_ENABLED` (default false). Producer (cron) удалён
+    // вместе с v2-стеком — на 2026-06-10 enqueue только вручную/из тестов.
     SpecialistsCombinedWorker,
     // Ф2 МТЗ «разблокировка конвейера» — ЕДИНЫЙ Worker очереди
     // `core.specialist-routing`. Делегирует job по `job.name` в нужный

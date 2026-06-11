@@ -25,6 +25,22 @@ export const BRAND_VOICE_TONE_LABEL: Record<string, string> = {
   inclusive: 'Инклюзивность',
 };
 
+/**
+ * Метки статуса артефакта brand-corpus (= `DocumentStatus` backend).
+ * Неизвестный код → человеческий фолбэк через `replaceAll`.
+ */
+const BRAND_VOICE_ARTIFACT_STATUS_LABEL: Record<string, string> = {
+  uploaded: 'Загружен',
+  parsing: 'Разбираем',
+  parsed: 'Разобран',
+  blocks_extracted: 'Проиндексирован',
+  failed: 'Ошибка',
+};
+
+export function brandVoiceArtifactStatusLabel(status: string): string {
+  return BRAND_VOICE_ARTIFACT_STATUS_LABEL[status] ?? status.replaceAll('_', ' ');
+}
+
 export interface ToneAxisDomain {
   key: string;
   label: string;

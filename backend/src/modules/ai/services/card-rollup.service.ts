@@ -63,10 +63,10 @@ export class CardRollupService {
       orderBy: { createdAt: 'desc' },
       take: CARD_ROLLUP_MAX_RECENT_MEETINGS,
       include: {
-        // Р6: каноническая сводка = summaryFast ?? summaryV2 ?? summary —
-        // тянем все три поля, иначе pickPrimarySummary молча упадёт на legacy.
+        // Р6: каноническая сводка = summaryFast ?? summary — тянем оба поля,
+        // иначе pickPrimarySummary молча упадёт на legacy.
         aiResult: {
-          select: { summaryFast: true, summaryV2: true, summary: true },
+          select: { summaryFast: true, summary: true },
         },
       },
     });

@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { entitlementsApi } from '@/api/entitlements.api';
 import {
   ALL_QUOTAS,
@@ -66,7 +66,7 @@ export function BillingClient() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : 'Не удалось загрузить тариф');
+        setError(humanizeApiError(e, 'Не удалось загрузить тариф'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

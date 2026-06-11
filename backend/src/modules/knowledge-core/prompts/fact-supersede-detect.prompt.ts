@@ -19,10 +19,18 @@
  * — `BITEMPORAL_SUPERSEDE_ENABLED`). Дешёвый арбитр: ≤700 input + ≤300 output.
  */
 
+import { withConfidenceCalibration } from '../../ai/services/prompts/common';
+
 export const FACT_SUPERSEDE_DETECT_SCHEMA_NAME =
   'fact_supersede_detect_v1';
 
-export const FACT_SUPERSEDE_DETECT_SYSTEM_PROMPT = [
+// A9 (2026-06-10): здесь `confidence` — КРИТИЧЕСКИЙ сигнал: при verdict
+// "supersedes" мы закрываем старый bitemporal-факт (validUntil=now) и создаём
+// supersede-ребро графа, при "contradicts" — contradicts-ребро. Это вес/основание
+// решения о графе, поэтому SYSTEM завершается единой шкалой уверенности
+// (`withConfidenceCalibration`, дописывается в КОНЕЦ → cache-friendly).
+// Согласуется с правилом «будь консервативен» в теле промпта.
+export const FACT_SUPERSEDE_DETECT_SYSTEM_PROMPT = withConfidenceCalibration([
   'Ты — knowledge-арбитр памяти компании. Тебе дают новый factual-блок и top-K похожих существующих блоков того же типа (signalType) той же организации.',
   'Реши, как новый блок соотносится с каждым из существующих, и выбери ОДИН verdict для всей группы. Целевой кандидат указывай через `targetBlockId` (id из переданного списка).',
   '',
@@ -40,7 +48,7 @@ export const FACT_SUPERSEDE_DETECT_SYSTEM_PROMPT = [
   '`confidence` — твоя уверенность в verdict (0.0..1.0). `reason` — кратко (1-3 предложения) почему ты выбрал именно этот verdict, на русском.',
   '',
   'Отвечай строго в формате JSON по схеме fact_supersede_detect_v1.',
-].join('\n');
+].join('\n'));
 
 export interface FactSupersedeDetectCandidate {
   id: string;

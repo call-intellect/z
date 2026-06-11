@@ -371,11 +371,12 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         });
         return null;
       }
-      // Wave 3 / Tracker Phase 4 РФ — если task-handler доступен, делегируем
-      // ему обработку voice (он сам сделает ASR + parseCreateTask). Если
-      // handler решит, что это не task — fallback на старый handleVoice.
+      // ТЗ 2026-06-10 §2 — структурные спецслучаи (forward/reply) до ASR.
+      // Plain voice БОЛЬШЕ не перехватывается как задача безусловно: его
+      // транскрибирует handleVoice и классифицирует (task/show_tasks/вопрос/
+      // план/заметка) — гейт намерения работает и для голоса.
       if (this.taskHandler) {
-        const handled = await this.taskHandler.tryHandle({
+        const handled = await this.taskHandler.tryHandleStructural({
           msg,
           binding,
           tenantId,
@@ -518,13 +519,14 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       // fall through
     }
 
-    // 7.5. Wave 3 / Tracker Phase 4 РФ — попытка обработать через task-flow
-    //      (создание задачи / forward / reply на bot-уведомление о задаче).
-    //      Если handler вернул true — сообщение уже обработано (бот сам ответил
-    //      пользователю), адаптер выходит и НЕ передаёт сообщение дальше как
-    //      free_note/chat_query. Если false — обычный pipeline (intent classify).
+    // 7.5. ТЗ 2026-06-10 §2 Ф3 — структурные спецслучаи task-flow (reply на
+    //      наше уведомление о задаче + forward «преврати в задачу»)
+    //      обрабатываются ДО классификации намерения. Plain text БОЛЬШЕ не
+    //      перехватывается безусловно как задача — её разбирает классификатор
+    //      ниже (фикс обхода гейта намерения: «план/вопрос» больше не падают
+    //      в IntakeIssue). task/show_tasks → отдельный маршрут после classify.
     if (this.taskHandler) {
-      const handled = await this.taskHandler.tryHandle({
+      const handled = await this.taskHandler.tryHandleStructural({
         msg,
         binding,
         tenantId,
@@ -539,6 +541,25 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       tenantId,
       userId: binding.userId,
     });
+
+    // ТЗ 2026-06-10 §2 Ф2 — task / show_tasks обрабатывает task-handler напрямую
+    // (создание задачи / читалка «мои задачи»): бот сам отвечает пользователю →
+    // InboundMessage не нужен. Если handler недоступен — упадёт в free_note ниже.
+    if (intent === 'task' && this.taskHandler) {
+      await this.taskHandler.handleCreateTask({
+        msg,
+        binding,
+        tenantId,
+        config,
+        text: rawText,
+        externalId: `${msg.chat.id}:${msg.message_id}`,
+      });
+      return null;
+    }
+    if (intent === 'show_tasks' && this.taskHandler) {
+      await this.taskHandler.handleShowTasks({ msg, binding, tenantId, config });
+      return null;
+    }
 
     if (intent === 'chat_query') {
       return {
@@ -842,6 +863,29 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       userId: args.binding.userId,
     });
 
+    // ТЗ 2026-06-10 §2 — голосовая задача / «покажи задачи» → task-handler
+    // напрямую (бот сам отвечает), как и в текстовом пути.
+    if (intent === 'task' && this.taskHandler) {
+      await this.taskHandler.handleCreateTask({
+        msg: args.msg,
+        binding: args.binding,
+        tenantId: args.tenantId,
+        config: args.config,
+        text: transcript,
+        externalId: `${args.msg.chat.id}:${args.msg.message_id}`,
+      });
+      return null;
+    }
+    if (intent === 'show_tasks' && this.taskHandler) {
+      await this.taskHandler.handleShowTasks({
+        msg: args.msg,
+        binding: args.binding,
+        tenantId: args.tenantId,
+        config: args.config,
+      });
+      return null;
+    }
+
     if (intent === 'chat_query') {
       return {
         type: 'chat_query',
@@ -1065,7 +1109,12 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     tenantId: string;
     userId: string;
   }): Promise<
-    'chat_query' | 'free_note' | 'daily_plan_morning' | 'daily_report_evening'
+    | 'chat_query'
+    | 'free_note'
+    | 'daily_plan_morning'
+    | 'daily_report_evening'
+    | 'task'
+    | 'show_tasks'
   > {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
@@ -1115,8 +1164,36 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           return isPlan ? 'daily_plan_morning' : 'daily_report_evening';
         }
 
-        // chat-категории → chat_query. Всё остальное (включая `note` и
-        // plan/report с conf<0.7) → free_note.
+        const intentSource: 'llm' | 'heuristic' =
+          result.source === 'heuristic' ? 'heuristic' : 'llm';
+
+        // ТЗ 2026-06-10 §2 — task: поставить задачу в трекер. Gate >=0.7;
+        // task с conf<0.7 проваливается ниже в `free_note` (note) — корректно
+        // (лучше заметка в потоке, чем ложная задача).
+        if (result.intent === 'task' && conf >= 0.7) {
+          this.metrics.incBotIntentClassified({
+            channel: 'telegram_bot',
+            intent: 'task',
+            source: intentSource,
+          });
+          return 'task';
+        }
+        // show_tasks: показать мои задачи. Gate >=0.7 → show_tasks; иначе →
+        // chat_query (трактуем как вопрос — отвечаем из памяти, не молчим и
+        // не плодим задачу).
+        if (result.intent === 'show_tasks') {
+          const routed: 'show_tasks' | 'chat_query' =
+            conf >= 0.7 ? 'show_tasks' : 'chat_query';
+          this.metrics.incBotIntentClassified({
+            channel: 'telegram_bot',
+            intent: routed,
+            source: intentSource,
+          });
+          return routed;
+        }
+
+        // chat-категории → chat_query. Всё остальное (включая `note`,
+        // plan/report и task с conf<0.7) → free_note.
         const isChat =
           result.intent === 'factual' ||
           result.intent === 'exploratory' ||
@@ -1125,8 +1202,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const intent: 'chat_query' | 'free_note' = isChat
           ? 'chat_query'
           : 'free_note';
-        const intentSource: 'llm' | 'heuristic' =
-          result.source === 'heuristic' ? 'heuristic' : 'llm';
         this.metrics.incBotIntentClassified({
           channel: 'telegram_bot',
           intent,

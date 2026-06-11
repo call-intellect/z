@@ -1,33 +1,40 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
+import { DeepSeekService } from './deepseek.service';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { MinimaxService } from './minimax.service';
 import { OpenAiProxyService } from './openai-proxy.service';
 
 /**
- * Каскад LLM-fallback'а.
+ * Каскад LLM-fallback'а главного отчёта встречи (потребитель — `analyze.worker`).
  *
- *   1. MiniMax (Anthropic-compat) — основной канал.
- *   2. На любой устойчивый сбой MiniMax → OpenAI Responses через `proxy.agent-lia.ru`.
+ * Две явные ветки по `ai.mainReport.primary` (retest3 Ф5 #51/Р3):
+ *   - `deepseek` (Ship-On, дефолт): DeepSeek → MiniMax → OpenAI-via-proxy.
+ *     Включает кэш DeepSeek и per-agent pro-модель (`input.model`).
+ *   - `minimax` (kill-switch-откат): дословно прежний каскад MiniMax → OpenAI.
  *
  * Anthropic выведен из каскада 2026-06-03: ключа нет (не закупаем), любой вызов
- * давал 403 (РФ-блок) и только тратил время перед переходом на MiniMax. Класс
- * `AnthropicService` физически остаётся (роутер/протокол-адаптер), но в дефолтном
- * fallback'е больше не участвует.
+ * давал 403 (РФ-блок) и только тратил время. Класс `AnthropicService` физически
+ * остаётся (роутер/протокол-адаптер), но в дефолтном fallback'е не участвует.
  *
- * Финальный ответ оборачивается в общий `LlmCompleteOutput`. Логи провайдера
- * (`provider: 'minimax' | 'openai-via-proxy'`) — для AiUsageLog.
+ * D1 (retest3): `input.model` — per-agent имя DeepSeek-модели (напр.
+ * `deepseek-v4-pro`). MiniMax/OpenAI берут `input.model ?? default`
+ * (`minimax.service:36`), поэтому перед ними model СБРАСЫВАЕТСЯ — иначе они
+ * попытаются использовать имя deepseek-модели и сломают откат/fallback.
  *
- * Этот сервис НЕ пишет AiUsageLog сам — ответ возвращается, и caller (analyze.worker)
- * пишет лог по результату с правильным `agentType`.
+ * Этот сервис НЕ пишет AiUsageLog сам — ответ возвращается, и caller
+ * (analyze.worker) пишет лог по результату с правильным `agentType`.
  */
 @Injectable()
 export class LlmFallbackService {
   private readonly logger = new Logger(LlmFallbackService.name);
 
   constructor(
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(DeepSeekService) private readonly deepseek: DeepSeekService,
     @Inject(MinimaxService) private readonly minimax: MinimaxService,
     @Inject(OpenAiProxyService) private readonly openai: OpenAiProxyService,
     // BusinessMetricsService может отсутствовать в юнит-тестах LlmFallbackService —
@@ -55,17 +62,38 @@ export class LlmFallbackService {
       input.system.cacheControl === undefined
         ? { ...input, system: { ...input.system, cacheControl: 'ephemeral' } }
         : input;
+    // model оставляем только DeepSeek-ветке; MiniMax/OpenAI его не понимают (D1).
+    const withoutModel: LlmCompleteInput = { ...withCache, model: undefined };
 
+    if (this.cfg.ai.mainReport.primary === 'deepseek') {
+      // 1. DeepSeek (primary) — кэш DeepSeek + per-agent pro-модель (input.model).
+      try {
+        return await this.deepseek.complete(withCache);
+      } catch (err) {
+        this.logger.warn(`Fallback DeepSeek→MiniMax: ${errMsg(err)}`);
+        this.metrics?.incLlmFallback('minimax');
+      }
+      // 2. MiniMax (откат) — без deepseek-model.
+      try {
+        return await this.minimax.complete(withoutModel);
+      } catch (err) {
+        this.logger.warn(`Fallback MiniMax→OpenAI-via-proxy: ${errMsg(err)}`);
+        this.metrics?.incLlmFallback('openai-via-proxy');
+      }
+      // 3. OpenAI-via-proxy.
+      return this.openai.complete(withoutModel);
+    }
+
+    // primary='minimax' — дословно прежний каскад (kill-switch-откат).
     // 1. MiniMax — основной канал (Anthropic-compat, поддерживает cacheControl).
     try {
-      return await this.minimax.complete(withCache);
+      return await this.minimax.complete(withoutModel);
     } catch (err) {
       this.logger.warn(`Fallback MiniMax→OpenAI-via-proxy: ${errMsg(err)}`);
       this.metrics?.incLlmFallback('openai-via-proxy');
     }
-
     // 2. OpenAI-via-proxy.
-    return this.openai.complete(withCache);
+    return this.openai.complete(withoutModel);
   }
 }
 

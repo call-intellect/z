@@ -9,6 +9,7 @@
 import {
   withAsrNote,
   withConfidenceCalibration,
+  withDecisionDiscriminator,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
@@ -17,6 +18,7 @@ import {
 // F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика пустых
 // входов и относительных сроков.
 export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withDecisionDiscriminator(
   withEdgeCasePolicy(
   withConfidenceCalibration(
     [
@@ -36,6 +38,7 @@ export const EXPERIMENT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '',
     'Отвечай СТРОГО валидным JSON по схеме. Никакого текста снаружи.',
     ].join('\n'),
+  ),
   ),
   ),
 );

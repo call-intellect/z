@@ -141,6 +141,14 @@ export function mapIdeaListItem(api: IdeaListItemApi): IdeaListItem {
   };
 }
 
+/**
+ * #80 — единая точка построения ссылки на деталь идеи. Используется виджетами
+ * дашборда и /me; ведёт на отдельный роут /ideas/[id] (а не на inline master-detail).
+ */
+export function ideaHref(id: string): string {
+  return `/ideas/${encodeURIComponent(id)}`;
+}
+
 export function mapIdeaDetail(api: IdeaDetailApi): IdeaDetail {
   return {
     ...mapIdeaListItem(api),

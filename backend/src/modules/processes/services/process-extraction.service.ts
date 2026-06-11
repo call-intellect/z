@@ -8,6 +8,7 @@ import {
   type LlmCallResult,
   LlmRouterService,
 } from '../../ai/services/llm-router.service';
+import { applyInputGuards } from '../../ai/services/prompts/common';
 import {
   PROCESS_TEMPLATE_EXTRACT_JSON_SCHEMA,
   PROCESS_TEMPLATE_EXTRACT_SCHEMA_NAME,
@@ -54,9 +55,8 @@ export class ProcessExtractionService {
     @Inject(CrossFunctionalDetectorService)
     private readonly crossFunctional: CrossFunctionalDetectorService,
   ) {
-    // cfg сейчас не нужен напрямую (worker управляет батч-окном), но
-    // оставлен для будущих параметров (e.g. dedupeThreshold cosine).
-    void this.cfg;
+    // cfg используется в extractBatch для kill-switch
+    // aiFeatures.promptInjectionGuardEnabled (A2 input-guard).
   }
 
   /**
@@ -87,20 +87,30 @@ export class ProcessExtractionService {
 
     let llmResult: LlmCallResult;
     const start = Date.now();
+    // A2: оборачиваем сырой пользовательский ввод (цитаты из встреч/документов,
+    // critical-question/trusted-answer) в анти-инъекционные маркеры. asr:false —
+    // ASR-нота уже в PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT (withAsrNote), второй
+    // раз не дописываем. Kill-switch — общий aiFeatures.promptInjectionGuardEnabled.
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(
+      PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT,
+      PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE({
+        blocks: blocks.map((b) => ({
+          id: b.id,
+          signalType: b.signalType,
+          criticalQuestion: b.criticalQuestion,
+          trustedAnswer: b.trustedAnswer,
+          quotes: b.quotes,
+        })),
+        existingTemplates,
+      }),
+      { enabled: guardOn, injection: true },
+    );
     try {
       llmResult = await this.llm.call({
         taskType: ProcessExtractionService.TASK_TYPE,
-        systemPrompt: PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT,
-        userMessage: PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE({
-          blocks: blocks.map((b) => ({
-            id: b.id,
-            signalType: b.signalType,
-            criticalQuestion: b.criticalQuestion,
-            trustedAnswer: b.trustedAnswer,
-            quotes: b.quotes,
-          })),
-          existingTemplates,
-        }),
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

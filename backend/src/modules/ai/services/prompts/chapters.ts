@@ -60,7 +60,9 @@ const CHAPTERS_SYSTEM = `Ты — деловой ассистент. Разбе�
 - "order" — порядковый номер главы, начиная с 0; идёт по возрастанию.
 
 Формат ответа — объект JSON с одним полем "chapters" (массив глав).
-Пример: {"chapters":[{"startMs":0,"endMs":120000,"title":"Введение","summary":"Знакомство и повестка.","order":0}]}`;
+Пример: {"chapters":[{"startMs":0,"endMs":120000,"title":"Введение","summary":"Знакомство и повестка.","order":0}]}
+
+summary главы — нейтральное описание содержания, без оценок. Для технических/переходных глав summary=null (схема допускает null), не натягивай описание.`;
 
 export interface ChaptersPromptInput {
   meeting: { id: string; type: string; title: string };

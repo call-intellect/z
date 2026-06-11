@@ -6,7 +6,7 @@ import { Send, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { cardsApi } from '@/api/cards.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { ScrollArea } from '@/ui/shadcn/scroll-area';
@@ -86,7 +86,7 @@ export function CardChat({ cardId }: { cardId: string }) {
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Ошибка чата';
+      const msg = humanizeApiError(err, 'Ошибка чата');
       toast.error(msg);
       // Сообщение пользователя оставляем в ленте — оно ушло на сервер.
     } finally {

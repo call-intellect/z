@@ -37,7 +37,7 @@ function buildService(prisma: PrismaStub): GraphMaterializationService {
 }
 
 describe('GraphMaterializationService.getMeetingMaterialization', () => {
-  it('(a) 3 блока signalType=decision, 0 Decision → gap decision {blocksWithSignal:3, materialized:0}', async () => {
+  it('(a) 2 canonical + 1 draft decision, 0 Decision → gap по CANONICAL-срезу {blocksWithSignal:2, materialized:0}', async () => {
     const prisma = buildPrisma();
     prisma.rawEvent.findMany.mockResolvedValueOnce([{ id: 're-1' }]);
     prisma.ideaBlockEvidence.findMany.mockResolvedValueOnce([
@@ -63,11 +63,12 @@ describe('GraphMaterializationService.getMeetingMaterialization', () => {
     expect(res.signalTypeDistribution).toEqual({ decision: 3 });
     expect(res.statusDistribution).toEqual({ canonical: 2, draft: 1 });
     expect(res.materialized).toEqual({ decisions: 0, ideas: 0, goals: 0 });
+    // Полное распределение сохранено (наблюдаемость), но gap — по canonical-срезу (2).
     expect(res.gaps).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: 'decision',
-          blocksWithSignal: 3,
+          blocksWithSignal: 2,
           materialized: 0,
         }),
       ]),
@@ -81,6 +82,31 @@ describe('GraphMaterializationService.getMeetingMaterialization', () => {
         }),
       }),
     );
+  });
+
+  it('(a2) все decision-блоки draft/merged (0 canonical), 0 Decision → gaps=[] (нет ложной тревоги #75)', async () => {
+    const prisma = buildPrisma();
+    prisma.rawEvent.findMany.mockResolvedValueOnce([{ id: 're-1' }]);
+    prisma.ideaBlockEvidence.findMany.mockResolvedValueOnce([
+      { blockId: 'b1' },
+      { blockId: 'b2' },
+    ]);
+    prisma.ideaBlock.findMany.mockResolvedValueOnce([
+      { signalType: 'decision', status: 'draft' },
+      { signalType: 'decision', status: 'merged_into' },
+    ]);
+    prisma.decision.count.mockResolvedValueOnce(0);
+    prisma.idea.count.mockResolvedValueOnce(0);
+    prisma.goal.count.mockResolvedValueOnce(0);
+
+    const service = buildService(prisma);
+    const res = await service.getMeetingMaterialization('tenant-1', 'm-1b');
+
+    // Полное распределение сохранено для наблюдаемости.
+    expect(res.signalTypeDistribution).toEqual({ decision: 2 });
+    expect(res.statusDistribution).toEqual({ draft: 1, merged_into: 1 });
+    // Но canonical=0 → gap НЕ поднимается (раньше был ложный WARN каждые 30 мин).
+    expect(res.gaps).toEqual([]);
   });
 
   it('(b) decision-блоки И ненулевой Decision.count → нет gap decision', async () => {

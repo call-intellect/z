@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { Loader2, Send, X, MessageSquarePlus, MessageSquare, Sparkles } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   createFreeNote,
   dismissNotification,
@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { ProbeAnswerInput } from '@/ui/components/probe/ProbeAnswerInput';
+import { ReadablePayload } from '@/ui/readable-payload';
 
 type Filter = 'unread' | 'pending_response' | 'all';
 type Tab = 'inbox' | 'proactive';
@@ -285,7 +286,7 @@ function NotificationDetail({
       setResponseText('');
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -300,7 +301,7 @@ function NotificationDetail({
       await respondToNotification(n.id, { response: answer });
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -312,7 +313,7 @@ function NotificationDetail({
       await dismissNotification(n.id);
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(null);
     }
@@ -344,7 +345,7 @@ function NotificationDetail({
         {payload.summary && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
-              Карточка{payload.resourceType ? ` (${payload.resourceType})` : ''}
+              Карточка
             </div>
             <p className="whitespace-pre-wrap">{payload.summary}</p>
           </div>
@@ -429,9 +430,16 @@ function NotificationDetail({
             <div className="text-xs uppercase text-muted-foreground">
               Ваш ответ ({n.respondedAt?.toLocaleString('ru-RU') ?? '—'})
             </div>
-            <pre className="whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-              {JSON.stringify(n.responsePayload, null, 2)}
-            </pre>
+            {(() => {
+              const rp = n.responsePayload as Record<string, unknown>;
+              const raw = rp.response ?? rp.text ?? rp.value;
+              const answerText = typeof raw === 'string' ? raw.trim() : '';
+              return answerText ? (
+                <p className="whitespace-pre-wrap text-sm">{answerText}</p>
+              ) : (
+                <ReadablePayload value={n.responsePayload} />
+              );
+            })()}
           </div>
         )}
 
@@ -472,7 +480,7 @@ function FreeNoteCard({
       await onCreated();
       toast.success('Заметка отправлена в память компании.');
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(false);
     }
@@ -594,7 +602,7 @@ function ProactiveRow({
       await dismissProactiveNotification(orgId, item.id);
       onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${e.message}`);
+      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
     } finally {
       setBusy(false);
     }

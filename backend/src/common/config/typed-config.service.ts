@@ -307,13 +307,12 @@ export class TypedConfigService {
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
         defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
         // ТЗ-3 Фаза 3 — форс synthetic-tool через tool_choice для не-thinking
-        // моделей при autoConvert. Дефолт OFF (см. env.schema.ts): включает
-        // владелец после прод-пробы agent-lia. Guard в deepseek.service
-        // откатывает на 'auto' при format-400 прокси.
+        // моделей при autoConvert. Дефолт ON (Ship-On, retest3 #56): kill-switch.
+        // Guard в deepseek.service откатывает на 'auto' при format-400 прокси.
         forceToolChoiceEnabled: this.resolveSync<boolean>(
           'ai.deepseek.forceToolChoiceEnabled',
           'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
-          false,
+          true,
         ),
       },
       ollama: {
@@ -323,6 +322,11 @@ export class TypedConfigService {
       minimax: {
         apiKey: this.get('MINIMAX_API_KEY'),
         baseUrl: this.get('MINIMAX_BASE_URL'),
+      },
+      // retest3 Ф5 #51/Р3 — основной провайдер главного отчёта встречи
+      // (LlmFallbackService). 'deepseek' (Ship-On) | 'minimax' (kill-switch-откат).
+      mainReport: {
+        primary: this.get('LLM_MAIN_REPORT_PRIMARY'),
       },
       grsai: {
         apiKey: this.get('GRSAI_API_KEY'),
@@ -670,6 +674,31 @@ export class TypedConfigService {
         'SUMMARY_AGENT_ENABLED',
         true,
       ),
+      /**
+       * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+       * (нейтральный протокол встречи наружу для клиента). При `true` (default)
+       * `analyze.worker` для клиентских типов встреч дополнительно генерит
+       * протокол и мержит его в `AiResult.structuredData.client_protocol_md`.
+       * При `false` — пропуск (фича не валит основной отчёт). Фича готова →
+       * выкатывается ON; рубильник только для экстренного выключения.
+       */
+      clientProtocolEnabled: this.resolveSync<boolean>(
+        'aiFeatures.clientProtocolEnabled',
+        'CLIENT_PROTOCOL_ENABLED',
+        true,
+      ),
+      /**
+       * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+       * орг-документа (`compile-org-document`). При `true` (default) на verdict
+       * merge/extension от regulation-dedupe специалист 3.1 собирает
+       * структурный `contentMd` через компилятор. При `false` — legacy
+       * plain-update поля (фича не валит dedupe-путь).
+       */
+      docCompilerEnabled: this.resolveSync<boolean>(
+        'aiFeatures.docCompilerEnabled',
+        'DOC_COMPILER_ENABLED',
+        true,
+      ),
     } as const;
   }
 
@@ -816,13 +845,9 @@ export class TypedConfigService {
       ),
       themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
       cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
-      // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
-      // НАМЕРЕННО через this.get(ENV), НЕ resolveSync: seed выставляет
-      // knowledge.v2AgentsEnabled=true, а ENV-дефолт=false; перевод на
-      // resolveSync читал бы AdminSetting первым и ВКЛЮЧИЛ бы v2-агентов на
-      // засеянном проде (текущее поведение — OFF). Это master-флаг фичи, а не
-      // крутилка-порог малого тенанта — включать v2 должно быть отдельным
-      // осознанным решением, не побочкой Фазы 6. См. §Фаза 6 МТЗ.
+      // DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2) удалён как мёртвый
+      // код. Эти три поля остались инертными (никто их больше не читает) —
+      // оставлены, чтобы не трогать env-валидацию/admin-setting-registry/specs.
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
@@ -882,6 +907,33 @@ export class TypedConfigService {
       ageEnabled: this.resolveSync<boolean>(
         'graph.ageEnabled',
         'GRAPH_AGE_ENABLED',
+        true,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── support desk (TZ 2026-06-09) ──────────
+  /**
+   * Вендорская служба поддержки (support-desk-clone Ф1).
+   *
+   *   - `enabled` — аварийный kill-switch. Дефолт TRUE (Ship-On). При FALSE
+   *     `SupportIntakeService.createTicket` отдаёт 503 SUPPORT_DESK_DISABLED,
+   *     а `SupportSlaCron` — no-op. Admin-editable (resolveSync: cacheMap →
+   *     ENV `SUPPORT_DESK_ENABLED` → default). Параметр владельца, какая Org —
+   *     вендор-деск, хранится отдельно в AdminSetting `support.vendor_org_id`
+   *     (читается через `getDynamic`, не здесь — это не bool-флаг).
+   */
+  get supportDesk() {
+    return {
+      enabled: this.resolveSync<boolean>(
+        'support_desk.enabled',
+        'SUPPORT_DESK_ENABLED',
+        true,
+      ),
+      // Ф4 kill-switch ночного куратора контура (no-op при false).
+      curatorEnabled: this.resolveSync<boolean>(
+        'support_desk.curator_enabled',
+        'SUPPORT_CURATOR_ENABLED',
         true,
       ),
     } as const;
@@ -1688,6 +1740,7 @@ export class TypedConfigService {
       contextualizerConfidenceMin: this.get('CONTEXTUALIZER_CONFIDENCE_MIN'),
       summarizerMessageThreshold: this.get('SUMMARIZER_MESSAGE_THRESHOLD'),
       multiQueryExpansionEnabled: this.get('MULTI_QUERY_EXPANSION_ENABLED'),
+      queryPlanExtractionEnabled: this.get('QUERY_PLAN_EXTRACTION_ENABLED'),
       summarizerCron: this.get('DIALOG_SUMMARIZER_CRON'),
       summarizerKeepLast: this.get('DIALOG_SUMMARIZER_KEEP_LAST'),
       summarizerStalenessHours: this.get('DIALOG_SUMMARIZER_STALENESS_HOURS'),
@@ -1729,6 +1782,15 @@ export class TypedConfigService {
         '*/1 * * * *',
       ),
     } as const;
+  }
+
+  /** ТЗ 2026-06-10 meeting-visibility — kill-switch «Кому видно» (Ship-On: true). */
+  get meetingVisibilityEnabled(): boolean {
+    return this.resolveSync<boolean>(
+      'meeting.visibility.enabled',
+      'MEETING_VISIBILITY_ENABLED',
+      true,
+    );
   }
 
   // ─────────────────────── recording reliability ─────────────────
@@ -1925,6 +1987,10 @@ export class TypedConfigService {
       ),
       // SBA β-8.1 — добивка панели операционного директора.
       sentimentEnabled: this.get('COO_SENTIMENT_ENABLED') !== false,
+      // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста
+      // чек-ин → knowledge-core (CheckinGraphIngestListener). ON по умолчанию.
+      checkinGraphIngestEnabled:
+        this.get('CHECKIN_GRAPH_INGEST_ENABLED') !== false,
       weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
       weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
       weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),

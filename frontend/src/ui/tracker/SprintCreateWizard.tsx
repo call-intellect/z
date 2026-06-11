@@ -214,7 +214,11 @@ function Combobox({
     );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // modal: combobox живёт внутри модального Dialog (мастер спринта). Без
+    // modal контент Popover портируется в body, у которого Dialog ставит
+    // pointer-events:none → список виден, но клики по нему не доходят. modal
+    // заставляет Popover держать собственный слой с pointer-events:auto.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <button
           type="button"

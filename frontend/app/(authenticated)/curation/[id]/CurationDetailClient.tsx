@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   curationApi,
   type CurationDecisionTypeApi,
@@ -21,7 +21,9 @@ import {
   type CurationDecisionType,
   type CurationLevel,
 } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
+import { ReadablePayload } from '@/ui/readable-payload';
 import {
   AdminError,
   AdminForbidden,
@@ -273,7 +275,7 @@ function CurationDetailView({
       router.push('/curation');
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось применить решение',
+        humanizeApiError(e, 'Не удалось применить решение'),
       );
     } finally {
       setSubmitting(false);
@@ -304,11 +306,9 @@ function CurationDetailView({
       {/* Заголовок */}
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
-          {item.resourceType}
+          {resourceTypeRu(item.resourceType)}
         </div>
-        <h1 className="mt-1 text-2xl font-semibold break-all">
-          {item.resourceId}
-        </h1>
+        <h1 className="mt-1 text-2xl font-semibold">Требует вашей проверки</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-fg-secondary">
             {curationLevelLabel(item.level)}
@@ -341,17 +341,13 @@ function CurationDetailView({
       {/* Почему сюда попала */}
       <section className="mb-6">
         <h2 className="mb-1 text-sm font-medium">Почему сюда попала</h2>
-        <pre className="max-h-40 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.triageReason, null, 2)}
-        </pre>
+        <ReadablePayload value={item.triageReason} />
       </section>
 
       {/* Предлагаемые данные */}
       <section className="mb-6">
         <h2 className="mb-1 text-sm font-medium">Предлагается канонизировать</h2>
-        <pre className="max-h-72 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.proposedPayload, null, 2)}
-        </pre>
+        <ReadablePayload value={item.proposedPayload} />
       </section>
 
       {/* Связанные конфликты */}
@@ -359,13 +355,13 @@ function CurationDetailView({
         <section className="mb-6">
           <h2 className="mb-2 text-sm font-medium">Связанные конфликты</h2>
           <ul className="space-y-1">
-            {item.relatedConflictIds.map((cid) => (
+            {item.relatedConflictIds.map((cid, idx) => (
               <li key={cid}>
                 <Link
                   href={`/curation/conflicts/${encodeURIComponent(cid)}`}
                   className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/5 px-2 py-1 text-xs text-warning underline-offset-2 hover:underline"
                 >
-                  Конфликт {cid}
+                  Конфликт {idx + 1}
                 </Link>
               </li>
             ))}

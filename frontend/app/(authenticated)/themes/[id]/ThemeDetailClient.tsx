@@ -14,7 +14,7 @@ import {
 import { toast } from 'sonner';
 
 import { themesApi } from '@/api/themes.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   THEME_BRANCH_LABELS,
   THEME_DYNAMIC_LABELS,
@@ -24,6 +24,7 @@ import {
   type ThemeEntityDomain,
   themeDetailFromApi,
 } from '@/domain/theme';
+import { entityTypeLabel, signalTypeLabel } from '@/domain/entity';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import {
@@ -200,7 +201,7 @@ function BlockItem({ block }: { block: ThemeBlockDomain }) {
               {block.name}
             </span>
             <Badge variant="outline" className="text-[10px]">
-              {block.signalType}
+              {signalTypeLabel(block.signalType)}
             </Badge>
           </div>
           <p className="mt-1 line-clamp-2 text-xs text-fg-tertiary">
@@ -227,8 +228,8 @@ function EntityItem({ entity }: { entity: ThemeEntityDomain }) {
             {entity.canonicalName}
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-fg-tertiary">
-            <span className="rounded-full bg-bg-overlay px-1.5 py-0.5 uppercase tracking-wide text-[10px]">
-              {entity.type}
+            <span className="rounded-full bg-bg-overlay px-1.5 py-0.5 tracking-wide text-[10px]">
+              {entityTypeLabel(String(entity.type).toLowerCase())}
             </span>
             <span>{entity.mentionsCount} упоминаний</span>
           </div>
@@ -278,7 +279,7 @@ function SaveAsCardDialog({
       if (err instanceof ApiError && err.code === 'card_name_taken') {
         toast.error('Карточка с таким названием уже существует');
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Не удалось сохранить';
+        const msg = humanizeApiError(err, 'Не удалось сохранить');
         toast.error(msg);
       }
     } finally {

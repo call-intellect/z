@@ -28,6 +28,9 @@ export interface IntakeApi {
   suggestedProjectId: string | null;
   suggestedAssigneeId: string | null;
   suggestedGoalId: string | null;
+  suggestedProjectName: string | null;
+  suggestedAssigneeName: string | null;
+  suggestedGoalTitle: string | null;
   suggestedPriority: string | null;
   suggestedDueDate: string | null;
   suggestedLabels: string[];
@@ -65,6 +68,9 @@ export interface Intake {
   suggestedProjectId: string | null;
   suggestedAssigneeId: string | null;
   suggestedGoalId: string | null;
+  suggestedProjectName: string | null;
+  suggestedAssigneeName: string | null;
+  suggestedGoalTitle: string | null;
   suggestedPriority: IssuePriority | null;
   suggestedDueDate: Date | null;
   suggestedLabels: string[];
@@ -129,6 +135,9 @@ export function intakeFromApi(api: IntakeApi): Intake {
     suggestedProjectId: api.suggestedProjectId,
     suggestedAssigneeId: api.suggestedAssigneeId,
     suggestedGoalId: api.suggestedGoalId,
+    suggestedProjectName: api.suggestedProjectName ?? null,
+    suggestedAssigneeName: api.suggestedAssigneeName ?? null,
+    suggestedGoalTitle: api.suggestedGoalTitle ?? null,
     suggestedPriority: api.suggestedPriority
       ? parseIssuePriority(api.suggestedPriority)
       : null,

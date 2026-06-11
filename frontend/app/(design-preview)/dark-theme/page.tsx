@@ -9,7 +9,7 @@ import type { Metadata } from 'next';
 import { DesignPreviewGallery } from '@/ui/components/design-preview/DesignPreviewGallery';
 
 export const metadata: Metadata = {
-  title: 'Кора · Дизайн-эталон: тёмная тема',
+  title: 'Дизайн-эталон: тёмная тема',
 };
 
 export default function DarkThemePreviewPage() {

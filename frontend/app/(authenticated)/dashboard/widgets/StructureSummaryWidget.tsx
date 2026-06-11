@@ -83,7 +83,7 @@ export function StructureSummaryWidget() {
               icon={<Sparkles size={16} />}
               label="Карт должностей"
               value={swr.data.roleProfiles.total}
-              caption={`${swr.data.roleProfiles.ready} готово · ${swr.data.roleProfiles.forming} формируется`}
+              caption={`${swr.data.roleProfiles.ready ?? 0} готово · ${swr.data.roleProfiles.forming ?? 0} формируется`}
             />
           </div>
         ) : null}

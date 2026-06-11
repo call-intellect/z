@@ -416,8 +416,35 @@ export const meetingsApi = {
     ),
 
   finish: (id: string) =>
-    apiClient.post<{ ok: true }>(
+    apiClient.post<{ ok: true; status: string; failureReason: string | null }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/finish`,
+    ),
+
+  // ─────────── Видимость встречи «Кому видно» (ТЗ Ф4) ───────────
+  // host-only: backend отдаёт 403 не-хосту (GET и PATCH). UI ловит 403 и
+  // переключается в read-only-режим.
+
+  /** Текущий режим видимости + список грантов (host-only). */
+  getVisibility: (id: string) =>
+    apiClient.get<{
+      scope: string;
+      grants: { granteeType: string; granteeId: string; name: string }[];
+    }>(`/api/v1/meetings/${encodeURIComponent(id)}/visibility`),
+
+  /**
+   * Полная замена режима видимости и набора грантов (host-only).
+   * Для scope='custom' grants обязателен непустой (иначе 400).
+   */
+  setVisibility: (
+    id: string,
+    body: {
+      scope: string;
+      grants?: { granteeType: string; granteeId: string }[];
+    },
+  ) =>
+    apiClient.patch<{ ok: true }>(
+      `/api/v1/meetings/${encodeURIComponent(id)}/visibility`,
+      body,
     ),
 
   startRecording: (id: string) =>

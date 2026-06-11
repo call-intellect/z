@@ -37,7 +37,7 @@ export function MyCheckInsClient() {
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.code === 'forbidden') {
           setError(
-            'У вас нет Person-записи в этой Org — чек-ины недоступны. Обратитесь к администратору.',
+            'У вас нет персональной записи в этой организации — чек-ины недоступны. Обратитесь к администратору.',
           );
         } else {
           setError(

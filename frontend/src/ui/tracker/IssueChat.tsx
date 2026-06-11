@@ -42,11 +42,11 @@ import { ApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
 import { toast } from 'sonner';
 import {
-  chatV2ModeLabel,
   formatTimestamp,
   type ChatV2Citation,
   type ChatV2Mode,
 } from '@/domain/chat-v2';
+import { AssistantMarkdown } from '@/ui/components/chat-v2/AssistantMarkdown';
 
 interface LocalMessage {
   id: string;
@@ -337,7 +337,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
               <MessageCircle size={16} className="text-fg-tertiary" />
             </div>
             <div className="text-sm font-medium text-fg-primary">
-              Спросите AI про эту задачу
+              Спросите Кору про эту задачу
             </div>
             <div className="mt-1 text-xs text-fg-tertiary">
               Кора подтянет контекст из памяти компании и ответит со ссылками
@@ -360,7 +360,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-fg-tertiary">
             <Loader2 size={14} className="animate-spin" />
-            AI печатает ответ…
+            Кора печатает ответ…
           </div>
         ) : null}
 
@@ -373,7 +373,7 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-2 border-t border-border-subtle p-3"
+        className="flex flex-col gap-2 border-t border-border-subtle p-3 pb-20 sm:pr-20"
       >
         <div className="flex items-end gap-2">
           <input
@@ -384,12 +384,12 @@ export function IssueChat({ issueId, orgId }: IssueChatProps) {
                 ? 'Идёт запись… нажмите квадрат, чтобы остановить'
                 : rec.kind === 'transcribing'
                   ? 'Распознаю…'
-                  : 'Спросить AI про эту задачу…'
+                  : 'Спросить Кору про эту задачу…'
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading || rec.kind !== 'idle'}
-            aria-label="Вопрос к AI"
+            aria-label="Вопрос к Коре"
           />
 
           {micSupported ? (
@@ -461,18 +461,20 @@ function ChatBubble({
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-[85%] break-words rounded-lg px-3 py-2 text-sm ${
           isUser
-            ? 'bg-accent text-accent-fg'
+            ? 'whitespace-pre-wrap bg-accent text-accent-fg'
             : 'border border-border-subtle bg-bg text-fg-primary'
         }`}
       >
-        {!isUser && message.mode ? (
-          <div className="mb-1 text-[11px] text-fg-tertiary">
-            Режим: {chatV2ModeLabel(message.mode)}
-          </div>
+        {!isUser ? (
+          <div className="mb-1 text-[11px] text-fg-tertiary">✨ Мастер Кора</div>
         ) : null}
-        <div>{message.text}</div>
+        {isUser ? (
+          <div>{message.text}</div>
+        ) : (
+          <AssistantMarkdown text={message.text} />
+        )}
         {!isUser ? (
           <button
             type="button"

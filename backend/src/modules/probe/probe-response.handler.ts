@@ -5,6 +5,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
+import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 
 import type { NotificationRespondedPayload } from './probe.types';
@@ -175,14 +176,24 @@ export class ProbeResponseHandler {
       this.toStringOrUndef(args.probePayload.message) ??
       args.probeReason;
 
+    // A2: оборачиваем сырой пользовательский ввод (свободный ответ сотрудника
+    // на probe + текст вопроса) в анти-инъекционные маркеры. asr не нужен
+    // (это не транскрипт). Kill-switch — общий aiFeatures.promptInjectionGuardEnabled.
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(
+      PROBE_RESPONSE_CLASSIFY_SYSTEM_PROMPT,
+      PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE({
+        question,
+        response,
+      }),
+      { enabled: guardOn, injection: true },
+    );
+
     try {
       const result = await this.llm.call({
         taskType: 'probe-response-classify',
-        systemPrompt: PROBE_RESPONSE_CLASSIFY_SYSTEM_PROMPT,
-        userMessage: PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE({
-          question,
-          response,
-        }),
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
         tenantId: args.tenantId,
         responseFormat: {
           type: 'json_schema',

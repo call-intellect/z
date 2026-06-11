@@ -36,9 +36,12 @@ import {
   REGULATION_EXTRACT_USER_TEMPLATE,
 } from '../prompts/regulation-extract.prompt';
 
+import type { OrgDocumentKind } from '../prompts/structured-document-compiler.prompt';
+
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist31ProbeService } from './specialist-3-1-probe.service';
+import { StructuredDocumentCompilerService } from './structured-document-compiler.service';
 
 /**
  * SBA α-7 — Specialist31Service.
@@ -94,6 +97,11 @@ export class Specialist31Service {
     private readonly probes: Specialist31ProbeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    // Волна 6 A7 — агент-компилятор contentMd орг-документа. @Optional,
+    // потому что unit-тесты могут не поднимать KnowledgeCoreModule целиком.
+    @Optional()
+    @Inject(StructuredDocumentCompilerService)
+    private readonly docCompiler?: StructuredDocumentCompilerService,
     // W4.1 — DataClassPolicyService для shadow-compare. @Optional, потому что
     // unit-тесты могут не поднимать KnowledgeCoreModule целиком.
     @Optional()
@@ -130,14 +138,18 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'regulation' && draft.kind !== 'standard') {
-      // LLM решила, что блок — про process / policy. Делегируем соответствующий
-      // путь. Это рассматривается как «misrouted» сигнал, но не failure.
+      // LLM решила, что блок — про process / policy / instruction. Делегируем
+      // соответствующий путь. Это «misrouted» сигнал, но не failure.
       if (draft.kind === 'process') {
         await this.upsertProcess(block, draft);
         return;
       }
       if (draft.kind === 'policy') {
         await this.upsertPolicy(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -157,13 +169,17 @@ export class Specialist31Service {
     const draft = await this.extractDraft(block);
     if (!draft) return;
     if (draft.kind !== 'process') {
-      // LLM думает иначе. Если regulation/policy/standard — делегируем.
+      // LLM думает иначе. Если regulation/policy/standard/instruction — делегируем.
       if (draft.kind === 'regulation' || draft.kind === 'standard') {
         await this.upsertRegulation(block, draft);
         return;
       }
       if (draft.kind === 'policy') {
         await this.upsertPolicy(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -191,6 +207,10 @@ export class Specialist31Service {
       }
       if (draft.kind === 'process') {
         await this.upsertProcess(block, draft);
+        return;
+      }
+      if (draft.kind === 'instruction') {
+        await this.upsertInstruction(block, draft);
         return;
       }
     }
@@ -401,10 +421,27 @@ export class Specialist31Service {
             },
           });
         } else {
+          // Волна 6 A7 — на merge/extension собираем структурный contentMd
+          // компилятором (ДОПОЛНЕНИЕ к existing.contentMd), не теряя старое.
+          // На fallback (null) — contentMd остаётся прежним (legacy-поведение).
+          const compiledMd =
+            verdict.decision === 'merge' || verdict.decision === 'extension'
+              ? await this.tryCompileContent({
+                  kind: 'regulation',
+                  tenantId: block.tenantId,
+                  name: existing.name,
+                  existingContentMd: existing.contentMd,
+                  newStatement: draft.statement,
+                  block,
+                })
+              : null;
           regulation = await this.prisma.regulation.update({
             where: { id: existing.id },
             data: {
               statement: draft.statement,
+              ...(compiledMd
+                ? { contentMd: compiledMd, version: { increment: 1 } }
+                : {}),
               scope: draft.scope ?? existing.scope ?? undefined,
               ownerPersonId:
                 ownerPersonId ?? existing.ownerPersonId ?? undefined,
@@ -565,10 +602,27 @@ export class Specialist31Service {
             },
           });
         } else {
+          // Волна 6 A7 — на merge/extension собираем структурное описание
+          // процесса компилятором (тело хранится в Process.description).
+          // На fallback (null) — legacy: оставляем существующее описание.
+          // NB: синхронизация steps[] из вывода компилятора с таблицей
+          //     ProcessStep — следующая волна (сейчас шаги пишутся отдельным
+          //     single-step upsert'ом из processStepHint).
+          const compiledMd =
+            verdict.decision === 'merge' || verdict.decision === 'extension'
+              ? await this.tryCompileContent({
+                  kind: 'process',
+                  tenantId: block.tenantId,
+                  name: existing.name,
+                  existingContentMd: existing.description,
+                  newStatement: draft.statement,
+                  block,
+                })
+              : null;
           proc = await this.prisma.process.update({
             where: { id: existing.id },
             data: {
-              description: existing.description ?? draft.statement,
+              description: compiledMd ?? existing.description ?? draft.statement,
               scope: draft.scope ?? existing.scope ?? undefined,
               ownerPersonId:
                 ownerPersonId ?? existing.ownerPersonId ?? undefined,
@@ -597,8 +651,9 @@ export class Specialist31Service {
       }
 
       // ProcessStep — если в черновике пришёл processStepHint, создаём один шаг.
-      // Полное извлечение всех шагов будет через `process-steps-extract`, но это
-      // отдельный pass поверх группы блоков. На α-7 — простой single-step upsert.
+      // На α-7 — простой single-step upsert (отдельный pass полного извлечения
+      // шагов процесса не реализован — промпт-сирота process-steps-extract
+      // удалён 2026-06-10 как нереализованный).
       if (draft.processStepHint) {
         await this.upsertSingleProcessStep({
           tenantId: block.tenantId,
@@ -750,10 +805,24 @@ export class Specialist31Service {
             },
           });
         } else {
+          // Волна 6 A7 — на merge/extension собираем структурный contentMd
+          // политики компилятором (ДОПОЛНЕНИЕ к existing.contentMd). На
+          // fallback (null) — legacy: contentMd = draft.statement.
+          const compiledMd =
+            verdict.decision === 'merge' || verdict.decision === 'extension'
+              ? await this.tryCompileContent({
+                  kind: 'policy',
+                  tenantId: block.tenantId,
+                  name: existing.name,
+                  existingContentMd: existing.contentMd,
+                  newStatement: draft.statement,
+                  block,
+                })
+              : null;
           policy = await this.prisma.policy.update({
             where: { id: existing.id },
             data: {
-              contentMd: draft.statement,
+              contentMd: compiledMd ?? draft.statement,
               severity: severity ?? existing.severity,
               scope: draft.scope ?? existing.scope ?? undefined,
               ownerPersonId:
@@ -819,6 +888,156 @@ export class Specialist31Service {
           err: err instanceof Error ? err.message : String(err),
         },
         'specialist-3-1.upsertPolicy: внутренняя ошибка — пропускаю блок',
+      );
+    }
+  }
+
+  /**
+   * A12 (Волна 6) — upsert инструкции (kind='instruction') в ОТДЕЛЬНУЮ таблицу
+   * `instructions` (НЕ regulations). Инструкция — пошаговое «как сделать X» для
+   * ОДНОЙ роли (single-role). Зеркалит upsertProcess по структуре, но проще:
+   * без KNN-дедуп-арбитра и без curation-triage (Instruction не входит в
+   * RBAC resourceType триажа regulation/process/policy — версии/триаж
+   * инструкций добавятся следующей волной). Upsert идемпотентен по
+   * (tenantId, name).
+   *
+   * Маппинг A12-полей:
+   *   - extractionStatus → status (ProcessStatus): «существует» → active;
+   *     «нужен»/«обсуждается» → deprecated (ближайший не-active статус в enum
+   *     ProcessStatus, у которого нет 'draft'/'proposed' — deprecated означает
+   *     «ещё/уже не действующий»).
+   *   - roles[0] (или scope 'role:<id>') → forRole.
+   *   - roles → personSubjectIds НЕ кладём (roles — это должности, не Person'ы);
+   *     personSubjectIds резолвятся из упомянутых в блоке Person-entity, как у
+   *     остальных типов.
+   */
+  private async upsertInstruction(
+    block: IdeaBlock,
+    draft: RegulationDraft,
+  ): Promise<void> {
+    try {
+      const ownerPersonId = await this.resolveOwnerPersonHint(
+        block.tenantId,
+        draft.ownerHint,
+      );
+      const sourceBlockIds = [block.id];
+      const personSubjectIds = await this.resolvePersonSubjects(block.id);
+      const dcRes = this.deriveDataClassForPersist({
+        blockId: block.id,
+        blockDataClass: block.dataClass,
+        kind: 'process',
+      });
+
+      const forRole = this.deriveForRole(draft);
+      const status = this.mapExtractionStatusToProcessStatus(
+        draft.extractionStatus,
+      );
+
+      const instruction = await this.prisma.instruction.upsert({
+        where: {
+          tenantId_name: { tenantId: block.tenantId, name: draft.name },
+        },
+        update: {
+          contentMd: draft.statement,
+          statement: draft.statement,
+          scope: draft.scope ?? undefined,
+          forRole: forRole ?? undefined,
+          status,
+          ownerPersonId: ownerPersonId ?? undefined,
+          sourceBlockIds: { set: this.union(sourceBlockIds, []) },
+          personSubjectIds: { set: this.union(personSubjectIds, []) },
+          dataClass: dcRes.dataClass,
+          dataClassAudit: dcRes.dataClassAudit,
+          confidence: draft.confidence ?? null,
+        },
+        create: {
+          tenantId: block.tenantId,
+          name: draft.name,
+          contentMd: draft.statement,
+          statement: draft.statement,
+          scope: draft.scope ?? null,
+          forRole: forRole ?? null,
+          status,
+          ownerPersonId: ownerPersonId ?? null,
+          sourceBlockIds,
+          personSubjectIds,
+          dataClass: dcRes.dataClass,
+          dataClassAudit: dcRes.dataClassAudit,
+          confidence: draft.confidence ?? null,
+        },
+      });
+
+      // Эмбеддинг (best-effort) — для будущего KNN-дедупа инструкций.
+      await this.tryWriteInstructionEmbedding({
+        id: instruction.id,
+        text: `${draft.name} ${draft.statement}`,
+      });
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'regulation',
+        reason: 'db_error',
+      });
+      this.logger.error(
+        {
+          blockId: block.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-1.upsertInstruction: внутренняя ошибка — пропускаю блок',
+      );
+    }
+  }
+
+  /**
+   * A12 — выбор forRole для инструкции: из scope вида 'role:<id>' (приоритет),
+   * иначе первая роль из draft.roles. Возвращает строку ≤120 символов (лимит
+   * Instruction.forRole в схеме) или null.
+   */
+  private deriveForRole(draft: RegulationDraft): string | null {
+    const scope = draft.scope?.trim();
+    if (scope && scope.startsWith('role:')) {
+      const id = scope.slice('role:'.length).trim();
+      if (id) return id.slice(0, 120);
+    }
+    const first = draft.roles?.find((r) => r && r.trim().length > 0)?.trim();
+    return first ? first.slice(0, 120) : null;
+  }
+
+  /**
+   * A12 — маппинг extractionStatus (русские ярлыки LLM) → ProcessStatus:
+   *   «существует» → active; «нужен»/«обсуждается» → deprecated; null → active.
+   */
+  private mapExtractionStatusToProcessStatus(
+    s: RegulationDraft['extractionStatus'],
+  ): 'active' | 'deprecated' {
+    return s === 'нужен' || s === 'обсуждается' ? 'deprecated' : 'active';
+  }
+
+  /**
+   * A12 — embedding для Instruction (best-effort). Отдельный метод, т.к.
+   * tableMap в tryWriteEmbedding покрывает только regulation/process/policy.
+   */
+  private async tryWriteInstructionEmbedding(args: {
+    id: string;
+    text: string;
+  }): Promise<void> {
+    try {
+      const text = args.text.trim().slice(0, 2_000);
+      if (!text) return;
+      const vec = await this.embedder.embedQuery(text);
+      if (!vec) return;
+      const vecStr = `[${vec.join(',')}]`;
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "instructions" SET "embedding" = $1::vector WHERE "id" = $2`,
+        vecStr,
+        args.id,
+      );
+    } catch (err) {
+      this.logger.debug(
+        {
+          id: args.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-1.tryWriteInstructionEmbedding: пропускаю (best-effort)',
       );
     }
   }
@@ -1329,6 +1548,67 @@ export class Specialist31Service {
   }
 
   /**
+   * Волна 6 A7 — собрать `contentMd` орг-документа через агент-компилятор на
+   * verdict merge/extension. Возвращает готовый markdown по шаблону типа
+   * (режим ДОПОЛНЕНИЕ — существующее тело + новый блок, ничего не теряя) либо
+   * `null`, если компилятор отключён/недоступен/вернул fallback (тогда caller
+   * остаётся на legacy plain-update поля).
+   *
+   * best-effort: компилятор сам не падает (внутренний try/catch + fallback);
+   * здесь дополнительный guard на отсутствие сервиса / kill-switch OFF.
+   */
+  private async tryCompileContent(args: {
+    kind: OrgDocumentKind;
+    tenantId: string;
+    name: string;
+    existingContentMd: string | null | undefined;
+    newStatement: string;
+    block: IdeaBlock & { evidence?: IdeaBlockEvidence[] };
+  }): Promise<string | null> {
+    if (!this.docCompiler || !this.docCompiler.isEnabled()) return null;
+    try {
+      const quotes = (args.block.evidence ?? [])
+        .slice(0, 6)
+        .map((e) => e.quote)
+        .filter((q): q is string => !!q && q.length > 0);
+      const res = await this.docCompiler.compile(
+        {
+          kind: args.kind,
+          name: args.name,
+          newSourceBlocks: [
+            {
+              name: args.block.name,
+              question: args.block.criticalQuestion,
+              answer: args.newStatement,
+              quotes,
+            },
+          ],
+          existingContentMd: args.existingContentMd ?? '',
+          nowIso: new Date().toISOString(),
+        },
+        {
+          tenantId: args.tenantId,
+          dataClass: args.block.dataClass,
+          sourceRef: { type: 'idea_block', id: args.block.id },
+        },
+      );
+      // ok=false → вернулся fallback (existingContentMd); не считаем это
+      // «успешной сборкой» — пусть caller использует legacy-логику.
+      return res.ok ? res.contentMd : null;
+    } catch (err) {
+      this.logger.debug(
+        {
+          kind: args.kind,
+          name: args.name,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-1.tryCompileContent: пропускаю (best-effort)',
+      );
+      return null;
+    }
+  }
+
+  /**
    * W4.1/W4.2 helper — резолвит финальный `dataClass` + Json-audit для
    * persist'а Regulation/Process/Policy.
    *
@@ -1381,7 +1661,7 @@ export class Specialist31Service {
 // ──────────────────────── shared types ────────────────────────
 
 export interface RegulationDraft {
-  kind: 'regulation' | 'process' | 'policy' | 'standard';
+  kind: 'regulation' | 'process' | 'policy' | 'standard' | 'instruction';
   name: string;
   statement: string;
   scope?: string | null;
@@ -1401,6 +1681,12 @@ export interface RegulationDraft {
     stepOrder?: number | null;
     stepDescription?: string | null;
   } | null;
+  /** A12 (Волна 6) — статус существования документа (русские ярлыки LLM). */
+  extractionStatus?: 'существует' | 'нужен' | 'обсуждается' | null;
+  /** A12 — роли/должности, которых касается норма. Для instruction — исполнитель. */
+  roles?: string[];
+  /** A12 — дословная опора из блока (≤15-20 слов). */
+  evidenceQuote?: string | null;
   confidence: number;
 }
 

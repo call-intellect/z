@@ -29,6 +29,7 @@ import { RequireSubscription } from '../billing/guards/require-subscription.deco
 import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 
 import type { AccessInfo } from './domain/meeting.domain';
 import {
@@ -42,6 +43,7 @@ import {
   ListMeetingsQuerySchema,
 } from './dto/list-meetings.dto';
 import type { MeetingForUserDto } from './dto/meeting-public.dto';
+import { SetVisibilitySchema, type SetVisibilityBody } from './dto/visibility.dto';
 import { HostControlsService } from './host-controls.service';
 import { MeetingsService } from './meetings.service';
 
@@ -110,13 +112,14 @@ export class MeetingsController {
   async list(
     @Query(new ZodValidationPipe(ListMeetingsQuerySchema)) query: ListMeetingsQuery,
     @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
   ): Promise<{
     items: ReturnType<MeetingsController['mapMeetingSummary']>[];
     page: number;
     limit: number;
     total: number;
   }> {
-    const result = await this.meetings.list(user.id, {
+    const result = await this.meetings.list(user.id, tenantId, {
       page: query.page,
       limit: query.limit,
       query: query.query,
@@ -269,6 +272,7 @@ export class MeetingsController {
       failureReason: meeting.failureReason ?? null,
       createdAt: meeting.createdAt.toISOString(),
       customPrompt: meeting.customPrompt ?? null,
+      visibilityScope: meeting.visibilityScope,
       participants: meeting.participants.map((p) => ({
         id: p.id,
         name: p.name,
@@ -337,8 +341,46 @@ export class MeetingsController {
   async finish(
     @Param('id') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ ok: true; status: string; failureReason: string | null }> {
+    const result = await this.hostControls.finish(meetingId, user.id);
+    return { ok: true, status: result.status, failureReason: result.failureReason };
+  }
+
+  // ─────────────────────────── visibility «Кому видно» (Ф4) ───────────────
+
+  /**
+   * ТЗ 2026-06-10 meeting-visibility (Ф4) — текущий режим «Кому видно» + гранты
+   * с человекочитаемыми именами (host-only).
+   *
+   *   - 403 `not_meeting_host` — actor не хост встречи;
+   *   - 404 `meeting_not_found` — встреча не найдена.
+   */
+  @Get(':id/visibility')
+  async getMeetingVisibility(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<{ scope: string; grants: { granteeType: string; granteeId: string; name: string }[] }> {
+    return this.meetings.getMeetingVisibility(id, user.id);
+  }
+
+  /**
+   * ТЗ 2026-06-10 meeting-visibility (Ф4) — задать режим «Кому видно» (host-only).
+   * Для scope='custom' grants — полная замена набора получателей.
+   *
+   *   - 400 `grants_required_for_custom` — scope='custom' без получателей;
+   *   - 400 `invalid_grantee` — получатель не из этой компании;
+   *   - 403 `not_meeting_host` — actor не хост встречи;
+   *   - 404 `meeting_not_found` — встреча не найдена.
+   */
+  @Patch(':id/visibility')
+  @RequireSubscription()
+  @HttpCode(HttpStatus.OK)
+  async setMeetingVisibility(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetVisibilitySchema)) body: SetVisibilityBody,
+    @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true }> {
-    await this.hostControls.finish(meetingId, user.id);
+    await this.meetings.setMeetingVisibility(id, user.id, body);
     return { ok: true };
   }
 
@@ -408,8 +450,10 @@ export class MeetingsController {
     @Param('id') meetingId: string,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ ok: true; stage: string }> {
-    // Проверка ownership: getForUser кидает NotAuthorizedError для не-хоста.
-    await this.meetings.getForUser(meetingId, user.id);
+    // Host-only: retry-ai перезапускает AI-пайплайн (деньги) — строго владелец.
+    // assertMeetingHost кидает NotAuthorizedError('not_meeting_host') для не-хоста.
+    // (getForUser после ТЗ meeting-visibility Ф3 виден участникам — для гейта НЕ годится.)
+    await this.meetings.assertMeetingHost(meetingId, user.id);
     const result = await this.retry.retry(meetingId, 'user', user.id);
     return { ok: true, stage: result.stage };
   }
@@ -544,6 +588,7 @@ export class MeetingsController {
     startedAt: Date | null;
     endedAt: Date | null;
     createdAt: Date;
+    visibilityScope: string;
   }): {
     id: string;
     title: string;
@@ -552,6 +597,7 @@ export class MeetingsController {
     startedAt: string | null;
     endedAt: string | null;
     createdAt: string;
+    visibilityScope: string;
   } {
     return {
       id: m.id,
@@ -561,6 +607,7 @@ export class MeetingsController {
       startedAt: m.startedAt?.toISOString() ?? null,
       endedAt: m.endedAt?.toISOString() ?? null,
       createdAt: m.createdAt.toISOString(),
+      visibilityScope: m.visibilityScope,
     };
   }
 }

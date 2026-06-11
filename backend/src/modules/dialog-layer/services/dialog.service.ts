@@ -17,6 +17,11 @@ import {
   QueryClassifierService,
   type DialogIntent,
 } from './query-classifier.service';
+import {
+  QueryPlanExtractorService,
+  type QueryPlanResult,
+  type StructuralRetrievalFilters,
+} from './query-plan-extractor.service';
 
 /**
  * SBA α-5 dialog-layer — DialogService (фасад).
@@ -54,6 +59,10 @@ export interface DialogProcessResult {
   confidence: number;
   /** Если ответ найден в AnswerCache — возвращаем его без вызова retrieval+LLM. */
   cachedAnswer: AnswerCacheEntry | null;
+  /** Query Understanding Волна 1 — сырой план запроса (для observability/metrics). null если выключено/не применился. */
+  queryPlan?: QueryPlanResult | null;
+  /** Query Understanding Волна 1 — резолвнутые структурные фильтры для recall-safe ретрива (Ф3). null если фильтровать нечем. */
+  structuralFilters?: StructuralRetrievalFilters | null;
   /** Длительности шагов в секундах (для observability и admin-debug). */
   steps: {
     contextualize: number;
@@ -79,6 +88,8 @@ export class DialogService {
     private readonly classifier: QueryClassifierService,
     @Inject(MultiQueryExpansionService)
     private readonly multiQuery: MultiQueryExpansionService,
+    @Inject(QueryPlanExtractorService)
+    private readonly queryPlanExtractor: QueryPlanExtractorService,
     @Inject(AnswerCacheService) private readonly answerCache: AnswerCacheService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
@@ -102,6 +113,8 @@ export class DialogService {
         queries: [input.userMessage],
         confidence: 1.0,
         cachedAnswer: null,
+        queryPlan: null,
+        structuralFilters: null,
         steps: noopSteps,
       };
     }
@@ -155,6 +168,45 @@ export class DialogService {
       conversationId: input.conversationId,
     });
 
+    // 5b. Query Understanding Волна 1 — извлечение структуры запроса (под
+    // флагом, fail-open). Результат не нужен multiQuery — считаем независимо.
+    let queryPlan: QueryPlanResult | null = null;
+    let structuralFilters: StructuralRetrievalFilters | null = null;
+    if (this.cfg.dialogLayer.queryPlanExtractionEnabled) {
+      try {
+        const todayIso = input.validAt ?? new Date().toISOString();
+        const org = await this.prisma.org.findUnique({
+          where: { id: input.tenantId },
+          select: { timezone: true },
+        });
+        const plan = await this.queryPlanExtractor.extract({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          question: finalQuestion,
+          todayIso,
+          orgTimezone: org?.timezone ?? null,
+          conversationId: input.conversationId,
+        });
+        queryPlan = plan;
+        structuralFilters = await this.queryPlanExtractor.resolveStructuralFilters({
+          tenantId: input.tenantId,
+          userId: input.userId,
+          plan,
+        });
+        this.metrics.incQueryPlanExtraction({
+          result: plan.applied ? 'applied' : 'failopen',
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          { conversationId: input.conversationId, err: message },
+          'QueryPlan extraction упал — fail-open (без структурного фильтра)',
+        );
+        queryPlan = null;
+        structuralFilters = null;
+      }
+    }
+
     // 6. MultiQuery (только для exploratory/analytical).
     const mq = await this.multiQuery.expand({
       tenantId: input.tenantId,
@@ -177,6 +229,8 @@ export class DialogService {
       queries: mq.queries,
       confidence: conf.confidence,
       cachedAnswer,
+      queryPlan,
+      structuralFilters,
       steps: {
         contextualize: ctx.durationSeconds,
         confidence: conf.durationSeconds,

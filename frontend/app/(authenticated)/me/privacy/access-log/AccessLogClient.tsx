@@ -127,7 +127,7 @@ export function AccessLogClient() {
 }
 
 function AccessLogRow({ item }: { item: AccessLogItemDto }) {
-  const name = item.viewerUserName?.trim() || item.viewerUserEmail || 'Сотрудник Org';
+  const name = item.viewerUserName?.trim() || item.viewerUserEmail || 'Сотрудник организации';
   return (
     <tr className="border-b border-border-subtle last:border-b-0 hover:bg-bg-overlay/30">
       <td className="px-4 py-2.5 text-fg-primary">

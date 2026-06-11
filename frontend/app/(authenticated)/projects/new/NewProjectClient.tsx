@@ -11,6 +11,7 @@ import { Label } from '@/ui/shadcn/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import { useAuth } from '@/contexts/auth-context';
 import { projectsApi } from '@/api/tracker/projects.api';
+import { humanizeApiError } from '@/api/api-error';
 import { FromTemplateWizard } from './FromTemplateWizard';
 
 /**
@@ -58,7 +59,7 @@ export function NewProjectClient() {
       );
       router.push(`/projects/${encodeURIComponent(project.slug)}/board`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось создать проект');
+      setError(humanizeApiError(err, 'Не удалось создать проект'));
     } finally {
       setSubmitting(false);
     }

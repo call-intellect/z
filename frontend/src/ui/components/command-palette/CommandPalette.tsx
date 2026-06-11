@@ -31,7 +31,7 @@ import { searchApi, type SearchResponse } from '@/api/search.api';
 import { conciergeApi } from '@/api/concierge.api';
 import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
 import { voiceApi } from '@/api/voice.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -297,7 +297,7 @@ export function CommandPalette() {
     } catch (err) {
       setVoiceState('idle');
       const message =
-        err instanceof ApiError ? err.message : 'Не удалось распознать голос';
+        humanizeApiError(err, 'Не удалось распознать голос');
       toast.error(message);
     }
   }, [currentOrgId]);
@@ -408,7 +408,7 @@ export function CommandPalette() {
       const message =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось получить ответ от AI';
+          : 'Не удалось получить ответ от Коры';
       setAiError(message);
     } finally {
       setAiBusy(false);
@@ -455,7 +455,7 @@ export function CommandPalette() {
     >
       <div className="relative">
         <CommandInput
-          placeholder="Поиск, ? — спросить AI, > — действие Concierge"
+          placeholder="Поиск, ? — спросить Кору, > — действие Concierge"
           value={query}
           onValueChange={setQuery}
         />
@@ -594,13 +594,13 @@ export function CommandPalette() {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="AI помощник">
+            <CommandGroup heading="Помощник">
               <CommandItem
                 value="ai-open-prompt"
                 onSelect={() => {
                   trackRecent({
                     id: 'mode:ai',
-                    label: 'Спросить AI компании…',
+                    label: 'Спросить Кору…',
                     subtitle: 'Q&A по памяти компании',
                     action: { kind: 'set-query', value: '? ' },
                   });
@@ -609,7 +609,7 @@ export function CommandPalette() {
               >
                 <ResultRow
                   icon={Sparkles}
-                  title="Спросить AI компании…"
+                  title="Спросить Кору…"
                   subtitle="? — задать вопрос ассистенту по второму мозгу"
                 />
               </CommandItem>
@@ -648,7 +648,7 @@ export function CommandPalette() {
 
         {/* AI режим */}
         {isAiMode && (
-          <CommandGroup heading="AI помощник компании">
+          <CommandGroup heading="Помощник компании">
             <CommandItem
               value="ai-ask-execute"
               onSelect={() => void runAiAsk()}
@@ -659,8 +659,8 @@ export function CommandPalette() {
                 iconClassName={aiBusy ? 'animate-spin' : undefined}
                 title={
                   aiBusy
-                    ? 'AI ищет ответ…'
-                    : `Спросить AI: «${trimmed.replace(/^\?+\s*/, '')}»`
+                    ? 'Кора ищет ответ…'
+                    : `Спросить Кору: «${trimmed.replace(/^\?+\s*/, '')}»`
                 }
                 subtitle="Enter — отправить (chat-v2 · org · synthetic)"
               />
@@ -692,7 +692,7 @@ export function CommandPalette() {
 
         {/* AI ответ inline */}
         {(aiAnswer || aiError) && (
-          <CommandGroup heading="Ответ AI">
+          <CommandGroup heading="Ответ Коры">
             <div className="px-3 py-3">
               {lastAskedQuestion && (
                 <div className="mb-2 text-xs text-fg-tertiary">
@@ -791,7 +791,7 @@ export function CommandPalette() {
         {isSearchMode && (
           <>
             {/* Подсказка: «Спросить AI про <query>» — параллельно поиску */}
-            <CommandGroup heading="AI помощник">
+            <CommandGroup heading="Помощник">
               <CommandItem
                 value={`ai-ask-fallback-${trimmed}`}
                 onSelect={() => void runAiAsk(trimmed)}
@@ -800,7 +800,7 @@ export function CommandPalette() {
                 <ResultRow
                   icon={aiBusy ? Loader2 : Sparkles}
                   iconClassName={aiBusy ? 'animate-spin' : undefined}
-                  title={`Спросить AI: «${trimmed}»`}
+                  title={`Спросить Кору: «${trimmed}»`}
                   subtitle="Ответ из второго мозга компании"
                 />
               </CommandItem>

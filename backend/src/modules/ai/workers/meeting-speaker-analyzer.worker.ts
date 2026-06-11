@@ -5,7 +5,11 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../services/json-extract.util';
 import { LlmRouterService } from '../services/llm-router.service';
-import type { DialogTurn } from '../services/prompts/common';
+import {
+  applyInputGuards,
+  withToneConfidenceCalibration,
+  type DialogTurn,
+} from '../services/prompts/common';
 
 /**
  * Meeting-Speaker-Analyzer (Pulse Wave 4 §4.4, plans/tz/2026-05-30-pulse-full.md).
@@ -27,7 +31,10 @@ import type { DialogTurn } from '../services/prompts/common';
  * Если реплик < 50 символов — пишем заглушку `neutral` с низким confidence.
  * Best-effort: ошибка по одной MPB не валит проход.
  */
-const SYSTEM_PROMPT = `Ты — аналитик встреч. На вход — текст реплик одного спикера за встречу. Определи:
+// A9 (2026-06-10): `confidence` — уверенность в оценке ТОНАЛЬНОСТИ текста.
+// Применяем тональную шкалу (`withToneConfidenceCalibration`) в КОНЕЦ SYSTEM
+// (cache-friendly): тон — наблюдаемое поведение, не диагноз; при сомнении ниже.
+const SYSTEM_PROMPT = withToneConfidenceCalibration(`Ты — аналитик встреч. На вход — текст реплик одного спикера за встречу. Определи:
 - topics: 3-5 главных тем, о которых он говорил (короткие фразы на русском).
 - textSentiment: общий sentiment ТЕКСТА его реплик ('positive' / 'neutral' / 'negative').
 - confidence: твоя уверенность 0..1.
@@ -36,7 +43,7 @@ const SYSTEM_PROMPT = `Ты — аналитик встреч. На вход —
 - Анализируй ТОЛЬКО текст, не пытайся угадывать эмоции по голосу/невербалике (их нет в данных).
 - На основе только переданных реплик. Не додумывай.
 - Имена сотрудников НЕ цитируй в topics.
-- Верни строго JSON: { topics: string[], textSentiment, confidence }`;
+- Верни строго JSON: { topics: string[], textSentiment, confidence }`);
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -182,13 +189,21 @@ export class MeetingSpeakerAnalyzerWorker {
 
         const truncated = speakerText.slice(0, MeetingSpeakerAnalyzerWorker.MAX_TEXT_CHARS);
 
+        // A2-AI: userMessage — сырые реплики спикера из транскрипта (ASR).
+        // Оборачиваем в маркеры данных + ASR-нота в КОНЕЦ SYSTEM. Воркер без
+        // TypedConfigService — глобальный kill-switch здесь не гейтит (всегда ON).
+        const guarded = applyInputGuards(SYSTEM_PROMPT, truncated, {
+          injection: true,
+          asr: true,
+        });
+
         let parsed: ParsedSentiment | null = null;
         for (let attempt = 0; attempt < 2; attempt++) {
           const out = await this.llm.call({
             taskType: 'meeting-speaker-analyzer',
             tenantId: mpb.tenantId,
-            systemPrompt: SYSTEM_PROMPT,
-            userMessage: truncated,
+            systemPrompt: guarded.system,
+            userMessage: guarded.user,
             sourceRef: { type: 'meeting_participant_behavior', id: mpb.id },
             maxTokens: 400,
             responseFormat: {

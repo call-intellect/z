@@ -271,6 +271,9 @@ enum SourceType {
   tracker_event
   /// ChatBox-интеграция: сессия клиентского чата → RawEvent → knowledge-core.
   chatbox
+  /// Ежедневный чек-ин сотрудника (план/отчёт) → RawEvent → knowledge-core.
+  /// Мост CheckinIngestService (ТЗ 2026-06-10-daily-checkin-to-graph-bridge).
+  daily_checkin
 }
 
 enum DataClass {
@@ -1354,6 +1357,12 @@ model Meeting {
   /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
   closedGroupKind String? @db.VarChar(20)
 
+  /// ТЗ 2026-06-10 meeting-visibility — «Кому видно» встреча (видео/запись/расшифровка/отчёт).
+  /// 'owner_only' | 'participants' (дефолт) | 'custom' | 'org'. Источник правды доступа к
+  /// READ-поверхностям встречи. НЕ влияет на граф знаний (отдельная подсистема).
+  visibilityScope String               @default("participants") @db.VarChar(16)
+  accessGrants    MeetingAccessGrant[]
+
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — источник встречи. `livekit` (дефолт)
   /// для встреч в комнате; `upload` для встреч, загруженных файлом и диаризованных.
   source                MeetingSource @default(livekit)
@@ -1372,6 +1381,25 @@ model Meeting {
   @@index([linkedIssueId])
   @@index([linkedCycleId])
   @@index([tenantId, source, createdAt])
+}
+
+/// ТЗ 2026-06-10 meeting-visibility — явный грант доступа к встрече (scope='custom').
+/// Кому хост открыл руками: человек (Person) или группа (KnowledgeGroup, ПРЯМОЕ членство).
+/// tenantId — денормализован скаляром для индекса; каскад через Meeting (не через Org,
+/// чтобы не править модель Org). При удалении встречи гранты удаляются.
+model MeetingAccessGrant {
+  id          String   @id @default(cuid())
+  tenantId    String
+  meetingId   String
+  granteeType String   @db.VarChar(8) /// 'person' | 'group'
+  granteeId   String /// Person.id | KnowledgeGroup.id
+  grantedById String /// User.id хоста, выдавшего доступ
+  createdAt   DateTime @default(now())
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, granteeType, granteeId])
+  @@index([tenantId, meetingId])
+  @@index([granteeType, granteeId])
 }
 
 /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикер диаризации загруженной встречи.
@@ -2509,6 +2537,7 @@ model Org {
   processes       Process[]
   processSteps    ProcessStep[]
   regulations     Regulation[]
+  instructions    Instruction[]
   policies        Policy[]
   tools           Tool[]
   metrics         Metric[]
@@ -2825,6 +2854,7 @@ enum KnowledgeGroupKind {
   leadership
   council
   personal
+  support // закрытый контур техподдержки (синглтон per вендор-Org, refId=null) — TZ support-desk
 }
 
 model KnowledgeGroup {
@@ -3857,6 +3887,7 @@ model CardVersion {
   /// после triage'а (см. sub-TZ §4, §5).
   processesAsCurrent   Process[]     @relation("ProcessCurrentVersion")
   regulationsAsCurrent Regulation[]  @relation("RegulationCurrentVersion")
+  instructionCurrent   Instruction[] @relation("InstructionCurrentVersion")
   policiesAsCurrent    Policy[]      @relation("PolicyCurrentVersion")
   /// SBA β-3 — обратное relation для Decision.currentVersionId.
   decisionsAsCurrent   Decision[]    @relation("DecisionCurrentVersion")
@@ -4781,6 +4812,7 @@ model Person {
   ownedGoals                  Goal[]                             @relation("GoalOwnerPerson")
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations            Regulation[]                       @relation("RegulationOwnerPerson")
+  instructionsOwned           Instruction[]                      @relation("InstructionOwnerPerson")
   ownedPolicies               Policy[]                           @relation("PolicyOwnerPerson")
   /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
   ownedProcessTemplates       ProcessTemplate[]                  @relation("ProcessTemplateOwnerPerson")
@@ -5852,6 +5884,57 @@ model Regulation {
   @@index([tenantId, ownerPersonId])
   @@index([currentVersionId])
   @@map("regulations")
+}
+
+/// Instruction — first-class сущность «Инструкция»: пошаговое руководство для ОДНОЙ роли
+/// (Волна 6 A10). Зеркалит Regulation, но с признаком single-role `forRole`.
+model Instruction {
+  id               String                       @id @default(cuid())
+  tenantId         String
+  name             String                       @db.VarChar(300)
+  contentMd        String                       @db.Text
+  status           ProcessStatus                @default(active)
+  version          Int                          @default(1)
+  confidence       Float?
+  /// `forRole` — роль-владелец инструкции (single-role признак).
+  forRole          String?                      @db.VarChar(120)
+  /// `entityId` — связка с графом.
+  entityId         String?                      @unique
+  /// `statement` — структурированная суть инструкции (альтернатива contentMd для дедупа / retrieval).
+  statement        String?                      @db.Text
+  /// `scope` — область действия: 'org' | 'department:<id>' | 'role:<id>' | 'project:<id>'.
+  scope            String?                      @db.VarChar(120)
+  /// FK на Person — назначенный ответственный за инструкцию.
+  ownerPersonId    String?
+  /// Self-relation для версионирования (новая запись «заменяет» старую).
+  supersedesId     String?
+  /// FK на CardVersion (последняя активная версия после triage).
+  currentVersionId String?
+  /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения.
+  sourceBlockIds   String[]                     @default([])
+  /// `personSubjectIds[]` — Person'ы, которым инструкция присвоена как subject.
+  personSubjectIds String[]                     @default([])
+  dataClass        DataClass                    @default(internal)
+  /// audit-trail вычисления dataClass (policyVersion + sources).
+  dataClassAudit   Json?
+  /// Эмбеддинг (name + statement) — для KNN-дедупа.
+  embedding        Unsupported("vector(1536)")?
+  lastConfirmedAt  DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson      Person?          @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  supersedes       Instruction?     @relation("InstructionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy     Instruction[]    @relation("InstructionSupersedes")
+  currentVersion   CardVersion?     @relation("InstructionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, forRole])
+  @@index([tenantId, ownerPersonId])
+  @@index([currentVersionId])
+  @@map("instructions")
 }
 
 /// Policy — политика (Фаза 0a, группа Б). UI в Фазе α-7.
@@ -8896,6 +8979,16 @@ model Issue {
   // RBAC и owner
   createdById String
 
+  // Support desk (TZ 2026-06-09 support-desk) — заполняются ТОЛЬКО для тикетов
+  // поддержки (cross-tenant: клиент из другой Org пишет в вендор-Org).
+  supportCustomerOrgId   String?   /// Org клиента, приславшего обращение
+  supportCustomerUserId  String?   /// User клиента (глобальный User.id)
+  supportCustomerContact String?   @db.VarChar(320) /// email/имя для отображения в деске
+  firstResponseDueAt     DateTime? /// SLA: дедлайн первого ответа
+  resolutionDueAt        DateTime? /// SLA: дедлайн решения
+  firstRespondedAt       DateTime? /// факт первого ответа клиенту
+  slaBreachedAt          DateTime? /// зафиксированное нарушение SLA
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
@@ -8945,6 +9038,9 @@ model Issue {
   @@index([parentId])
   /// Tracker Boards (2026-05-27) — фильтр задач по доске на канбане.
   @@index([boardId])
+  /// Support desk (TZ 2026-06-09) — тикеты конкретного клиента + SLA-сканер.
+  @@index([tenantId, supportCustomerUserId])
+  @@index([tenantId, firstResponseDueAt])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
@@ -9035,6 +9131,12 @@ model IssueComment {
 
   access String @default("internal") // internal | external (гость)
 
+  // Support desk (TZ 2026-06-09) — провенанс + состояние черновика клона.
+  authorType        String   @default("human") /// human | clone | system
+  draftState        String?  /// null=обычный | pending | accepted | edited | rejected (только authorType=clone)
+  cloneConfidence   Decimal? @db.Decimal(4, 3) /// калиброванная уверенность клона
+  groundednessScore Decimal? @db.Decimal(4, 3) /// результат critic (truthful/total)
+
   // Голосовое сообщение
   voiceUrl        String?
   voiceDuration   Int? // секунды
@@ -9056,6 +9158,69 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+}
+
+/// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.
+model SupportSlaPolicy {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique /// вендор-Org
+  firstResponseMins Int      @default(60)
+  resolutionMins    Int      @default(480)
+  businessHoursOnly Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// CSAT/оценка тикета поддержки клиентом. TZ support-desk Ф1 (R-INV-2/R3 — чистый сигнал петле).
+model IssueRating {
+  id            String   @id @default(cuid())
+  tenantId      String
+  issueId       String   @unique
+  score         Int      /// 1..5
+  comment       String?  @db.Text
+  ratedByUserId String?  /// клиент (User.id)
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+/// Обучающий сигнал клона поддержки (R-INV-2): пара черновик→финал + тип правки.
+/// TZ support-desk Ф3.
+model SupportDraftOutcome {
+  id                String   @id @default(cuid())
+  tenantId          String   /// вендор-Org
+  issueId           String
+  draftCommentId    String?
+  taskType          String   @default("support-clone-draft")
+  draftText         String   @db.Text
+  finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
+  outcome           String   /// accepted | edited | rejected
+  editType          String?  /// factual | tone | policy | empty | null
+  cloneConfidence   Decimal? @db.Decimal(4, 3)
+  groundednessScore Decimal? @db.Decimal(4, 3)
+  promotedToContour Boolean  @default(false) /// прошёл гейт качества и попал в контур
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, taskType, createdAt])
+  @@index([tenantId, issueId])
+}
+
+/// Аудит действий ночного куратора контура поддержки (TZ Ф4, R-INV-6/R24).
+/// Каждая операция (в т.ч. отклонённая дебатом) фиксируется — что/почему/verdict.
+model SupportCuratorAction {
+  id             String   @id @default(cuid())
+  tenantId       String   /// вендор-Org
+  runDate        String   /// YYYY-MM-DD прогон (идемпотентность в пределах дня)
+  blockId        String
+  action         String   /// keep | promote | fix | merge | archive
+  reason         String   @db.Text
+  targetBlockId  String?  /// для merge — куда слили
+  debateDecision String?  /// итог MultiAgentDebateService (для destructive)
+  applied        Boolean  @default(false) /// применена ли (false = дебат отклонил / keep)
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, runDate])
+  @@index([tenantId, blockId])
 }
 
 /// Вложение к задаче или комментарию.

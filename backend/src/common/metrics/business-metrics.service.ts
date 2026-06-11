@@ -113,6 +113,11 @@ export class BusinessMetricsService implements OnModuleInit {
   //                    tool_choice в редких случаях).
   private promptInvalidResponseTotal!: Counter<'task_type' | 'model' | 'reason'>;
 
+  // ── Query Understanding Волна 1 (ТЗ 2026-06-10 query-understanding-tier0-tier1) ──
+  private queryPlanExtractionTotal!: Counter<'result'>;
+  private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
+  private queryPlanEmptyPoolTotal!: Counter<'result'>;
+
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
   // одинаковым display name >1 (или LLM вернул userId не из списка
@@ -771,6 +776,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //         'other' — LLM упал/timeout/нет tool_call/update в БД упал.
   // Cardinality: 2 значения reason × ≤101 tenant_top = ≤202 series.
   private cooSentimentFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core.
+  // result ∈ ok (RawEvent создан/идемпотентный возврат) | skipped (completedAt=
+  // null / нет записи / флаг off) | error (исключение моста, best-effort). 3 series.
+  private checkinGraphIngestTotal!: Counter<'result'>;
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
@@ -1266,6 +1275,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_invalid_response_total',
       help: 'Невалидный ответ LLM (ТЗ 2026-05-24 §9 F6): не парсится JSON / не проходит Zod-схему / отсутствует ожидаемый tool_use. Накапливается на каждый retry, не только финальный fail.',
       labelNames: ['task_type', 'model', 'reason'] as const,
+    });
+
+    this.queryPlanExtractionTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_extraction_total',
+      help: 'Query Understanding Волна 1 — извлечение структуры запроса (dialog-extract-plan). result="applied" план применён (фильтр); "failopen" низкий confidence/невалидный JSON/LLM упал → смысловой путь без фильтра.',
+      labelNames: ['result'] as const,
+    });
+    this.queryPlanRetrievalFilteredTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_retrieval_filtered_total',
+      help: 'Query Understanding Волна 1 — chat-v2 retrieval: filtered="yes" применён структурный recall-safe фильтр (полный скан), "no" обычный смысловой путь.',
+      labelNames: ['filtered'] as const,
+    });
+    this.queryPlanEmptyPoolTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_empty_pool_total',
+      help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
+      labelNames: ['result'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -3077,6 +3102,11 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина. reason: invalid_element (silent-skip батч-парсером) | other (LLM down / нет tool_call / update упал).',
       labelNames: ['tenant_top', 'reason'] as const,
     });
+    this.checkinGraphIngestTotal = this.getOrCreateCounter({
+      name: 'z_checkin_graph_ingest_total',
+      help: 'ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core. result: ok (RawEvent создан или идемпотентный возврат) | skipped (пустой чек-ин / нет записи / kill-switch off) | error (исключение моста, best-effort).',
+      labelNames: ['result'] as const,
+    });
     this.cooWeeklyDigestGeneratedTotal = this.getOrCreateCounter({
       name: 'coo_weekly_digest_generated_total',
       help: 'SBA β-8.1 — успешно сгенерированный недельный дайджест операционного директора.',
@@ -3847,6 +3877,19 @@ export class BusinessMetricsService implements OnModuleInit {
       model: args.model,
       reason: args.reason,
     });
+  }
+
+  /** Query Understanding Волна 1 — результат извлечения плана запроса. */
+  incQueryPlanExtraction(args: { result: 'applied' | 'failopen' }): void {
+    this.queryPlanExtractionTotal.inc({ result: args.result });
+  }
+  /** Query Understanding Волна 1 — применён ли структурный фильтр в retrieval. */
+  incQueryPlanRetrievalFiltered(args: { filtered: 'yes' | 'no' }): void {
+    this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
+  }
+  /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incQueryPlanEmptyPool(args: { result: 'empty' }): void {
+    this.queryPlanEmptyPoolTotal.inc({ result: args.result });
   }
 
   /**
@@ -5154,10 +5197,15 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
-  /** Результат intent-классификации входящего текста бота (LLM или эвристика). */
+  /**
+   * Результат intent-классификации входящего текста бота (LLM или эвристика).
+   * ТЗ 2026-06-10 §2 Ф4 — добавлены значения `task` / `show_tasks` (гейт
+   * намерения перед созданием задачи): теперь метрика показывает РАСПРЕДЕЛЕНИЕ
+   * всех терминальных намерений бота, а не только chat_query/free_note.
+   */
   incBotIntentClassified(args: {
     channel: 'telegram_bot' | 'max_bot';
-    intent: 'chat_query' | 'free_note';
+    intent: 'chat_query' | 'free_note' | 'task' | 'show_tasks';
     source: 'llm' | 'heuristic';
   }): void {
     this.botIntentClassifiedTotal.inc({
@@ -6820,6 +6868,15 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant_top: args.tenantTop,
       reason: args.reason ?? 'other',
     });
+  }
+
+  /**
+   * Counter `z_checkin_graph_ingest_total{result}` — мост чек-ин → граф знаний
+   * (ТЗ 2026-06-10-daily-checkin-to-graph-bridge). result ∈ ok | skipped | error
+   * (best-effort, ошибка моста не ломает создание чек-ина).
+   */
+  incCheckinGraphIngest(args: { result: 'ok' | 'skipped' | 'error' }): void {
+    this.checkinGraphIngestTotal.inc({ result: args.result });
   }
 
   /** Counter `coo_weekly_digest_generated_total{tenant_top}`. */

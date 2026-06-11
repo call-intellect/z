@@ -7,6 +7,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai-queue.service';
 
 import { LlmRouterService } from './llm-router.service';
+import { applyInputGuards } from './prompts/common';
 import {
   REGENERATE_SECTION_JSON_SCHEMA,
   REGENERATE_SECTION_TASK_TYPE,
@@ -235,10 +236,21 @@ export class RegenerateService {
         : {}),
     });
 
+    // A2-AI: вход — сырой транскрипт встречи + пользовательская инструкция к
+    // секции. Оборачиваем user в маркеры данных + ASR-нота. Глобальный
+    // kill-switch читаем из TypedConfigService (дефолт ON).
+    const guardOn =
+      this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(prompt.system, prompt.user, {
+      enabled: guardOn,
+      injection: true,
+      asr: true,
+    });
+
     const result = await this.router.call({
       taskType: REGENERATE_SECTION_TASK_TYPE,
-      systemPrompt: prompt.system,
-      userMessage: prompt.user,
+      systemPrompt: guarded.system,
+      userMessage: guarded.user,
       tenantId: meeting.tenantId,
       meetingId: input.meetingId,
       userId: input.userId,

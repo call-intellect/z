@@ -177,11 +177,6 @@ export class MeetingsAdminController {
       qualityScore: Record<string, unknown> | null;
     };
     reportStatuses: {
-      analyzeV2: {
-        status: string | null;
-        error: string | null;
-        generatedAt: string | null;
-      };
       reportFast: {
         status: string | null;
         error: string | null;
@@ -233,9 +228,6 @@ export class MeetingsAdminController {
       tasks: unknown;
       modelUsed: string;
       createdAt: string;
-      summaryV2: string | null;
-      summaryV2Model: string | null;
-      summaryV2GeneratedAt: string | null;
       summaryFast: string | null;
       summaryFastModel: string | null;
       summaryFastGeneratedAt: string | null;
@@ -323,11 +315,6 @@ export class MeetingsAdminController {
           null,
       },
       reportStatuses: {
-        analyzeV2: {
-          status: meeting.analyzeV2Status ?? null,
-          error: meeting.analyzeV2Error ?? null,
-          generatedAt: meeting.analyzeV2GeneratedAt?.toISOString() ?? null,
-        },
         reportFast: {
           status: meeting.reportFastStatus ?? null,
           error: meeting.reportFastError ?? null,
@@ -387,10 +374,6 @@ export class MeetingsAdminController {
             tasks: meeting.aiResult.tasks ?? null,
             modelUsed: meeting.aiResult.modelUsed,
             createdAt: meeting.aiResult.createdAt.toISOString(),
-            summaryV2: meeting.aiResult.summaryV2 ?? null,
-            summaryV2Model: meeting.aiResult.summaryV2Model ?? null,
-            summaryV2GeneratedAt:
-              meeting.aiResult.summaryV2GeneratedAt?.toISOString() ?? null,
             summaryFast: meeting.aiResult.summaryFast ?? null,
             summaryFastModel: meeting.aiResult.summaryFastModel ?? null,
             summaryFastGeneratedAt:

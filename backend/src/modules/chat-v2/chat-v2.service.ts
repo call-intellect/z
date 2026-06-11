@@ -215,6 +215,7 @@ export class ChatV2OrchestrationService {
       standaloneQuestion: dialogResult.standaloneQuestion,
       queries: dialogResult.queries,
       validAt,
+      structuralFilters: dialogResult.structuralFilters ?? null,
       conversationSummary: convSummary,
       // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
       // ChatDialogIntent (4 категории) для chat-v2 synthesis. Новые

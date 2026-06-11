@@ -79,6 +79,22 @@ export const CARD_ROLLUP_V2_VENDOR_PROMPT = `Ты — аналитик отде�
 
 Пример вывода: «Поставщик «Selectel» предоставляет S3-совместимое хранилище под записи встреч. Контракт активен до конца года, переподписание обсуждаем в ноябре. В апреле был инцидент с задержкой записи (полчаса недоступности), компенсация согласована. Открытый риск — рост объёма записей опережает текущий тариф, нужно расширять квоту. Следующий шаг — встреча с их аккаунт-менеджером по новой цене за петабайт.»`;
 
+/**
+ * D1 supersession-правило (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8).
+ *
+ * Карточка собирается из блоков РАЗНОГО возраста (см. orderBy updatedAt DESC).
+ * Если блоки противоречат друг другу (статус сделки, контактное лицо, цена,
+ * договорённость) — устаревшее НЕ должно смешиваться с актуальным. Этот суффикс
+ * добавляется в КОНЕЦ каждого kind-промпта (стабильный текст — не ломает
+ * prompt-cache, т.к. SYSTEM остаётся константой).
+ */
+export const CARD_ROLLUP_V2_SUPERSESSION_RULE = [
+  '',
+  'При противоречии источников между блоками: бери более позднее / актуальное',
+  '(по дате блока/цитаты), а устаревшее помечай как заменённое («раньше было …,',
+  'сейчас …»). НЕ смешивай старую и новую редакцию в одно утверждение.',
+].join('\n');
+
 const PROMPTS: Record<CardRollupV2Kind, string> = {
   client: CARD_ROLLUP_V2_CLIENT_PROMPT,
   deal: CARD_ROLLUP_V2_DEAL_PROMPT,
@@ -89,12 +105,13 @@ const PROMPTS: Record<CardRollupV2Kind, string> = {
 };
 
 /**
- * Возвращает system-промпт под `kind`. Неизвестный kind (например, legacy
- * 'custom-template') фоллбэчится на `custom`-промпт.
+ * Возвращает system-промпт под `kind` + supersession-правило (D1) в конце.
+ * Неизвестный kind (например, legacy 'custom-template') фоллбэчится на
+ * `custom`-промпт.
  */
 export function getCardRollupV2SystemPrompt(kind: string): string {
-  if ((CARD_ROLLUP_V2_KINDS as readonly string[]).includes(kind)) {
-    return PROMPTS[kind as CardRollupV2Kind];
-  }
-  return CARD_ROLLUP_V2_CUSTOM_PROMPT;
+  const base = (CARD_ROLLUP_V2_KINDS as readonly string[]).includes(kind)
+    ? PROMPTS[kind as CardRollupV2Kind]
+    : CARD_ROLLUP_V2_CUSTOM_PROMPT;
+  return `${base}\n${CARD_ROLLUP_V2_SUPERSESSION_RULE}`;
 }

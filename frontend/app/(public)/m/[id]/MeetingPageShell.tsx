@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { meetingsApi, type JoinMeetingApiResponse } from '@/api/meetings.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useMeetingAccess } from '@/hooks/use-meeting-access';
 import { toast } from 'sonner';
 import { Skeleton } from '@/ui/components/shared/Skeleton';
@@ -92,7 +92,7 @@ export function MeetingPageShell({ meetingId, inviteToken }: Props) {
       setJoined({ joined: result, identityToParticipantId: identityMap });
     } catch (e) {
       const message =
-        e instanceof ApiError ? e.message : 'Не удалось подключиться.';
+        humanizeApiError(e, 'Не удалось подключиться.');
       toast.error(message);
     }
   };

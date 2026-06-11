@@ -88,8 +88,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
     // пост-фактум резолв `assigneeUserId` из `assigneeRaw` по списку участников
-    // встречи (БЕЗ правки LLM-промпта). Паттерн скопирован из
-    // `meeting-analyze-v2.worker.ts`.
+    // встречи (БЕЗ правки LLM-промпта).
     @Inject(ParticipantContextService)
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
@@ -778,7 +777,6 @@ function clamp01(v: number): number {
 
 /**
  * Парсит dueDateIso. Формат: YYYY-MM-DD или ISO datetime. Иначе null.
- * Идентично `meeting-analyze-v2.worker.ts.parseDueDateIso`.
  */
 function parseDueDateIso(raw: string | null): Date | null {
   if (!raw) return null;

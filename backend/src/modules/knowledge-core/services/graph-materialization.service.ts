@@ -94,11 +94,19 @@ export class GraphMaterializationService {
     });
     const signalTypeDistribution: Record<string, number> = {};
     const statusDistribution: Record<string, number> = {};
+    // #75 — canonical-срез по signalType: Decision/Idea материализуются ТОЛЬКО
+    // из canonical-блоков (specialist-3-3-decisions.worker:85 skip not_canonical).
+    // Полные распределения оставляем для наблюдаемости (super-admin diagnostics),
+    // но gap считаем по canonical-срезу — иначе draft/merged блок даёт ложный gap.
+    const canonicalBySignalType: Record<string, number> = {};
     for (const b of blocks) {
       const sig = String(b.signalType);
       const st = String(b.status);
       signalTypeDistribution[sig] = (signalTypeDistribution[sig] ?? 0) + 1;
       statusDistribution[st] = (statusDistribution[st] ?? 0) + 1;
+      if (st === 'canonical') {
+        canonicalBySignalType[sig] = (canonicalBySignalType[sig] ?? 0) + 1;
+      }
     }
 
     // 4. Материализованные записи: пересечение sourceBlockIds с blockIds.
@@ -114,24 +122,17 @@ export class GraphMaterializationService {
       }),
     ]);
 
-    // 5. Расхождения: сигнал есть, записи нет.
+    // 5. Расхождения: CANONICAL-блоки сигнала есть, а материализованных записей
+    // нет. По draft/merged/archived gap не поднимаем — из них и не материализуют.
     const gaps: MeetingMaterialization['gaps'] = [];
-    const decisionBlocks = signalTypeDistribution['decision'] ?? 0;
-    if (decisionBlocks > 0 && decisions === 0) {
-      gaps.push({
-        type: 'decision',
-        blocksWithSignal: decisionBlocks,
-        materialized: decisions,
-      });
-    }
-    const ideaBlocks = signalTypeDistribution['idea'] ?? 0;
-    if (ideaBlocks > 0 && ideas === 0) {
-      gaps.push({
-        type: 'idea',
-        blocksWithSignal: ideaBlocks,
-        materialized: ideas,
-      });
-    }
+    const decisionGap = buildGap(
+      'decision',
+      canonicalBySignalType['decision'] ?? 0,
+      decisions,
+    );
+    if (decisionGap) gaps.push(decisionGap);
+    const ideaGap = buildGap('idea', canonicalBySignalType['idea'] ?? 0, ideas);
+    if (ideaGap) gaps.push(ideaGap);
 
     return {
       meetingId,
@@ -143,4 +144,20 @@ export class GraphMaterializationService {
       gaps,
     };
   }
+}
+
+/**
+ * #75 — gap поднимается ТОЛЬКО когда есть canonical-блоки сигнала, но
+ * материализованных записей нет. Из draft/merged/archived не материализуют —
+ * по ним gap = ложная тревога (раньше WARN «есть(1), записей 0» каждые 30 мин).
+ */
+function buildGap(
+  type: 'decision' | 'idea',
+  canonicalCount: number,
+  materialized: number,
+): MeetingMaterialization['gaps'][number] | null {
+  if (canonicalCount > 0 && materialized === 0) {
+    return { type, blocksWithSignal: canonicalCount, materialized };
+  }
+  return null;
 }

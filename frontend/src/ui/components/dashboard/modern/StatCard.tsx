@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 
@@ -8,8 +9,13 @@ import { CHART } from './tokens';
 import { glass } from './tokens';
 
 /**
- * KPI-карточка: градиентная иконка, дельта-плашка, крупное значение, подпись и
- * мини-спарклайн (recharts area). Разметка и стили 1-в-1 из витрины.
+ * KPI-карточка: градиентная иконка, опц. дельта-плашка, крупное значение,
+ * подпись и опц. мини-спарклайн (recharts area). Разметка и стили 1-в-1 из
+ * витрины.
+ *
+ * Поля `delta` / `up` / `spark` — опциональные: без дельты плашка не рендерится
+ * (иконка остаётся слева), без спарклайна нижняя строка содержит только подпись.
+ * `href` (опц.) оборачивает карточку в next/link (паттерн KpiHero).
  */
 export function StatCard({
   icon,
@@ -20,17 +26,19 @@ export function StatCard({
   up,
   spark,
   tone,
+  href,
 }: {
   icon: ReactNode;
   grad: string;
   label: string;
   value: string;
-  delta: string;
-  up: boolean;
-  spark: { i: number; v: number }[];
+  delta?: string;
+  up?: boolean;
+  spark?: { i: number; v: number }[];
   tone: string;
+  href?: string;
 }) {
-  return (
+  const inner = (
     <div style={glass({ borderRadius: 20 })} className="p-5">
       <div className="flex items-start justify-between">
         <div
@@ -39,43 +47,56 @@ export function StatCard({
         >
           {icon}
         </div>
-        <span
-          className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
-          style={{
-            color: up ? CHART.mint : CHART.amber,
-            background: up ? 'oklch(0.85 0.15 165 / 0.12)' : 'oklch(0.84 0.16 80 / 0.12)',
-          }}
-        >
-          {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {delta}
-        </span>
+        {delta != null ? (
+          <span
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
+            style={{
+              color: up ? CHART.mint : CHART.amber,
+              background: up ? 'oklch(0.85 0.15 165 / 0.12)' : 'oklch(0.84 0.16 80 / 0.12)',
+            }}
+          >
+            {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+            {delta}
+          </span>
+        ) : null}
       </div>
       <div className="mt-4 text-[30px] font-semibold leading-none tracking-tight">{value}</div>
       <div className="mt-1.5 flex items-end justify-between">
         <span className="text-sm" style={{ color: CHART.dim }}>
           {label}
         </span>
-        <div className="h-8 w-20">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <AreaChart data={spark} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id={`sp-${label}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={tone} stopOpacity={0.5} />
-                  <stop offset="100%" stopColor={tone} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area
-                type="monotone"
-                dataKey="v"
-                stroke={tone}
-                strokeWidth={2}
-                fill={`url(#sp-${label})`}
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        {spark && spark.length > 0 ? (
+          <div className="h-8 w-20">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <AreaChart data={spark} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id={`sp-${label}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={tone} stopOpacity={0.5} />
+                    <stop offset="100%" stopColor={tone} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="v"
+                  stroke={tone}
+                  strokeWidth={2}
+                  fill={`url(#sp-${label})`}
+                  dot={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : null}
       </div>
     </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full">
+        {inner}
+      </Link>
+    );
+  }
+  return inner;
 }

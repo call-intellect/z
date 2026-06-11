@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { OperationsDashboardService } from './operations-dashboard.service';
+import {
+  bucketizeWeeklyInflow,
+  OperationsDashboardService,
+} from './operations-dashboard.service';
 
 /**
  * SBA β-8 — OperationsDashboardService unit-тесты.
@@ -71,6 +74,8 @@ describe('OperationsDashboardService', () => {
       // ТЗ-2 Ф2 — blockersResolvedCount (BlockerSynthesis status=resolved, 30д).
       blockerSynthesis: {
         count: vi.fn().mockResolvedValue(0),
+        // Ф1 редизайн — buildWeeklyInflow читает BlockerSynthesis.createdAt.
+        findMany: vi.fn().mockResolvedValue([]),
       },
       person: {
         findMany: vi.fn().mockResolvedValue(overrides.persons ?? []),
@@ -295,5 +300,61 @@ describe('OperationsDashboardService', () => {
     const anna = cap.items.find((i) => i.personName === 'Анна');
     expect(anna?.loadPercent).toBe(120);
     expect(cap.overloadedCount).toBe(1);
+  });
+});
+
+/**
+ * Ф1 редизайн — чистая функция раскладки недельного инфлоу (детерминизм,
+ * без моков prisma). idx = floor((t - start) / week), start = now - 12 недель.
+ */
+describe('bucketizeWeeklyInflow', () => {
+  const WEEK = 7 * 24 * 60 * 60 * 1000;
+  const now = new Date('2026-06-10T12:00:00Z');
+
+  // Событие в середине недели i: t = now - (11.5 - i) * WEEK.
+  function eventInWeek(i: number): Date {
+    return new Date(now.getTime() - (11.5 - i) * WEEK);
+  }
+
+  it('раскладывает события по нужным неделям (i=0,5,11), остальные null', () => {
+    const result = bucketizeWeeklyInflow(
+      [eventInWeek(0), eventInWeek(5), eventInWeek(11)],
+      now,
+    );
+    expect(result).toHaveLength(12);
+    // По одному событию в неделях 0, 5, 11 → значение 1.
+    expect(result[0]).toBe(1);
+    expect(result[5]).toBe(1);
+    expect(result[11]).toBe(1);
+    // Остальные индексы — null (неделя без данных).
+    for (const idx of [1, 2, 3, 4, 6, 7, 8, 9, 10]) {
+      expect(result[idx]).toBeNull();
+    }
+  });
+
+  it('пустой массив → 12 элементов, все null', () => {
+    const result = bucketizeWeeklyInflow([], now);
+    expect(result).toHaveLength(12);
+    expect(result.every((v) => v === null)).toBe(true);
+  });
+
+  it('несколько событий в одной неделе → count > 1', () => {
+    const result = bucketizeWeeklyInflow(
+      [eventInWeek(3), eventInWeek(3), eventInWeek(3)],
+      now,
+    );
+    expect(result[3]).toBe(3);
+    // Прочие — null.
+    for (let i = 0; i < 12; i++) {
+      if (i !== 3) expect(result[i]).toBeNull();
+    }
+  });
+
+  it('события вне окна (раньше start / позже now) игнорируются', () => {
+    const before = new Date(now.getTime() - 13 * WEEK); // раньше start
+    const future = new Date(now.getTime() + WEEK); // позже now
+    const atNow = new Date(now.getTime()); // t >= now → исключается (lt now)
+    const result = bucketizeWeeklyInflow([before, future, atNow], now);
+    expect(result.every((v) => v === null)).toBe(true);
   });
 });

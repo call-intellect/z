@@ -10,7 +10,8 @@ import {
   type ChatCitationApi,
   type ChatMessageApi,
 } from '@/api/chat.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
+import { stripContextMarkers } from '@/domain/chat-v2';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { ScrollArea } from '@/ui/shadcn/scroll-area';
@@ -114,7 +115,7 @@ export function OrgChatPanel({
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Ошибка чата';
+      const msg = humanizeApiError(err, 'Ошибка чата');
       toast.error(msg);
     } finally {
       setSending(false);
@@ -160,7 +161,7 @@ export function OrgChatPanel({
           </div>
         )}
       </ScrollArea>
-      <div className="border-t border-border-subtle p-3">
+      <div className="border-t border-border-subtle p-3 pb-20 sm:pr-20">
         <div className="flex items-end gap-2">
           <Textarea
             value={input}
@@ -210,7 +211,9 @@ function ChatBubble({ message }: { message: ChatMessage }) {
           isUser ? 'bg-accent text-accent-fg' : 'bg-bg-overlay text-fg-primary',
         )}
       >
-        <p className="whitespace-pre-wrap">{message.content}</p>
+        <p className="whitespace-pre-wrap">
+          {isUser ? message.content : stripContextMarkers(message.content)}
+        </p>
         {message.citations && message.citations.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {message.citations.map((c, i) => (

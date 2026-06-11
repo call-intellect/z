@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState, type JSX } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   calendarApi,
   type CreateEventRequestApi,
@@ -246,7 +246,7 @@ export function EventForm({
       onClose();
     } catch (e2) {
       setError(
-        e2 instanceof ApiError ? e2.message : 'Не удалось сохранить событие.',
+        humanizeApiError(e2, 'Не удалось сохранить событие.'),
       );
     } finally {
       setSaving(false);
@@ -269,7 +269,7 @@ export function EventForm({
       onClose();
     } catch (e2) {
       setError(
-        e2 instanceof ApiError ? e2.message : 'Не удалось удалить событие.',
+        humanizeApiError(e2, 'Не удалось удалить событие.'),
       );
     } finally {
       setDeleting(false);

@@ -15,7 +15,7 @@
  *   { value: string|number|boolean|array|null, confidence: 0..1, quote, timeSec }
  */
 
-import { withInjectionGuard } from './common';
+import { withInjectionGuard, wrapUserData } from './common';
 
 export interface AutoFillPropertyDescriptor {
   /** id колонки (TableProperty.id). */
@@ -79,7 +79,10 @@ export function buildTableAutoFillPrompt(
     args.rowContext.trim() || '  (пусто)',
     '',
     'Фрагмент транскрипта встречи:',
-    args.transcriptChunk.trim(),
+    // Сырой транскрипт встречи — оборачиваем в маркеры данных (anti-injection).
+    // SYSTEM держит INJECTION_GUARD_NOTE через withInjectionGuard выше.
+    // rowContext выше — derived (собран нашим кодом из ячеек строки), не оборачиваем.
+    wrapUserData(args.transcriptChunk.trim()),
     '',
     'Верни JSON по правилам из системного сообщения. Если факт не назван прямо — value: null.',
   ].join('\n');

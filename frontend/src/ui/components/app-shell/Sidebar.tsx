@@ -27,6 +27,7 @@ import {
   IdCard,
   Inbox,
   Lightbulb,
+  LifeBuoy,
   ListChecks,
   Lock,
   LogOut,
@@ -82,6 +83,9 @@ import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
 // Action Center B1 — живой бейдж pending-подтверждений у пункта «Подтверждения».
 import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
 import { useMemoryAccess } from '@/hooks/useMemoryAccess';
+// ТЗ 2026-06-09 support-desk — пункт «Поддержка» (только сотрудники деска) и
+// «Мои обращения» (всем, когда деск настроен).
+import { useSupportStatus } from '@/hooks/useSupportStatus';
 // ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
 import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
 import {
@@ -91,6 +95,7 @@ import {
 } from '@/domain/entitlement';
 import { useTheme } from '@/ui/components/theme/ThemeProvider';
 import { NAV_HELP } from '@/lib/nav-help';
+import { SECTION_LABELS } from '@/lib/section-labels';
 import { OrgSwitcher } from './OrgSwitcher';
 
 /**
@@ -210,7 +215,7 @@ const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
   // SBA β-5 — реестр идей и запросов клиентов (доступ всем member по умолчанию).
   { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
   // SBA α-7 — Regulation / Process / Policy.
-  { href: '/regulations', label: 'Правила и стандарты', icon: ClipboardList, matchPrefix: '/regulations' },
+  { href: '/regulations', label: SECTION_LABELS.regulations, icon: ClipboardList, matchPrefix: '/regulations' },
   // SBA β-3 — реестр решений компании.
   { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
   // SBA β-4 — повторяющиеся сигналы (problems / risks / blockers).
@@ -245,7 +250,7 @@ const DAILY_GROUP: NavGroup = {
     // ролью. Переехал из свёрнутого «Справочника» наверх как daily-driver
     // владельца. tourTarget welcome.structure перенесён сюда (был на /structure
     // в «Справочнике»).
-    { href: '/structure', label: 'Команда', icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
+    { href: '/structure', label: SECTION_LABELS.structure, icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
@@ -295,7 +300,7 @@ const ME_GROUP: NavGroup = {
     // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
     { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
     // 2026-05-28 referrals-sidebar — реферальная программа (20 000 ₽ с платежа).
-    { href: '/referrals', label: 'Реферальная программа', icon: Gift, matchPrefix: '/referrals' },
+    { href: '/referrals', label: SECTION_LABELS.referrals, icon: Gift, matchPrefix: '/referrals' },
   ],
 };
 
@@ -430,6 +435,30 @@ const INTAKE_NAV_ITEM: NavItem = {
   overviewTarget: 'overview.intake',
 };
 
+/**
+ * ТЗ 2026-06-09 support-desk — «Поддержка» (очередь деска) виден ТОЛЬКО
+ * сотрудникам поддержки (useSupportStatus().isAgent). Инжектится отдельной
+ * группой в Sidebar.
+ */
+const SUPPORT_DESK_NAV_ITEM: NavItem = {
+  href: '/support/desk',
+  label: 'Поддержка',
+  icon: LifeBuoy,
+  matchPrefix: '/support/desk',
+};
+
+/**
+ * «Мои обращения» — личный вход в свои тикеты поддержки. Добавляется в
+ * «Моё пространство», когда деск настроен (useSupportStatus().deskEnabled).
+ * Основной вход всё равно — плавающий виджет.
+ */
+const MY_TICKETS_NAV_ITEM: NavItem = {
+  href: '/support/my-tickets',
+  label: 'Мои обращения',
+  icon: LifeBuoy,
+  matchPrefix: '/support/my-tickets',
+};
+
 const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
   // /settings/integrations теперь = outbound-направления доставки (DestinationsClient).
@@ -465,6 +494,10 @@ export function Sidebar({
   // который пользователь ещё не видел (сравнение по количеству grants
   // в localStorage). Тушится при заходе на /clones.
   const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
+
+  // ТЗ 2026-06-09 support-desk — статус поддержки: deskEnabled → показываем
+  // «Мои обращения» всем; isAgent → отдельная группа «Поддержка» (очередь).
+  const support = useSupportStatus();
 
   // Динамические admin-пункты (Фаза 7) — отдельная подгруппа в «Настройках».
   const adminItems: NavItem[] = [];
@@ -523,13 +556,18 @@ export function Sidebar({
   })();
 
   // Action Center B1 — инжектим живой badgeCount в пункт «Подтверждения».
+  // ТЗ 2026-06-09 support-desk — если деск настроен, добавляем «Мои обращения»
+  // (личный вход в свои тикеты). Основной вход — плавающий виджет.
   const meGroup: NavGroup = {
     ...ME_GROUP,
-    items: ME_GROUP.items.map((it) =>
-      it.href === '/actions'
-        ? { ...it, badgeCount: pendingActionsTotal }
-        : it,
-    ),
+    items: [
+      ...ME_GROUP.items.map((it) =>
+        it.href === '/actions'
+          ? { ...it, badgeCount: pendingActionsTotal }
+          : it,
+      ),
+      ...(support.deskEnabled ? [MY_TICKETS_NAV_ITEM] : []),
+    ],
   };
 
   // ТЗ 2026-05-26 §6 — фильтруем пункты «Памяти компании» в зависимости от
@@ -563,6 +601,13 @@ export function Sidebar({
     };
   })();
 
+  // ТЗ 2026-06-09 support-desk — отдельная группа «Поддержка» (очередь деска)
+  // только для сотрудников поддержки.
+  const supportGroup: NavGroup = {
+    label: 'Поддержка',
+    items: [SUPPORT_DESK_NAV_ITEM],
+  };
+
   const groups: NavGroup[] = [
     DAILY_GROUP,
     tasksGroup,
@@ -570,6 +615,7 @@ export function Sidebar({
     CHATS_GROUP,
     memoryGroup,
     ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
+    ...(support.isAgent ? [supportGroup] : []),
     referenceGroup,
     settingsGroup,
   ];
@@ -680,7 +726,7 @@ function SidebarGroup({
     <div>
       {showSeparator && <Separator className="my-2" />}
       {!group.hideGroupLabel && (
-        <div className="mt-3 mb-1 px-3 text-xs uppercase tracking-wider text-fg-tertiary">
+        <div className="mt-4 mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
           {group.label}
         </div>
       )}

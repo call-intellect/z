@@ -23,6 +23,9 @@ export const SCHEMA = z
     role_fit: z.enum(['low', 'medium', 'high']).nullable(),
     overall_rating: z.string().nullable(),
     next_step: z.string().nullable(),
+    // A11-Волна2 (additive, опциональные — обратная совместимость):
+    competing_offers: z.string().nullable().optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -56,7 +59,14 @@ const SYSTEM = `Ты — рекрутер-ассистент. Это собес�
 
 Что НЕ делать (edge case — общие фразы без подтверждённых фактов):
 Транскрипт-фрагмент: «Анна: Расскажите о себе. Сергей: Я люблю программировать, постоянно учусь. Анна: А чего хотите от новой работы? Сергей: Интересных задач».
-Вывод: {"experience": [], "strengths": [], "weaknesses": [], "risks": ["нет конкретики по опыту и стэку — нужно отдельное техническое собеседование"], "motivation": "интересные задачи", "role_fit": null, "overall_rating": null, "next_step": null}. Пояснение: «люблю программировать» — не сильная сторона, риторика, а не факт; пустые массивы для strengths/weaknesses.`;
+Вывод: {"experience": [], "strengths": [], "weaknesses": [], "risks": ["нет конкретики по опыту и стэку — нужно отдельное техническое собеседование"], "motivation": "интересные задачи", "role_fit": null, "overall_rating": null, "next_step": null}. Пояснение: «люблю программировать» — не сильная сторона, риторика, а не факт; пустые массивы для strengths/weaknesses.
+
+Само-проверка и различения:
+Стороны: НАША сторона — рекрутер/интервьюер; кандидат — внешняя сторона. role_fit обоснуй опытом/ответами кандидата. ЛЮБАЯ оценка кандидата — ГИПОТЕЗА по наблюдаемому на интервью (формулируй «похоже/по этому собеседованию»), не приговор. Пусто — «не выявлено».
+
+Дополнительно извлеки:
+- "competing_offers": другие офферы / предложения о работе, которые рассматривает кандидат (где, на какой стадии, сроки решения, если прозвучало), строкой; null, если кандидат про другие офферы не говорил.
+- "data_quality": 1–2 фразы о полноте данных встречи — насколько полный транскрипт, есть ли неопределённые спикеры, ненадёжные для распознавания места (числа/имена/термины); null, если оговорок нет.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -80,6 +90,8 @@ export const TOOL = buildExtractTool(
     },
     overall_rating: fieldNullableString,
     next_step: fieldNullableString,
+    competing_offers: fieldNullableString,
+    data_quality: fieldNullableString,
   },
   [
     'experience',
@@ -90,5 +102,7 @@ export const TOOL = buildExtractTool(
     'role_fit',
     'overall_rating',
     'next_step',
+    'competing_offers',
+    'data_quality',
   ],
 );

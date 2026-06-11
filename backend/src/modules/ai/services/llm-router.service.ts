@@ -43,8 +43,7 @@ import { ProviderInfoResolver } from './protocol-adapter/provider-info.resolver'
  *
  * Knowledge-core (Фаза 2+): block-ingest, block-distill, block-linker,
  * entity-resolver, entity-merge-arbiter, entity-graph-builder, theme-classify,
- * reframing, card-rollup-v2, task-extract-v2, chapter-extract-v2, summary-v2,
- * chat-v2, goal-alignment, dashboard-summary.
+ * reframing, card-rollup-v2, chat-v2, goal-alignment, dashboard-summary.
  */
 export type LlmTaskType =
   | 'summary'
@@ -66,9 +65,6 @@ export type LlmTaskType =
   | 'theme-classify'
   | 'reframing'
   | 'card-rollup-v2'
-  | 'task-extract-v2'
-  | 'chapter-extract-v2'
-  | 'summary-v2'
   | 'chat-v2'
   | 'goal-alignment'
   | 'dashboard-summary'
@@ -92,10 +88,8 @@ export type LlmTaskType =
   // SBA α-7 — Specialist 3.1 (Regulations / Processes / Policies).
   // 'regulation-extract' — извлечение черновика Regulation/Process/Policy из блока.
   // 'regulation-dedupe' — арбитр merge/new/extension/contradicts (KNN-кандидаты).
-  // 'process-steps-extract' — извлечение упорядоченных шагов процесса.
   | 'regulation-extract'
   | 'regulation-dedupe'
-  | 'process-steps-extract'
   // SBA α-7 wave 2 — Specialist 3.1 ProcessTemplate detector.
   // 'process-template-extract' — батч IdeaBlock'ов (signalType=process_step|methodology_step)
   // → массив кандидатов ProcessTemplate (name + summary + steps).
@@ -194,6 +188,19 @@ export type LlmTaskType =
   | 'dialog-classify'
   | 'dialog-multi-query'
   | 'dialog-summarize'
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — извлечение плана
+  // запроса (период/типы сигналов/ветки тем/сущности/«я»/агрегация) для
+  // recall-safe фильтрации chat-v2. Дешёвый, частый — primary flash (Р9).
+  | 'dialog-extract-plan'
+  // Support desk Ф3 (support-desk-clone) — клон техподдержки: черновик ответа
+  // из закрытого контура (capable, Б9), critic-проверка обоснованности и
+  // классификация типа правки (оба дёшево, deepseek-v4-flash, Б9).
+  | 'support-clone-draft'
+  | 'support-answer-critic'
+  | 'support-edit-classify'
+  // Support desk Ф4 (support-desk-clone) — ночной куратор контура: решение
+  // keep|promote|fix|merge|archive по блокам базы (capable, Б9).
+  | 'support-contour-curate'
   // ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — multi-query
   // расширение для клонов: на входе вопрос к клону, на выходе 3 формулировки
   // (точная / ситуационный аналог / общий принцип) для retrieval по
@@ -381,9 +388,8 @@ export type LlmTaskType =
   // ТЗ 2026-05-25 (meeting-report-split-from-block-ingest) — Фаза 1.
   // 'meeting-report-fast' — ОДИН LLM-вызов поверх СЫРОГО транскрипта,
   //   возвращает { chapters, tasks, summary_markdown, quality_score } через
-  //   tool_use. Заменяет цепочку block-ingest → tasks-v2 → chapters-v2 →
-  //   summary-v2 → meeting-quality-score для «быстрого» пользовательского
-  //   отчёта. Capable модель + большой выход + thinking.
+  //   tool_use для «быстрого» пользовательского отчёта (заменил снятый с
+  //   эксплуатации v2-стек). Capable модель + большой выход + thinking.
   //   Primary = deepseek-v4-pro; secondary = gpt-5.4-mini; tertiary = ollama qwen3.5:9b.
   | 'meeting-report-fast'
   // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
@@ -564,7 +570,25 @@ export type LlmTaskType =
   // авто-применения НЕТ — Р3). Дешёвый классификатор: primary deepseek-v4-flash.
   // Cache-friendly: SYSTEM статичен (инструкция + enum DocumentType + JSON-форма),
   // переменное (текст + темы) в КОНЦЕ user.
-  | 'document-attribution-suggest';
+  | 'document-attribution-suggest'
+  // Волна 4 B0 (2026-06-10) — client-meeting-split: нейтральный ПРОТОКОЛ встречи
+  // НАРУЖУ для клиента (free-text Markdown, как summary; без tool/JSON-схемы).
+  // Запускается в analyze.worker для клиентских типов (sales/customer_success/
+  // partner/custdev), результат — AiResult.structuredData.client_protocol_md.
+  // Граница D6: ноль внутренних оценок. DEFAULT-маршрут (без strict-json), за
+  // kill-switch clientProtocolEnabled (дефолт ON). Cache-friendly: SYSTEM
+  // статичен, диалог+участники+дата в КОНЦЕ user.
+  | 'client-meeting-split'
+  // Волна 6 Стадия C, A7 (2026-06-10) — structured-document-compiler.
+  // 'compile-org-document' — единый агент-компилятор `contentMd` орг-документа
+  //   (regulation/process/policy/instruction). Вызывается после
+  //   regulation-dedupe на verdict merge/extension: собирает структурный
+  //   документ по шаблону типа (режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ, маркеры) через tool
+  //   `compile_org_document` → { contentMd, steps, changeReason, signals }.
+  //   Capable модель + tool-use. Primary = deepseek-v4-pro; secondary = gpt-5.4
+  //   (proxy); tertiary = ollama qwen3.5:9b (см. seed-маршрут). За kill-switch
+  //   docCompilerEnabled (дефолт ON).
+  | 'compile-org-document';
 
 /**
  * Полный кортеж всех `LlmTaskType` — единый источник правды для DTO admin'а.
@@ -592,9 +616,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'theme-classify',
   'reframing',
   'card-rollup-v2',
-  'task-extract-v2',
-  'chapter-extract-v2',
-  'summary-v2',
   'chat-v2',
   'goal-alignment',
   'dashboard-summary',
@@ -608,7 +629,6 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA α-7
   'regulation-extract',
   'regulation-dedupe',
-  'process-steps-extract',
   // SBA β-2
   'knowledge-clone-extract',
   'knowledge-clone-merge',
@@ -649,6 +669,14 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'dialog-classify',
   'dialog-multi-query',
   'dialog-summarize',
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0)
+  'dialog-extract-plan',
+  // Support desk Ф3 (support-desk-clone)
+  'support-clone-draft',
+  'support-answer-critic',
+  'support-edit-classify',
+  // Support desk Ф4 (support-desk-clone) — ночной куратор контура
+  'support-contour-curate',
   // SBA α-7 wave 2
   'process-template-extract',
   // SBA α-3 wave 3
@@ -771,6 +799,12 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // ТЗ-4 Ф10 (2026-06-09) — document-attribution-suggest (подсказка docType +
   // темы для загруженного документа без явной атрибуции; human-in-the-loop).
   'document-attribution-suggest',
+  // Волна 4 B0 (2026-06-10) — client-meeting-split (нейтральный протокол встречи
+  // наружу для клиента, free-text; DEFAULT-маршрут, за kill-switch ON).
+  'client-meeting-split',
+  // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
+  // contentMd орг-документа; tool-use, capable; за kill-switch docCompilerEnabled ON).
+  'compile-org-document',
 ] as const;
 
 /**
@@ -1851,10 +1885,8 @@ export class LlmRouterService implements OnModuleInit {
   ): 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom' {
     switch (taskType) {
       case 'summary':
-      case 'summary-v2':
         return 'summary';
       case 'tasks':
-      case 'task-extract-v2':
         return 'tasks';
       case 'follow-up':
         return 'follow-up';

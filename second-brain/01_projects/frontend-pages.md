@@ -383,6 +383,37 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - Визуал: `/goals`,`/actions`,`/maturity` на modern; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css.
 - ⚠ Светлая тема дашбордов (ТЗ-3) — задизайнит владелец отдельно (в «не сделано»).
 
+## Служба поддержки — виджет + кабинет клиента + деск (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). API/модель — [[api-layer]] §«Служба поддержки», профильная заметка — [[support-desk]].
+
+**Клиентский виджет (отдельный bounded context, R-INV-4 — без tool'ов Concierge и без графа компании):**
+- `frontend/src/ui/support/SupportWidget.tsx` + `SupportForm.tsx` + `SupportWidgetMount.tsx` — плавающая кнопка + форма создания обращения (тема + сообщение), монтируется глобально.
+
+**Новые страницы:**
+- `/support/my-tickets` — список обращений клиента + детальный экран (лента только `access='external'`) + оценка CSAT.
+- `/support/desk` — рабочий деск сотрудника поддержки: очередь (`unassigned/mine/all/closed/spam`) + детальный тикет с ответом клиенту / внутренней заметкой / назначением / сменой статуса (доступ по членству в группе-контуре).
+
+**Меню:** пункты сайдбара «Поддержка» (клиентский «Мои обращения» + деск для сотрудников поддержки).
+
+## Доводка редизайна дашбордов — полный стеклянный язык + дата-виз (2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md`](../../plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md) (Ф0–Ф7). Ветка `feature/query-understanding-and-support-desk`. Контрактные поля бэка — [[api-layer]] §«Дата-виз поля редизайна дашбордов».
+
+Закрыт класс «новый градиентный фон со старыми плоскими `shadcn`-карточками»: 5 экранов доведены до **современного стеклянного языка** (библиотека `frontend/src/ui/components/dashboard/modern/*`, эталоны `/dashboard/portfolio`, `/dashboard/value-recap`, `/goals`, `/maturity`, `/actions`). Тема — только тёмная (светлая = отдельная Ф владельца, см. `04_не-сделано`). Новых флагов нет (Ship-On); OFF-ветки kill-switch (`reworkEnabled`/`mainReworkEnabled`) **не тронуты** — мигрировалась только ON-раскладка.
+
+| Экран | Было | Стало (modern/*) |
+|---|---|---|
+| `/dashboard/operations` (`OperationsDashboardClient` + `MaturityWidget`/`CauseCategoryMapWidget`/`InsightsTopWidget`) | новый фон, но 4×`KpiHero` + ~10 плоских `bg-bg-card`-секций | `ModernPageShell`; 4 `KpiHero`→`StatCard`; hero-`AreaTrend` «Операционная нагрузка» по `weeklyInflow`; `DonutCard` температуры; `RadarCard` зрелости; `GlassCard`/`ModernTable` |
+| `/me` (`MeClient` + `MyPositionCard`/`MyTelegramCard`) | без нового фона, верх — `shadcn Card` | `ModernPageShell` + `GlassCard`-карточки; якоря `#me-card-position`/`#me-card-telegram` сохранены |
+| `/dashboard` (`DirectorDashboardClient`, ON-ветка) | KPI `KpiHero`, AI-сводка/виджеты табов — `shadcn Card` | 3 `KpiHero`→`StatCard` (реальный sparkline уже был на бэке); AI-сводка→`GlassCard` glow; виджеты табов→`GlassCard` |
+| `/dashboard/operations/daily` (`DailyDigestClient`) | фон + 1 glass-секция | все секции glass + 2 hero-`AreaTrend` (настроение/нагрузка) из `digest.trend`; заглушка при `<2` точках |
+| `/dashboard/operations/weekly` (`WeeklyDigestClient`) | фон + 1 glass-секция | все секции glass + hero-`AreaTrend`+`BarTrend` из `digest.trend` |
+
+**Фундамент библиотеки (Ф0):** `StatCard` — пропсы `spark`/`delta`/`up` стали опциональными + добавлен `href`; новый компонент `ModernPageShell({title, subtitle?, headerRight?, maxWidth?, children})` (фон `MODERN_PAGE_BG` + контейнер + glass-header); хелпер `kpiTone(value, threshold)` в `tokens.ts`. Файлы — `frontend/src/ui/components/dashboard/modern/{StatCard.tsx,tokens.ts,ModernPageShell.tsx,index.ts,StatCard.spec.tsx}`. `KpiHero` **не удалён** — остаётся у внешних потребителей (`/teams`, `/persons/pulse`, `KnowledgeVelocityKpi`).
+
+**Уборка (Ф7):** удалён мёртвый `frontend/app/(authenticated)/dashboard/DashboardClient.tsx` (0 импортёров — роутинг идёт через `DashboardRouter` → `DirectorDashboardClient`/редирект на `/me`).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.
@@ -405,5 +436,7 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-06-05 (telegram-channel-reachability-fix):** `/me/channels` и карточка «Telegram» на «Я» получили честное состояние **«Не настроен»** (`channel_not_configured`) — когда глобальный Telegram-бот без токена; вместо кнопки в тупик показывается «бот не настроен администратором» (+ссылка в `/admin/content/global-channels` для owner/admin). Канал «В личном кабинете» теперь «Работает автоматически» (без «Привязан: id»); «потолок чувствительности» свёрнут в `<details>`. Deep-link строится из `botUsername` канала. Бэкенд: `listMyChannels`+`resolveBindings` теперь видят глобальные бот-каналы. Источник: [plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md](../../plans/tz/2026-06-05-telegram-channel-reachability-and-channels-ux-fix.md).
 - **2026-06-06 (Трекер + Встречи, A1-A7 + B1-B5):** новая группа меню **«Задачи»** (Проекты·Спринты·Входящие·Архив спринтов), Дамп+Таблицы → «Память компании», `/me/inbox` → «Мои задачи»; подвкладки проекта primary + «Ещё ▾»; «Архив гипотез» → «Архив спринтов» (без гипотезной лексики); пикер проекта при «Принять» во Входящих. Журнал встреч (`/meetings`) — «Войти»/«Скопировать ссылку»/«Пригласить» + бейдж «Идёт» у joinable. Страница встречи (`/m/:id`) — хостовое «Выйти» (rejoin) отдельно от «Завершить», блок «Вы вышли из встречи», «Скопировать ссылку» в лобби, надёжная «Ссылка» (fallback-модалка) + «Пригласить» в комнате (`InviteDialog`). Подробнее — раздел «Трекер + Встречи — финальная сессия» выше; контексты/хелперы — [[frontend-contexts-hooks]] §«Хелперы и хуки сессии». Источник: [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
 - **2026-06-06 (стабильность фронта + UX отчёта, ТЗ-1 + ТЗ-2 + ТЗ-5):** прод-сборка переведена на **webpack** (`next build --webpack`, уход от Turbopack — корень `ChunkLoadError`), `deploymentId` из build-arg `DEPLOYMENT_VERSION` (защита от version skew — рассинхрона версий). Русские `app/global-error.tsx` + `app/error.tsx` с **тихим авто-перезагрузом** при `ChunkLoadError` (anti-loop по 10-секундному окну, `src/lib/chunk-reload.ts`). **Vidstack-плеер заменён на нативный `<video>`** во всех 3 местах (`MeetingPlayer` / `ShareMeeting` / `ShareClip`), хук `src/hooks/use-video-player.ts`, зависимость `@vidstack/react` удалена. На странице результата встречи (`/result`) — честный баннер **«Отчёт готовится»** с SWR-поллингом (вместо пустоты, пока `reportFastStatus` не `ready`). **Действия отчёта** `ReportActions` (Скопировать / Скачать .md / Печать) в диалоге отчёта и в «Обзоре» под видео; сериализатор `structuredReportToMarkdown`. Источник: ТЗ-1/ТЗ-2/ТЗ-5 ветки `feature/prod-stability-2026-06-06`. Грабли (Turbopack→ChunkLoadError, удаление dep требует `bun install`) — [[../02_architecture/code-pitfalls]].
+
+- **2026-06-10 (доводка редизайна дашбордов до полного стеклянного языка + дата-виз, Ф0–Ф7):** 5 экранов (`/dashboard/operations`, `/me`, `/dashboard`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`) доведены до современного языка `modern/*` — устранён класс «новый фон + старые плоские `shadcn`-карточки». `KpiHero`→`StatCard`, `shadcn Card`→`GlassCard`/`ModernTable`, hero-графики `AreaTrend`/`BarTrend`/`DonutCard`/`RadarCard` по реальным трендовым рядам (`weeklyInflow`, `digest.trend` — см. [[api-layer]]). Фундамент библиотеки (Ф0): `StatCard` с опциональными `spark/delta/up` + `href`, новый `ModernPageShell`, хелпер `kpiTone`. Удалён мёртвый `DashboardClient.tsx` (Ф7); `KpiHero` сохранён для `/teams`/`/persons/pulse`/`KnowledgeVelocityKpi`. Тема только тёмная, OFF-ветки kill-switch не тронуты, новых флагов нет. Подробнее — раздел «Доводка редизайна дашбордов» выше. Источник: [plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md](../../plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md).
 
 [[../index|← index]]

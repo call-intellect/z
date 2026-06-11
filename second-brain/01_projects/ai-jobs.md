@@ -29,7 +29,9 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 |---|---|---|
 | knowledge-core | `block-distill`, `block-ingest`, `entity-merge-arbiter`, `theme-classify`, `reframing`, `entity-graph-builder`, `block-link-arbiter` | DeepSeek-flash → OpenAI-mini → Ollama |
 | chat-v2 | `chat-v2-synthesize`, `chat-v2-conversation-title`, `synthesis-clone-style` | DeepSeek-flash → OpenAI-mini → Ollama |
-| specialist 3.1 (Regulations) | `regulation-extract`, `regulation-dedupe`, `process-steps-extract` | DeepSeek-flash → OpenAI-mini → Ollama |
+| specialist 3.1 (Regulations) | `regulation-extract`, `regulation-dedupe` (`process-steps-extract` — **ретайрнут** 2026-06-10, Волна 5) | DeepSeek-flash → OpenAI-mini → Ollama |
+| document-compiler (мастер-ТЗ промптов, 2026-06-10) | `compile-org-document` | DeepSeek V4 Pro (capable). См. §«Мастер-ТЗ промптов» ниже |
+| client-protocol (мастер-ТЗ промптов, 2026-06-10) | `client-meeting-split` | free-text DEFAULT-цепочка. См. §«Мастер-ТЗ промптов» ниже |
 | specialist 3.2 (Knowledge Clone) | `knowledge-clone-extract`, `knowledge-clone-merge` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.3 (Decisions) | `decision-extract`, `decision-supersede-detect` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.4 (Card / Project / Customer) | `card-rollup-v2`, `specialist-3-4-routing` | DeepSeek-flash → OpenAI-mini → Ollama |
@@ -248,6 +250,24 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 
 [[../index|← index]]
 
+## Ежедневный чек-ин — источник графа знаний (мост `daily_checkin`, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md). Профильная заметка по каналам — [[conversational-channels]] §«`daily_checkin_self`»; enum — [[../02_architecture/data-model]] §SourceType; перечень ingest-источников — [[../02_architecture/knowledge-core]].
+
+Завершённый чек-ин сотрудника (план/отчёт) теперь **кормит граф знаний** (раньше из него только считался sentiment). Мост — **событийный**, по образцу `ChatboxIngestService`:
+
+`checkin.created` → `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`) → `CheckinIngestService.ingestCheckin(tenantId, checkInId)` → `IngestService.ingest` → `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest (knowledge-core подхватывает сам, без изменений).
+
+- **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие в `RawEvent`; LLM-извлечение блоков делает обычный `block-ingest.worker` ниже по конвейеру.
+- **Best-effort и независимо** — listener зарегистрирован рядом с `CheckinSentimentAnalyzerWorker` (тоже `@OnEvent('checkin.created')`), оба в `operations.module.ts`; провал моста не ломает sentiment и наоборот.
+- **Идемпотентность** — стабильный `idempotencyKey` по `sourceExternalId=checkInId`; `occurredAt` берётся из стабильного `dateLocal` (не из мутирующего `completedAt`). **НЕ ингестит** sentiment/qualityScore (только текст плана/отчёта).
+- **v1-ограничение** — replace чек-ина того же дня = no-op (первый завершённый чек-ин = канон, т.к. `idempotencyKey` стабилен по `dateLocal`); re-ingest при replace — vNext.
+- **Без новой BullMQ-очереди и без cron** — это событийный listener.
+- **Метрика** — `z_checkin_graph_ingest_total{result}`, `result ∈ ok|skipped|error` (Prometheus counter, `business-metrics.service.ts`).
+- **Kill-switch** — `CHECKIN_GRAPH_INGEST_ENABLED` (`betaOps.checkinGraphIngestEnabled`, zBool default true=ON; Ship-On, действий владельца не требует). OFF → чек-ины в граф не попадают.
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.
@@ -357,5 +377,76 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - **Без новой очереди** — подсказка считается синхронно при загрузке/по запросу (не отдельный BullMQ-job).
 
 > ⚠ Загрузка встречи (ТЗ-5) использует существующий ASR-стек (Vox-диаризация в `meeting-upload-transcribe.worker`), **новых chat-LLM taskType не вводит** — анализ загруженной встречи после подписи говорящих идёт по обычному meeting-пайплайну (`core.meeting-analyze-v2` и т.д.).
+
+[[../index|← index]]
+
+## Понимание структуры запроса в чате — `dialog-extract-plan` (Query Understanding Волна 1, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0). Карта фичи — [[chat-v2]] §«Query Understanding Волна 1»; архитектура retrieval — [[../02_architecture/knowledge-core]] §«Структурный фильтр retrieval».
+
+### Новый taskType `dialog-extract-plan`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `dialog-extract-plan` | **один** LLM-вызов извлекает СТРУКТУРУ вопроса к AI-чату (период как символический токен + `signalTypes` + `themeBranches` + `entityHints` + «я»/`personScope` + `aggregation` + `needsAction` + `activeNow`) → `QueryPlanFilters`. Период затем резолвится **детерминированно** (без LLM, `period-resolver.ts`). **FAIL-OPEN:** ошибка LLM / битый JSON / confidence < 0.6 → пустой план, поиск без фильтра (как раньше). | `deepseek-v4-flash` (cheap, Р9) → fallback по DEFAULT-цепочке | `extract-plan.prompt.ts` (cache-friendly: стабильный SYSTEM + injection-guard, вопрос пользователя в конце USER за data-маркерами) |
+
+- Сервис `QueryPlanExtractorService` (`backend/src/modules/dialog-layer/services/`), вызывается из `DialogService.process`; результат проброшен в retrieval (см. [[chat-v2]]).
+- Маршрут засеивается `backend/scripts/seed-llm-task-routes-dialog-extract-plan.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентно).
+- Флаг `QUERY_PLAN_EXTRACTION_ENABLED` (kill-switch, ON). **Без новой очереди** — извлечение синхронно в пути чат-запроса, не отдельный BullMQ-job.
+
+## Служба поддержки — клон техподдержки (4 taskType, 2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
+
+| taskType | Модель | Роль |
+|---|---|---|
+| `support-clone-draft` | DeepSeek V4 Pro (capable) | Генерация черновика ответа клиенту: RAG **из закрытого контура поддержки** (R-INV-1) + few-shot топ-N принятых пар из `SupportDraftOutcome`. Цитаты `[BLOCK:id]` обязательны. Стабильный cache-friendly SYSTEM, переменное (вопрос + контур-блоки + few-shot) — в конце USER. |
+| `support-answer-critic` | `deepseek-v4-flash` (cheap judge, Б9) | Groundedness-проверка черновика: извлекает claims → сверяет с контур-блоками → `groundedness=truthful/total`. Ниже `support_critic_min_groundedness` (0.6) → исход `clarify`/`escalate`, не «ответить» (R-INV-5). |
+| `support-edit-classify` | `deepseek-v4-flash` (cheap judge) | Классификация ТИПА правки черновика человеком: `factual` / `tone` / `policy` / `empty` — ДО записи обучающего сигнала (R-INV-2; голый diff хакаем). |
+| `support-contour-curate` | DeepSeek V4 Pro (capable) | Ночной куратор контура: по дневным `SupportDraftOutcome` + сигналам (реоткрытия/CSAT) решает на блок `keep`/`promote`/`fix(supersede)`/`merge`/`archive` + обоснование. Destructive — только soft-archive за debate-гейтом (R-INV-6). |
+
+- Все 4 маршрута засеиваются `backend/scripts/seed-llm-task-routes-support.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'support'`, phase `seed-llm-routes`, идемпотентно). Fallback — `DEFAULT_FALLBACK_CHAIN`.
+- `support-clone-draft` вызывается по кнопке «черновик» (`POST /support/desk/tickets/:id/draft`); `support-answer-critic` — сразу после генерации (гейт показа сотруднику); `support-edit-classify` — при правке/отправке; `support-contour-curate` — из `SupportCuratorCron` (`@Cron('0 3 * * *')`).
+- **Без новой BullMQ-очереди** — draft/critic/classify считаются синхронно в пути деска; куратор — внутри cron-прохода.
+
+## Мастер-ТЗ промптов — 2 новых агента + ретайр v2-стека (2026-06-10)
+
+**Источник:** мастер-ТЗ упрочнения промптов (ветка `feature/master-prompt-fleet-2026-06-10`, 12 коммитов). Инфра-добавка Волны 0 (`applyInputGuards`, калибровки confidence, дискриминаторы, `inputKind` CI-lint) — массовая обёртка raw-промптов без смены поведения.
+
+### Новый агент `client-meeting-split` (taskType `client-meeting-split`, Волна 4)
+
+Нейтральный **протокол встречи для клиента** (наружу) — отдельный артефакт рядом с внутренним отчётом.
+
+| Свойство | Значение |
+|---|---|
+| Формат | **free-text** (DEFAULT-цепочка маршрутизации, не структурный) |
+| Когда | клиентские типы встреч: `sales` / `customer_success` / `partner` / `custdev` |
+| Промпт | `client-meeting-split.prompt.ts` — 5 разделов + таблица шагов; **граница D6**: ноль внутренних оценок / «температуры» сделки / ЛПР / упоминаний конкурентов / бюджета |
+| Где считается | `analyze.worker` → `runClientProtocol(...)` под флагом, best-effort `try/catch` |
+| Результат | merge в `AiResult.structuredData.client_protocol_md` (не перезатирает основной отчёт); `agentType=client_protocol` в usage-log |
+| Флаг | kill-switch `aiFeatures.clientProtocolEnabled` (ON) — `CLIENT_PROTOCOL_ENABLED` в env.schema + typed-config + admin-registry |
+| Фронт | `ClientProtocolCard` «Протокол для клиента» + кнопка «Скопировать»; `client_protocol_md` исключён из generic-грида и из «скопировать весь отчёт» (не задваивается) |
+
+### Новый агент `structured-document-compiler` (taskType `compile-org-document`, Волна 6 C)
+
+Единый владелец сборки `contentMd` орг-документа (regulation / process / policy / instruction).
+
+| Свойство | Значение |
+|---|---|
+| Модель | **DeepSeek V4 Pro** (capable); seed-маршрут `seed-llm-task-routes-compile-org-document.ts` (в `apply-prod-deploy` STEPS, phase `seed-llm-routes`) |
+| Контракт | tool `compile_org_document` → `{contentMd, steps[], changeReason, signals[]}`; `steps[]` только для `kind=process`, для прочих типов игнорируются |
+| Режимы | **СОЗДАНИЕ** (`existingContentMd` пуст — каркас с нуля по структуре типа) / **ДОПОЛНЕНИЕ** (непустой — слияние без потери старого, маркеры `withDocumentCompilerMode` из A0.7) |
+| Когда | вызывается из `specialist-3-1-regulations` **после `regulation-dedupe`** на вердиктах `merge` / `extension` (вместо plain-update) — `tryCompileContent(...)`, best-effort с fallback к `existingContentMd` |
+| Сервис | `structured-document-compiler.service.ts` (в `knowledge-core.module`), `compile()` через router |
+| Флаг | kill-switch `aiFeatures.docCompilerEnabled` (ON) — env.schema + typed-config + admin |
+| Отложено | версионная обвязка `changeReason → RegulationVersion` (модели нет) + `steps → ProcessStep` — см. `04_не-сделано` |
+
+### Ретайр v2-стека и `runTasks` (Волна 5, refactor)
+
+- **v2-стек удалён целиком** (мёртвый код, прод-флаг никогда не включался): промпты+экстракторы `tasks-v2` / `summary-v2` / `chapters-v2`, воркер+cron `meeting-analyze-v2`, очередь `MEETING_ANALYZE_V2`, плюс сирота `process-steps-extract`. Ссылки вычищены из llm-router union/ALL, knowledge-core.module, workers.module, core-queue, pick-primary-summary (теперь `summaryFast || summary`), а также из card-rollup / cards / shares / public-api / meetings / director-dashboard / admin-compare / ai-models. Колонки БД (`summaryV2*` / `analyzeV2*` / `tasks`) оставлены мёртвыми (миграций нет).
+- **`runTasks` убран** из `analyze.worker` — `AiResult.tasks` больше **не пишется**; фронт читает `Task`-модель.
+- Прочее A6: telegram create/forward → один builder (`today` из SYSTEM в user); `issue-infer-fields` — убрана goal-ветка (`suggestedGoalId=null`); мёртвый `chat-v2-synthesize` MODE_PROMPTS удалён (полезное перенесено в боевой `synthetic.prompt`).
+
+[[../index|← index]]
 
 [[../index|← index]]

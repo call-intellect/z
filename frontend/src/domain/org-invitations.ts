@@ -19,7 +19,14 @@ import type {
   OrgInvitationCreateResultApi,
 } from '@/api/orgs.api';
 
-export type OrgInvitationRole = 'owner' | 'admin' | 'manager';
+// A5 / Р3 (2026-06-10): добавлены роли coo (операционный директор) и hr_partner
+// (HR-партнёр) — разблокированы в backend DTO приглашения/смены роли.
+export type OrgInvitationRole =
+  | 'owner'
+  | 'admin'
+  | 'manager'
+  | 'coo'
+  | 'hr_partner';
 export type OrgInvitationStatus =
   | 'pending'
   | 'accepted'

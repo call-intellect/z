@@ -35,6 +35,11 @@
 - **Что при `enforce`:** запрещает слать неподходящие данные в неподходящую ИИ-модель (например, чувствительное — не за рубеж).
 - **Статус:** **отложено твоим решением** (приватность сейчас не приоритет). Лежит в наблюдении осознанно — это ОК, помечено.
 
+### 4. Какая Org — вендорский деск поддержки — `feature.support_desk` + `support.vendor_org_id`
+- **Сейчас:** не задано. Без двух параметров деск не работает (seed'ы — no-op, приём отдаёт 503).
+- **Что при ВКЛ:** включаешь вендор-эксклюзивный entitlement `feature.support_desk` **только своей Org** (через `OrgEntitlement.featureOverrides`) и задаёшь AdminSetting `support.vendor_org_id` = id этой Org. После этого обращения всех клиентов Коры приходят в единый деск этой Org, а из её закрытого контура собирается клон поддержки.
+- **Что жду от тебя:** id вендор-Org (наша компания) и галочка-членство сотрудников поддержки в группе-контуре (через `POST /support/admin/agents`). Не продаётся клиентам — деск приёма только наша Org (Р-3). (ТЗ support-desk-clone-and-closed-contour Ф1)
+
 ---
 
 ## ⚪ Долг прошлого — РАЗОБРАН 2026-06-08 (ТЗ enable-shipped)
@@ -92,6 +97,17 @@ _(пусто — все доставки в Telegram авторизованы в
 | `operations.portfolio_health.enabled` | 🟢 ВКЛ | Дашборд здоровья портфеля целей: cron пн 05:00 пишет недельный `PortfolioHealthSnapshot`, `GET /operations/portfolio-health` (healthScore 0–100 + светофор + распределение по статусам + MoSCoW-разрез + дельта неделя-к-неделе). Выкл → cron не пишет, endpoint отдаёт пустой скелет. (ТЗ-2 Ф6.A daily-value-dashboards) |
 | `documents.ai_attribution.enabled` | 🟢 ВКЛ | LLM-подсказка атрибуции загруженного документа: после парсинга документа БЕЗ явной атрибуции (`docType` и `attachedThemeId` оба пусты) дешёвый классификатор `document-attribution-suggest` предлагает смысловой тип + тему графа и пишет их в `Document.suggested*` (человек подтверждает в UI — авто-применения нет, Р3). Выкл → подсказка не строится, `suggested*` остаются пустыми. (ТЗ-4 Ф10 manual-document-upload) |
 | `meeting_upload.enabled` / `MEETING_UPLOAD_ENABLED` | 🟢 ВКЛ | Ручная загрузка встреч (`POST /meetings/upload` — видео/аудио ≤2 ГБ → ingest → диаризация → разметка спикеров → анализ). Выкл → создание новой загрузки отклоняется кодом `UPLOAD_DISABLED`; уже принятые загрузки доезжают. AdminSetting-ключ (ENV — fallback). (ТЗ-5 Ф6 meeting-upload-diarization) |
+| `MEETING_VISIBILITY_ENABLED` | 🟢 ВКЛ | «Кому видно» встречу: хост задаёт аудиторию (`owner_only`/`participants` дефолт/`custom`/`org`) — кому видна встреча, тому видны видео/запись/расшифровка/отчёт (6 READ-поверхностей через `canView`). Выкл → аварийный откат к legacy owner-only (встречу видит только создатель), на всех затронутых поверхностях. ENV-рубильник (`cfg.meetingVisibilityEnabled`, zBool default true). Действий владельца НЕ требует. (ТЗ meeting-visibility-who-can-see Ф6) |
+| `QUERY_PLAN_EXTRACTION_ENABLED` | 🟢 ВКЛ | Query Understanding Волна 1: извлечение структуры запроса (dialog-extract-plan) + recall-safe структурный фильтр chat-v2. OFF → чат работает как раньше (чистый смысловой top-K). (ТЗ query-understanding-tier0-tier1) |
+| `SUPPORT_DESK_ENABLED` | 🟢 ВКЛ | Встроенная служба поддержки (приём обращений клиентов → деск → ответы сотрудников → закрытый контур памяти → клон-черновик). Выкл → `POST /support/tickets` отдаёт `SUPPORT_DESK_DISABLED` (503), деск замирает. ENV-рубильник. (ТЗ support-desk-clone-and-closed-contour Ф1) |
+| `SUPPORT_CURATOR_ENABLED` | 🟢 ВКЛ | Ночной куратор контура поддержки (`@Cron('0 3 * * *')` → анализ дневных сигналов → keep/fix/merge/archive по блокам контура за debate-гейтом, только soft-archive). Выкл → cron no-op, база контура не пересобирается. ENV-рубильник. (ТЗ support-desk-clone-and-closed-contour Ф4) |
+| `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` | 🟢 ВКЛ | Форс вызова synthetic-tool (`tool_choice:{type:function}`) для НЕ-thinking DeepSeek-моделей при autoConvert (json_schema→tool), чтобы flash возвращал структуру, а не прозу. Guard в `deepseek.service` сам откатывает на `auto` при format-400 и не форсит thinking-модели. Выкл → поведение `auto` (модель может вернуть прозу). ENV-рубильник. (retest3 Ф2 #56/Р2) |
+| `LLM_MAIN_REPORT_PRIMARY` | 🟢 `deepseek` | Основной провайдер ГЛАВНОГО отчёта встречи (`LlmFallbackService`): `deepseek` (Ship-On — кэш DeepSeek + per-agent pro-модель, каскад DeepSeek→MiniMax→OpenAI). Рубильник-откат: `=minimax` → прежний каскад MiniMax→OpenAI. ENV-enum (`minimax`/`deepseek`). (retest3 Ф5 #51/Р3) |
+| `aiFeatures.clientProtocolEnabled` / `CLIENT_PROTOCOL_ENABLED` | 🟢 ВКЛ | Нейтральный ПРОТОКОЛ встречи наружу для клиента (`client-meeting-split`, free-text Markdown): для клиентских типов (sales/customer_success/partner/custdev) `analyze.worker` дополнительно генерит протокол БЕЗ внутренних оценок (граница D6) и мержит в `AiResult.structuredData.client_protocol_md`. Выкл → протокол не генерится, основной отчёт по типу не затрагивается. AdminSetting-ключ (ENV — fallback). (Волна 4 B0 master-prompt-fleet) |
+| `aiFeatures.docCompilerEnabled` / `DOC_COMPILER_ENABLED` | 🟢 ВКЛ | Агент-компилятор `contentMd` орг-документа (`compile-org-document`, tool-use): на verdict merge/extension от `regulation-dedupe` специалист 3.1 собирает структурный документ по шаблону типа (regulation/process/policy/instruction; режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ, маркеры) вместо plain-update поля + инкремент `version`. Выкл → legacy plain-update поля (dedupe-путь не ломается). Best-effort: при ошибке компилятора — fallback к существующему телу. ENV-рубильник. (Волна 6 Стадия C A7 master-prompt-fleet) |
+| `CHECKIN_GRAPH_INGEST_ENABLED` | 🟢 ВКЛ | Мост ежедневный чек-ин → knowledge-core (`CheckinIngestService`): на событие `checkin.created` завершённый чек-ин (план/отчёт) кладётся в `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest (граф знаний). Best-effort, рядом с `CheckinSentimentAnalyzerWorker`. Рубильник на случай инцидента в block-ingest, действий владельца не требует. Выкл → чек-ины в граф не попадают (sentiment/обработка чек-ина не затронуты). ENV-рубильник (`betaOps.checkinGraphIngestEnabled`, zBool default true). (ТЗ daily-checkin-to-graph-bridge) |
+
+> **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
 ---
 
@@ -121,6 +137,9 @@ _(пусто — все доставки в Telegram авторизованы в
 | `documents.maxFilesPerUpload` | 20 | Максимум файлов в одной операции загрузки | Ручная загрузка `/documents` (ТЗ-4 Ф3/Ф6) |
 | `documents.acceptedFormats` | `pdf,docx,xlsx,pptx,md,txt,html,rtf,odt,csv` | Белый список расширений, принимаемых при загрузке | Ручная загрузка `/documents` (ТЗ-4 Ф6) |
 | `billing.meetingUploadsPerMonth` | 20 | Месячный лимит ручных загрузок встреч на компанию (≥ лимита → `UPLOAD_QUOTA_EXCEEDED`); отдельно от грантов `MeetingsBalance`. ENV-fallback `BILLING_MEETING_UPLOADS_PER_MONTH` | Ручная загрузка встреч `POST /meetings/upload` (ТЗ-5 Ф6) |
+| `support.vendor_org_id` | _(пусто)_ | **Параметр владельца:** id вендор-Org, в которую приходят обращения клиентов и где живёт закрытый контур поддержки. Пока пусто — все support-seed'ы no-op, деск не работает. См. §«Требуют твоего решения» №4 | Служба поддержки (ТЗ support-desk-clone Ф1) |
+| `support_critic_min_groundedness` | 0.6 | Минимальный groundedness-балл черновика клона (truthful/total). Ниже → исход `clarify`/`escalate` вместо «ответить» (R-INV-5) | Клон-черновик поддержки (ТЗ support-desk-clone Ф3) |
+| `support_promote_min_csat` | 4 | Минимальный CSAT (1..5) для промоута принятого ответа клона в контур памяти (гейт качества против само-отравления, R-INV-2) | Петля обучения поддержки (ТЗ support-desk-clone Ф3) |
 
 ---
 

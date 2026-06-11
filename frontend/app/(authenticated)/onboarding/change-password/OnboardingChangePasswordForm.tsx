@@ -5,9 +5,10 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
 import { accountsApi } from '@/api/accounts.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  PASSWORD_RULE_HINT,
   passwordsMatch,
   validatePassword,
 } from '@/lib/password-validation';
@@ -74,7 +75,7 @@ export function OnboardingChangePasswordForm() {
         if (err.code === 'current_password_invalid') {
           toast.error('Временный пароль введён неверно.');
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось сохранить пароль. Попробуйте ещё раз.');
@@ -138,9 +139,7 @@ export function OnboardingChangePasswordForm() {
           {newPassword && !passwordCheck.valid ? (
             <p className="text-xs text-danger">{passwordCheck.message}</p>
           ) : (
-            <p className="text-xs text-fg-tertiary">
-              Минимум 8 символов, буква и цифра.
-            </p>
+            <p className="text-xs text-fg-tertiary">{PASSWORD_RULE_HINT}</p>
           )}
         </div>
 

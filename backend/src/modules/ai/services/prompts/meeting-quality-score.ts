@@ -158,7 +158,24 @@ export const MEETING_QUALITY_SCORE_SYSTEM_PROMPT = `Ты — методолог-
 - Конструктивно, без оценочных суждений людей.
 - Рекомендации — ДЕЙСТВИЯ («Озвучить повестку в первые 5 минут»), а НЕ диагнозы («Хост не подготовился»).
 
-ВЫЗОВИ ИНСТРУМЕНТ \`${MEETING_QUALITY_SCORE_TOOL_NAME}\` с результатом. Не пиши ничего вне tool_use.`;
+ФОРМАТ ОТВЕТА — верни СТРОГО валидный JSON-объект (без markdown-обёрток, без текста вне JSON) ровно по схеме:
+{
+  "overallScore": <0..100>,
+  "categories": {
+    "preparation": <0..100>,
+    "structure": <0..100>,
+    "clarity": <0..100>,
+    "outcomes": <0..100>,
+    "engagement": <0..100>
+  },
+  "recommendations": [
+    { "text": "…", "severity": "info|warning|critical", "category": "preparation|structure|clarity|outcomes|engagement" }
+  ],
+  "strengths": ["…"]
+}
+Пять оценок категорий — ВЛОЖЕНЫ в объект "categories" (не на верхнем уровне).
+
+Если транскрипт фрагментирован/неполный — severity рекомендаций=info и не штрафуй жёстко оценки по structure/engagement (это ограничение записи, а не встречи). engagement оценивай по времени говорения и вопросам, НЕ навешивай людям ярлыки «пассивный/активный».`;
 
 /**
  * Аргумент `meeting` для билдера user-сообщения.
@@ -192,7 +209,7 @@ export function buildMeetingQualityScoreUserPrompt(ctx: MeetingQualityScoreConte
     'Транскрипт (фрагменты):',
     ctx.transcriptCondensed,
     '',
-    `Верни результат через tool \`${MEETING_QUALITY_SCORE_TOOL_NAME}\`.`,
+    `Верни результат строго валидным JSON-объектом по описанной схеме.`,
   ]
     .filter((s) => s !== '')
     .join('\n');

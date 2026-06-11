@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { resourceTypeRu } from '../resource-type-ru';
+
 import {
   ageDaysFrom,
   isPrivileged,
@@ -88,7 +90,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        title: `Требует проверки: ${i.resourceType} ${i.resourceId}`,
+        title: `Требует проверки: ${resourceTypeRu(i.resourceType)}`,
         severity:
           expiringSoon || ageDays >= this.cfg.pendingActions.urgentAgeDays
             ? 'urgent'

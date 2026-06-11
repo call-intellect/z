@@ -3,7 +3,7 @@
  *
  * ТЗ 2026-05-25 `hard-participant-identification` (§4.1).
  *
- * Используется промптами извлечения задач (`tasks-v2`, `tasks-structured`,
+ * Используется промптами извлечения задач (`tasks-structured`,
  * `tasks-unified`), чтобы LLM мог вернуть не только строку `assigneeRaw`
  * («Иван», «маркетинг»), но и точный `User.id` (`assigneeUserId`) для
  * зарегистрированных сотрудников, упомянутых в этой встрече.
@@ -45,7 +45,16 @@ export interface AiParticipantContext {
 }
 
 /**
- * Формирует компактный текстовый блок для системного промпта.
+ * Формирует компактный текстовый блок СПИСКА УЧАСТНИКОВ.
+ *
+ * F1 cache-friendly (контракт закреплён 2026-06-10, Кластер 7-B/A8): список
+ * участников — это ПЕРЕМЕННЫЕ данные на каждую встречу, поэтому он ОБЯЗАН
+ * идти в USER-сообщении (рядом с транскриптом), а НЕ в SYSTEM. В SYSTEM —
+ * только стабильные `PARTICIPANT_IDENTIFICATION_RULES` (правила, без списка).
+ * Так SYSTEM-префикс остаётся стабильным и кэшируется провайдером ≈99%
+ * (см. feedback `LLM-промпты — обязательно cache-friendly`). НЕ переносить
+ * этот блок в SYSTEM.
+ *
  * Один участник = одна строка. Пустой список → пустая строка.
  *
  * Формат (пример):
@@ -53,7 +62,7 @@ export interface AiParticipantContext {
  *   - "Сергей" (userId=user_def, role=host)
  *   - "Иван" (userId=null, role=guest)
  *
- * Используется в `tasks-v2.prompt`, `tasks-unified`, `tasks-structured`.
+ * Используется в `tasks-unified`, `tasks-structured` (в USER-блоке).
  */
 export function formatParticipantsForPrompt(
   participants: readonly AiParticipantContext[],
@@ -72,12 +81,12 @@ export function formatParticipantsForPrompt(
 }
 
 /**
- * Текст инструкции для системного промпта про жёсткую идентификацию.
- * Подмешивается в `tasks-*`-промпты, когда передан непустой список
- * участников.
+ * Текст ПРАВИЛ жёсткой идентификации для СИСТЕМНОГО промпта.
  *
- * НЕ дублирует список — список ставится отдельным блоком (см.
- * `formatParticipantsForPrompt`).
+ * F1 cache-friendly (контракт закреплён 2026-06-10): это СТАБИЛЬНАЯ строка без
+ * переменных данных — её можно держать в SYSTEM. Сам список участников НЕ
+ * дублируется здесь: он переменный и ставится отдельным блоком в USER (см.
+ * `formatParticipantsForPrompt`). Не вшивать в этот текст конкретных имён/userId.
  */
 export const PARTICIPANT_IDENTIFICATION_RULES = `Правила идентификации исполнителя:
 - Если в речи прозвучало имя, точно совпадающее с участником из списка с непустым userId, в поле "assigneeUserId" верни ИМЕННО этот userId (не выдумывай чужие).

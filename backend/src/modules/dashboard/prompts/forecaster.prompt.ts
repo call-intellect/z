@@ -11,9 +11,15 @@
  *
  * EU AI Act: НЕ анализируем голос/видео и не извлекаем эмоции. На вход —
  * только структурированные метрики, без текстов сотрудников.
+ *
+ * A9 (2026-06-10): `confidence` в `expectedShifts[]` течёт в вес прогноза на
+ * дашборде — поэтому SYSTEM завершается прогнозной шкалой уверенности
+ * (`withForecastConfidenceCalibration`, дописывается в КОНЕЦ → cache-friendly).
  */
 
-export const FORECASTER_SYSTEM_PROMPT = `Ты — прогнозист компании.
+import { withForecastConfidenceCalibration } from '../../ai/services/prompts/common';
+
+export const FORECASTER_SYSTEM_PROMPT = withForecastConfidenceCalibration(`Ты — прогнозист компании.
 Анализируй тренды за 4 недели и сделай прогноз на следующую неделю.
 
 Цитаты на источники не нужны.
@@ -31,7 +37,7 @@ EU AI Act: не анализируй голос/видео — только ст
   ]
 }
 
-Без дополнительных полей. Без markdown-fences.`;
+Без дополнительных полей. Без markdown-fences.`);
 
 /**
  * JSON-schema для `responseFormat: json_schema` (strict). Используется

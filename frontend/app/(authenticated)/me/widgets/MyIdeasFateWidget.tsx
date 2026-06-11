@@ -5,7 +5,7 @@ import { Lightbulb } from 'lucide-react';
 import useSWR from 'swr';
 
 import { meDailyValueApi } from '@/api/me-daily-value.api';
-import { IDEA_STATUS_LABEL } from '@/domain/idea';
+import { ideaHref, IDEA_STATUS_LABEL } from '@/domain/idea';
 import {
   CardTitle,
   CHART,
@@ -63,7 +63,7 @@ export function MyIdeasFateWidget() {
             {items.map((idea) => (
               <li key={idea.id}>
                 <Link
-                  href={`/ideas/${encodeURIComponent(idea.id)}`}
+                  href={ideaHref(idea.id)}
                   className="block rounded-xl px-3 py-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
                 >
                   <p

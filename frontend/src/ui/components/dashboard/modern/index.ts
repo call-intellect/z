@@ -8,7 +8,9 @@
  * Тема пока только тёмная.
  */
 
-export { CHART, GRAD, glass, MODERN_PAGE_BG, STATUS_TONE } from './tokens';
+export { CHART, GRAD, glass, kpiTone, MODERN_PAGE_BG, STATUS_TONE } from './tokens';
+
+export { ModernPageShell } from './ModernPageShell';
 
 export { GlassCard } from './GlassCard';
 export { CardTitle } from './CardTitle';

@@ -176,10 +176,17 @@ LiveKit чистит атрибуты автоматически при disconne
     `GET /api/v1/knowledge/entities/:id`.
   - `prompts/block-ingest.prompt.ts` — JSON Schema, helpers, ENTITY/SIGNAL
     enum'ы.
+  - `services/structured-document-compiler.service.ts` (мастер-ТЗ промптов,
+    Волна 6 A7, 2026-06-10) — единый владелец сборки `contentMd` орг-документа
+    (regulation / process / policy / instruction). `compile()` через router
+    (taskType `compile-org-document`); вызывается из `specialist-3-1-regulations`
+    после `regulation-dedupe` на вердиктах merge/extension. Kill-switch
+    `aiFeatures.docCompilerEnabled`. См. [[../01_projects/ai-jobs]] §«Мастер-ТЗ промптов».
 
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
-  member'ов Org).
+  member'ов Org). **Мастер-ТЗ промптов (2026-06-10):** `RESOURCE_TYPES` +=
+  `instruction` (зеркалит `process`), строки в policy.csv.
 
 - **`backend/scripts/postgres-init.sql`** — pgvector HNSW индексы +
   generated `IdeaBlock.search_tsv` + GIN. Применяется через
@@ -655,6 +662,7 @@ AI-чат компании поверх knowledge-core, с conversation history 
 - `POST /api/v1/regulations/:id/supersede` (owner/admin only) — пометить старую `deprecated`, новая получает `supersedesId`.
 - `POST /api/v1/regulations/:id/confirm` — `lastConfirmedAt = now()`.
 - Z-DTO через `nestjs-zod`, RBAC через existing `regulation`/`process`/`policy` ResourceType. Все ошибки на русском.
+- **Мастер-ТЗ промптов (2026-06-10):** `RegulationKindSchema` += `instruction`. При `kind=instruction` list/get/confirm читают **`prisma.instruction`** (мапперы `instruction → ListItem/Detail`, поле `extractionStatus`); controller RBAC-роутинг на ResourceType `instruction`. Та же `/regulations` поверхность обслуживает 4-ю сущность без отдельного API.
 
 **Frontend:**
 - `frontend/src/api/regulations.api.ts` — API-клиент (list/get/history/supersede/confirm).
@@ -2337,5 +2345,23 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 ### AdminSettings (kill-switch / крутилки)
 
 Новые ключи в `admin-setting-schema-registry.ts`: `dashboard.main_rework.enabled`, `operations.dashboard_rework.enabled`, `operations.per_person_self_view.enabled`, `me.daily_value_widgets.enabled`, `operations.portfolio_health.enabled` + `portfolio.health.{threshold_healthy,threshold_warning,weight_*}`, `documents.ai_attribution.enabled`, `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`, `billing.meetingUploadsPerMonth`, `meeting_upload.enabled`. ENV: `MEETING_UPLOAD_ENABLED` (kill-switch, default true). Сиды — 6 `seed-admin-setting-*` в `apply-prod-deploy.ts` STEPS. См. [[../01_projects/admin-settings]].
+
+[[../index|← index]]
+
+## support — служба поддержки + закрытый контур + клон (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4; Ф5 авто-отправка / Ф6 тон-адаптер отложены). Профильная заметка — [[../01_projects/support-desk]]; модели — [[data-model]] §«Служба поддержки»; taskType — [[../01_projects/ai-jobs]]; cron'ы — [[../01_projects/workers-queues]]; эндпоинты — [[../01_projects/api-layer]]; страницы — [[../01_projects/frontend-pages]].
+
+Вендорская служба поддержки на существующих кирпичах (трекер `Issue`, граф `KnowledgeGroup`, клон `clone-respond`, каналы `Notification`). Новое — ровно закрытый контур памяти, обучающая петля «черновик→правка», support-слой над трекером, клиентский виджет.
+
+### Новый модуль `backend/src/modules/support/`
+
+- **Сервисы (`services/`):** `support-access` (членство в группе-контуре = «галочка сотрудника поддержки»), `support-intake` (cross-tenant приём обращения клиента в вендор-Org), `support-desk` (reply/note/assign/transition по тикету), `support-sla` (таймеры/эскалация), `support-contour` (галочка add/remove + ручной засев Q&A), `support-clone` (генерация черновика RAG из контура + few-shot), `support-answer-critic` (groundedness-проверка черновика, R-INV-5), `support-edit-classify` (классификация типа правки factual|tone|policy|empty), `support-learning` (accept/reject/edit → `SupportDraftOutcome` + `LlmPreferenceSample` + CSAT-гейт промоута в контур), `support-curator` (ночной куратор контура).
+- **Контроллеры (`controllers/`):** `support-client.controller.ts` (`/support/tickets`, `/support/my-tickets`, `/support/me`), `support-desk.controller.ts` (`/support/desk/*`), `support-admin.controller.ts` (`/support/admin/agents`, `/support/admin/contour/seed`).
+- **Guards (`guards/`):** `SupportAccessGuard` (член группы-контура, иначе `SUPPORT_NOT_AGENT`), `SupportAdminGuard` (owner вендор-Org / super_admin).
+- **Crons (`crons/`):** `support-sla.cron.ts` (`@Cron('*/5 * * * *')` → `slaBreachedAt` просроченным), `support-curator.cron.ts` (`@Cron('0 3 * * *')` → soft-archive/fix/merge за debate-гейтом `MultiAgentDebateService`).
+- **Изоляция контура (R-INV-1):** позитивный pre-retrieval фильтр `contourGroupId` в `ChatV2RetrievalService.collectPool` (все ветки пула + `expandViaGraph`) — **безусловный**, не зависит от `KNOWLEDGE_ACCESS_ENFORCEMENT`. CI-негатив-тест `contour-isolation.spec.ts`.
+- **4 taskType:** `support-clone-draft`/`support-contour-curate` (DeepSeek V4 Pro), `support-answer-critic`/`support-edit-classify` (`deepseek-v4-flash`, Б9). Сид `seed-llm-task-routes-support.ts`.
+- **Флаги:** `SUPPORT_DESK_ENABLED` (kill-switch ON), `SUPPORT_CURATOR_ENABLED` (kill-switch ON), `feature.support_desk` (entitlement-решение владельца, вендор-эксклюзив), AdminSetting `support.vendor_org_id` (параметр владельца — без него seed'ы no-op), `support_critic_min_groundedness` (0.6), `support_promote_min_csat` (4).
 
 [[../index|← index]]

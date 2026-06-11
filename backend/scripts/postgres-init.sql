@@ -671,3 +671,67 @@ BEGIN
     $sql$;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Instruction — first-class «Инструкция» (Волна 6 A10, single-role руководство).
+--   HNSW индекс на instructions.embedding (vector_cosine_ops) для KNN cosine
+--   dedupe + supersede-detect (зеркало regulations/decisions card-эмбеддингов).
+--   Без HNSW — seq-scan по всем инструкциям Org; с индексом — O(log n).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'instructions'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "instructions_embedding_hnsw_cosine_idx"
+      ON "instructions" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Person dedup (ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф2): частичный
+-- уникальный индекс по активному email внутри tenant — чтобы на один email в
+-- одной Org нельзя было завести две активные карточки (источник дублей в
+-- разделе «Команда»). NULL/'' email не учитываются (несколько карточек без
+-- email допустимы).
+--   SELF-SKIP: schema-фаза apply-prod-deploy идёт РАНЬШЕ backfill-фазы (Ф3
+--   слияния дублей). Если на момент прогона активные дубли ещё есть — уникальный
+--   индекс не встанет (ошибка), поэтому считаем группы-дубли и при >0 пишем
+--   RAISE NOTICE и пропускаем; индекс встанет на СЛЕДУЮЩЕМ прогоне postgres-init
+--   уже после backfill. Идемпотентно (CREATE UNIQUE INDEX IF NOT EXISTS).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  dup_groups integer := 0;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'persons'
+  ) THEN
+    EXECUTE $sql$
+      SELECT count(*) FROM (
+        SELECT 1
+        FROM "persons"
+        WHERE "deletedAt" IS NULL AND "email" IS NOT NULL AND "email" <> ''
+        GROUP BY "tenantId", lower("email")
+        HAVING count(*) > 1
+      ) d
+    $sql$ INTO dup_groups;
+
+    IF dup_groups > 0 THEN
+      RAISE NOTICE 'persons_tenant_email_active_uniq: % email-групп с активными дублями — индекс пропущен (backfill Ф3 сольёт, индекс встанет на следующем прогоне postgres-init)', dup_groups;
+    ELSE
+      EXECUTE $sql$
+        CREATE UNIQUE INDEX IF NOT EXISTS "persons_tenant_email_active_uniq"
+          ON "persons" ("tenantId", lower("email"))
+          WHERE "deletedAt" IS NULL AND "email" <> ''
+      $sql$;
+    END IF;
+  END IF;
+END $$;

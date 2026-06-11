@@ -11,7 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -83,7 +83,7 @@ export function TeamsListClient() {
       setData(teamHealthFromApi(res));
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить команды',
+        humanizeApiError(e, 'Не удалось загрузить команды'),
       );
     } finally {
       setLoading(false);

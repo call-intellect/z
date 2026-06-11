@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { curationApi } from '@/api/curation.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -29,7 +29,7 @@ export function CurationSettingsClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -68,7 +68,7 @@ function SettingsContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Не удалось загрузить настройки');
+        setError(humanizeApiError(e, 'Не удалось загрузить настройки'));
       }
     } finally {
       setIsLoading(false);
@@ -98,7 +98,7 @@ function SettingsContent() {
       setSaved(true);
     } catch (e) {
       setSaveError(
-        e instanceof ApiError ? e.message : 'Не удалось сохранить настройки',
+        humanizeApiError(e, 'Не удалось сохранить настройки'),
       );
     } finally {
       setSubmitting(false);

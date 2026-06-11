@@ -42,6 +42,7 @@ import { toast } from 'sonner';
 import { useIntake } from '@/hooks/tracker/useIntake';
 import { useProjects } from '@/hooks/tracker/useProjects';
 import { intakeApi } from '@/api/tracker/intake.api';
+import { humanizeApiError } from '@/api/api-error';
 import {
   INTAKE_SOURCE_LABELS,
   INTAKE_STATUS_LABELS,
@@ -129,7 +130,7 @@ export function IntakeClient() {
         (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
       );
     } catch (e) {
-      toast.error(`Не удалось выполнить триаж: ${e instanceof Error ? e.message : 'неизвестная ошибка'}`, { duration: 5000 });
+      toast.error(`Не удалось выполнить триаж: ${humanizeApiError(e, 'попробуйте ещё раз')}`, { duration: 5000 });
     } finally {
       setBusyId(null);
     }
@@ -400,13 +401,13 @@ function IntakeCard({
         <div className="flex flex-wrap items-center gap-1.5">
           {item.suggestedProjectId && (
             <SuggestionChip>
-              📌 Проект «{shortId(item.suggestedProjectId)}»
+              📌 Проект «{item.suggestedProjectName ?? 'без названия'}»
             </SuggestionChip>
           )}
           {item.suggestedAssigneeId && (
             <SuggestionChip>
               <User size={11} aria-hidden />
-              Исполнитель {shortId(item.suggestedAssigneeId)}
+              Исполнитель {item.suggestedAssigneeName ?? 'не определён'}
             </SuggestionChip>
           )}
           {item.suggestedDueDate && (
@@ -421,7 +422,7 @@ function IntakeCard({
           {item.suggestedGoalId && (
             <SuggestionChip>
               <Target size={11} aria-hidden />
-              Цель «{shortId(item.suggestedGoalId)}»
+              Цель «{item.suggestedGoalTitle ?? 'без названия'}»
             </SuggestionChip>
           )}
           {item.suggestedPriority && (
@@ -505,11 +506,6 @@ function SuggestionChip({
       {children}
     </span>
   );
-}
-
-/** Короткое представление id (`abcd1234`) для chip'а — пока без join'ов. */
-function shortId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id;
 }
 
 // ─── Reject dialog ──────────────────────────────────────────────────────────

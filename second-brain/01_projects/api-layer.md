@@ -194,6 +194,10 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
 
+## Regulations (единый API регламентов/процессов/политик/инструкций)
+
+Единая поверхность `/api/v1/regulations` агрегирует несколько таблиц через query-параметр `kind`. Полная карта эндпоинтов и DTO — [[../02_architecture/module-map]] §«SBA α-7 / Specialist 3.1». **Мастер-ТЗ промптов (2026-06-10):** `kind=instruction` добавлен как 4-я сущность — `GET /regulations?kind=instruction` (list), `GET /regulations/:id?kind=instruction` (get), `POST /regulations/:id/confirm` читают/пишут **`prisma.instruction`** (отдельная таблица `instructions`, см. [[../02_architecture/data-model]]). RBAC — ResourceType `instruction` (зеркалит `process`). Detail отдаёт поле `extractionStatus` (Существует / Нужен / Обсуждается).
+
 ## Curation (Слой 4)
 
 | Метод | Путь | Назначение | Доступ |
@@ -283,6 +287,18 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 > - `OrgsService.createForOwner` создаёт `Person` владельца + `Membership.personId` при создании Org.
 > - `GET /me/promises` теперь **graceful**: при отсутствии `Person` отдаёт `{items:[]}` (а не 500); `POST /me/promises/:blockId/mark` остаётся `403` (нельзя закрывать чужое обещание).
 > - Backfill для существующих владельцев — `backend/scripts/backfill-owner-person.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS).
+
+### Дата-виз поля редизайна дашбордов (2026-06-10)
+
+ТЗ [`plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md`](../../plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md) (Ф1/Ф1b). Доводка редизайна дашбордов под современный язык добавила **трендовые ряды** в три существующих операционных эндпоинта (новые поля, без изменения смысла прежних метрик; реальные данные, не выдумка; конвенция `old→new`, `null` = пустая корзина — как у `sparkline12w`).
+
+| Эндпоинт | Новое поле | Источник | Зачем |
+|---|---|---|---|
+| `GET /api/v1/dashboard/operations/overview` | `weeklyInflow: { blockers: (number\|null)[]; frictions: (number\|null)[] }` (12 недель) | `BlockerSynthesis.createdAt` (блокеры) и `EntityLink(relationType='conflicted_with').createdAt` (трения), in-memory bucket по неделям (паттерн `SentimentIndexService.buildSparkline`) | hero-`AreaTrend` «Операционная нагрузка» + спарклайны `StatCard` на `/dashboard/operations` |
+| `GET /api/v1/dashboard/operations/daily-digest` | `trend: DailyDigestTrendPointDto[]` (≤14 точек) | история persisted-снимков `DailyOperationsDigest.metricsJson` (`totalCheckIns`/`greenShare`/`redShare`/`blockers`/`overdueCommitments`/`goalsCompleted`/`goalsFailed`), мапперы `mapDailyDigestRowsToTrend`/`buildDailyTrend` | hero-`AreaTrend` настроение + нагрузка на `/dashboard/operations/daily` |
+| `GET /api/v1/dashboard/operations/weekly-digest` | `trend: WeeklyDigestTrendPointDto[]` (≤12 точек) | история persisted-снимков `WeeklyOperationsDigest.metricsJson` (`totalCheckIns`/`greenShare`/`redShare`/`goalsCompleted`/`goalsFailed`/`blockers`/`hangingDecisions`), мапперы `mapWeeklyDigestRowsToTrend`/`buildWeeklyTrend` | hero-`AreaTrend`+`BarTrend` на `/dashboard/operations/weekly` |
+
+Ряды строятся в `enrichDto` (один доп. `findMany`, best-effort: ошибка → пустой массив; индексы `@@index([tenantId,dateLocal])`/`@@index([tenantId,weekStart])` уже есть). Пустая история → `trend: []` / 12×`null`, фронт показывает заглушку «Тренд появится за несколько дней». FE-зеркало: `weeklyInflow` и `daily.trend` — слой `api`+`domain` (`operations-dashboard.{api,ts}`, `operations-daily-digest.{api,ts}`); `weekly.trend` — только API-тип (`weekly-digest.api.ts`; domain-слоя у weekly нет). Чистые мапперы покрыты unit-тестами (`bucketizeWeeklyInflow`, `mapDailyDigestRowsToTrend`, `mapWeeklyDigestRowsToTrend`). Схема БД не менялась.
 
 ## Clones (Skill & Persona, γ-1 + v2)
 
@@ -525,6 +541,15 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 
 Гейт доступа в retrieval — без отдельных эндпоинтов и кодов ошибок: отфильтрованные блоки просто не попадают в выдачу (не 403). Включается флагом `KNOWLEDGE_ACCESS_ENFORCEMENT` (off/shadow/enforce, дефолт off).
 
+**«Кому видно» — доступ к видеовстрече** (модуль `meetings`, `meetings.controller.ts`; ТЗ [`2026-06-10-meeting-visibility-who-can-see.md`](../../plans/tz/2026-06-10-meeting-visibility-who-can-see.md); kill-switch `MEETING_VISIBILITY_ENABLED`):
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/meetings/:id/visibility` | текущая аудитория встречи: `{ scope, grants: [{ granteeType, granteeId, name }] }`. `scope`: `owner_only`/`participants`/`custom`/`org` | host-only |
+| PATCH | `/api/v1/meetings/:id/visibility` | задать аудиторию. Тело `{ scope, grants?: [{ granteeType:'person'\|'group', granteeId }] }`; при `scope='custom'` — полная замена набора грантов (delete-all + createMany, идемпотентно по `@@unique`), при других scope гранты очищаются | host-only |
+
+Коды ошибок: `403 not_meeting_host` (не хост), `404 meeting_not_found`, `400 grants_required_for_custom` (`scope='custom'` без непустого `grants`), `400 invalid_grantee` (`granteeId` не Person/KnowledgeGroup этого tenant). Поле `visibilityScope` отдаётся в DTO деталей/отчёта и в summary списка. Отличие от `KNOWLEDGE_ACCESS_ENFORCEMENT`: это физический доступ к СТРАНИЦЕ встречи (видео/запись/расшифровка/отчёт через предикат `canView`), не фильтрация блоков графа знаний — отдельная подсистема.
+
 ## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
 
 **Источник:** ТЗ-2/ТЗ-3/ТЗ-4/ТЗ-5. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[../02_architecture/module-map]] §«Батч 5».
@@ -562,6 +587,43 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | GET | `/api/v1/meetings/:id/speakers` | список диаризованных говорящих (`MeetingUploadSpeaker`) | read |
 | PUT | `/api/v1/meetings/:id/speakers` | разметка говорящих (сотрудник/внешний/исключить/слить) | write |
 | POST | `/api/v1/meetings/:id/speakers/confirm` | подтвердить разметку → снять гейт `awaiting_speakers` → enqueue анализа | write |
+
+## Служба поддержки `/support/*` (2026-06-09)
+
+ТЗ — [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md). Модуль `support`, 3 контроллера. Профильная заметка — [[support-desk]]; модели — [[../02_architecture/data-model]] §«Служба поддержки». Коды ошибок machine-readable: `SUPPORT_DESK_DISABLED` (503), `SUPPORT_RATE_LIMIT` (429), `SUPPORT_NOT_AGENT` (403). Swagger-тег `support`.
+
+**Клиент (любой авторизованный, любая Org → приём в вендор-деск):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/support/tickets` | создать обращение (`Issue` в вендор-Org). Тело `{ subject, message, category? }` → `{ ticketId, ticketNumber }` | любой авторизованный, рубильник `SUPPORT_DESK_ENABLED` |
+| GET | `/api/v1/support/my-tickets` | мои обращения (список) | self |
+| GET | `/api/v1/support/my-tickets/:id` | моё обращение + лента (ТОЛЬКО `access='external'`, R-INV-3) | self |
+| POST | `/api/v1/support/my-tickets/:id/messages` | дописать сообщение в свой тикет | self |
+| POST | `/api/v1/support/my-tickets/:id/rate` | оценить (CSAT). Тело `{ score:1..5, comment? }` → `IssueRating` | self |
+| GET | `/api/v1/support/me` | мой support-контекст (является ли сотрудником поддержки) | self |
+
+**Сотрудник поддержки (guard `SupportAccessGuard` — член группы-контура):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/v1/support/desk/tickets` | очередь (`?view=unassigned\|mine\|all\|closed\|spam&cursor=`) | агент поддержки |
+| GET | `/api/v1/support/desk/tickets/:id` | тикет + вся лента (internal+external) + черновик клона | агент |
+| POST | `/api/v1/support/desk/tickets/:id/reply` | ответ клиенту (`access='external'`, `authorType='human'`; `fromDraftCommentId?` → outcome=edited+DIFF) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/note` | внутренняя заметка (`access='internal'`) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/assign` | назначить ответственного (reuse `IssueAssignee` M:M) | агент |
+| POST | `/api/v1/support/desk/tickets/:id/transition` | сменить статус тикета | агент |
+| POST | `/api/v1/support/desk/tickets/:id/draft` | попросить клона черновик (`support-clone-draft` + critic + цитаты) | агент |
+| POST | `/api/v1/support/desk/drafts/:id/accept` | принять черновик как есть (outcome=accepted) | агент |
+| POST | `/api/v1/support/desk/drafts/:id/reject` | отклонить черновик (outcome=rejected) | агент |
+| GET | `/api/v1/support/desk/meta` | мета деска (статусы/виды/счётчики) | агент |
+
+**Админ (guard `SupportAdminGuard` — owner вендор-Org / super_admin):**
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST/GET/DELETE | `/api/v1/support/admin/agents` | галочка «сотрудник поддержки» = членство `KnowledgeGroupMember(support, source='manual')` (Р-7) | owner/super_admin |
+| POST | `/api/v1/support/admin/contour/seed` | ручной засев контура. Тело `{ items:[{ question, answer }] }` → IdeaBlock + `IdeaBlockAccess(support)`; идемпотентно (Р-4) | owner/super_admin |
 
 ## История изменений
 

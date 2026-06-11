@@ -11,7 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { structureApi, type StructureSummaryApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/ui/shadcn/button';
@@ -46,7 +46,7 @@ export function Step5Client() {
       .catch((e) => {
         if (cancelled) return;
         setSummaryError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить сводку.',
+          humanizeApiError(e, 'Не удалось загрузить сводку.'),
         );
         setLoading(false);
       });

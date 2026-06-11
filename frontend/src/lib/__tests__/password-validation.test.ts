@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { passwordsMatch, validatePassword } from '../password-validation';
+import {
+  PASSWORD_RULE_HINT,
+  passwordsMatch,
+  validatePassword,
+} from '../password-validation';
 
 describe('validatePassword', () => {
   it('reject короче 8 символов', () => {
@@ -35,6 +39,12 @@ describe('validatePassword', () => {
 
   it('accept ровно 8 символов: буква + цифры', () => {
     expect(validatePassword('a1234567').valid).toBe(true);
+  });
+
+  it('#18 — любая ошибка возвращает ЕДИНЫЙ PASSWORD_RULE_HINT', () => {
+    expect(validatePassword('Ab1').message).toBe(PASSWORD_RULE_HINT); // короткий
+    expect(validatePassword('abcdefgh').message).toBe(PASSWORD_RULE_HINT); // без цифры
+    expect(validatePassword('12345678').message).toBe(PASSWORD_RULE_HINT); // без буквы
   });
 });
 

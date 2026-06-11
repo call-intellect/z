@@ -358,6 +358,25 @@ const MeetingInvitePayloadSchema = z
   })
   .strict();
 
+/**
+ * ТЗ 2026-06-09 support-desk (Р-6) — дублирование сотруднику поддержки.
+ *
+ * `support.ticket_created` — новое обращение клиента; `support.ticket_reply` —
+ * клиент ответил в своём тикете. Recipient — userId сотрудника-члена группы
+ * контура. `ticketId`/`ticketNumber` — для drill-down на тикет в деске,
+ * `subject` — тема (для предпросмотра), `snippet` — обрезок текста (для
+ * `ticket_reply`). Текст клиента передаётся как ДАННЫЕ (не инструкция).
+ */
+const SupportTicketEventPayloadSchema = z
+  .object({
+    ticketId: z.string().min(1).max(80),
+    ticketNumber: z.string().min(1).max(40),
+    subject: z.string().min(1).max(300),
+    snippet: z.string().max(2_000).optional(),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
@@ -390,6 +409,9 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['actions.reminder', ActionsReminderPayloadSchema],
   // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
   ['meeting.invite', MeetingInvitePayloadSchema],
+  // ТЗ 2026-06-09 support-desk (Р-6) — дублирование сотруднику поддержки.
+  ['support.ticket_created', SupportTicketEventPayloadSchema],
+  ['support.ticket_reply', SupportTicketEventPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

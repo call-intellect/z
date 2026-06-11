@@ -38,7 +38,10 @@ describe('OperationsDashboardService — ТЗ-2 Ф2 resolved counts + reworkEnab
         findMany: vi.fn().mockResolvedValue([]),
         count: entityLinkCount,
       },
-      blockerSynthesis: { count: blockerSynthesisCount },
+      blockerSynthesis: {
+        count: blockerSynthesisCount,
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       person: { findMany: vi.fn().mockResolvedValue([]) },
       appointment: { findMany: vi.fn().mockResolvedValue([]) },
       insight: { groupBy: vi.fn().mockResolvedValue([]) },

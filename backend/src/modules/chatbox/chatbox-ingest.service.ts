@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
+import { applyInputGuards } from '../ai/services/prompts/common';
 import { IngestService } from '../ingest/ingest.service';
 
 /**
@@ -144,12 +145,23 @@ export class ChatboxIngestService {
 
     const transcript = renderTranscript(msgs);
 
+    // Анти-инъекция: транскрипт чата — сырые внешние сообщения (клиент/менеджер),
+    // классический вектор prompt-injection. Оборачиваем user в маркеры данных +
+    // ноту в system. У сервиса нет TypedConfigService, поэтому глобальный
+    // kill-switch (aiFeatures.promptInjectionGuardEnabled) тут НЕ гейтит —
+    // guards включены всегда (enabled по умолчанию true).
+    const { system: guardedSystem, user: guardedUser } = applyInputGuards(
+      SUMMARY_SYSTEM_PROMPT,
+      transcript,
+      { injection: true },
+    );
+
     try {
       const result = await this.llm.call({
         taskType: 'chatbox-summary',
-        systemPrompt: SUMMARY_SYSTEM_PROMPT,
+        systemPrompt: guardedSystem,
         // Переменная часть (транскрипт) — в конце, под prompt caching.
-        userMessage: transcript,
+        userMessage: guardedUser,
         tenantId,
         dataClass: 'sensitive',
         maxTokens: 500,

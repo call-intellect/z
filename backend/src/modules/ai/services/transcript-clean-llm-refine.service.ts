@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { CleanedSegment, CleanerRemovedItem } from './deterministic-cleaner';
 import { LlmRouterAllProvidersFailedError, LlmRouterService, NoEligibleProviderError } from './llm-router.service';
+import { withAsrNote, withInjectionGuard, wrapUserData } from './prompts/common';
 import { PromptResolverService } from './prompt-resolver.service';
 import {
   buildTranscriptCleanRefineUserMessage,
@@ -98,6 +99,12 @@ export class TranscriptCleanLlmRefineService {
       );
     }
 
+    // A2-AI: вход чанков — сырой транскрипт (тексты сегментов). Оборачиваем
+    // system нотой про инъекции + ASR один раз (system стабилен на весь проход,
+    // cache-friendly), а user-чанк оборачиваем маркерами в цикле. Сервис без
+    // TypedConfigService — глобальный kill-switch здесь не гейтит (всегда ON).
+    const guardedSystem = withAsrNote(withInjectionGuard(systemPrompt));
+
     const out = segments.slice();
     let refinedCount = 0;
     let anyChunkFailed = false;
@@ -107,16 +114,18 @@ export class TranscriptCleanLlmRefineService {
     const chunks = chunk(candidates, TranscriptCleanLlmRefineService.CHUNK_SIZE);
     for (const ch of chunks) {
       try {
-        const userMessage = buildTranscriptCleanRefineUserMessage(
-          ch.map((s) => ({
-            originalIndex: s.originalIndex,
-            speaker: s.participantIdentity,
-            text: s.cleanedText,
-          })),
+        const userMessage = wrapUserData(
+          buildTranscriptCleanRefineUserMessage(
+            ch.map((s) => ({
+              originalIndex: s.originalIndex,
+              speaker: s.participantIdentity,
+              text: s.cleanedText,
+            })),
+          ),
         );
         const result = await this.router.call({
           taskType: 'transcript-clean-refine',
-          systemPrompt,
+          systemPrompt: guardedSystem,
           userMessage,
           tenantId,
           meetingId,

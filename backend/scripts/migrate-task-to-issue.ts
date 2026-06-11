@@ -148,7 +148,7 @@ async function ensureVirtualProject(
       slug: VIRTUAL_PROJECT_SLUG,
       identifier: VIRTUAL_PROJECT_IDENTIFIER,
       name: VIRTUAL_PROJECT_NAME,
-      description: 'Виртуальный проект для legacy задач из встреч (action items).',
+      description: 'Задачи, перенесённые из встреч.',
       ownerId: ownerUserId,
     },
     select: { id: true, identifier: true },

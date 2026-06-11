@@ -15,6 +15,7 @@
 import {
   withAsrNote,
   withConfidenceCalibration,
+  withDecisionDiscriminator,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
@@ -25,6 +26,7 @@ import {
 // F9 (2026-05-24): добавлен `withEdgeCasePolicy` — единая политика
 // пустых/противоречивых входов и относительных сроков.
 export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withDecisionDiscriminator(
   withEdgeCasePolicy(
   withConfidenceCalibration(
     [
@@ -50,6 +52,7 @@ export const INSIGHT_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '  Это поле обязательное. Если в блоке прямо не указано — выбери наиболее правдоподобное по контексту; если совсем неясно — "unknown".',
     '- `confidence` — насколько уверенно ты извлёк суть сигнала (0..1). Якоря см. ниже.',
     ].join('\n'),
+  ),
   ),
   ),
 );

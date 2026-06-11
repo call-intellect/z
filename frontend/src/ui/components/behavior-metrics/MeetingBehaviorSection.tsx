@@ -15,9 +15,10 @@
 import type { JSX } from 'react';
 
 import { useMeetingBehaviorMetrics } from '@/hooks/use-meeting-behavior-metrics';
-import type {
-  BehaviorMetricsDomain,
-  BehaviorParticipantDomain,
+import {
+  isDiarizationDegenerate,
+  type BehaviorMetricsDomain,
+  type BehaviorParticipantDomain,
 } from '@/domain/behavior-metrics';
 
 export interface MeetingBehaviorSectionProps {
@@ -48,6 +49,9 @@ export function MeetingBehaviorSection({ meetingId }: MeetingBehaviorSectionProp
   if (data.status === 'failed') return <FailedBox onRetry={mutate} />;
   // ready или low_confidence — рендерим метрики.
   if (!hasBehaviorSignal(data)) return <UnavailableBox />;
+  // #26 — вырожденная диаризация (нет таймкодов → псевдо-turn на дорожку): тоталы
+  // абсурдны («Всего речи 130 мин» / «перекрёстная 128 мин»). Не показываем цифры.
+  if (isDiarizationDegenerate(data.meeting)) return <DiarizationDegradedBox />;
 
   const lowConfidence = data.status === 'low_confidence' || data.meeting?.lowConfidence === true;
   return (
@@ -114,6 +118,22 @@ function UnavailableBox(): JSX.Element {
       <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
       <p className="text-sm text-fg-secondary">
         Поведенческая аналитика недоступна для этой записи.
+      </p>
+    </section>
+  );
+}
+
+function DiarizationDegradedBox(): JSX.Element {
+  return (
+    <section
+      data-testid="meeting-behavior-section-degraded"
+      className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-2"
+    >
+      <h2 className="text-lg font-semibold text-fg-primary">Поведение участников</h2>
+      <p className="text-sm text-fg-secondary">
+        Метрики недоступны: не удалось разделить речь по ролям и времени —
+        распознавание не дало таймкодов внутри реплик. Доли говорения, монологи и
+        перекрёстная речь появятся, когда диаризация улучшится.
       </p>
     </section>
   );

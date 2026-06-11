@@ -39,7 +39,8 @@ interface Fixture {
 }
 
 function buildSystemPrompt(contextBlock: string, toolFragment: string): string {
-  // Копия логики concierge.service.ts → buildSystemPrompt (строки 340-361).
+  // Копия логики concierge.service.ts → buildSystemPrompt.
+  // F1 cache-friendly (2026-06-10): preHits в SYSTEM нет — он стабилен.
   return [
     'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
     'Отвечай по-русски, кратко и по делу.',
@@ -56,6 +57,7 @@ function buildSystemPrompt(contextBlock: string, toolFragment: string): string {
     '',
     'Принципы:',
     '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
+    '- Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.',
     '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
     '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
   ].join('\n');

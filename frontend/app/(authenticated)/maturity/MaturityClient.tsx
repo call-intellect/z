@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import Link from 'next/link';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { maturityApi } from '@/api/maturity.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -29,7 +29,7 @@ export function MaturityClient(): JSX.Element {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -56,7 +56,7 @@ function MaturityContent({
       const r = await maturityApi.overview(orgId);
       setOverview(toMaturityOverviewDomain(r));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось загрузить сводку');
+      setError(humanizeApiError(err, 'Не удалось загрузить сводку'));
     } finally {
       setLoading(false);
     }
@@ -74,7 +74,7 @@ function MaturityContent({
       await maturityApi.rebuild(orgId);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Не удалось пересчитать');
+      setError(humanizeApiError(err, 'Не удалось пересчитать'));
     } finally {
       setRebuilding(false);
     }

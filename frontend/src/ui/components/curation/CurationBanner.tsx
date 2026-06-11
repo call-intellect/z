@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { curationApi, type CurationItemApi } from '@/api/curation.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -55,7 +55,7 @@ export function CurationBanner({
         if (cancelled) return;
         // Тихая ошибка: для inline-виджета не показываем ничего, чтобы не
         // мешать основной странице.
-        setError(e instanceof ApiError ? e.message : 'error');
+        setError(humanizeApiError(e, 'error'));
       } finally {
         if (!cancelled) setLoading(false);
       }

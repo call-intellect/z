@@ -25,7 +25,6 @@ import {
   type EntityResolverJobData,
   type EventReminderJobData,
   type IdeaClustererJobData,
-  type MeetingAnalyzeV2JobData,
   type MeetingReportFastJobData,
   type SpecialistsCombinedJobData,
   type ProbeEventJobData,
@@ -212,32 +211,6 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Публикация события `meeting.analyze-v2`. Consumer — `meeting-analyze-v2.worker`
-   * (Фаза 5). Дедуп через `jobId = meeting_analyze_v2_<meetingId>` + `delay`
-   * (по умолчанию `cfg.knowledgeCore.meetingAnalyzeV2DebounceMs` = 120s — даёт
-   * block-distill стабилизироваться).
-   *
-   * Несколько подряд идущих enqueue для одного `meetingId` сложатся в один
-   * отложенный job. На передачу `delayMs = 0` — сразу.
-   */
-  async enqueueMeetingAnalyzeV2(
-    meetingId: string,
-    opts?: { delayMs?: number },
-  ): Promise<void> {
-    const q = this.requireQueue(CORE_QUEUE_NAMES.MEETING_ANALYZE_V2);
-    const delay =
-      opts?.delayMs !== undefined
-        ? opts.delayMs
-        : this.cfg?.knowledgeCore.meetingAnalyzeV2DebounceMs ?? 120_000;
-    const jobId = `meeting_analyze_v2_${meetingId}`;
-    const payload: MeetingAnalyzeV2JobData = { meetingId };
-    await q.add('meeting-analyze-v2', this.stamp(payload), { jobId, delay });
-    this.logger.debug(
-      `enqueue core.meeting-analyze-v2 meetingId=${meetingId} delay=${delay}ms`,
-    );
-  }
-
-  /**
    * Публикация события `core.meeting-report-fast`
    * (ТЗ 2026-05-25, Фаза 4 — параллельный запуск).
    *
@@ -253,8 +226,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
    *     транскрипта»);
    *   - (опц.) ручной запуск из админки / integration-test.
    *
-   * NB: НЕ блокирует и не зависит от `core.meeting-analyze-v2`/`ai.analyze` —
-   * это два независимых pipeline, идущих параллельно (см. ТЗ §3).
+   * NB: НЕ блокирует и не зависит от `ai.analyze` — независимый pipeline.
    */
   async enqueueMeetingReportFast(
     meetingId: string,
@@ -280,9 +252,9 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
    * `jobId = specialists_combined_<meetingId>`: повторный enqueue той же
    * встречи в окне BullMQ не создаст дубль.
    *
-   * NB: producer (например, `MeetingAnalyzeV2Cron` при включённом флаге
-   * `SPECIALISTS_COMBINED_ENABLED`) сам должен проверить флаг перед вызовом.
-   * Сам сервис очереди — нейтрален.
+   * NB: producer сам должен проверить флаг `SPECIALISTS_COMBINED_ENABLED`
+   * перед вызовом. Сам сервис очереди — нейтрален. Прежний cron-producer
+   * (MeetingAnalyzeV2Cron) удалён вместе с v2-стеком (2026-06-10).
    */
   async enqueueSpecialistsCombined(
     meetingId: string,

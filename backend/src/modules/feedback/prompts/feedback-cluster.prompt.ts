@@ -317,9 +317,22 @@ export function validateFeedbackClusterReferences(
 /**
  * Параметры структурированного вывода и температуры (см. ТЗ §«LLM-router»).
  * Caller (FeedbackDigestService) использует их при сборке LlmCallParams.
+ *
+ * A9 (I11) — native json_schema strict вместо json_object (снижает долю
+ * битого JSON). Цепочка `feedback.cluster` (см. seed-llm-task-routes-
+ * feedback-cluster.ts): primary deepseek-v4-pro (strict через tool-путь),
+ * secondary gpt-5.4 (нативно, OpenAI Responses), tertiary/quaternary
+ * gemini-3-pro — все поддерживают strict. Zod-валидация выхода
+ * (`FeedbackClusterOutputSchema`) и ref-checker остаются как есть —
+ * схема `FEEDBACK_CLUSTER_JSON_SCHEMA` им изоморфна.
  */
 export const FEEDBACK_CLUSTER_LLM_PARAMS = {
   temperature: 0.2,
   maxTokens: 8_000,
-  responseFormat: { type: 'json_object' as const },
+  responseFormat: {
+    type: 'json_schema' as const,
+    name: FEEDBACK_CLUSTER_SCHEMA_NAME,
+    schema: FEEDBACK_CLUSTER_JSON_SCHEMA,
+    strict: true as const,
+  },
 } as const;

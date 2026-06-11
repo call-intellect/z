@@ -229,9 +229,9 @@ export class CardsController {
         skip,
         take: limit,
         include: {
-          // Р6: тянем все три summary-поля для pickPrimarySummary.
+          // Р6: тянем summaryFast + legacy summary для pickPrimarySummary.
           aiResult: {
-            select: { summaryFast: true, summaryV2: true, summary: true },
+            select: { summaryFast: true, summary: true },
           },
         },
       }),
@@ -363,7 +363,6 @@ export class CardsController {
     m: Meeting & {
       aiResult: {
         summaryFast: string | null;
-        summaryV2: string | null;
         summary: string;
       } | null;
     },

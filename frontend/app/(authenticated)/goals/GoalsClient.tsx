@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
 import { usePersons } from '@/hooks/usePersons';
 import { useAuth } from '@/contexts/auth-context';
@@ -211,7 +211,7 @@ export function GoalsClient() {
 
       {error && (
         <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          {error instanceof ApiError ? error.message : 'Не удалось загрузить цели'}
+          {humanizeApiError(error, 'Не удалось загрузить цели')}
         </div>
       )}
 
@@ -288,7 +288,7 @@ function EmptyState({ isOwner }: { isOwner: boolean }) {
       <p className="max-w-md text-sm text-fg-tertiary">
         {isOwner
           ? 'Цели компании не заданы. Owner может создать первую цель — это включит еженедельный мониторинг движения компании к стратегии.'
-          : 'Цели компании не заданы. Только владелец Org может создавать цели.'}
+          : 'Цели компании не заданы. Только владелец организации может создавать цели.'}
       </p>
     </GlassCard>
   );
@@ -539,7 +539,7 @@ function CreateGoalDialog({
       onOpenChange(false);
       onCreated();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось создать цель';
+      const msg = humanizeApiError(err, 'Не удалось создать цель');
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -711,7 +711,7 @@ function EditGoalDialog({
       toast.success('Цель обновлена');
       onUpdated();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось обновить';
+      const msg = humanizeApiError(err, 'Не удалось обновить');
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -733,7 +733,7 @@ function EditGoalDialog({
       toast.success('Цель архивирована');
       onArchived();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось архивировать';
+      const msg = humanizeApiError(err, 'Не удалось архивировать');
       toast.error(msg);
     } finally {
       setArchiving(false);

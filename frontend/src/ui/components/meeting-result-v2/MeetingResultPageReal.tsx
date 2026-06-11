@@ -28,11 +28,13 @@ import {
   Clock,
   Copy,
   Download,
+  Eye,
   ExternalLink,
   Files,
   FileText,
   ListChecks,
   Loader2,
+  Lightbulb,
   Lock,
   MessageCircle,
   MessageSquareText,
@@ -56,7 +58,7 @@ import { chaptersApi } from '@/api/chapters.api';
 import { tasksApi } from '@/api/tasks.api';
 import { highlightsApi } from '@/api/highlights.api';
 import { exportsApi } from '@/api/exports.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useMeeting } from '@/hooks/use-meeting';
 import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
 import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
@@ -73,7 +75,11 @@ import {
   type ClosedGroupKind,
 } from '@/domain/knowledge-access';
 import type { MeetingDomain } from '@/domain/meeting';
-import { meetingStatusView, MEETING_TYPE_LABEL_RU } from '@/domain/meeting';
+import {
+  meetingStatusView,
+  visibilityScopeLabel,
+  MEETING_TYPE_LABEL_RU,
+} from '@/domain/meeting';
 import type { MeetingType } from '@/domain/enums';
 import { templateFromApi } from '@/domain/template';
 import type { TaskDomain } from '@/domain/task';
@@ -113,6 +119,7 @@ import { MeetingChatPanel } from './MeetingChatPanel';
 import { MeetingSummaryRender } from './MeetingSummaryRender';
 import { ReportsTab } from './ReportsTab';
 import { ShareDialog } from './ShareDialog';
+import { VisibilityDialog } from './VisibilityDialog';
 import { HighlightCreatorDialog } from './HighlightCreatorDialog';
 import { fmtTime, fmtDurationCompact } from './format-utils';
 import {
@@ -468,6 +475,7 @@ function MeetingHeader({
   const router = useRouter();
   const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
 
   // Список юзерских и системных шаблонов для regenerate sub-menu.
   const { data: templatesData } = useSWR(
@@ -499,7 +507,7 @@ function MeetingHeader({
           toast.error('Лимит регенераций исчерпан, попробуйте через час.');
           return;
         }
-        toast.error(e.message);
+        toast.error(humanizeApiError(e));
         return;
       }
       toast.error('Не удалось запустить регенерацию');
@@ -517,7 +525,7 @@ function MeetingHeader({
       );
       void job;
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка экспорта';
+      const msg = humanizeApiError(e, 'Ошибка экспорта');
       toast.error(msg);
     }
   };
@@ -535,7 +543,7 @@ function MeetingHeader({
       toast.success('Встреча удалена');
       router.push('/meetings');
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось удалить';
+      const msg = humanizeApiError(e, 'Не удалось удалить');
       toast.error(msg);
     }
   };
@@ -551,7 +559,7 @@ function MeetingHeader({
       );
       toast.success(`Доступ обновлён: ${label}`);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось изменить доступ';
+      const msg = humanizeApiError(e, 'Не удалось изменить доступ');
       toast.error(msg);
     }
   };
@@ -583,6 +591,13 @@ function MeetingHeader({
             )}
             <span className="font-mono text-xs text-fg-tertiary">
               v{meeting.recapVersion}
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-fg-tertiary">
+              <Eye size={12} strokeWidth={1.75} />
+              Кому видно:{' '}
+              <span className="text-fg-secondary">
+                {visibilityScopeLabel(meeting.visibilityScope)}
+              </span>
             </span>
           </div>
         </div>
@@ -663,6 +678,11 @@ function MeetingHeader({
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setVisibilityOpen(true)}>
+                <Eye size={14} />
+                Кому видно
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <Lock size={14} />
@@ -695,6 +715,12 @@ function MeetingHeader({
 
       <ProcessingBanner meeting={meeting} />
       {confirmDialog}
+      <VisibilityDialog
+        meetingId={meeting.id}
+        open={visibilityOpen}
+        onOpenChange={setVisibilityOpen}
+        onSaved={onMutateMeeting}
+      />
     </header>
   );
 }
@@ -838,7 +864,7 @@ function HighlightCard({
           toast.error('Превышен лимит рендеринга MP4.');
           return;
         }
-        toast.error(e.message);
+        toast.error(humanizeApiError(e));
         return;
       }
       toast.error('Ошибка при скачивании');
@@ -913,10 +939,10 @@ function OverviewTab({
   meeting: MeetingDomain;
   durationMs: number | null;
   /**
-   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'v2'|'legacy' }`
+   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'legacy' }`
    * либо `null` если ни одного варианта нет.
    */
-  primarySummary: { markdown: string; source: 'fast' | 'v2' | 'legacy' } | null;
+  primarySummary: { markdown: string; source: 'fast' | 'legacy' } | null;
   followUpEmail: string | null;
   structuredData: unknown;
   customMd: string | null;
@@ -931,6 +957,21 @@ function OverviewTab({
     { label: 'Клипы', value: highlightsCount },
     { label: 'Длительность', value: fmtDurationCompact(durationMs) },
   ];
+
+  /**
+   * Волна 4, B1.4 — клиентский протокол. Backend кладёт нейтральный текст для
+   * отправки клиенту в `structuredData.client_protocol_md` (markdown-строка).
+   * Рендерим его отдельной секцией «Протокол для клиента» (ниже), а из общего
+   * generic-грида `StructuredDataCard` ключ исключён, чтобы не дублировать.
+   */
+  const clientProtocolMd =
+    structuredData &&
+    typeof structuredData === 'object' &&
+    typeof (structuredData as Record<string, unknown>).client_protocol_md ===
+      'string'
+      ? ((structuredData as Record<string, unknown>)
+          .client_protocol_md as string).trim()
+      : '';
 
   return (
     <div className="flex flex-col gap-4">
@@ -953,6 +994,7 @@ function OverviewTab({
           </div>
         </Card>
       )}
+      {clientProtocolMd ? <ClientProtocolCard markdown={clientProtocolMd} /> : null}
       {structuredData ? <StructuredDataCard data={structuredData} /> : null}
       {customMd && (
         <Card>
@@ -996,6 +1038,71 @@ function StatsRow({ stats }: { stats: Array<{ label: string; value: string | num
   );
 }
 
+/** Ключи отчёта с отдельным (не-generic) рендером — вынимаются из общего грида. */
+const STRUCTURED_SPECIAL_KEYS = new Set([
+  'data_quality',
+  'churn_risk_quote',
+  'ideas',
+  'proposals',
+  // Волна 4, B1.4 — клиентский протокол рендерится ОТДЕЛЬНОЙ секцией
+  // «Протокол для клиента» (ClientProtocolCard) над StructuredDataCard, поэтому
+  // из общего generic-грида он исключён, чтобы не дублироваться.
+  'client_protocol_md',
+]);
+
+/**
+ * data_quality (строка) — приглушённый блок-бейдж «Качество данных» ВНЕ грида.
+ * Это НЕ оценка качества встречи (QualityScore) — это полнота входных данных отчёта.
+ */
+function DataQualityBadge({ value }: { value: unknown }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-base px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        Качество данных
+      </div>
+      <div className="mt-1 text-sm leading-relaxed text-fg-tertiary">
+        <StructuredFieldValue value={value} />
+      </div>
+      <div className="mt-1 text-[11px] leading-snug text-fg-tertiary">
+        Оценка полноты исходных данных отчёта, а не качества самой встречи.
+      </div>
+    </div>
+  );
+}
+
+/** churn_risk_quote (строка) — выделенная цитата риска оттока. */
+function ChurnRiskQuote({ value }: { value: unknown }) {
+  return (
+    <Card>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+        Цитата риска оттока
+      </div>
+      <blockquote className="mt-2 border-l-2 border-chip-warning-fg pl-3 text-sm italic leading-relaxed text-fg-primary">
+        <StructuredFieldValue value={value} />
+      </blockquote>
+    </Card>
+  );
+}
+
+/** ideas / proposals (массивы) — отдельная секция с лампочкой, отличная от Задач. */
+function IdeasSection({ entries }: { entries: Array<[string, unknown]> }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {entries.map(([k, v]) => (
+        <Card key={k}>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+            <Lightbulb size={12} className="text-chip-warning-fg" />
+            {structuredFieldLabel(k)}
+          </div>
+          <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+            <StructuredFieldValue value={v} />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function StructuredDataCard({ data }: { data: unknown }) {
   const entries = useMemo(() => {
     if (!data || typeof data !== 'object') return [];
@@ -1004,24 +1111,37 @@ function StructuredDataCard({ data }: { data: unknown }) {
     );
   }, [data]);
   if (entries.length === 0) return null;
+
+  const genericEntries = entries.filter(([k]) => !STRUCTURED_SPECIAL_KEYS.has(k));
+  const ideasEntries = entries.filter(
+    ([k]) => k === 'ideas' || k === 'proposals',
+  );
+  const dataQuality = entries.find(([k]) => k === 'data_quality');
+  const churnQuote = entries.find(([k]) => k === 'churn_risk_quote');
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-semibold text-fg-primary">Обзор</h3>
         <ReportActions output={data} title="Отчёт встречи" />
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {entries.map(([k, v]) => (
-          <Card key={k}>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              {structuredFieldLabel(k)}
-            </div>
-            <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
-              <StructuredFieldValue value={v} />
-            </div>
-          </Card>
-        ))}
-      </div>
+      {genericEntries.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {genericEntries.map(([k, v]) => (
+            <Card key={k}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
+                {structuredFieldLabel(k)}
+              </div>
+              <div className="mt-1.5 text-sm leading-relaxed text-fg-primary">
+                <StructuredFieldValue value={v} />
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+      {ideasEntries.length > 0 && <IdeasSection entries={ideasEntries} />}
+      {churnQuote && <ChurnRiskQuote value={churnQuote[1]} />}
+      {dataQuality && <DataQualityBadge value={dataQuality[1]} />}
     </div>
   );
 }
@@ -1055,6 +1175,42 @@ function FollowUpCard({ text }: { text: string }) {
   );
 }
 
+/**
+ * Волна 4, B1.4 — клиентский протокол. Нейтральный текст для отправки клиенту
+ * (markdown), который backend кладёт в `structuredData.client_protocol_md`.
+ * Отдельная секция со своей кнопкой «Скопировать» (по образцу FollowUpCard),
+ * markdown-рендер через тот же `MeetingSummaryRender`, что и краткое содержание.
+ */
+function ClientProtocolCard({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Не удалось скопировать');
+    }
+  };
+  return (
+    <Card>
+      <CardHeader
+        title="Протокол для клиента"
+        accessory={
+          <Button variant="outline" size="sm" onClick={onCopy}>
+            <Copy size={12} />
+            {copied ? 'Скопировано' : 'Скопировать'}
+          </Button>
+        }
+      />
+      <p className="mb-3 mt-0 text-xs text-fg-tertiary">
+        Нейтральный текст для отправки клиенту.
+      </p>
+      <MeetingSummaryRender markdown={markdown} />
+    </Card>
+  );
+}
+
 function ChaptersTab({
   meetingId,
   chapters,
@@ -1077,7 +1233,7 @@ function ChaptersTab({
       toast.success('Регенерация глав запущена');
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1090,7 +1246,7 @@ function ChaptersTab({
       setEditingId(null);
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1107,7 +1263,7 @@ function ChaptersTab({
       toast.success('Удалено');
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1125,7 +1281,7 @@ function ChaptersTab({
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1442,7 +1598,7 @@ function TasksTab({
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1453,7 +1609,7 @@ function TasksTab({
       await tasksApi.update(task.id, { status: next });
       onMutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -1739,7 +1895,7 @@ function ParticipantRow({
       setEditing(false);
       onSaved();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось переименовать';
+      const msg = humanizeApiError(e, 'Не удалось переименовать');
       toast.error(msg);
     } finally {
       setSaving(false);

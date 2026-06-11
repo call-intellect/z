@@ -2,8 +2,13 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
@@ -49,7 +54,30 @@ export class CommitmentResponseHandler {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    /**
+     * E2 (мастер-ТЗ Волна 1, Кластер A) — нужен только для kill-switch
+     * анти-инъекционной обёртки (`promptInjectionGuardEnabled`). `@Optional()`
+     * + дефолт null — существующие unit-тесты конструируют handler без него.
+     * Default при отсутствии cfg — guard ON.
+     */
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly config: TypedConfigService | null = null,
   ) {}
+
+  /**
+   * E2 — мастер-флаг защиты от prompt-injection. Ответ сотрудника на
+   * followup-probe — свободный текст, инъекция в котором может ложно
+   * объявить обещание выполненным. Поэтому он обязан идти в LLM обёрнутым
+   * в маркеры данных. Default — true; при отсутствии cfg тоже true.
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.config?.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
 
   @OnEvent('notification.responded')
   async handle(event: {
@@ -260,19 +288,29 @@ export class CommitmentResponseHandler {
       'Никакого комментария вне JSON.',
     ].join('\n');
 
-    const userMessage = [
+    const rawUserMessage = [
       `Исходное обещание: ${args.criticalQuestion}`,
       `Текст обещания: ${args.trustedAnswer.slice(0, 500)}`,
       'Ответ сотрудника:',
       args.rawText.slice(0, 2_000),
     ].join('\n');
 
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Свободный
+    // ответ сотрудника оборачиваем в маркеры данных, system дополняем
+    // INJECTION_GUARD_NOTE, чтобы инъекция не подменила статус обещания.
+    // Только обёртка — статус 'unclear' это отдельная волна.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const guardedSystem = guardOn
+      ? withInjectionGuard(systemPrompt)
+      : systemPrompt;
+    const userMessage = guardOn ? wrapUserData(rawUserMessage) : rawUserMessage;
+
     let text: string;
     try {
       const res = await this.llm.call({
         taskType: 'commitment-extract-status',
         tenantId: args.tenantId,
-        systemPrompt,
+        systemPrompt: guardedSystem,
         userMessage,
         responseFormat: { type: 'json_object' },
         maxTokens: 500,

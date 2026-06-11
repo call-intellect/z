@@ -171,6 +171,22 @@ export interface DailyDigestChronicBlockerDto {
   responsiblePersonId: string | null;
 }
 
+/**
+ * Ф1b редизайна дашбордов — одна точка исторического тренда daily-дайджеста.
+ * Считается из уже persisted-снимков `DailyOperationsDigest.metricsJson`
+ * (не выдумка). Кладётся в ответ дайджеста полем `trend` (один вызов фронта).
+ */
+export interface DailyDigestTrendPointDto {
+  dateLocal: string;            // YYYY-MM-DD
+  totalCheckIns: number;
+  greenShare: number;           // 0..1
+  redShare: number;
+  blockers: number;             // metricsJson.newBlockers.length
+  overdueCommitments: number;   // metricsJson.overdueCommitments.length
+  goalsCompleted: number;       // metricsJson.goals.completed
+  goalsFailed: number;          // metricsJson.goals.failed
+}
+
 export interface DailyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -196,6 +212,8 @@ export interface DailyOperationsDigestDto {
   customersAtRisk: DailyDigestCustomerAtRiskDto[];
   /** ТЗ-2 Ф3 — хронические блокеры (топ по businessImpactScore). Пусто, если синтеза нет. */
   chronicBlockers: DailyDigestChronicBlockerDto[];
+  /** Ф1b — исторический тренд, old→new, до 14 точек, заканчивая dateLocal текущего дайджеста. */
+  trend: DailyDigestTrendPointDto[];
 }
 
 /**

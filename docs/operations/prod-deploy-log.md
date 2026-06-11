@@ -70,6 +70,141 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔗 2026-06-10 — Мост ежедневный чек-ин → граф знаний (`daily_checkin`)
+
+> Контракт: `plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10`.
+>
+> **Зачем для прода:** завершённый чек-ин (план/отчёт сотрудника) теперь становится источником графа знаний — AI-чат компании сможет отвечать «что делал сотрудник X на неделе». Событийный мост: на `checkin.created` слушатель `CheckinGraphIngestListener` зовёт `CheckinIngestService.ingestCheckin`, который пишет `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` через `IngestService.ingest` (по образцу `ChatboxIngestService`). Идемпотентно по `sourceExternalId=checkInId`; `occurredAt` берётся из стабильного `dateLocal` (не из мутирующего `completedAt`). Sentiment/qualityScore в граф НЕ ингестятся — работает рядом и независимо от `CheckinSentimentAnalyzerWorker`. **Миграция БД ЕСТЬ** (enum-значение, аддитивная, авто). **1 новая ENV (kill-switch, default ON).** **Новой BullMQ-очереди/cron НЕТ** — событийный listener.
+>
+> ⚠ **v1-ограничение:** replace чек-ина того же дня = no-op (первый завершённый чек-ин = канон), т.к. `idempotencyKey` стабилен по `dateLocal`; re-ingest при replace — vNext.
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `CHECKIN_GRAPH_INGEST_ENABLED` (`betaOps.checkinGraphIngestEnabled`, zBool default `true`). Аварийный откат: `=false` в `.env` + рестарт → чек-ины перестают попадать в граф (sentiment/обработка чек-ина не затронуты). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610140000_source_type_daily_checkin`): `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'daily_checkin'`. Опасных изменений нет (только новое enum-значение). ⚠ `ALTER TYPE ... ADD VALUE` **не-транзакционна** и её нельзя выполнять в одной транзакции с использованием значения — поэтому enum-значение вынесено в **отдельную** миграцию. Идемпотентна (`IF NOT EXISTS`, повтор — no-op). Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый `CheckinIngestService` + `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`), оба зарегистрированы в `operations.module.ts`; новая ENV; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): после завершения чек-ина появляется новый `RawEvent` с `sourceType='daily_checkin'` (через `diag` или БД); метрика `z_checkin_graph_ingest_total{result}` тикает (`result ∈ ok|skipped|error`): `curl -s localhost:3000/metrics | grep z_checkin_graph_ingest_total`. Новой очереди/cron НЕТ — это событийный listener (отдельного `bullmq_`/cron-grep'а не требует).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🩹 2026-06-10 — Зависание встречи в `scheduled` + дубли/статусы «Команда» (Ф1–Ф6)
+
+> Контракт: `plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (6 коммитов).
+>
+> **Зачем для прода:** два независимых багфикса. (1) «Команда»: один человек = одна строка (дедуп по email + статус по membership). (2) Встреча больше не виснет навсегда в `scheduled` — `finish` устойчив, idle-cron reconcile'ит брошенные `scheduled`. **Миграций Prisma НЕТ** (partial unique — в `postgres-init.sql`). **Новых ENV нет.** **Docker rebuild backend+frontend** (код).
+>
+> ⚠ **Главный прод-блокер (вне репо, владельцу):** доставка вебхуков LiveKit `room_started`/`room_finished` на backend сломана после переезда `meet.crossmark.ru → korateam.ru` — без её починки **каждая новая встреча будет зависать в `scheduled`**, а Ф5/Ф6 — лишь страховка устойчивости, корень не лечат. Действия — см. ТЗ §4 (правка `infra/livekit/livekit.yaml` `webhook.urls` + nginx-проксирование `/webhooks/` на backend) и строку в `second-brain/04_не-сделано/README.md`.
+
+- **Шаг 5 — postgres-init.sql** — новый partial unique: `persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''` (запрещает второй активный `Person` на тот же email в Org; образец — `Vendor_tenantId_inn_unique_idx`/`Entity_strong_email_uniq`). **Self-skip:** если на момент прогона ещё есть активные дубли по email — блок делает `RAISE NOTICE` и пропускает создание индекса; индекс встанет на следующем прогоне `postgres-init` **уже после backfill Ф3** (Шаг 8). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `args:['--apply']`, `skipBootstrap:true`): `scripts/backfill-merge-duplicate-persons.ts` — сливает дубли `Person` по `(tenantId, lower(email))`: каноническая = аккаунтная (`userId`) либо старейшая, дубли soft-delete'ятся, пустые поля канонической обогащаются, слабое имя-логин заменяется человеческим (Р4); `≥2` аккаунтов на email — НЕ сливает (warn). **Сначала dry-run** (без флага, только counts — сверить): `docker compose exec backend bun run scripts/backfill-merge-duplicate-persons.ts` → **затем `--apply`** через агрегатор: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или напрямую `... backfill-merge-duplicate-persons.ts --apply`, опц. `--tenant=<id>`). Идемпотентен (повтор → 0 групп). Запускать **до** повторного `apply-postgres-init` (чтобы self-skip-индекс Шага 5 встал).
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `orgs.service.listTeamRoster` (статус по membership + дедуп по email), `persons.service.create` (дедуп по email до вставки → 409 `person_email_taken` / линковка безличной карточки), `host-controls.service.finish` (устойчив из `scheduled`/терминальных), `idle-meeting.cron` (reconcile брошенных `scheduled`); frontend: нейтральный тост finish): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): раздел «Команда» — один человек = одна строка, владелец помечен «активен» (не «не приглашён»); тестовая встреча — «Завершить» из любого состояния закрывает без 409 (из `scheduled` → нейтральный тост «Встреча завершена (запись не велась)»).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📖 2026-06-10 — Волна 6 A10: модель Instruction (first-class «Инструкция», single-role)
+
+> Контракт: master-prompt-fleet (Волна 6 A10), схема-слой. Ветка `feature/master-prompt-fleet-2026-06-10`.
+>
+> **Зачем для прода:** новая first-class сущность «Инструкция» (`Instruction`) — пошаговое руководство для ОДНОЙ роли (`forRole`), зеркалит `Regulation` + признак single-role. Только схема-слой (таблица + индексы), без extraction/API/RBAC (другой слой). **Миграция БД ЕСТЬ** (аддитивная, авто). **Новых ENV нет.**
+
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610120000_add_instruction`): `+ table instructions` (FK → `Org`/`persons`/self/`CardVersion`; unique `(tenantId, name)` + unique `entityId`; индексы по `(tenantId, status)`/`(tenantId, forRole)`/`(tenantId, ownerPersonId)`/`(currentVersionId)`; колонка `embedding vector(1536)`). Аддитивна (CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна.
+- **Шаг 5 — postgres-init.sql — HNSW** — новый: `instructions_embedding_hnsw_cosine_idx ON "instructions" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine dedupe/supersede инструкций, зеркало `decisions`/`regulations`). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (Волна 6 B, `phase:'backfill'`, `args:['--apply']`, `skipBootstrap:true`): `scripts/backfill-reclassify-instructions.ts` — переносит single-role `Process` (`scope=role:*`) в новую таблицу `instructions` (идемпотентно, skip по `tenantId+name`). Без `--apply` — dry-run. Сначала проверка: `docker compose exec backend bun run scripts/backfill-reclassify-instructions.ts` → затем через агрегатор `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новый PrismaClient-модель `instruction`): `docker compose up -d --build backend`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🧩 2026-06-10 — Волна 6 A7: агент-компилятор орг-документа (`compile-org-document`)
+
+> Контракт: master-prompt-fleet (Волна 6 Стадия C, A7). Ветка `feature/master-prompt-fleet-2026-06-10`.
+>
+> **Зачем для прода:** единый владелец сборки `contentMd` орг-документа (regulation/process/policy/instruction). На verdict merge/extension от `regulation-dedupe` специалист 3.1 теперь собирает структурный документ по шаблону типа (режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ, маркеры `[требует уточнения]`/`[конфликт]`/`[изменено]`, «ничего не теряй») вместо plain-update поля + инкремент `version`. Best-effort: при ошибке компилятора — fallback к существующему телу (dedupe-путь не ломается). **Миграций БД НЕТ.** **1 новая ENV (kill-switch, default ON).** **1 новый taskType.**
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `DOC_COMPILER_ENABLED` (`aiFeatures.docCompilerEnabled`, default `true`). Аварийный откат: `=false` → legacy plain-update поля. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 7 — Seed-маршрут — 1 новый, идемпотентный, в STEPS** (`phase:'seed-llm-routes'`, alias `'compile-org-document'`): `scripts/seed-llm-task-routes-compile-org-document.ts` — taskType `compile-org-document` → `deepseek-v4-pro` primary → `openai-via-proxy/gpt-5.4` → `ollama/qwen3.5:9b` (capable + tool-use). Без seed поедет по `DEFAULT_FALLBACK_CHAIN` (тоже работоспособен). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `StructuredDocumentCompilerService`, новый промпт `compile_org_document`, вызов из `Specialist31Service` на merge/extension, новый taskType; frontend без изменений): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката): `/admin/ai-models` → `compile-org-document` (deepseek-v4-pro primary). После встречи с повторно-упомянутым регламентом/процессом: в логах backend нет ERROR от `structured-document-compiler`; `contentMd` существующей карточки на extension собран по структуре типа (таблица «кто-что-когда» для регламента / разделы для процесса), `version` инкрементирован.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🐞 2026-06-10 — Фикс открытых багов retest3 (Ф1–Ф9, кроме #20/#24/#17/#26)
+
+> Контракт: `plans/tz/2026-06-10-bugfix-fleet-retest3.md`. Коммиты: Ф1 `e696d831` · Ф2 `a442fc37` · Ф5 `5781b43f` · Ф6 `1f035158` · Ф7 `73af1791` · Ф4 `9550d382` · Ф3 `0652c365` · Ф8 `a9289d54` · Ф9 `048be10e`.
+>
+> **Зачем для прода:** pulse-patterns 500 → 200; json-режим LLM (quality-score/extract-actions/secondary-каскад) перестаёт падать; главный отчёт идёт через DeepSeek (кэш + pro); чат больше не светит служебные маркеры; локализация (русский 404, resourceType, заголовки, отчёт); диагностика пустых дорожек + гард абсурдных метрик диаризации. **Миграций БД НЕТ.** **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (обе с дефолтами — действий владельца НЕ требуют):**
+  - `LLM_MAIN_REPORT_PRIMARY` (enum `minimax`/`deepseek`, **default `deepseek`**, Ф5/#51). Откат на прежний канал: `=minimax` в `.env` + рестарт.
+  - `LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED` (**default сменён OFF→ON**, Ф2/#56). Аварийный откат: `=false`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback есть — действий НЕ требует):** `transcribe.minAudioBytes` (порог «битого» аудио для ре-submit пустой дорожки, default 1024, Ф3/#74).
+- **Шаг 9 — Re-run скрипта (Ф8/#83):** `migrate-task-to-issue.ts` уже в `apply-prod-deploy STEPS` — прогон агрегатора обновит описание виртуального проекта «Из встреч». Идемпотентно.
+- **Кэш-сброс (ожидаемо):** правки SYSTEM-промптов `meeting-quality-score` и `daily-digest` разово инвалидируют prompt-cache DeepSeek/MiniMax — деньги на 1 прогон, дальше кэш восстановится.
+- **Шаг 11 — Docker rebuild:** `docker compose up -d --build backend frontend`.
+- **ОТЛОЖЕНО (не в этом выкате):** #26 (тайминги Vox — нужен прод-smoke), #20/#24 (Sidebar UX — отдельный ТЗ), #17 (прод-ретест смены пароля). См. `second-brain/04_не-сделано/README.md`.
+
+---
+
+### 👁 2026-06-10 — «Кому видно» — доступ к видеовстречам (Ф1–Ф6)
+
+> Контракт: `plans/tz/2026-06-10-meeting-visibility-who-can-see.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (5 код-коммитов).
+>
+> **Зачем для прода:** убирает боль «сотрудники не видят встречи владельца» (by design owner-only MVP). Хост встречи управляет аудиторией «Кому видно» (как в Google Диске): `owner_only` · `participants` (ДЕФОЛТ) · `custom` (выбрать людей/группы) · `org` (всей компании). Кому видна встреча — тому видны видео/запись/расшифровка/отчёт (6 READ-поверхностей переведены на предикат `canView`). Управление встречей (rename/контролы/retry-ai/start/stop/delete/смена видимости) остаётся host-only. Граф знаний («второй мозг») НЕ затронут — отдельная подсистема. **Миграция БД ЕСТЬ** (аддитивная, авто). **1 новая ENV (kill-switch, default true).**
+>
+> ⚠ **Регистрировать в `apply-prod-deploy.ts` STEPS НЕ нужно** — это миграция схемы (`prisma migrate deploy`), не seed/patch/backfill.
+
+- **Шаг 1 — ENV (kill-switch, default true — действий владельца НЕ требует):** `MEETING_VISIBILITY_ENABLED` (`cfg.meetingVisibilityEnabled`, zBool default `true`). Действует «Кому видно». Аварийный откат: `=false` в `.env` + `docker compose up -d --force-recreate backend` → legacy owner-only (встречу видит только создатель). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260610130000_meeting_visibility`): `Meeting +visibilityScope VARCHAR(16) NOT NULL DEFAULT 'participants'`; `+ table MeetingAccessGrant` (грант person/group: `tenantId`/`meetingId`/`granteeType`/`granteeId`/`grantedById`/`createdAt`; FK `meetingId → Meeting ON DELETE CASCADE`; unique `(meetingId,granteeType,granteeId)` + индексы `(tenantId,meetingId)`/`(granteeType,granteeId)`). Аддитивна (ADD COLUMN с дефолтом + CREATE TABLE), без потери данных. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. Идемпотентна (повтор — no-op). **В STEPS агрегатора регистрировать НЕ нужно.**
+- **Шаг 11 — Docker rebuild** — обязателен (backend: `MeetingVisibilityService` (`canView`/`assertCanView`/`buildListWhere`), `KnowledgeAccessResolver.resolveDirectGroupIds` (новый read-only метод), новый `assertMeetingHost`, эндпоинты `GET/PATCH /meetings/:id/visibility`, новая PrismaClient-модель `meetingAccessGrant`; frontend: контрол «Кому видно» на странице встречи + при создании): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): Swagger `/api/docs` → `GET /api/v1/meetings/:id/visibility` + `PATCH /api/v1/meetings/:id/visibility` (host-only). На странице встречи (хост) виден чип «Кому видно: …» и диалог редактирования; участник встречи видит её в списке/деталях/отчёте/записи; не-участник при дефолте `participants` без гранта → `403`.
+
+Прод-инструкция кратко: `docker compose up -d --build backend frontend` (миграция применится сама) + при желании выставить `MEETING_VISIBILITY_ENABLED=true` в `.env` (это и так дефолт). Все прочие команды — через `docker compose exec backend ...`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🛟 2026-06-09 — Встроенная служба поддержки + закрытый контур + самообучающийся клон (Ф1–Ф4)
+
+> Контракт: `plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md` (Фазы 1–4). Коммиты Ф1 `356cc032`+`d8ffbdf3` · Ф2 `4cb444ed` · Ф3 `ae0fca83`+`24bf7e0f`+`9d396cd4` · Ф4 `14c4e6dc`.
+>
+> **Зачем для прода:** клиент Коры из своего кабинета задаёт вопрос → обращение приходит в единый вендор-деск → сотрудник отвечает → ответы копятся в закрытый контур памяти → из него собирается клон техподдержки (черновики человеку, обучение на правках, ночной куратор контура). Ф5 (авто-отправка клиенту) и Ф6 (тон-адаптер) — **отложены**. **Миграции БД ЕСТЬ** (3 шт., аддитивные, авто). **Новые ENV ЕСТЬ** (2 kill-switch, default ON). **Деск НЕ заработает, пока владелец не задаст AdminSetting `support.vendor_org_id` + entitlement `feature.support_desk` для вендор-Org** (см. Шаг 1).
+
+- **Шаг 1 — ENV / AdminSetting / kill-switch / entitlement:**
+  - **ENV (2 kill-switch, default ON):** `SUPPORT_DESK_ENABLED` (приём обращений + деск; `false` → `POST /support/tickets` 503 `SUPPORT_DESK_DISABLED`), `SUPPORT_CURATOR_ENABLED` (ночной куратор контура; `false` → curator-cron no-op). Реестр — `docs/operations/feature-flags.md`.
+  - **Параметр владельца (обязателен для работы):** AdminSetting `support.vendor_org_id` = id вендор-Org. Пока пусто — все support-seed'ы no-op, приём 503. Засеивается code-fallback'ом нет — задаётся владельцем через админку.
+  - **Решение владельца (вендор-эксклюзив):** entitlement `feature.support_desk` включить ТОЛЬКО для вендор-Org через `OrgEntitlement.featureOverrides` (не продаётся, Р-3).
+  - **Крутилки (AdminSetting, засеиваются `seed-admin-setting-support.ts`, см. Шаг 7):** `support_critic_min_groundedness` (default 0.6, R-INV-5), `support_promote_min_csat` (default 4, гейт промоута R-INV-2).
+- **Шаг 4 — Prisma** — **обязательно, авто** (3 миграции, аддитивные, без потери данных, применяются `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260609120000_support_desk_phase1`: `Issue +` support-поля (`supportCustomerOrgId`/`supportCustomerUserId`/`supportCustomerContact` + `firstResponseDueAt`/`resolutionDueAt`/`firstRespondedAt`/`slaBreachedAt` + 2 индекса), `IssueComment +` `authorType`/`draftState`/`cloneConfidence`/`groundednessScore`, `+ table SupportSlaPolicy`, `+ table IssueRating`, `ALTER TYPE "KnowledgeGroupKind" ADD VALUE 'support'`.
+  - `20260609130000_support_draft_outcome`: `+ table SupportDraftOutcome` (пара черновик→финал + тип правки, обучающий сигнал).
+  - `20260609140000_support_curator_action`: `+ table SupportCuratorAction` (аудит решений ночного куратора).
+  - ⚠ `ALTER TYPE ... ADD VALUE 'support'` **не-транзакционна** (нормально для enum-добавления; `migrate deploy` исполняет её отдельным statement'ом, повторно — no-op). Прочее — ADD COLUMN / CREATE TABLE. Идемпотентно.
+- **Шаг 7 — Seed** — **4 новых, идемпотентных, ВСЕ в `apply-prod-deploy.ts` STEPS** (прогон агрегатора их подхватит). Все **no-op без AdminSetting `support.vendor_org_id`** где применимо:
+  - `scripts/seed-support-project.ts` (`phase:'seed-base'`) — Support-проект `SUP` (`systemGenerated`, скрыт из обычного списка) + 6 states (Новое/В работе/Ждёт клиента/Решено/Закрыто/Спам) + `SupportSlaPolicy`. No-op без `support.vendor_org_id`.
+  - `scripts/seed-support-contour-group.ts` (`phase:'seed-base'`) — синглтон `KnowledgeGroup(kind='support', isClosed)` per вендор-Org. No-op без `support.vendor_org_id`.
+  - `scripts/seed-admin-setting-support.ts` (`phase:'seed-base'`) — `support_critic_min_groundedness=0.6` + `support_promote_min_csat=4` (защищает admin-edited).
+  - `scripts/seed-llm-task-routes-support.ts` (`phase:'seed-llm-routes'`, alias `'support'`) — 4 новых taskType: `support-clone-draft` + `support-contour-curate` → DeepSeek V4 Pro; `support-answer-critic` + `support-edit-classify` → `deepseek-v4-flash` (Б9). Fallback — `DEFAULT_FALLBACK_CHAIN`.
+  - Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: новый модуль `support` (intake/desk/access/sla/contour/clone/critic/edit-classify/learning/curator-сервисы, 3 контроллера, `SupportAccessGuard`/`SupportAdminGuard`, `SupportSlaCron` `@Cron('*/5 * * * *')` + `SupportCuratorCron` `@Cron('0 3 * * *')`), безусловный pre-filter контура `contourGroupId` в `ChatV2RetrievalService.collectPool`, 4 новых taskType, 2 новых ENV; frontend: `SupportWidget` (плавающая кнопка+форма) + `/support/my-tickets` + `/support/desk` + пункты сайдбара): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - **СНАЧАЛА владелец задаёт `support.vendor_org_id` + entitlement `feature.support_desk` для вендор-Org**, затем повторный прогон seed-агрегатора (`--mode update`) — без этого деск 503.
+  - Новые cron: в логах backend `support-sla.cron`/`support-curator.cron` проходят без ERROR (SLA — каждые 5 мин ставит `slaBreachedAt` просроченным; curator — в 03:00 за debate-гейтом, только soft-archive).
+  - Новые taskType: `/admin/ai-models` → `support-clone-draft` (deepseek-v4-pro), `support-answer-critic`/`support-edit-classify` (deepseek-v4-flash), `support-contour-curate` (deepseek-v4-pro).
+  - Новые REST: Swagger `/api/docs` → раздел `/api/v1/support/*` (`/tickets`, `/my-tickets`, `/me`, `/desk/*`, `/admin/agents`, `/admin/contour/seed`).
+  - Изоляция контура: `POST /support/tickets` от пользователя другой Org создаёт `Issue` в вендор-Org (`supportCustomerOrgId` = его tenant); черновик клона цитирует ТОЛЬКО блоки support-контура.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔔 2026-06-08 — TZ-1 Фаза 0: daily-value foundation (ТГ-доставка + бюджет + кампания привязки)
 
 > Контракт: `plans/tz/2026-06-08-agents-daily-value-engine.md` (Фаза 0). Ветка `feature/2026-06-08-tz-batch-tables-clones-shipon`.
@@ -1952,6 +2087,24 @@ docker compose run --rm smoke
 
 ---
 
+### 🧭 2026-06-10 — Query Understanding Волна 1 (понимание структуры запроса + recall-safe фильтр chat-v2)
+
+> Контракт: `plans/tz/2026-06-10-query-understanding-tier0-tier1.md` (Tier 0 + Tier 1).
+>
+> **Зачем для прода:** разговорный AI-чат начинает понимать структуру запроса (время/тип/сущность/тема/«я») и применять её как recall-safe структурный фильтр поверх графа — вместо чистого смыслового top-K. «Что решали по маркетингу на этой неделе» больше не возвращает решение трёхмесячной давности по другому отделу. **Новых обязательных ENV нет** (kill-switch — code-default ON). **Миграции БД нет.**
+
+- **Шаг 1 — ENV / kill-switch** — `QUERY_PLAN_EXTRACTION_ENABLED` (bool, **default true**, kill-switch ON) — извлечение структуры запроса (dialog-extract-plan) + структурный фильтр chat-v2. OFF (`=false` в `.env` + рестарт) → чат работает как раньше (чистый смысловой top-K). ENV-fallback опционален (code-default ON).
+- **Шаг 7 — Seed** — `docker compose exec backend bun run scripts/seed-llm-task-routes-dialog-extract-plan.ts` — маршрут `dialog-extract-plan` на `deepseek-v4-flash` (Query Understanding Волна 1, Р9); идемпотентен; **уже в `apply-prod-deploy.ts` STEPS** (`--mode update` его покрывает): `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 12 — Smoke** (после выката):
+  - Новый taskType `dialog-extract-plan` виден в `/admin/ai-models` (primary deepseek-v4-flash) и отвечает.
+  - Флагманский запрос «что решали по маркетингу на этой неделе» фильтрует: `curl -s localhost:3000/metrics | grep z_query_plan_retrieval_filtered_total` — `{filtered="yes"}` растёт.
+  - Пустое окно (заведомо «нет данных» период) → честный ответ «в памяти нет» (метрика `z_query_plan_empty_pool_total{result="empty"}` растёт), а не правдоподобное неверное число.
+  - Метрики присутствуют: `curl -s localhost:3000/metrics | grep -E 'z_query_plan_extraction_total|z_query_plan_retrieval_filtered_total|z_query_plan_empty_pool_total'`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ## 🚀 Полный чек-лист обновления (Сценарий A: данные сохраняем)
 
 > Стандартный workflow обновления работающего прода. Если БД жалко потерять — это твой путь.
@@ -2224,6 +2377,14 @@ CLONE_V2_ENABLED=false                   # ТОЛЬКО ПОСЛЕ Шага 6.10
 SPECIALISTS_COMBINED_ENABLED=false
 COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM=false
 DATACLASS_POLICY_ENFORCEMENT=shadow      # off | shadow | enforce — на проде сначала shadow
+
+# === Волна 4 B0 (2026-06-10) — client-meeting-split (kill-switch, default ON) ===
+# Нейтральный ПРОТОКОЛ встречи наружу для клиента (free-text Markdown) для
+# клиентских типов (sales/customer_success/partner/custdev). analyze.worker
+# мержит результат в AiResult.structuredData.client_protocol_md. Граница D6:
+# ноль внутренних оценок. Default ON — действий владельца не требует; рубильник
+# для экстренного выключения. AdminSetting-зеркало: aiFeatures.clientProtocolEnabled.
+CLIENT_PROTOCOL_ENABLED=true
 
 # === Concierge → dialog-layer integration (ТЗ 2026-05-27) ===
 # При CONCIERGE_DIALOG_LAYER_ENABLED=true главный AI-агент использует

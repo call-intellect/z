@@ -83,6 +83,12 @@ const STEPS: Step[] = [
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   { phase: 'seed-base', script: 'scripts/seed-knowledge-groups.ts', hint: 'группы доступа: Руководство/Совет + department-группы + leadership-членство (Ф2 knowledge-access)' },
+  // ТЗ 2026-06-09 support-desk Ф1 — Support-проект (states+SLA) + закрытый
+  // контур поддержки. Оба no-op без AdminSetting `support.vendor_org_id`
+  // (параметр владельца). Идемпотентны.
+  { phase: 'seed-base', script: 'scripts/seed-support-project.ts', hint: 'Support-проект SUP + 6 states + SupportSlaPolicy (TZ support-desk Ф1); no-op без support.vendor_org_id' },
+  { phase: 'seed-base', script: 'scripts/seed-support-contour-group.ts', hint: 'закрытый контур поддержки KnowledgeGroup(kind=support) (TZ support-desk); no-op без support.vendor_org_id' },
+  { phase: 'seed-base', script: 'scripts/seed-admin-setting-support.ts', hint: 'support_critic_min_groundedness=0.6 (R-INV-5) + support_promote_min_csat=4 (TZ support-desk Ф3 гейт промоута R-INV-2)' },
 
   // === LLM TaskRoutes для всех новых taskType (35 скриптов) ===
   ...[
@@ -98,6 +104,8 @@ const STEPS: Step[] = [
     'tracker-phase3', 'tracker-phase3-c', 'tracker-phase4-telegram',
     'feedback-cluster', 'clone-v2', 'specialists-combined',
     'dialog-layer', 'temporal', 'kie-grsai-ab',
+    // Query Understanding Волна 1 — extract-plan route (deepseek-v4-flash primary, Р9)
+    'dialog-extract-plan',
     // Sprints (2026-05-27) — Specialist 3-13 (Помощник по спринтам).
     'sprints',
     // Agents v2 (2026-05-30) — Фаза 0.1 probe-response-classify;
@@ -122,6 +130,14 @@ const STEPS: Step[] = [
     // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
     // поедет по аварийному DEFAULT_FALLBACK_CHAIN.
     'goal-task-link',
+    // Support desk Ф3 (TZ 2026-06-09 support-desk-clone) — клон техподдержки:
+    // support-clone-draft (Pro capable) + support-answer-critic /
+    // support-edit-classify (flash cheap judge, Б9).
+    'support',
+    // Волна 6 Стадия C, A7 (2026-06-10) — compile-org-document (агент-компилятор
+    // contentMd орг-документа; capable + tool-use). Без маршрута поедет по
+    // DEFAULT_FALLBACK_CHAIN; явный seed фиксирует deepseek-v4-pro primary.
+    'compile-org-document',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -174,6 +190,11 @@ const STEPS: Step[] = [
   { phase: 'patch', script: 'scripts/patch-prompt-role-profile-build-fase0d.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-chat-v2-to-pro.ts', skipBootstrap: true },
   { phase: 'patch', script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts', args: ['--update-existing'], skipBootstrap: true },
+  // 2026-06-10 cabinet §5 (Р-5) — включить анализ для уже подключённых ChatBox-
+  // интеграций (раньше analysisEnabled=false по умолчанию → чаты не анализировались).
+  // Идемпотентен (повтор → 0). Дефолт dry-run → нужен --apply. На чистом старте
+  // интеграций нет → skipBootstrap. Cron analyze-sweep сам подберёт их сессии.
+  { phase: 'patch', script: 'scripts/patch-enable-chatbox-analysis.ts', args: ['--apply'], hint: 'ChatBox analysisEnabled=true для подключённых (§5)', skipBootstrap: true },
   // 2026-06-03 — унификация дешёвой модели DeepSeek: все LlmTaskRoute с legacy
   // `deepseek-chat` → `deepseek-v4-flash` (DeepSeek-V4). Идемпотентен (skip
   // editedByAdmin; повторный прогон = 0 кандидатов). На чистом старте сиды уже
@@ -332,6 +353,16 @@ const STEPS: Step[] = [
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.
   { phase: 'backfill', script: 'scripts/backfill-default-board.ts', hint: 'default Board + issues.boardId backfill', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-system-generated-projects.ts', hint: 'пометить org-контейнеры «Спринт компании» systemGenerated=true (A6)', skipBootstrap: true },
+  // 2026-06-10 Волна 6 A10 — переклассификация single-role Process → Instruction
+  // (first-class «Инструкция»). Идемпотентен (skip по tenantId+name), dry-run по
+  // умолчанию → нужен `--apply`. На чистом старте инструкций нет → skipBootstrap.
+  { phase: 'backfill', script: 'scripts/backfill-reclassify-instructions.ts', args: ['--apply'], hint: 'Process scope=role:* → Instruction (A10)', skipBootstrap: true },
+  // 2026-06-10 — слияние дублей Person по email внутри Org (раздел «Команда»:
+  // аккаунтная ⊕ ручная карточка на один email). Дефолт dry-run → нужен --apply.
+  // Идемпотентен (повтор → нет групп >1). По смыслу идёт ДО установки partial
+  // unique index persons_tenant_email_active_uniq (postgres-init self-skip
+  // пропустит индекс, пока дубли есть; индекс встанет на следующем прогоне).
+  { phase: 'backfill', script: 'scripts/backfill-merge-duplicate-persons.ts', args: ['--apply'], hint: 'Слить дубли Person по email (Команда)', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-onboarding-setup-completed.ts',

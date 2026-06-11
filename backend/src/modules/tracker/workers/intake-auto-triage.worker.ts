@@ -15,6 +15,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
@@ -72,7 +77,7 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
 - "suggestedLabels": массив меток (короткие slug'и) — может быть пустой.
 - "confidence": число 0..1, насколько ты уверен что задача чётко сформулирована и атрибуция верна.
 
-Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.92 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста.`;
+Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.75 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста (это порог авто-создания задачи).`;
 
 /**
  * Wave 3 / Tracker Phase 3 part B (2026-05-24) — IntakeAutoTriageWorker.
@@ -82,9 +87,10 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
  *   2. Загружает контекст организации (projects, people, goals, recent
  *      issues для паттернов).
  *   3. LLM `intake-auto-triage` → структурированный suggestion.
- *   4. Если confidence ≥ 0.92 + source='meeting' + suggestedAssigneeId
- *      разрешён через Person → создаёт Issue автоматически, помечает
- *      IntakeIssue.status='accepted', triagedAt=now, createdIssueId.
+ *   4. Если confidence ≥ tracker.autoAcceptConfidenceThreshold (дефолт 0.75) +
+ *      source='meeting' + suggestedAssigneeId разрешён через Person → создаёт
+ *      Issue автоматически, помечает IntakeIssue.status='accepted',
+ *      triagedAt=now, createdIssueId.
  *   5. Иначе — обновляет suggested* поля (status остаётся 'pending').
  *
  * Все шаги в одном методе `process` ради читаемости. На любую ошибку LLM —
@@ -212,13 +218,29 @@ export class IntakeAutoTriageWorker
       }),
     ]);
 
-    const userMessage = this.buildUserMessage({
+    const rawUserMessage = this.buildUserMessage({
       intake,
       projects,
       people: people.map((p) => p.name),
       goals: goals.map((g) => g.name),
       recentIssues,
     });
+
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. rawContent
+    // из внешнего канала идёт в LLM в маркерах данных, system — с
+    // INJECTION_GUARD_NOTE. Observability — sanitize по самому rawContent
+    // (source='chat'), без отклонения текста.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(intake.rawContent);
+      for (const pattern of sanitized.reasons) {
+        this.metrics?.incPromptInjectionAttempt({ source: 'chat', pattern });
+      }
+    }
+    const systemPrompt = guardOn
+      ? withInjectionGuard(INTAKE_AUTO_TRIAGE_SYSTEM)
+      : INTAKE_AUTO_TRIAGE_SYSTEM;
+    const userMessage = guardOn ? wrapUserData(rawUserMessage) : rawUserMessage;
 
     // 3. LLM-вызов с устойчивым разбором (ТЗ B Фаза 4): tryParseJson + ретрай×2
     //    + validate-callback (router уйдёт на secondary на битом JSON, как
@@ -231,7 +253,7 @@ export class IntakeAutoTriageWorker
         const result = await this.llm.call({
           taskType: 'intake-auto-triage',
           tenantId,
-          systemPrompt: INTAKE_AUTO_TRIAGE_SYSTEM,
+          systemPrompt,
           userMessage,
           responseFormat: {
             type: 'json_schema',
@@ -465,6 +487,23 @@ export class IntakeAutoTriageWorker
         confidence: new Prisma.Decimal(args.confidence),
       },
     });
+  }
+
+  /**
+   * E2 (мастер-ТЗ Волна 1, Кластер A) — мастер-флаг защиты от
+   * prompt-injection. IntakeIssue.rawContent приходит из ВНЕШНИХ каналов
+   * (telegram/in_app/meeting) и может содержать инъекцию, которая ложно
+   * завышает confidence/atтрибуцию и через auto-accept создаёт реальный
+   * Issue. Поэтому user-блок обязан идти в LLM обёрнутым в маркеры данных.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
   }
 
   /**

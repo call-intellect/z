@@ -36,12 +36,18 @@ import { PromptResolverService } from '../services/prompt-resolver.service';
 import type { ResolvedPrompt } from '../services/prompt-resolver.types';
 import {
   ROOM_CHAT_SYSTEM_NOTE,
+  applyInputGuards,
   formatChatTime,
   withAsrNote,
   withInjectionGuard,
   withOrgContextNote,
   wrapUserData,
 } from '../services/prompts/common';
+// Волна 4 B0 — нейтральный протокол встречи наружу для клиента (free-text).
+import {
+  CLIENT_PROTOCOL_PROMPT_NAME,
+  buildClientProtocolPrompt,
+} from '../services/prompts/client-meeting-split.prompt';
 import type {
   DialogTurn,
   OrgContextForPrompt,
@@ -56,19 +62,12 @@ import {
 import {
   getPromptForType,
   typeNeedsFollowUp,
-  typeNeedsTasks,
 } from '../services/prompts/index';
 import { sanitizeCustomPrompt } from '../services/prompts/sanitize-custom-prompt';
 import {
   SUMMARY_TOOL_NAME,
   buildSummaryPrompt,
 } from '../services/prompts/system-summary';
-import {
-  TASKS_SCHEMA,
-  TASKS_TOOL,
-  TASKS_TOOL_NAME,
-  buildTasksPrompt,
-} from '../services/prompts/tasks';
 
 /**
  * Worker стадии `ai.analyze`.
@@ -87,6 +86,28 @@ import {
  *
  * Concurrency: 2 (рейт-лимит Anthropic-комплита).
  */
+
+/**
+ * retest3 Ф5 #51 — per-agent модель главного отчёта. summary/report-by-type/
+ * follow-up идут на capable pro-модель DeepSeek; tasks/custom — на flash-default
+ * (model не задаётся). В minimax-ветке `LlmFallbackService` это имя сбрасывается
+ * (D1) — поэтому безопасно проставлять всегда.
+ */
+const MAIN_REPORT_MODEL = 'deepseek-v4-pro';
+
+/**
+ * Волна 4 B0 — клиентские типы встреч, для которых генерится нейтральный
+ * ПРОТОКОЛ наружу (`client-meeting-split`). Внутренняя аналитика остаётся в
+ * отчёте по типу (`extract_sales` и т.п.); протокол — безопасный документ для
+ * отправки клиенту, без внутренних оценок (граница D6).
+ */
+const CLIENT_PROTOCOL_TYPES = new Set<string>([
+  'sales',
+  'customer_success',
+  'partner',
+  'custdev',
+]);
+
 @Injectable()
 export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AnalyzeWorker.name);
@@ -297,6 +318,55 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         model: data.model,
         seconds: (Date.now() - reportStarted) / 1000,
       });
+
+      // 5a. Волна 4 B0 — нейтральный ПРОТОКОЛ встречи наружу для клиента.
+      //     Только для клиентских типов и только в структурном пути (custom-
+      //     prompt — отдельный сценарий, протокол к нему не относится). Результат
+      //     (free-text Markdown) мержим в structuredData.client_protocol_md,
+      //     НЕ перезатирая основной отчёт. Best-effort: фича за kill-switch ON,
+      //     при ошибке/выключенном флаге — пропуск, основной отчёт не валится.
+      if (
+        CLIENT_PROTOCOL_TYPES.has(meeting.type) &&
+        this.isClientProtocolEnabled()
+      ) {
+        const protocolStarted = Date.now();
+        try {
+          const protocolText = await this.runClientProtocol({
+            meeting,
+            dialog,
+            roomChat,
+            jobId: job.id ?? null,
+          });
+          if (protocolText && protocolText.trim().length > 0) {
+            const existing =
+              (aiResult.structuredData as Prisma.JsonObject | null) ?? {};
+            aiResult = await this.prisma.aiResult.update({
+              where: { id: aiResult.id },
+              data: {
+                structuredData: {
+                  ...existing,
+                  client_protocol_md: protocolText,
+                } as Prisma.InputJsonValue,
+              },
+            });
+          }
+          this.metrics.observeAiPipelineDuration({
+            stage: 'analyze.client_protocol',
+            type: meeting.type,
+            model: MAIN_REPORT_MODEL,
+            seconds: (Date.now() - protocolStarted) / 1000,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              meetingId: meeting.id,
+              type: meeting.type,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'analyze: client-meeting-split упал (best-effort) — пропуск протокола, основной отчёт не затронут',
+          );
+        }
+      }
     }
 
     // 6. follow-up.
@@ -323,26 +393,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    // 7. tasks.
-    if (typeNeedsTasks(meeting.type)) {
-      const tasksStarted = Date.now();
-      const tasks = await this.runTasks({
-        meeting,
-        dialog,
-        roomChat,
-        jobId: job.id ?? null,
-      });
-      aiResult = await this.prisma.aiResult.update({
-        where: { id: aiResult.id },
-        data: { tasks: (tasks ?? []) as Prisma.InputJsonValue },
-      });
-      this.metrics.observeAiPipelineDuration({
-        stage: 'analyze.tasks',
-        type: meeting.type,
-        model: 'mixed',
-        seconds: (Date.now() - tasksStarted) / 1000,
-      });
-    }
+    // 7. tasks — снято 2026-06-10. Раньше analyze писал AiResult.tasks (мёртвое
+    //    поле: фронт читает Task-модель, заполняемую tasks-extract.worker'ом).
+    //    Блок и private runTasks удалены вместе с v2-стеком; колонка
+    //    AiResult.tasks остаётся в БД (миграция не делалась), но больше не пишется.
 
     // 8. transition → ai_ready.
     await this.meetings.transitionStatus(meetingId, 'ai_ready', {
@@ -581,10 +635,52 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       agentType: 'summary',
       promptName: SUMMARY_TOOL_NAME,
       input: {
+        model: MAIN_REPORT_MODEL,
         system: { text: systemText, cacheControl: 'ephemeral' },
         user: userText,
       },
     });
+  }
+
+  /**
+   * Волна 4 B0 — нейтральный ПРОТОКОЛ встречи наружу для клиента (free-text
+   * Markdown). Мирроль `runSummary`: free-text (без tool), на той же capable
+   * MAIN_REPORT_MODEL. Входные guard'ы (E1/E2) — через единый `applyInputGuards`
+   * (injection + asr), kill-switch — общий `promptInjectionGuardEnabled`.
+   * Возвращает строку Markdown; caller мержит её в structuredData.client_protocol_md.
+   */
+  private async runClientProtocol(args: {
+    meeting: Meeting;
+    dialog: DialogTurn[];
+    roomChat?: RoomChatMessage[];
+    jobId: string | null;
+  }): Promise<string | null> {
+    const prompt = buildClientProtocolPrompt({
+      meeting: { ...args.meeting },
+      dialog: args.dialog,
+      roomChat: args.roomChat,
+    });
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    const { system, user } = applyInputGuards(prompt.system, prompt.user, {
+      enabled: guardOn,
+      injection: true,
+      asr: true,
+      meetingDateIso: args.meeting.startedAt
+        ? args.meeting.startedAt.toISOString().slice(0, 10)
+        : null,
+    });
+    const out = await this.callLlm({
+      meeting: args.meeting,
+      jobId: args.jobId,
+      agentType: 'client_protocol',
+      promptName: CLIENT_PROTOCOL_PROMPT_NAME,
+      input: {
+        model: MAIN_REPORT_MODEL,
+        system: { text: system, cacheControl: 'ephemeral' },
+        user,
+      },
+    });
+    return out.text ?? null;
   }
 
   private async runCustomPrompt(args: {
@@ -695,6 +791,21 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Волна 4 B0 — kill-switch агента `client-meeting-split` (нейтральный протокол
+   * наружу для клиента). Defensive (как `isSummaryAgentEnabled`): в старых
+   * unit-тестах cfg инжектится без `clientProtocolEnabled` → возвращаем true
+   * (дефолт ВКЛ). При явном false — протокол не генерится (экстренное выключение).
+   */
+  private isClientProtocolEnabled(): boolean {
+    try {
+      const features = this.cfg.aiFeatures as { clientProtocolEnabled?: boolean };
+      return features.clientProtocolEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
   private async runStructuredReport(args: {
     meeting: Meeting;
     dialog: DialogTurn[];
@@ -768,6 +879,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType: 'report-by-type',
         promptName: expectedToolName,
         input: {
+          model: MAIN_REPORT_MODEL,
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user: userExtra,
           tools: [tool],
@@ -866,32 +978,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async runTasks(args: {
-    meeting: Meeting;
-    dialog: DialogTurn[];
-    roomChat?: RoomChatMessage[];
-    jobId: string | null;
-  }): Promise<Array<{ title: string; assignee: string | null; dueDate: string | null }> | null> {
-    const prompt = buildTasksPrompt({
-      meeting: { ...args.meeting },
-      dialog: args.dialog,
-      roomChat: args.roomChat,
-    });
-    const result = await this.callStructured(
-      args,
-      prompt,
-      TASKS_TOOL,
-      TASKS_TOOL_NAME,
-      TASKS_SCHEMA,
-      'tasks',
-    );
-    return result?.tasks ?? null;
-  }
-
   /**
-   * Структурный вызов с retry на invalid schema, для follow-up и tasks.
+   * Структурный вызов с retry на invalid schema. Используется follow-up.
    * Не падает фатально — на устойчивую ошибку возвращает null
-   * (follow-up/tasks — не критичные поля).
+   * (follow-up — не критичное поле).
    */
   private async callStructured<T>(
     args: { meeting: Meeting; jobId: string | null },
@@ -899,16 +989,12 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     tool: LlmTool,
     toolName: string,
     schema: { safeParse: (v: unknown) => { success: boolean; data?: T } },
-    agentType: 'follow-up' | 'tasks',
+    agentType: 'follow-up',
   ): Promise<T | null> {
     // ТЗ 2026-05-24 §4 (F1) — обернуть system + user; retry-suffix снаружи маркеров.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(prompt.system) : prompt.system;
-    // ТЗ-4 Ф2 — ASR-нота только для tasks (follow-up не извлекает факты из
-    // сырого ASR — ему нота не нужна). Дописывается СНАРУЖИ guard'а самым
-    // последним блоком system (cache-friendly).
-    const wrappedSystem =
-      agentType === 'tasks' ? withAsrNote(guardedSystem) : guardedSystem;
+    const wrappedSystem = guardedSystem;
     const wrappedUser = guardOn ? wrapUserData(prompt.user) : prompt.user;
     for (let attempt = 0; attempt < 2; attempt++) {
       const out = await this.callLlm({
@@ -917,6 +1003,8 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         agentType,
         promptName: toolName,
         input: {
+          // follow-up — на pro-модели.
+          model: MAIN_REPORT_MODEL,
           system: { text: wrappedSystem, cacheControl: 'ephemeral' },
           user:
             attempt === 0
@@ -943,7 +1031,13 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private async callLlm(args: {
     meeting: Meeting;
     jobId: string | null;
-    agentType: 'summary' | 'report-by-type' | 'follow-up' | 'tasks' | 'custom';
+    agentType:
+      | 'summary'
+      | 'report-by-type'
+      | 'follow-up'
+      | 'tasks'
+      | 'custom'
+      | 'client_protocol';
     promptName: string;
     input: Parameters<LlmFallbackService['complete']>[0];
   }): Promise<LlmCompleteOutput> {

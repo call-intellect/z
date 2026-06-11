@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import { LlmRouterService } from './llm-router.service';
-import type { DialogTurn } from './prompts/common';
+import { applyInputGuards, type DialogTurn } from './prompts/common';
 import type { AiParticipantContext } from './prompts/participant-context';
 import {
   type TaskExtracted,
@@ -71,16 +71,24 @@ export class TaskExtractionService {
     );
     const minConfidence =
       input.minConfidence ?? TaskExtractionService.DEFAULT_MIN_CONFIDENCE;
+    // A2-AI: вход — сырой транскрипт встречи. Оборачиваем user в маркеры
+    // данных + ASR-нота. Сервис без TypedConfigService — глобальный kill-switch
+    // здесь не гейтит (enabled по умолчанию true). Делаем один раз ДО цикла,
+    // чтобы маркеры обрамляли только транскрипт, а ретрай-добавка шла снаружи.
+    const guarded = applyInputGuards(prompt.system, prompt.user, {
+      injection: true,
+      asr: true,
+    });
 
     let lastError: unknown = null;
     for (let attempt = 0; attempt < TaskExtractionService.MAX_RETRIES; attempt++) {
       const userMessage =
         attempt === 0
-          ? prompt.user
-          : `${prompt.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"tasks":[...]} без markdown.`;
+          ? guarded.user
+          : `${guarded.user}\n\nПопытка ${attempt + 1}: предыдущий ответ не был валидным JSON. Верни ТОЛЬКО JSON-объект {"tasks":[...]} без markdown.`;
       const result = await this.router.call({
         taskType: TASKS_STRUCTURED_TASK_TYPE,
-        systemPrompt: prompt.system,
+        systemPrompt: guarded.system,
         userMessage,
         tenantId: input.tenantId,
         meetingId: input.meetingId,

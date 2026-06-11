@@ -15,6 +15,7 @@ import type { ConversationalLinkCodeService } from '../../link-code.service';
 
 
 import type { TelegramApiClient } from './telegram-api-client';
+import type { TelegramBotMessageHandler } from './telegram-bot-message.handler';
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
 
@@ -57,7 +58,18 @@ function makeAdapter(opts: {
   voiceEnabled?: boolean;
   documentEnabled?: boolean;
   intentClassifierEnabled?: boolean;
-  classifyIntent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
+  classifyIntent?:
+    | 'factual'
+    | 'exploratory'
+    | 'analytical'
+    | 'clone_roleplay'
+    | 'daily_plan_morning'
+    | 'daily_report_evening'
+    | 'note'
+    | 'task'
+    | 'show_tasks';
+  classifyConfidence?: number;
+  withTaskHandler?: boolean;
   classifyThrows?: boolean;
   rateLimitCount?: number;
   // β-9 / Phase 6 — если undefined, AccountsService инжектится как @Optional
@@ -135,6 +147,7 @@ function makeAdapter(opts: {
       : vi.fn().mockResolvedValue({
           intent: opts.classifyIntent ?? 'factual',
           source: 'llm',
+          confidence: opts.classifyConfidence ?? null,
           durationSeconds: 0.1,
         }),
   } as unknown as QueryClassifierService;
@@ -158,6 +171,16 @@ function makeAdapter(opts: {
       }
     : undefined) as AccountsService | undefined;
 
+  const taskHandler = (
+    opts.withTaskHandler
+      ? {
+          tryHandleStructural: vi.fn().mockResolvedValue(false),
+          handleCreateTask: vi.fn().mockResolvedValue(undefined),
+          handleShowTasks: vi.fn().mockResolvedValue(undefined),
+        }
+      : undefined
+  ) as unknown as TelegramBotMessageHandler | undefined;
+
   const adapter = new TelegramBotChannelAdapter(
     registry,
     prisma,
@@ -170,7 +193,7 @@ function makeAdapter(opts: {
     documents,
     classifier,
     cfg,
-    undefined, // taskHandler @Optional
+    taskHandler,
     accounts,
   );
   return {
@@ -185,6 +208,7 @@ function makeAdapter(opts: {
     vox,
     documents,
     classifier,
+    taskHandler,
     accounts,
   };
 }
@@ -386,6 +410,152 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
       text: 'Просто заметка без знака вопроса',
       originChannelBindingId: 'binding-1',
     });
+  });
+
+  // ─────────── §2 гейт намерения: task / show_tasks ───────────
+
+  it('текст task (conf>=0.7): task-handler создаёт задачу, InboundMessage не возвращается', async () => {
+    mocks = makeAdapter({
+      classifyIntent: 'task',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    const update: TelegramUpdate = {
+      update_id: 50,
+      message: {
+        message_id: 50,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Поставь задачу: подготовить КП к пятнице',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org-1',
+        text: 'Поставь задачу: подготовить КП к пятнице',
+      }),
+    );
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+  });
+
+  it('текст show_tasks (conf>=0.7): читалка «мои задачи», InboundMessage не возвращается', async () => {
+    mocks = makeAdapter({
+      classifyIntent: 'show_tasks',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    const update: TelegramUpdate = {
+      update_id: 51,
+      message: {
+        message_id: 51,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'Какие у меня задачи?',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
+  });
+
+  it('текст show_tasks с conf<0.7: трактуется как вопрос (chat_query), не читалка', async () => {
+    mocks = makeAdapter({
+      classifyIntent: 'show_tasks',
+      classifyConfidence: 0.5,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    const update: TelegramUpdate = {
+      update_id: 52,
+      message: {
+        message_id: 52,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'задачи',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toMatchObject({ type: 'chat_query' });
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+  });
+
+  it('текст task с conf<0.7: падает в free_note (не создаёт задачу)', async () => {
+    mocks = makeAdapter({
+      classifyIntent: 'task',
+      classifyConfidence: 0.5,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    const update: TelegramUpdate = {
+      update_id: 53,
+      message: {
+        message_id: 53,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'надо бы что-то сделать наверное',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toMatchObject({ type: 'free_note' });
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
+  });
+
+  it('структурный спецслучай (tryHandleStructural=true): адаптер выходит, classify не зовётся', async () => {
+    mocks = makeAdapter({ withTaskHandler: true });
+    vi.mocked(mocks.taskHandler!.tryHandleStructural).mockResolvedValue(true);
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    const update: TelegramUpdate = {
+      update_id: 54,
+      message: {
+        message_id: 54,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        text: 'принял',
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel,
+    });
+    expect(result).toBeNull();
+    expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
   });
 
   // ─────────── voice ───────────

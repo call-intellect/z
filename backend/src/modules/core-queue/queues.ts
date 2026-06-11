@@ -34,18 +34,10 @@ export const CORE_QUEUE_NAMES = {
    */
   CARD_ROLLUP_V2: 'core.card-rollup-v2',
   /**
-   * Meeting-analyze-v2 (Фаза 5): Tasks-2.0/Chapters-2.0/Summary-2.0 поверх
-   * IdeaBlock'ов встречи. Один job обходит три extractor-сервиса параллельно
-   * и пишет в новые поля БД (Task.evidenceBlockIds, MeetingChapter.evidenceBlockIds,
-   * AiResult.summaryV2). Не перезаписывает legacy записи.
-   * Дебаунс ~2 мин по jobId=`meeting_analyze_v2_<meetingId>`.
-   */
-  MEETING_ANALYZE_V2: 'core.meeting-analyze-v2',
-  /**
    * Meeting-report-fast (ТЗ 2026-05-25, Фаза 2). Consumer —
    * `MeetingReportFastWorker`. Один LLM-вызов поверх СЫРОГО транскрипта
    * выдаёт chapters + tasks + summaryFast + qualityScore. Работает
-   * НЕЗАВИСИМО от block-ingest / meeting-analyze-v2.
+   * НЕЗАВИСИМО от block-ingest.
    *
    * Идемпотентность: jobId = `meeting_report_fast_<meetingId>` (опционально
    * добавляется producer'ом, фоновый cron в Фазе 4).
@@ -254,14 +246,6 @@ export interface CardRollupV2JobData {
   reason?: string;
   /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
   traceId?: string;
-}
-
-/**
- * Payload для job'а `core.meeting-analyze-v2`. Минимальный — только
- * `meetingId`, остальное (tenantId, blocks) consumer подтянет из БД.
- */
-export interface MeetingAnalyzeV2JobData {
-  meetingId: string;
 }
 
 /**

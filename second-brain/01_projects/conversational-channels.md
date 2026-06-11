@@ -336,6 +336,8 @@ type InboundMessage =
 4. `CheckinResponseHandler.onModuleInit` зарегистрировал handler через `subscribeInbound('daily_checkin_self', ...)` (Phase 5).
 5. Handler зовёт `processSelfInitiated()` → парсит rawText `CheckinParserService` → `DailyCheckInService.upsertFromParser({source:'self_initiated'})` → закрывает pending `checkin.prompt` notification через `markAsAnsweredByCheckin` → эмитит `checkin.created` → шлёт `checkin.ack` через `sendNotification` с `preferredChannelKinds=[originChannelKind]`.
 
+> **Чек-ин кормит граф знаний (2026-06-10).** Событие `checkin.created` (от любого пути — self-initiated или ответ на `checkin.prompt`) теперь, помимо sentiment-анализа, поднимает мост в knowledge-core: `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`) → `CheckinIngestService.ingestCheckin` → `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest. Завершённые чек-ины (план/отчёт) становятся источником графа, чтобы AI-чат компании отвечал «что делал сотрудник X на неделе». Best-effort, рядом и независимо с sentiment-воркером; kill-switch `CHECKIN_GRAPH_INGEST_ENABLED`. Детали — [[ai-jobs]] §«Ежедневный чек-ин — источник графа знаний», ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md).
+
 ### Новый event-type `checkin.ack`
 
 Payload schema в `event-payload.registry.ts`:

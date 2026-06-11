@@ -430,6 +430,12 @@ Response:
 Веса: `SEARCH_COSINE_WEIGHT=0.7`, `SEARCH_BM25_WEIGHT=0.3`. Reqs только
 `status='canonical'` и `embedding IS NOT NULL` (для cosine).
 
+### Структурный фильтр retrieval в chat-v2 (Query Understanding Волна 1, 2026-06-10)
+
+**Источник:** [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0+1). Карта фичи — [[../01_projects/chat-v2]] §«Query Understanding Волна 1».
+
+chat-v2 retrieval теперь умеет применять **recall-safe структурные фильтры** (дата по `IdeaBlockEvidence.sourceTimestamp` / `signalType` / entity / `themeBranch` через `ThemeIdeaBlock`+`Theme.branch` / bitemporal `validUntil IS NULL`) поверх смыслового сходства. Источник структуры — `QueryPlanExtractorService` (dialog-layer): один LLM-вызов `dialog-extract-plan` извлекает план запроса, период резолвится детерминированно (без date-библиотек), fail-open на любой ошибке. При наличии хотя бы одного фильтра `ChatV2RetrievalService.rankByStructuralFilter` делает **полный точный скан** WHERE-фильтрованного пула с `ORDER BY` вычисляемого cosine-score — НЕ HNSW-проба `embedding<=>qvec LIMIT` (та роняет recall на узком окне). Без фильтров путь прежний (без регрессии); пустой фильтрованный пул → честное «по заданным условиям ничего не нашлось» без LLM-синтеза. Kill-switch `QUERY_PLAN_EXTRACTION_ENABLED` (ON).
+
 Дополнительные эндпоинты:
 - `GET /api/v1/knowledge/blocks/:id` — деталка блока + evidence + entities;
   если `merged_into` — следуем по `mergedIntoId` один шаг до canonical.
@@ -716,6 +722,18 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 
 ### Выходной шлюз retrieval (Ф4)
 При `KNOWLEDGE_ACCESS_ENFORCEMENT='enforce'` финальный набор блоков фильтруется на **выходном шлюзе** `loadContextBlocks`/`loadContradictingBlocks` (chat-v2) + pre-filter в pool/SQL во всех поверхностях retrieval (chat/search/snapshot/graph/reasoning-chain/проекции/контекст клонов). Defense-in-depth: даже precomputed-путь и кэш перефильтровываются на шлюзе. При `off` выдача байт-в-байт текущая.
+
+## Источники графа (sourceType `RawEvent`)
+
+Граф знаний наполняется из нескольких каналов — каждый пишет `RawEvent` через `IngestService.ingest`, а `block-ingest.worker` обрабатывает их единообразно (источник прозрачен для пайплайна). Текущие `sourceType`:
+
+- `meeting` — видеовстреча (мост `MeetingIngestService.ingestMeeting`).
+- `chatbox` — сессия клиентского чата ChatBox (мост `ChatboxIngestService`, см. [[../01_projects/chatbox-integration]]).
+- `tracker_event` — события трекера задач (`TrackerAdapter`).
+- `conversational` — свободные заметки из каналов общения (free_note; `ConversationalIngestAdapter`, см. [[../01_projects/conversational-channels]]).
+- `daily_checkin` (2026-06-10) — ежедневный чек-ин сотрудника (план/отчёт) → `RawEvent` через `CheckinIngestService`, событийный мост по образцу chatbox (`@OnEvent('checkin.created')`, `dataClass='sensitive'`, идемпотентность по `checkInId`, kill-switch `CHECKIN_GRAPH_INGEST_ENABLED`). Детали — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
+
+Полный enum `SourceType` и контракт `RawEvent` — [[data-model]] §«Source / RawEvent».
 
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

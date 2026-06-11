@@ -15,7 +15,7 @@
  * useMyCloneAccess) → UiModel этого компонента.
  */
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { clonesApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
 import { useClones, useMyCloneAccess } from '@/hooks/useClones';
@@ -39,7 +39,7 @@ export function ClonesMarketplaceClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Раздел доступен только внутри Org."
+        description="Раздел доступен только внутри организации."
       />
     );
   }
@@ -119,7 +119,7 @@ function Content({ orgId }: { orgId: string }) {
       } else {
         toast.error('Не удалось отправить запрос.', {
           description:
-            err instanceof ApiError ? err.message : 'Попробуйте ещё раз.',
+            humanizeApiError(err, 'Попробуйте ещё раз.'),
         });
       }
     } finally {
@@ -134,7 +134,7 @@ function Content({ orgId }: { orgId: string }) {
       return <AdminForbidden />;
     }
     const message =
-      err instanceof ApiError ? err.message : 'Не удалось загрузить клонов.';
+      humanizeApiError(err, 'Не удалось загрузить клонов.');
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
         <Header total={0} />

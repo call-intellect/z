@@ -13,6 +13,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
+import { applyInputGuards } from '../ai/services/prompts/common';
 import { CardsService } from '../cards/cards.service';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import { EntitlementService } from '../entitlements/entitlement.service';
@@ -140,10 +141,21 @@ export class ChatService {
       question: input.message,
     });
 
+    // Анти-инъекция: userMessage = транскрипт встречи (ASR-фрагменты) + история
+    // диалога + вопрос пользователя — всё сырой пользовательский вход. Оборачиваем
+    // в маркеры данных + ASR-нота (поверх распознанной речи). Kill-switch —
+    // глобальный aiFeatures.promptInjectionGuardEnabled (дефолт ON).
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
+      enabled: guardOn,
+      injection: true,
+      asr: true,
+    });
+
     const result = await this.llm.call({
       taskType: 'chat',
-      systemPrompt: ctx.systemPrompt,
-      userMessage: ctx.userMessage,
+      systemPrompt: guarded.system,
+      userMessage: guarded.user,
       tenantId: meeting.tenantId,
       meetingId: meeting.id,
       userId: input.userId,
@@ -196,10 +208,21 @@ export class ChatService {
 
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
+
+    // Анти-инъекция: userMessage = найденные фрагменты транскриптов встреч
+    // (ASR) + вопрос пользователя — сырой пользовательский вход. Маркеры
+    // данных + ASR-нота. Kill-switch — глобальный aiFeatures.promptInjectionGuardEnabled.
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
+      enabled: guardOn,
+      injection: true,
+      asr: true,
+    });
+
     const result = await this.llm.call({
       taskType: 'chat',
-      systemPrompt: ctx.systemPrompt,
-      userMessage: ctx.userMessage,
+      systemPrompt: guarded.system,
+      userMessage: guarded.user,
       tenantId,
       userId: input.userId,
     });
@@ -282,10 +305,21 @@ export class ChatService {
 
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
+
+    // Анти-инъекция: userMessage = фрагменты транскриптов встреч карточки (ASR)
+    // + вопрос пользователя — сырой пользовательский вход. Маркеры данных +
+    // ASR-нота. Kill-switch — глобальный aiFeatures.promptInjectionGuardEnabled.
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
+      enabled: guardOn,
+      injection: true,
+      asr: true,
+    });
+
     const result = await this.llm.call({
       taskType: 'card-chat',
-      systemPrompt: ctx.systemPrompt,
-      userMessage: ctx.userMessage,
+      systemPrompt: guarded.system,
+      userMessage: guarded.user,
       tenantId,
       userId: input.userId,
       sourceRef: { type: 'card', id: input.cardId },

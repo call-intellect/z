@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Brain, CheckCircle2, Loader2, Send } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dumpApi } from '@/api/dump.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -57,7 +57,7 @@ export function DumpClient() {
       if (e instanceof ApiError && e.code === 'quota_exceeded') {
         toast.error('Лимит 30 мыслей в день. Попробуйте позже.');
       } else {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+        toast.error(humanizeApiError(e, 'Не удалось сохранить'));
       }
     } finally {
       setSubmitting(false);
@@ -76,7 +76,7 @@ export function DumpClient() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-          Эта страница доступна только в рамках Org. Создайте или присоединитесь к организации.
+          Эта страница доступна только в рамках организации. Создайте или присоединитесь к организации.
         </div>
       </div>
     );

@@ -512,6 +512,16 @@ const STEPS: Step[] = [
     hint: 'очистка ложных subject=менеджер от chatbox (cross-attribution)',
     skipBootstrap: true,
   },
+  // 2026-06-11 chatbox-tasks Ф5/Ф7 — проставить Task.sourceType='meeting' где
+  // пусто (safety no-op: колонка имеет @default("meeting"), миграция уже накатала
+  // всем существующим). Идемпотентен (WHERE sourceType=''). На чистом старте
+  // задач нет → skipBootstrap.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-task-source-type.ts',
+    hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

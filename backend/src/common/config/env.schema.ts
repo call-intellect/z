@@ -434,6 +434,25 @@ const AiFeatureFlagsSchema = z.object({
    * Аварийный рубильник: фича готова и выкатывается ON.
    */
   REGULATION_GATE_STRICT_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 chatbox-tasks Ф5 — kill-switch извлечения задач из переписки
+   * Чат-бокса. При `true` (default ON) закрытая сессия чата после моста в
+   * knowledge-core порождает `Task(sourceType='chatbox')` тем же разборщиком,
+   * что и встреча. При `false` — задачи из переписки не создаются (память/граф
+   * не трогаются). Аварийный рубильник: фича готова и выкатывается ON.
+   * AdminSetting-ключ `chatbox.taskExtraction.enabled` (ENV — fallback).
+   */
+  CHATBOX_TASK_EXTRACTION_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 chatbox-tasks Ф6 — kill-switch единого межисточникового
+   * дедупа задач. При `true` (default ON) кандидат-задача, совпавшая с уже
+   * открытой задачей tenant (из ЛЮБОГО источника), НЕ создаётся повторно —
+   * переписка привязывается к существующей задаче через `TaskSource`. При
+   * `false` — дедуп выключен, кандидаты создаются как новые задачи (non-lossy).
+   * Неотделим от Ф5 (Р-4). AdminSetting-ключ `tasks.crossSourceDedupe.enabled`
+   * (ENV — fallback). Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  TASKS_CROSS_SOURCE_DEDUPE_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */

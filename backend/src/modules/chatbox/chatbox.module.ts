@@ -15,6 +15,7 @@ import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncCron } from './chatbox-sync.cron';
 import { ChatboxSyncService } from './chatbox-sync.service';
 import { ChatboxWebhookController } from './chatbox-webhook.controller';
+import { CrossSourceTaskDedupeService } from './cross-source-task-dedupe.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
@@ -54,6 +55,10 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxIngestService,
     ChatboxAnalyzeQueueService,
     ChatboxAnalyzeCron,
+    // ТЗ 2026-06-11 chatbox-tasks Ф6 — единый межисточниковый дедуп задач
+    // (link vs create). Инжектится в ChatboxAnalyzeWorker (WorkersModule
+    // импортирует ChatboxModule → провайдер виден в DI).
+    CrossSourceTaskDedupeService,
   ],
   exports: [
     ChatboxApiClient,
@@ -63,6 +68,7 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxSyncQueueService,
     ChatboxIngestService,
     ChatboxAnalyzeQueueService,
+    CrossSourceTaskDedupeService,
   ],
 })
 export class ChatboxModule {}

@@ -709,6 +709,40 @@ export class TypedConfigService {
         'REGULATION_GATE_STRICT_ENABLED',
         true,
       ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф5 — kill-switch извлечения задач из
+       * переписки Чат-бокса (`chatbox-analyze.worker` после ingestSession).
+       * Default ON (Ship-On). AdminSetting `chatbox.taskExtraction.enabled` →
+       * ENV `CHATBOX_TASK_EXTRACTION_ENABLED` → default.
+       */
+      chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
+        'chatbox.taskExtraction.enabled',
+        'CHATBOX_TASK_EXTRACTION_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф6 — kill-switch межисточникового дедупа
+       * задач (`CrossSourceTaskDedupeService`). При false кандидат всегда
+       * создаётся как новая задача (non-lossy). Default ON (Ship-On).
+       * AdminSetting `tasks.crossSourceDedupe.enabled` → ENV
+       * `TASKS_CROSS_SOURCE_DEDUPE_ENABLED` → default.
+       */
+      tasksCrossSourceDedupeEnabled: this.resolveSync<boolean>(
+        'tasks.crossSourceDedupe.enabled',
+        'TASKS_CROSS_SOURCE_DEDUPE_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф6 — порог семантической близости задач
+       * для межисточникового дедупа (cosine). Серая зона = [threshold-0.07,
+       * threshold) → LLM-арбитр `task-dedupe`. Admin-editable (resolveSync:
+       * cacheMap → default; ENV не вводим — крутилка). Дефолт 0.85.
+       */
+      crossSourceDedupeThreshold: this.resolveSync<number>(
+        'tasks.cross_source_dedupe_threshold',
+        undefined,
+        0.85,
+      ),
     } as const;
   }
 

@@ -1764,6 +1764,12 @@ export class TypedConfigService {
         'PROCESS_MARKER_DETECT_ENABLED',
         true,
       ),
+      // ── TZ clone-method Э3.1 — CDM-интервью носителя через probe (kill-switch, ON) ──
+      cdmInterviewEnabled: this.resolveSync<boolean>(
+        'knowledge.cdmInterviewEnabled',
+        'CDM_INTERVIEW_ENABLED',
+        true,
+      ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',

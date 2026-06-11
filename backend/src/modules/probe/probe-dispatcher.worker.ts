@@ -287,6 +287,14 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const suggestedQuestion = this.toStringOrUndef(payload.suggestedQuestion);
     const suggestedActions = this.toStringArray(payload.suggestedActions);
 
+    // TZ clone-method Э3.1 — CDM-вопрос НЕ переформулировать: он уже построен
+    // LLM `cdm-case-interview` строго по методике критических решений
+    // (открытый, не наводящий). Прогон через probe-formulate может сделать
+    // его наводящим (подсказать «правильный» ответ) — отдаём КАК ЕСТЬ.
+    if (probe.reason === 'skill.cdm_interview' && suggestedQuestion) {
+      return { question: suggestedQuestion };
+    }
+
     // Probe Фаза 1 R3: fallback-вопрос больше НЕ берётся из сырого
     // humanizeProbeFallback(message) (показывал шаблон). Приоритет:
     //   1. suggestedQuestion — готовый человеческий вопрос от специалиста;

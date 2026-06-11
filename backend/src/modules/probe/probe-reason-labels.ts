@@ -55,6 +55,9 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   // skill.* (specialist-3-7)
   'skill.contradicting_traits': 'в профиле навыков есть противоречие',
   'skill.profile_starved': 'мало данных о навыках',
+  // TZ clone-method Э3.1 — CDM-интервью носителя (вопрос НЕ переформулируется
+  // LLM probe-formulate, ярлык нужен только для единообразия реестра).
+  'skill.cdm_interview': 'разбор реального кейса носителя роли',
   // regulation.* (specialist-3-1)
   'regulation.missing_owner': 'у регламента нет ответственного',
   'regulation.process_no_steps': 'у процесса не описаны шаги',
@@ -113,6 +116,8 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'strategic_misalignment_high': 'Как эта работа связана с вашей стратегией?',
   'skill.profile_starved': 'Расскажете, чем вы сейчас занимаетесь?',
   'skill.contradicting_traits': 'Уточните, пожалуйста, чем вы сейчас занимаетесь?',
+  'skill.cdm_interview':
+    'Расскажите про недавний рабочий случай, где пришлось выбирать: почему выбрали именно этот вариант и какие альтернативы отвергли?',
   'regulation.missing_owner': 'Кто отвечает за этот регламент?',
   'regulation.process_no_steps': 'Из каких шагов состоит этот процесс?',
   'regulation.stale': 'Этот регламент ещё актуален или его пора обновить?',

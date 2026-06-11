@@ -191,6 +191,11 @@ export type LlmTaskType =
   //   третий проход rebuild 3.7 пишет SkillTrait layer=process_marker,
   //   дешёвый — flash.
   | 'process-marker-detect'
+  // TZ clone-method Э3.1 (2026-06-12) — CDM-интервью носителя роли: по
+  //   свежему реальному кейсу (reasoning-цитатам) формулирует ОДИН открытый
+  //   не наводящий вопрос ретроспективного разбора (Critical Decision
+  //   Method); вопрос уходит носителю через probe. Редкий — capable.
+  | 'cdm-case-interview'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -685,6 +690,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'value-motivation-detect',
   // TZ clone-method Э2.1 — детектор маркеров процесса (clone-method Э2.1), дешёвый — flash
   'process-marker-detect',
+  // TZ clone-method Э3.1 — формулировка CDM-вопроса по кейсу (clone-method Э3.1), редкий — capable
+  'cdm-case-interview',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

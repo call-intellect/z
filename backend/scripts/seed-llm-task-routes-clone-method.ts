@@ -87,6 +87,24 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
     ],
   },
+  {
+    taskType: 'cdm-case-interview',
+    playbookSection:
+      '«clone-method Э3.1» — формулировка CDM-вопроса носителю по реальному кейсу (не наводящий вопрос — тонкая задача), вызов редкий — capable',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-pro',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
 ];
 
 interface SeedStats {

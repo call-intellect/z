@@ -114,6 +114,17 @@ export class SegmentBuilderService {
     if (report) {
       return report;
     }
+    // TZ clone-method Э3.1 — ответ на probe-уведомление
+    // `{ kind:'notification_response', questionText, response }`
+    // (см. ConversationalIngestAdapter.ingestNotificationResponse). До фикса
+    // payload падал в buildFallback и ВЕСЬ JSON (userId, eventType,
+    // respondsToNotificationId, объект response) уходил LLM как
+    // stringify-шум. Чиним класс: ВСЕ probe-ответы (не только CDM) идут
+    // чистым текстом «Вопрос Коры: … Ответ …».
+    const notificationResponse = this.tryGetNotificationResponseText(payload);
+    if (notificationResponse) {
+      return [{ startMs: 0, endMs: 0, speakers: [], text: notificationResponse }];
+    }
     return this.buildFallback(payload);
   }
 
@@ -186,6 +197,48 @@ export class SegmentBuilderService {
     const p = payload as { kind?: unknown; text?: unknown };
     if (p.kind !== 'free_note') return null;
     return typeof p.text === 'string' && p.text.trim().length > 0 ? p.text : null;
+  }
+
+  /**
+   * TZ clone-method Э3.1 — чистый текст из payload ответа на probe
+   * (`kind:'notification_response'`):
+   *   - текст ответа достаём из `payload.response` по каскаду ключей
+   *     ['text','response','body','answer'] (как ProbeResponseHandler.
+   *     extractResponseText); если response — строка, берём её;
+   *   - если есть `questionText` — склейка «Вопрос Коры: …\n\nОтвет …»
+   *     (вопрос даёт LLM контекст, без него ответ «да, согласен» бесполезен);
+   *   - пустой текст ответа → null (fallback на старое поведение).
+   */
+  private tryGetNotificationResponseText(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as {
+      kind?: unknown;
+      questionText?: unknown;
+      response?: unknown;
+    };
+    if (p.kind !== 'notification_response') return null;
+
+    let responseText: string | null = null;
+    if (typeof p.response === 'string' && p.response.trim().length > 0) {
+      responseText = p.response.trim();
+    } else if (typeof p.response === 'object' && p.response !== null) {
+      for (const key of ['text', 'response', 'body', 'answer'] as const) {
+        const v = (p.response as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.trim().length > 0) {
+          responseText = v.trim();
+          break;
+        }
+      }
+    }
+    if (!responseText) return null;
+
+    const questionText =
+      typeof p.questionText === 'string' && p.questionText.trim().length > 0
+        ? p.questionText.trim()
+        : null;
+    return questionText
+      ? `Вопрос Коры: ${questionText}\n\nОтвет сотрудника: ${responseText}`
+      : responseText;
   }
 
   // ─────────────────────────── meeting ─────────────────────────────────────

@@ -485,12 +485,13 @@ export class Specialist37Service {
         'specialist-3-7: rebuild завершён',
       );
 
-      // 7. Probe-events.
+      // 7. Probe-events (Э3.1 — entityId нужен CDM-интервью для выборки кейсов).
       await this.probes.checkAndEmitProbes({
         tenantId: profile.tenantId,
         profileId: profile.id,
         personId: profile.person.id,
         personName: profile.person.name,
+        entityId: profile.person.entityId,
       });
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({

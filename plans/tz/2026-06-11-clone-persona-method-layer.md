@@ -218,7 +218,7 @@ enum SkillTraitLayer {
 - **Acceptance:** `PracticeSkill` извлекается и доходит до status active по evaluator; process-marker черты пишутся с layer; греп — нет осей «avoidant/dependent/избегает/не решает сам» в промпте/выдаче; spec + `build` зелёные.
 - **Закрывает:** R6, R7.
 
-### [ ] Фаза Э3.1 — CDM-интервью носителя через probe
+### [x] Фаза Э3.1 — CDM-интервью носителя через probe
 - **Картография:** `specialist-3-7-skill-probe.service.ts`, probe-система (`feedback_probe_no_buttons_text_voice_only`), ingest (новый высокоприоритетный sourceType/флаг для transcript).
 - **Входит:** расширить 3.7-probe на ретроспективный разбор 3-5 реальных кейсов по CDM (не наводящие вопросы, текст/голос); transcript → RawEvent с пометкой «interview» (high-priority контекст клона), кормит детекторы Э1/Э2.
 - **Не входит:** автоинтервью без участия носителя; inline-кнопки.

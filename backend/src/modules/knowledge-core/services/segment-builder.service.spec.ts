@@ -325,3 +325,93 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
     expect(segments[0]!.authorPersonId).toBeUndefined();
   });
 });
+
+/**
+ * TZ clone-method Э3.1 — ответ на probe (`kind:'notification_response'`)
+ * распознаётся как чистый текстовый сегмент «Вопрос Коры: … Ответ …»,
+ * а не JSON-stringify обёртка (фикс класса: чинит ВСЕ probe-ответы,
+ * не только CDM — раньше userId/eventType/respondsToNotificationId уходили
+ * LLM как шум через buildFallback).
+ */
+describe('SegmentBuilderService — notification_response (clone-method Э3.1)', () => {
+  const makeSvc = () =>
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('questionText + response.text → 1 сегмент «Вопрос Коры: …\\n\\nОтвет …» (НЕ JSON.stringify)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      respondsToNotificationId: 'notif-1',
+      eventType: 'probe.question',
+      questionText: 'Какие альтернативы вы рассматривали и почему отвергли?',
+      response: { text: 'Рассматривал выкат в пятницу, но отказался из-за риска.' },
+      signalTypeHint: 'reasoning',
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe(
+      'Вопрос Коры: Какие альтернативы вы рассматривали и почему отвергли?\n\nОтвет сотрудника: Рассматривал выкат в пятницу, но отказался из-за риска.',
+    );
+    // Служебные поля payload НЕ протекают в текст сегмента.
+    expect(segments[0]!.text).not.toContain('notification_response');
+    expect(segments[0]!.text).not.toContain('userId');
+    expect(segments[0]!.text).not.toContain('respondsToNotificationId');
+    expect(segments[0]!.text).not.toContain('{');
+  });
+
+  it('без questionText → сегмент только из текста ответа', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      questionText: null,
+      response: { text: 'Да, всё подтверждаю.' },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Да, всё подтверждаю.');
+    expect(segments[0]!.text).not.toContain('Вопрос Коры');
+  });
+
+  it('каскад ключей response: answer тоже распознаётся; строковый response — как есть', () => {
+    const svc = makeSvc();
+    const byAnswer = svc.buildSegments({
+      kind: 'notification_response' as const,
+      response: { answer: 'Ответ через ключ answer' },
+    });
+    expect(byAnswer).toHaveLength(1);
+    expect(byAnswer[0]!.text).toBe('Ответ через ключ answer');
+
+    const byString = svc.buildSegments({
+      kind: 'notification_response' as const,
+      response: 'Ответ строкой',
+    });
+    expect(byString).toHaveLength(1);
+    expect(byString[0]!.text).toBe('Ответ строкой');
+  });
+
+  it('пустой response → fallback на старое поведение (JSON.stringify)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      questionText: 'Вопрос есть, ответа нет',
+      response: {},
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // Упал в buildFallback: текст — JSON-stringify обёртки.
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toContain('notification_response');
+  });
+});

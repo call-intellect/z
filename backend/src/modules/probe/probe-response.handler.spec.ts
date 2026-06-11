@@ -274,4 +274,60 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
       'контекст от specialist, не сам вопрос',
     );
   });
+
+  // ─── TZ clone-method Э3.1 — high-priority reasoning для CDM-ответов ───
+  it('reason=skill.cdm_interview → ingest получает signalTypeHint=reasoning и questionText (каскад formulatedQuestion)', async () => {
+    const probeCdm = {
+      ...buildProbe(),
+      reason: 'skill.cdm_interview',
+      payload: {
+        formulatedQuestion:
+          'Какие альтернативы вы рассматривали и почему отвергли?',
+        suggestedQuestion: 'fallback-вопрос специалиста',
+        message: 'контекст кейса',
+      },
+    };
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue(probeCdm);
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        answer: 'Рассматривал выкат в пятницу',
+        confidence: 0.9,
+        requiresFollowup: false,
+      }),
+    });
+
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+    await handler.handle(event);
+
+    expect(mocks.ingestArgs).toHaveLength(1);
+    const ingested = mocks.ingestArgs[0]!;
+    expect(ingested.signalTypeHint).toBe('reasoning');
+    // Каскад: formulatedQuestion в приоритете.
+    expect(ingested.questionText).toBe(
+      'Какие альтернативы вы рассматривали и почему отвергли?',
+    );
+  });
+
+  it('обычный reason → signalTypeHint НЕ передаётся (undefined), questionText из каскада есть', async () => {
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        answer: 'Да',
+        confidence: 0.9,
+        requiresFollowup: false,
+      }),
+    });
+
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+    await handler.handle(event);
+
+    expect(mocks.ingestArgs).toHaveLength(1);
+    const ingested = mocks.ingestArgs[0]!;
+    expect(ingested.signalTypeHint).toBeUndefined();
+    // buildProbe payload: { question, message } → каскад берёт question.
+    expect(ingested.questionText).toBe(
+      'Решение по миграции на DeepSeek принято?',
+    );
+  });
 });

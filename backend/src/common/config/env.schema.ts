@@ -1310,6 +1310,19 @@ const SkillSchema = z.object({
    * код-гардом. Выкл → профиль без process_marker-черт (как до Э2.1).
    */
   PROCESS_MARKER_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э3.1 (2026-06-12) — CDM-интервью носителя через probe ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) CDM-интервью носителя роли:
+   * Кора по свежим reasoning-кейсам сама задаёт носителю до 5 не наводящих
+   * вопросов ретроспективного разбора (Critical Decision Method — «почему
+   * выбрали этот вариант», «какие альтернативы отвергли») через
+   * probe-систему; ответ попадает в граф как high-priority reasoning
+   * (signalTypeHint='reasoning'). Выкл → новые CDM-вопросы не задаются;
+   * ответы на уже заданные продолжают обрабатываться. Лимиты — НЕ здесь,
+   * а в AdminSetting (`knowledge.cdmInterviewMaxQuestions`, default 5 /
+   * `knowledge.cdmInterviewCooldownDays`, default 7).
+   */
+  CDM_INTERVIEW_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит

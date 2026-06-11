@@ -6,6 +6,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { resourceTypeRu } from '../../pending-actions/resource-type-ru';
 
 /**
  * CardStaleDetectorCron — раз в сутки сканирует канонические карточки
@@ -129,7 +130,7 @@ export class CardStaleDetectorCron {
                 eventType: 'system.message',
                 payload: {
                   title: 'Карточка давно не подтверждалась',
-                  body: `Карточка ${c.resourceType} ${c.resourceId} не подтверждалась более ${months} мес. Подтвердите актуальность или внесите правки.`,
+                  body: `Карточка «${resourceTypeRu(c.resourceType)}» не подтверждалась более ${months} мес. Подтвердите актуальность или внесите правки.`,
                   severity: 'info',
                   actionUrl: `/curation/${item.id}`,
                 },

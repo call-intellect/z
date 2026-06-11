@@ -55,13 +55,28 @@ const RULE_IDS = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6'] as const;
 type RuleId = (typeof RULE_IDS)[number];
 
 const RULE_DESCRIPTIONS: Record<RuleId, string> = {
-  R1: 'Артефакт (Document) без процесса-источника',
-  R2: 'Шаг процесса без выходного артефакта',
-  R3: 'Шаг процесса без owner Role',
-  R4: 'Роль с непривязанным элементом ответственности',
-  R5: 'Элемент ответственности без метрики',
-  R6: 'CompanyProfile без Mission / Vision / Strategy',
+  R1: 'Документ не привязан ни к одному процессу',
+  R2: 'Шаг процесса не создаёт ни одного результата',
+  R3: 'У шага процесса не назначен ответственный',
+  R4: 'У роли есть зона ответственности без привязки к задачам',
+  R5: 'Зона ответственности без измеримой метрики',
+  R6: 'У компании не заполнены миссия, видение и стратегия',
 };
+
+/** RU-слова для типов сущностей — фолбэк имени в probe вместо cuid. */
+const ENTITY_TYPE_WORD_RU: Record<string, string> = {
+  document: 'документ',
+  process_step: 'шаг процесса',
+  role: 'роль',
+  responsibility: 'зона ответственности',
+  metric: 'метрика',
+  company_profile: 'профиль компании',
+};
+
+/** Человеческое слово по типу сущности; неизвестный — как есть. */
+function entityTypeWordRu(entityType: string): string {
+  return ENTITY_TYPE_WORD_RU[entityType] ?? entityType;
+}
 
 @Injectable()
 export class ConsistencyCheckerService {
@@ -439,7 +454,8 @@ export class ConsistencyCheckerService {
     }
     if (args.ownerCandidates.length === 0) return;
     const ruleDescription = RULE_DESCRIPTIONS[args.rule];
-    const entityName = args.violation.entityName || args.violation.entityId;
+    const entityName =
+      args.violation.entityName || entityTypeWordRu(args.violation.entityType);
     try {
       await this.probe.suggest({
         tenantId: args.tenantId,

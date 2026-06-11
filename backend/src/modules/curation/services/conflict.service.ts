@@ -14,6 +14,7 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { resolutionRu, resourceTypeRu } from '../../pending-actions/resource-type-ru';
 import type {
   ConflictItemDto,
   ConflictResolutionDto,
@@ -353,7 +354,7 @@ export class ConflictService {
           eventType: 'system.message',
           payload: {
             title: 'Конфликт разрешён',
-            body: `Конфликт ${conflict.resourceType} ${conflict.existingId} ↔ ${conflict.newId} разрешён (${conflict.resolution ?? 'dismissed'}).`,
+            body: `Конфликт по карточке «${resourceTypeRu(conflict.resourceType)}» разрешён (${resolutionRu(conflict.resolution)}).`,
             severity: 'info',
             actionUrl: `/curation/conflicts/${conflict.id}`,
           },

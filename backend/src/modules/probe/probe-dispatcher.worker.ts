@@ -31,6 +31,16 @@ interface FormulatedProbe {
   question: string;
 }
 
+/** Человеческий fallback-вопрос: вырезает cuid-подобные токены и обрезает. */
+export function humanizeProbeFallback(message: string): string {
+  const cleaned = message
+    .replace(/\b[a-z0-9]{20,}\b/gi, '') // cuid-подобные длинные токены
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:!?»])/g, '$1')
+    .trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 200) : 'Можете уточнить, пожалуйста?';
+}
+
 /**
  * SBA β-5 — ProbeDispatcherWorker (Layer 6).
  *
@@ -210,8 +220,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const suggestedQuestion = this.toStringOrUndef(payload.suggestedQuestion);
     const suggestedActions = this.toStringArray(payload.suggestedActions);
 
-    const fallbackQuestion =
-      suggestedQuestion ?? (message.length > 0 ? message.slice(0, 200) : 'Можете уточнить?');
+    const fallbackQuestion = suggestedQuestion ?? humanizeProbeFallback(message);
     const fallback: FormulatedProbe = {
       question: fallbackQuestion,
     };

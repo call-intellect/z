@@ -1268,6 +1268,16 @@ const SkillSchema = z.object({
    * программный отказ ДО вызова модели (анти-deepfake). Default 2.
    */
   CLONE_TOPIC_MIN_BLOCKS: z.coerce.number().int().positive().default(2),
+  // ── TZ clone-method Э0.1 (2026-06-12) — пост-LLM grounding-гейт ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) пост-LLM grounding-гейта
+   * clone-respond: если ответ модели не содержит ни одной валидной
+   * цитаты-опоры (`[BLOCK:id]` / `[DECISION:id]` из subgraph) — ответ
+   * считается ungrounded и заменяется программным отказом
+   * (анти-галлюцинация). Выкл → поведение как до Э0.1 (ответ без опоры
+   * уходит пользователю как есть).
+   */
+  CLONE_RESPOND_GROUNDING_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит

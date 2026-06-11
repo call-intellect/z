@@ -1748,6 +1748,8 @@ export class TypedConfigService {
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 1 ──
       cloneTopicSimilarityThreshold: this.get('CLONE_TOPIC_SIMILARITY_THRESHOLD'),
       cloneTopicMinBlocks: this.get('CLONE_TOPIC_MIN_BLOCKS'),
+      // ── TZ clone-method Э0.1 — пост-LLM grounding-гейт (kill-switch, ON) ──
+      cloneRespondGroundingEnabled: this.get('CLONE_RESPOND_GROUNDING_ENABLED'),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',

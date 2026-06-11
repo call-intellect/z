@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   ForbiddenException,
   Inject,
@@ -41,6 +43,7 @@ import type {
   CloneCitationDto,
   CloneHistoryResponseDto,
   CloneListItemDto,
+  CloneQueryLogListResponseDto,
   ClonesListQuery,
   ClonesListResponseDto,
   CloneVersionDto,
@@ -82,6 +85,14 @@ export class ClonesService {
    */
   static readonly TOPIC_STARVED_REFUSAL_TEXT =
     'У оригинала недостаточно высказываний по этой теме, чтобы я мог отвечать в его стиле без выдумывания. Спроси напрямую.';
+
+  /**
+   * TZ clone-method Э0.1 — программный отказ ПОСЛЕ LLM: модель ответила, но
+   * не сослалась ни на один блок/решение из subgraph (ungrounded ≈ вероятная
+   * галлюцинация). Текст менять только в паре с тестами/документацией.
+   */
+  static readonly UNGROUNDED_REFUSAL_TEXT =
+    'По этому вопросу у меня нет наблюдений в памяти роли — отвечать без опоры не буду, чтобы не выдумывать. Спроси носителя напрямую. (ответ — от клона должности)';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -300,6 +311,16 @@ export class ClonesService {
       ) {
         this.metrics.incCloneAskByOwner();
       }
+      // TZ clone-method Э0.1 — журнал запросов (включая отказы).
+      await this.logCloneQuery({
+        tenantId: args.tenantId,
+        cloneScope: 'person',
+        cloneTargetId: args.personId,
+        userId: args.requesterUserId,
+        question: args.question,
+        answeredGrounded: false,
+        refusalReason: 'topic_starved',
+      });
 
       return {
         conversationId,
@@ -342,6 +363,26 @@ export class ClonesService {
     // 8. Распарсить цитаты.
     const citations = this.parseCitations(llmResult.text, subgraph);
 
+    // 8.5. TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой
+    //      валидной цитаты-опоры → программный отказ вместо галлюцинации.
+    //      Legacy-путь mode не вычисляет — всегда factual.
+    if (this.isUngrounded(citations, 'factual')) {
+      return this.persistUngroundedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: profile.id,
+        cloneTargetId: args.personId,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        scopeKind: 'person',
+        isOwner:
+          profile.person.userId !== null &&
+          profile.person.userId === args.requesterUserId,
+        cloneV2: false,
+      });
+    }
+
     // 9. ChatV2Conversation + Message.
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
@@ -378,6 +419,17 @@ export class ClonesService {
     ) {
       this.metrics.incCloneAskByOwner();
     }
+
+    // 12. TZ clone-method Э0.1 — журнал запросов (успешный ответ).
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: 'person',
+      cloneTargetId: args.personId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: citations.length > 0,
+      refusalReason: null,
+    });
 
     return {
       conversationId,
@@ -524,6 +576,16 @@ export class ClonesService {
 
       this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
       this.metrics.incCloneAsk({ scope: 'role' });
+      // TZ clone-method Э0.1 — журнал запросов (включая отказы).
+      await this.logCloneQuery({
+        tenantId: args.tenantId,
+        cloneScope: 'role',
+        cloneTargetId: args.roleId,
+        userId: args.requesterUserId,
+        question: args.question,
+        answeredGrounded: false,
+        refusalReason: 'topic_starved',
+      });
 
       return {
         conversationId,
@@ -573,6 +635,24 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
+    // TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой
+    // валидной цитаты-опоры → программный отказ вместо галлюцинации.
+    // Legacy-путь mode не вычисляет — всегда factual.
+    if (this.isUngrounded(citations, 'factual')) {
+      return this.persistUngroundedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: args.roleId,
+        cloneTargetId: args.roleId,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        scopeKind: 'role',
+        isOwner: false,
+        cloneV2: false,
+      });
+    }
+
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -602,6 +682,17 @@ export class ClonesService {
     });
 
     this.metrics.incCloneAsk({ scope: 'role' });
+
+    // TZ clone-method Э0.1 — журнал запросов (успешный ответ).
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: 'role',
+      cloneTargetId: args.roleId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: citations.length > 0,
+      refusalReason: null,
+    });
 
     return {
       conversationId,
@@ -773,6 +864,7 @@ export class ClonesService {
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
         scopeRefId: profile.id,
+        cloneTargetId: args.personId,
         question: args.question,
         conversationId: args.conversationId,
         persona,
@@ -808,6 +900,27 @@ export class ClonesService {
 
     // 9. Парсим цитаты из «черновика». В judgmental — скрываем из текста.
     const citations = this.parseCitations(llmResult.text, subgraph);
+
+    // 9.5. TZ clone-method Э0.1 — пост-LLM grounding-гейт (ДО stripCitations):
+    //      ответ без единой валидной цитаты-опоры → программный отказ.
+    //      В judgmental гейт не применяется (SYSTEM запрещает [BLOCK:id] в тексте).
+    if (this.isUngrounded(citations, mode)) {
+      return this.persistUngroundedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: profile.id,
+        cloneTargetId: args.personId,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        scopeKind: 'person',
+        isOwner:
+          profile.person.userId !== null &&
+          profile.person.userId === args.requesterUserId,
+        cloneV2: true,
+      });
+    }
+
     const finalText =
       mode === 'judgmental'
         ? ClonesService.stripCitationsFromText(llmResult.text)
@@ -854,6 +967,17 @@ export class ClonesService {
     ) {
       this.metrics.incCloneAskByOwner();
     }
+
+    // 12. TZ clone-method Э0.1 — журнал запросов (успешный ответ).
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: 'person',
+      cloneTargetId: args.personId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: citations.length > 0,
+      refusalReason: null,
+    });
 
     return {
       conversationId,
@@ -979,6 +1103,7 @@ export class ClonesService {
         tenantId: args.tenantId,
         requesterUserId: args.requesterUserId,
         scopeRefId: args.roleId,
+        cloneTargetId: args.roleId,
         question: args.question,
         conversationId: args.conversationId,
         persona,
@@ -1020,6 +1145,25 @@ export class ClonesService {
     });
 
     const citations = this.parseCitations(llmResult.text, subgraph);
+
+    // TZ clone-method Э0.1 — пост-LLM grounding-гейт (ДО stripCitations):
+    // ответ без единой валидной цитаты-опоры → программный отказ.
+    // В judgmental гейт не применяется (SYSTEM запрещает [BLOCK:id] в тексте).
+    if (this.isUngrounded(citations, mode)) {
+      return this.persistUngroundedRefusal({
+        tenantId: args.tenantId,
+        requesterUserId: args.requesterUserId,
+        scopeRefId: args.roleId,
+        cloneTargetId: args.roleId,
+        question: args.question,
+        conversationId: args.conversationId,
+        persona,
+        scopeKind: 'role',
+        isOwner: false,
+        cloneV2: true,
+      });
+    }
+
     const finalText =
       mode === 'judgmental'
         ? ClonesService.stripCitationsFromText(llmResult.text)
@@ -1059,6 +1203,17 @@ export class ClonesService {
     });
 
     this.metrics.incCloneAsk({ scope: 'role' });
+
+    // TZ clone-method Э0.1 — журнал запросов (успешный ответ).
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: 'role',
+      cloneTargetId: args.roleId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: citations.length > 0,
+      refusalReason: null,
+    });
 
     return {
       conversationId,
@@ -1204,11 +1359,16 @@ export class ClonesService {
   /**
    * Утилита: единая обработка topic-starved-отказа для обоих v2-путей.
    * Возвращает готовый `AskCloneResponseDto` с `refused=true`.
+   *
+   * TZ clone-method Э0.1 — добавлен `cloneTargetId` (personId/roleId) для
+   * записи в журнал `CloneQueryLog` (для person-scope `scopeRefId` —
+   * это profile.id, а в журнал нужен personId).
    */
   private async persistTopicStarvedRefusal(args: {
     tenantId: string;
     requesterUserId: string;
     scopeRefId: string;
+    cloneTargetId: string;
     question: string;
     conversationId: string | undefined;
     persona: ExecutablePersona;
@@ -1244,6 +1404,15 @@ export class ClonesService {
     this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
     this.metrics.incCloneAsk({ scope: args.scopeKind });
     if (args.isOwner) this.metrics.incCloneAskByOwner();
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: args.scopeKind,
+      cloneTargetId: args.cloneTargetId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: false,
+      refusalReason: 'topic_starved',
+    });
     return {
       conversationId,
       messageId,
@@ -1253,6 +1422,88 @@ export class ClonesService {
       isOwner: args.isOwner,
       refused: true,
       refusalReason: 'topic_starved',
+    };
+  }
+
+  /**
+   * TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой валидной
+   * цитаты-опоры ([BLOCK:id]/[DECISION:id] из subgraph) считаем ungrounded и
+   * заменяем программным отказом (анти-галлюцинация). Kill-switch:
+   * cfg.skill.cloneRespondGroundingEnabled.
+   *
+   * Применим ТОЛЬКО к mode='factual': judgmental-SYSTEM прямо запрещает
+   * [BLOCK:id] в тексте ответа (правило 2) — 0 цитат там норма, не пробел;
+   * анти-deepfake в judgmental держится topic-density ДО LLM + правилами
+   * SYSTEM п.4/6.
+   */
+  private isUngrounded(
+    citations: CloneCitationDto[],
+    mode: 'factual' | 'judgmental',
+  ): boolean {
+    if (mode === 'judgmental') return false;
+    if (!this.cfg.skill.cloneRespondGroundingEnabled) return false;
+    return citations.length === 0;
+  }
+
+  /**
+   * TZ clone-method Э0.1 — единая обработка ungrounded-отказа для всех
+   * 4 ask-путей (legacy/v2 × person/role). Структура повторяет
+   * `persistTopicStarvedRefusal`: persistMessage с программным отказом +
+   * метрики + журнал CloneQueryLog + готовый DTO с `refused=true`.
+   */
+  private async persistUngroundedRefusal(args: {
+    tenantId: string;
+    requesterUserId: string;
+    scopeRefId: string;
+    cloneTargetId: string;
+    question: string;
+    conversationId: string | undefined;
+    persona: ExecutablePersona;
+    scopeKind: 'person' | 'role';
+    isOwner: boolean;
+    /** true — путь askPersonV2/askRoleV2 (для парности с llmMeta v2-путей). */
+    cloneV2: boolean;
+  }): Promise<AskCloneResponseDto> {
+    const refusalText = ClonesService.UNGROUNDED_REFUSAL_TEXT;
+    const { conversationId, messageId } = await this.persistMessage({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      scope: 'card',
+      scopeRefId: args.scopeRefId,
+      question: args.question,
+      conversationId: args.conversationId,
+      answer: refusalText,
+      citations: [],
+      llmMeta: {
+        refused: true,
+        refusalReason: 'ungrounded',
+        personaVersion: args.persona.version,
+        scopeKind: args.scopeKind,
+        ...(args.scopeKind === 'role' ? { roleId: args.cloneTargetId } : {}),
+        ...(args.cloneV2 ? { cloneV2: true } : {}),
+      },
+    });
+    this.metrics.incCloneAskRefused({ reason: 'ungrounded' });
+    this.metrics.incCloneAsk({ scope: args.scopeKind });
+    if (args.isOwner) this.metrics.incCloneAskByOwner();
+    await this.logCloneQuery({
+      tenantId: args.tenantId,
+      cloneScope: args.scopeKind,
+      cloneTargetId: args.cloneTargetId,
+      userId: args.requesterUserId,
+      question: args.question,
+      answeredGrounded: false,
+      refusalReason: 'ungrounded',
+    });
+    return {
+      conversationId,
+      messageId,
+      text: refusalText,
+      citations: [],
+      mode: 'clone_style',
+      isOwner: args.isOwner,
+      refused: true,
+      refusalReason: 'ungrounded',
     };
   }
 
@@ -2854,6 +3105,82 @@ export class ClonesService {
       },
     });
     return { conversationId, messageId: assistantMessage.id };
+  }
+
+  // ─────────────────── clone query log (TZ clone-method Э0.1) ───────────────────
+
+  /**
+   * TZ clone-method Э0.1 — журнал запросов к клону (виден владельцу).
+   * Пишется на КАЖДЫЙ ask всех 4 путей, включая отказы. Текст вопроса —
+   * превью (200) + sha256-hash (полный текст уже лежит в ChatV2Message).
+   * Best-effort: ошибка записи НЕ валит ответ.
+   */
+  private async logCloneQuery(args: {
+    tenantId: string;
+    cloneScope: 'person' | 'role';
+    cloneTargetId: string;
+    userId: string;
+    question: string;
+    answeredGrounded: boolean;
+    refusalReason?: string | null;
+  }): Promise<void> {
+    try {
+      await this.prisma.cloneQueryLog.create({
+        data: {
+          tenantId: args.tenantId,
+          cloneScope: args.cloneScope,
+          cloneTargetId: args.cloneTargetId,
+          userId: args.userId,
+          questionPreview: args.question.slice(0, 200),
+          questionHash: createHash('sha256').update(args.question).digest('hex'),
+          answeredGrounded: args.answeredGrounded,
+          refusalReason: args.refusalReason ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'clones.logCloneQuery: запись журнала упала — ответ клона не задет',
+      );
+    }
+  }
+
+  /**
+   * TZ clone-method Э0.1 — журнал запросов к клонам для владельца/админа Org
+   * (`GET /api/v1/clones/query-log`, guard OrgAdminGuard в контроллере).
+   */
+  async listQueryLog(args: {
+    tenantId: string;
+    cloneTargetId?: string;
+    limit: number;
+    offset: number;
+  }): Promise<CloneQueryLogListResponseDto> {
+    const where = {
+      tenantId: args.tenantId,
+      ...(args.cloneTargetId ? { cloneTargetId: args.cloneTargetId } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.cloneQueryLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: args.limit,
+        skip: args.offset,
+      }),
+      this.prisma.cloneQueryLog.count({ where }),
+    ]);
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        cloneScope: r.cloneScope,
+        cloneTargetId: r.cloneTargetId,
+        userId: r.userId,
+        questionPreview: r.questionPreview,
+        answeredGrounded: r.answeredGrounded,
+        refusalReason: r.refusalReason,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      total,
+    };
   }
 }
 

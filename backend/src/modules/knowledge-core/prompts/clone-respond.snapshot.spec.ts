@@ -30,7 +30,7 @@ import {
 } from './clone-respond.prompt';
 
 describe('clone-respond — snapshot сборки промта', () => {
-  it('system prompt стабилен (правила 1-7, включая анти-deepfake пункт 6)', () => {
+  it('system prompt стабилен (правила 1-8, включая анти-deepfake пункт 6 и частичный пробел пункт 8 — TZ clone-method Э0.1)', () => {
     expect(CLONE_RESPOND_SYSTEM_PROMPT_BASE).toMatchSnapshot('system');
   });
 

@@ -185,7 +185,7 @@ enum SkillTraitLayer {
 
 Граф: **Э0** ∥ **Э1** ∥ **Э2** (данные-производители независимы) → **ИНТ** (persona-compile v2, зависит от Э1+Э2) → **ВАЛ** (валидация). **Э3** (CDM-интервью) ∥ Э1/Э2, его выход — высокоприоритетные reasoning-блоки, которые кормят те же детекторы/синтез.
 
-### [ ] Фаза Э0.1 — clone-respond v2: grounding + отказ + журнал
+### [x] Фаза Э0.1 — clone-respond v2: grounding + отказ + журнал
 - **Картография:** `clone-respond.prompt.ts`, `clones.service.ts` (anti-fake topic-density), новая модель `CloneQueryLog`.
 - **Входит:** per-claim grounding (утверждение ↔ IdeaBlock/Entity); отказ при пробеле; запись `CloneQueryLog`.
 - **Не входит:** правовой контур/согласие (владелец), per-claim UI-цитаты в чате (vNext).

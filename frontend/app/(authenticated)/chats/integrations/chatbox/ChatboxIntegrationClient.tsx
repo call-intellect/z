@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { Loader2, MessagesSquare, RefreshCw, Trash2, Users } from 'lucide-react';
+import {
+  Contact,
+  Loader2,
+  MessagesSquare,
+  RefreshCw,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -531,6 +538,25 @@ function ConnectedView({
             <Link href="/chats/integrations/chatbox/managers">
               <Users size={14} />
               Менеджеры и сотрудники
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Клиенты и сотрудники */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Клиенты и сотрудники</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-fg-secondary">
+            Свяжите клиентов Чат бокса с карточками людей компании, чтобы Кора
+            верно приписывала знания из переписок.
+          </p>
+          <Button asChild variant="outline">
+            <Link href="/chats/integrations/chatbox/customers">
+              <Contact size={14} />
+              Клиенты и сотрудники
             </Link>
           </Button>
         </CardContent>

@@ -6,6 +6,8 @@ import { ChatboxAnalyzeCron } from './chatbox-analyze.cron';
 import { ChatboxApiClient } from './chatbox-api.client';
 import { ChatboxChatsController } from './chatbox-chats.controller';
 import { ChatboxChatsService } from './chatbox-chats.service';
+import { ChatboxCustomersController } from './chatbox-customers.controller';
+import { ChatboxCustomersService } from './chatbox-customers.service';
 import { ChatboxIngestService } from './chatbox-ingest.service';
 import { ChatboxIntegrationController } from './chatbox-integration.controller';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
@@ -42,12 +44,14 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxWebhookController,
     ChatboxChatsController,
     ChatboxMembersController,
+    ChatboxCustomersController,
   ],
   providers: [
     ChatboxApiClient,
     ChatboxChatsService,
     ChatboxIntegrationService,
     ChatboxMembersService,
+    ChatboxCustomersService,
     ChatboxSessionService,
     ChatboxSyncService,
     ChatboxSyncQueueService,

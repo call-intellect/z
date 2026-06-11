@@ -155,6 +155,18 @@ export type ChatboxMemberApi = {
   linkedPerson: { id: string; name: string | null } | null;
 };
 
+// --- Клиенты → сотрудники (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1) ---
+
+export type ChatboxCustomerApi = {
+  id: string;
+  externalId: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  linkMode: ChatboxLinkMode;
+  linkedPerson: { id: string; name: string | null } | null;
+};
+
 export type ListChatsQuery = {
   status?: ChatboxChatStatusApi;
   channelType?: string;
@@ -251,6 +263,24 @@ export const chatboxApi = {
   createMemberPerson: (id: string) =>
     apiClient.post<{ ok: true; member: ChatboxMemberApi }>(
       '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/create-person',
+      {},
+    ),
+
+  // --- Клиенты → сотрудники (Ф1) ---
+
+  listCustomers: () =>
+    apiClient.get<ChatboxCustomerApi[]>('/api/v1/chatbox/customers'),
+
+  linkCustomer: (id: string, personId: string | null) =>
+    apiClient.put<{ ok: true; customer: ChatboxCustomerApi }>(
+      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/link',
+      { personId },
+    ),
+
+  // Создать сотрудника Коры из клиента ChatBox и сразу привязать.
+  createCustomerPerson: (id: string) =>
+    apiClient.post<{ ok: true; customer: ChatboxCustomerApi }>(
+      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/create-person',
       {},
     ),
 };

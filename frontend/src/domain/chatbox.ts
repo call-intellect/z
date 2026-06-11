@@ -11,6 +11,7 @@ import type {
   ChatboxChatApi,
   ChatboxChatDetailApi,
   ChatboxChatStatusApi,
+  ChatboxCustomerApi,
   ChatboxIntegrationApi,
   ChatboxLinkMode,
   ChatboxMemberApi,
@@ -298,7 +299,7 @@ export function mapChatDetail(
 // --- Менеджеры → сотрудники (ТЗ 2026-06-05 chatbox-integration, Фаза 9) ---
 
 const LINK_MODE_LABELS: Record<ChatboxLinkMode, string> = {
-  auto: 'Авто (по email)',
+  auto: 'Авто (по email или имени)',
   manual: 'Вручную',
   none: 'Не связан',
 };
@@ -347,6 +348,37 @@ export function mapMember(api: ChatboxMemberApi): ChatboxMemberView {
     name: api.name,
     displayName: api.name ?? api.email ?? api.externalId,
     role: api.role,
+    linkMode: api.linkMode,
+    linkModeLabel: chatboxLinkModeLabel(api.linkMode),
+    linkedPersonId: api.linkedPerson?.id ?? null,
+    linkedPersonName: api.linkedPerson?.name ?? null,
+  };
+}
+
+// --- Клиенты → сотрудники (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1) ---
+
+export type ChatboxCustomerView = {
+  id: string;
+  externalId: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  /** Имя для показа: name, иначе email, иначе телефон, иначе externalId. */
+  displayName: string;
+  linkMode: ChatboxLinkMode;
+  linkModeLabel: string;
+  linkedPersonId: string | null;
+  linkedPersonName: string | null;
+};
+
+export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
+  return {
+    id: api.id,
+    externalId: api.externalId,
+    email: api.email,
+    phone: api.phone,
+    name: api.name,
+    displayName: api.name ?? api.email ?? api.phone ?? api.externalId,
     linkMode: api.linkMode,
     linkModeLabel: chatboxLinkModeLabel(api.linkMode),
     linkedPersonId: api.linkedPerson?.id ?? null,

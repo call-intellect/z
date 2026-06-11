@@ -25,6 +25,12 @@ import {
 } from '../knowledge-core/prompts/probe-formulate.prompt';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
+import {
+  PROBE_REASON_FALLBACK,
+  PROBE_REASON_FALLBACK_DEFAULT,
+  PROBE_REASON_LABEL,
+  PROBE_REASON_LABEL_DEFAULT,
+} from './probe-reason-labels';
 import { ProbeService } from './probe.service';
 
 interface FormulatedProbe {
@@ -220,7 +226,15 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const suggestedQuestion = this.toStringOrUndef(payload.suggestedQuestion);
     const suggestedActions = this.toStringArray(payload.suggestedActions);
 
-    const fallbackQuestion = suggestedQuestion ?? humanizeProbeFallback(message);
+    // Probe Фаза 1 R3: fallback-вопрос больше НЕ берётся из сырого
+    // humanizeProbeFallback(message) (показывал шаблон). Приоритет:
+    //   1. suggestedQuestion — готовый человеческий вопрос от специалиста;
+    //   2. PROBE_REASON_FALLBACK[reason] — заготовка под тип ситуации;
+    //   3. generic «Можете уточнить, пожалуйста?».
+    const fallbackQuestion =
+      suggestedQuestion ??
+      PROBE_REASON_FALLBACK[probe.reason] ??
+      PROBE_REASON_FALLBACK_DEFAULT;
     const fallback: FormulatedProbe = {
       question: fallbackQuestion,
     };
@@ -233,11 +247,12 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       // asr не нужен (это не транскрипт). Kill-switch — общий флаг.
       const guardOn =
         this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const reasonLabel =
+        PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
       const guarded = applyInputGuards(
         PROBE_FORMULATE_SYSTEM_PROMPT,
         PROBE_FORMULATE_USER_TEMPLATE({
-          emittedByService: probe.emittedByService,
-          reason: probe.reason,
+          reasonLabel,
           message,
           suggestedActions,
           contextCard:

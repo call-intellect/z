@@ -13,6 +13,7 @@ import { ChevronDown, FileText, Shield } from 'lucide-react';
 
 import { cn } from '@/ui/shadcn/lib/utils';
 import { AdminCommandPaletteProvider } from '@/ui/components/admin/AdminCommandPalette';
+import { ADMIN_BRAND } from '@/ui/components/admin/brand';
 import { MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import {
   ADMIN_NAV_SECTIONS,
@@ -95,7 +96,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="mb-3 flex items-center justify-between px-3 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
             <span className="flex items-center gap-2">
               <Shield size={14} className="text-accent-fg" />
-              Z-Admin
+              {ADMIN_BRAND}
             </span>
             <kbd className="hidden rounded border border-border-subtle bg-bg-overlay px-1.5 py-0.5 text-[10px] font-normal text-fg-tertiary md:inline-flex">
               ⌘K

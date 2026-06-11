@@ -38,6 +38,8 @@ import {
   DialogTitle,
 } from '@/ui/shadcn/dialog';
 
+import { adminRootCrumb } from '@/ui/components/admin/brand';
+
 import {
   AdminEmpty,
   AdminError,
@@ -102,7 +104,7 @@ export function SkillTraitConceptsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Смысловые блоки навыка' },
       ]}

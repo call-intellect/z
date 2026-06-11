@@ -23,6 +23,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'by-org', label: 'По Org' },
@@ -44,7 +45,7 @@ export function EntitlementsOverviewClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Тенанты' },
         { label: 'Entitlements' },
       ]}

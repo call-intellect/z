@@ -15,12 +15,13 @@
 import { AdminSection } from '@/ui/components/admin/AdminSection';
 
 import { AiModelsClient } from '../../ai-models/AiModelsClient';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 export function RoutingClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Роутинг моделей' },
       ]}

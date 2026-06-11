@@ -49,6 +49,7 @@ import {
   AdminLoading,
 } from '../AdminStateViews';
 import { useAdminQuery } from '../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'burning', label: 'Сейчас горит', icon: Flame },
@@ -61,7 +62,7 @@ export function IncidentsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Пульс', href: '/admin' },
         { label: 'Инциденты' },
       ]}

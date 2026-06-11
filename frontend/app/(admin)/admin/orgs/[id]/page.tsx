@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { OrgDetailClient } from './OrgDetailClient';
 
-export const metadata: Metadata = { title: 'Z-Admin — Организация' };
+export const metadata: Metadata = { title: 'Организация' };
 
 /**
  * Server-обёртка глобальной карточки Org (Z-Admin Фаза 4 редизайна).

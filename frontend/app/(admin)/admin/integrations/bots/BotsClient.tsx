@@ -40,6 +40,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'telegram', label: 'Telegram', icon: Send },
@@ -69,7 +70,7 @@ export function BotsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Каналы и интеграции' },
         { label: 'Conversational боты' },
       ]}

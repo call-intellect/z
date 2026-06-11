@@ -34,6 +34,7 @@ import {
 import { useAdminQuery } from '../../useAdminQuery';
 import { EmailPreviewPanel } from './EmailPreviewPanel';
 import { EmailTemplateEditor } from './EmailTemplateEditor';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'list', label: 'Список' },
@@ -83,7 +84,7 @@ export function EmailTemplatesClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Контент' },
         { label: 'Email-шаблоны' },
       ]}

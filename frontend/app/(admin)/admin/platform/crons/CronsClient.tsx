@@ -41,6 +41,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { CronEditDialog } from './CronEditDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type StatusFilter = 'all' | 'disabled' | 'error';
 
@@ -111,7 +112,7 @@ export function CronsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Кроны' },
       ]}

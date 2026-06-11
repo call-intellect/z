@@ -33,6 +33,7 @@ import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
 
 import { AdminEmpty } from '../../AdminStateViews';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const MIN_REASON_LENGTH = 10;
 
@@ -48,7 +49,7 @@ export function LimitsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Лимиты и квоты' },
       ]}

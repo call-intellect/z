@@ -63,3 +63,77 @@ describe('personsDomainApi — маппинг полей UI → бэкенд-к�
     expect(bodyOf(calls[0].init)).toEqual({ roleId: null });
   });
 });
+
+describe('personsDomainApi — обратный маппинг бэкенд → UI (D7, дрейф контракта)', () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('list: name→fullName, primaryDepartmentId→departmentId, currentRoleId→roleId', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: 'p1',
+              name: 'Сергей Мазур',
+              email: 's@e.ru',
+              userId: null,
+              primaryDepartmentId: 'dep1',
+              primaryDepartmentName: 'Маркетинг',
+              currentRoleId: 'role1',
+              currentRoleName: 'Маркетолог',
+              invitationStatus: 'accepted',
+              createdAt: '2026-01-01',
+            },
+          ],
+          total: 1,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await personsDomainApi.list('org1');
+    expect(res.total).toBe(1);
+    expect(res.items[0]).toEqual({
+      id: 'p1',
+      orgId: 'org1',
+      fullName: 'Сергей Мазур',
+      email: 's@e.ru',
+      roleId: 'role1',
+      roleName: 'Маркетолог',
+      departmentId: 'dep1',
+      departmentName: 'Маркетинг',
+      userId: null,
+      invitationStatus: 'accepted',
+      createdAt: '2026-01-01',
+    });
+  });
+
+  it('byId: обратный маппинг + null name → пустая строка fullName (без undefined)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          person: {
+            id: 'p2',
+            name: null,
+            email: null,
+            userId: 'u2',
+            primaryDepartmentId: null,
+            primaryDepartmentName: null,
+            currentRoleId: null,
+            currentRoleName: null,
+            invitationStatus: 'pending',
+            createdAt: '2026-02-02',
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await personsDomainApi.byId('org1', 'p2');
+    expect(res.person.fullName).toBe('');
+    expect(res.person.departmentId).toBeNull();
+    expect(res.person.roleId).toBeNull();
+    expect(res.person.userId).toBe('u2');
+  });
+});

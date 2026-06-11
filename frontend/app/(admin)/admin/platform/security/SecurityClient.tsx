@@ -27,6 +27,7 @@ import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
 import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
 import { Button } from '@/ui/shadcn/button';
 import { Textarea } from '@/ui/shadcn/textarea';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const MIN_REASON_LENGTH = 10;
 
@@ -52,7 +53,7 @@ export function SecurityClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Безопасность' },
       ]}

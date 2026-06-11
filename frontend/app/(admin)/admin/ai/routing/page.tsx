@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RoutingClient } from './RoutingClient';
 
 export const metadata: Metadata = {
-  title: 'Роутинг моделей — Z-Admin',
+  title: 'Роутинг моделей',
 };
 
 /**

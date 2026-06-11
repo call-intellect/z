@@ -19,6 +19,7 @@ import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
 import { AdminEmpty } from '../../AdminStateViews';
 import { PromptsListClient } from '../../prompts/PromptsListClient';
 import { PromptExperimentsListClient } from '../../prompts/experiments/PromptExperimentsListClient';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'list', label: 'Список', icon: ListTree },
@@ -31,7 +32,7 @@ export function PromptsAiClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Промпты' },
       ]}

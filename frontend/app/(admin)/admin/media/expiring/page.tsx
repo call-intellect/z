@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 
 import { ExpiringRecordingsTable } from '@/ui/components/admin/ExpiringRecordingsTable';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 export const metadata: Metadata = {
-  title: 'Истекающие записи — Z-Admin',
+  title: 'Истекающие записи',
 };
 
 /**
@@ -21,7 +22,7 @@ export default function AdminMediaExpiringPage() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Записи и медиа' },
         { label: 'Истекающие записи' },
       ]}

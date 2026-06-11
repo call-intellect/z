@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { CronsClient } from './CronsClient';
 
 export const metadata: Metadata = {
-  title: 'Расписания @Cron — Z-Admin',
+  title: 'Расписания @Cron',
 };
 
 /**

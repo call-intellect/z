@@ -272,18 +272,61 @@ export const rolesDomainApi = {
     ),
 };
 
-export const personsDomainApi = {
-  list: (orgId: string, query: ListPersonsQuery = {}) =>
-    apiClient.get<ListPersonsResponseApi>(
-      `/api/v1/persons${buildQuery({ ...query })}`,
-      { headers: orgHeaders(orgId) },
-    ),
+/**
+ * Сырой ответ бэка `/api/v1/persons` (PersonListItemDto). Поля `name` /
+ * `primaryDepartmentId` / `currentRoleId` НЕ совпадают с UI-моделью
+ * PersonDomainApi (`fullName` / `departmentId` / `roleId`) — у read-методов
+ * раньше не было обратного маппера (пустые имена в 5 поверхностях). Маппим
+ * здесь, в api-слое (ApiDto→DomainModel), зеркало write-маппера create/update.
+ */
+interface PersonListItemApi {
+  id: string;
+  name: string | null;
+  email: string | null;
+  userId: string | null;
+  primaryDepartmentId: string | null;
+  primaryDepartmentName: string | null;
+  currentRoleId: string | null;
+  currentRoleName: string | null;
+  invitationStatus: PersonDomainApi['invitationStatus'];
+  createdAt: string;
+}
 
-  byId: (orgId: string, id: string) =>
-    apiClient.get<{ person: PersonDomainApi }>(
-      `/api/v1/persons/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+function mapPersonFromApi(raw: PersonListItemApi, orgId: string): PersonDomainApi {
+  return {
+    id: raw.id,
+    orgId,
+    fullName: raw.name ?? '',
+    email: raw.email,
+    roleId: raw.currentRoleId,
+    roleName: raw.currentRoleName,
+    departmentId: raw.primaryDepartmentId,
+    departmentName: raw.primaryDepartmentName,
+    userId: raw.userId,
+    invitationStatus: raw.invitationStatus,
+    createdAt: raw.createdAt,
+  };
+}
+
+export const personsDomainApi = {
+  list: (orgId: string, query: ListPersonsQuery = {}): Promise<ListPersonsResponseApi> =>
+    apiClient
+      .get<{ items: PersonListItemApi[]; total?: number }>(
+        `/api/v1/persons${buildQuery({ ...query })}`,
+        { headers: orgHeaders(orgId) },
+      )
+      .then((r) => ({
+        items: r.items.map((p) => mapPersonFromApi(p, orgId)),
+        total: r.total,
+      })),
+
+  byId: (orgId: string, id: string): Promise<{ person: PersonDomainApi }> =>
+    apiClient
+      .get<{ person: PersonListItemApi }>(
+        `/api/v1/persons/${encodeURIComponent(id)}`,
+        { headers: orgHeaders(orgId) },
+      )
+      .then((r) => ({ person: mapPersonFromApi(r.person, orgId) })),
 
   // Бэкенд-контракт: { name, email, primaryDepartmentId, roleId } (CreatePersonSchema).
   // UI-модель использует fullName/departmentId — мапим имена полей здесь.

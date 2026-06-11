@@ -24,6 +24,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'glossary', label: 'Термины' },
@@ -50,7 +51,7 @@ export function CopyStringsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Контент' },
         { label: 'Глоссарий и UI-строки' },
       ]}

@@ -9,7 +9,7 @@ import { ClonesAccessClient } from './ClonesAccessClient';
  * Backend: `ClonesAdminController` (`OrgAdminGuard + TenantGuard`).
  */
 export const metadata: Metadata = {
-  title: 'Z-Admin — Доступы к клонам',
+  title: 'Доступы к клонам',
 };
 
 export default function AdminClonesPage() {

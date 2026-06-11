@@ -31,7 +31,7 @@ import {
   PROBE_REASON_LABEL,
   PROBE_REASON_LABEL_DEFAULT,
 } from './probe-reason-labels';
-import { probeWindow } from './probe-reason-policy';
+import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
 
 interface FormulatedProbe {
@@ -167,6 +167,48 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     // 2. Select recipient (round-robin — берём первого; engagement weight γ+).
     const selectedUserId = candidates[0];
     if (!selectedUserId) return;
+
+    // 2b. Probe Фаза 4 (R8) — recheck повода перед dispatch (answer-first lite).
+    // Если у reason есть предикат и он показывает, что пробел уже закрылся сам
+    // между suggest и dispatch (напр. решающего назначили, владельца указали) —
+    // не слать probe, пометить suppressed_stale. Best-effort: ошибка предиката
+    // → продолжаем отправку (не блокируем из-за сбоя re-read).
+    const recheck = PROBE_REASON_RECHECK[probe.reason];
+    if (recheck) {
+      const probePayload = (probe.payload ?? {}) as Record<string, unknown>;
+      try {
+        const stillRelevant = await recheck({
+          prisma: this.prisma,
+          tenantId: probe.tenantId,
+          contextCardId: this.toStringOrUndef(probePayload.contextCardId) ?? null,
+          contextCardKind:
+            this.toStringOrUndef(probePayload.contextCardKind) ?? null,
+        });
+        if (!stillRelevant) {
+          await this.prisma.probeEvent.update({
+            where: { id: probe.id },
+            data: { status: 'suppressed_stale' },
+          });
+          this.metrics.incProbeEvent({
+            emittedByService: probe.emittedByService,
+            reason: probe.reason,
+            status: 'suppressed_stale',
+          });
+          this.logger.log(
+            `probe suppressed_stale: id=${probe.id} reason=${probe.reason} (повод закрылся между suggest и dispatch)`,
+          );
+          return;
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            probeEventId: probe.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'probe-dispatcher: recheck повода упал — отправляю probe (best-effort)',
+        );
+      }
+    }
 
     // 3. LLM probe-formulate.
     const formulated = await this.formulate(probe);

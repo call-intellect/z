@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
@@ -12,16 +13,24 @@ import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.s
  */
 describe('ChatboxAnalyzeCron', () => {
   let prismaMock: {
-    chatboxChatSession: { findMany: ReturnType<typeof vi.fn> };
+    chatboxChatSession: {
+      findMany: ReturnType<typeof vi.fn>;
+      count: ReturnType<typeof vi.fn>;
+    };
     chatboxIntegration: { findMany: ReturnType<typeof vi.fn> };
   };
   let queueMock: { enqueue: ReturnType<typeof vi.fn> };
   let adminMock: { get: ReturnType<typeof vi.fn> };
+  let metricsMock: { setChatboxPendingSessions: ReturnType<typeof vi.fn> };
   let cron: ChatboxAnalyzeCron;
 
   beforeEach(() => {
     prismaMock = {
-      chatboxChatSession: { findMany: vi.fn() },
+      chatboxChatSession: {
+        findMany: vi.fn(),
+        // Системный总 pending для gauge (Ф3).
+        count: vi.fn().mockResolvedValue(5),
+      },
       // Гейт анализа: по умолчанию оба тенанта с analysisEnabled=true.
       chatboxIntegration: {
         findMany: vi
@@ -31,11 +40,13 @@ describe('ChatboxAnalyzeCron', () => {
     };
     queueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
     adminMock = { get: vi.fn().mockResolvedValue(true) };
+    metricsMock = { setChatboxPendingSessions: vi.fn() };
 
     cron = new ChatboxAnalyzeCron(
       prismaMock as unknown as PrismaService,
       queueMock as unknown as ChatboxAnalyzeQueueService,
       adminMock as unknown as AdminSettingsService,
+      metricsMock as unknown as BusinessMetricsService,
     );
   });
 
@@ -76,6 +87,13 @@ describe('ChatboxAnalyzeCron', () => {
     expect(queueMock.enqueue).toHaveBeenCalledTimes(2);
     expect(queueMock.enqueue).toHaveBeenCalledWith('t1', 's1');
     expect(queueMock.enqueue).toHaveBeenCalledWith('t2', 's2');
+    // Ф3 — gauge pending-сессий выставлен системным总 (count=5).
+    expect(metricsMock.setChatboxPendingSessions).toHaveBeenCalledWith(5);
+    expect(prismaMock.chatboxChatSession.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ analysisStatus: 'pending' }),
+      }),
+    );
   });
 
   it('enqueue по одной сессии упал → проход не падает', async () => {

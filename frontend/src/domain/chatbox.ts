@@ -15,6 +15,7 @@ import type {
   ChatboxIntegrationApi,
   ChatboxLinkMode,
   ChatboxMemberApi,
+  ChatboxMemorySummaryApi,
   ChatboxMessageApi,
   ChatboxSenderTypeApi,
   ChatboxSessionApi,
@@ -383,6 +384,42 @@ export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
     linkModeLabel: chatboxLinkModeLabel(api.linkMode),
     linkedPersonId: api.linkedPerson?.id ?? null,
     linkedPersonName: api.linkedPerson?.name ?? null,
+  };
+}
+
+// --- Сводка «Чаты в памяти» (ТЗ 2026-06-11 remaining-handoff, блок A, Ф2) ---
+
+export type ChatboxMemorySummaryView = {
+  configured: boolean;
+  analysisEnabled: boolean;
+  dialogs: number;
+  sessions: number;
+  analyzed: number;
+  /** Псевдоним inProgress (pending + analyzing) — «в работе». */
+  pending: number;
+  inProgress: number;
+  failed: number;
+  blocks: number;
+  tasks: number;
+  /** Есть ли вообще что показывать (хоть один диалог или сессия). */
+  hasData: boolean;
+};
+
+export function mapMemorySummary(
+  api: ChatboxMemorySummaryApi,
+): ChatboxMemorySummaryView {
+  return {
+    configured: api.configured,
+    analysisEnabled: api.analysisEnabled,
+    dialogs: api.dialogs,
+    sessions: api.sessions,
+    analyzed: api.analyzed,
+    pending: api.inProgress,
+    inProgress: api.inProgress,
+    failed: api.failed,
+    blocks: api.blocks,
+    tasks: api.tasks,
+    hasData: api.dialogs > 0 || api.sessions > 0,
   };
 }
 

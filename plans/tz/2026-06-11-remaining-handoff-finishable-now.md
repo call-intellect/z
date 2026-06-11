@@ -50,16 +50,16 @@ E. Прод-операции владельца (не код)
 
 ## A. ChatBox — Ф2/Ф3/Ф4 (полный контракт: `2026-06-11-chatbox-memory-finishing...` §Ф2/Ф3/Ф4)
 
-### A1 — Ф2 «Чаты в памяти» (виджет) `[ ]`
+### A1 — Ф2 «Чаты в памяти» (виджет) `[x]`
 - **Цель:** сводка «забрали N диалогов → проанализировали M → породили K карточек/задач».
 - **Врезка:** новый агрегатный эндпоинт в `backend/src/modules/chatbox/*` (счётчики `ChatboxChat`/`ChatboxChatSession` по `analysisStatus` + блоки/задачи источника `chatbox`: `RawEvent(sourceType='chatbox')`, `Task(sourceType='chatbox')`). Виджет на `frontend/app/(authenticated)/chats/integrations/chatbox/ChatboxIntegrationClient.tsx` (рядом с уже добавленной карточкой «Клиенты и сотрудники») и/или в разделе «Чаты».
 - **Acceptance:** виджет показывает забрано/проанализировано/в работе/ошибки + ссылки на карточки; цифры сходятся с `/chatbox/integration/sync/status`. Парные токены, только русский. typecheck/lint/build + spec.
 
-### A2 — Ф3 метрики синка/анализа + алерт `[ ]`
+### A2 — Ф3 метрики синка/анализа + алерт `[x]`
 - **Врезка:** prom-метрики через `BusinessMetricsService` в воркерах chatbox (`chatbox-sync.service`, `chatbox-analyze.worker`): счётчик синков, счётчик анализов, gauge pending-сессий, возраст последнего синка. Правило алерта «`analysisEnabled=false`, а чаты копятся» и «pending растёт».
 - **Acceptance:** метрики в `/metrics`; алерт-правило задокументировано; unit на инкременты.
 
-### A3 — Ф4 разбор WARN `sendMessage без id` `[ ]`
+### A3 — Ф4 разбор WARN `sendMessage без id` `[x]` (код — best-effort парсер + WARN; боевая проверка формы ответа ждёт 1 реальной отправки владельцем)
 - **Врезка:** `backend/src/modules/chatbox/chatbox-chats.service.ts` `sendMessage` — по залогированной форме (`keys`) поправить парсер ответа ChatBox POST; убрать синтетический ключ `kora-out-…`, если реальный `id` под известным полем.
 - **Прод-вход владельца:** 1 реальная отправка живому клиенту — снять форму ответа.
 - **Acceptance:** реальная отправка → сообщение по настоящему `externalId`, WARN не появляется.

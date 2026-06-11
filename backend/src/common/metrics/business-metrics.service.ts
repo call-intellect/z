@@ -54,6 +54,16 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  // ── ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3) ──────────
+  // syncs — успех/провал синка per scope; analyzes — успех/провал анализа
+  // сессии; pending — сколько закрытых сессий ждут анализа (gauge);
+  // last_sync_ts — unixtime последнего успешного синка per scope (для алёрта
+  // «синк отстал»).
+  private chatboxSyncsTotal!: Counter<'scope' | 'status'>;
+  private chatboxAnalyzesTotal!: Counter<'status'>;
+  private chatboxPendingSessions!: Gauge<string>;
+  private chatboxLastSyncTsSeconds!: Gauge<'scope'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -1182,6 +1192,27 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_task_dedupe_total',
       help: 'Ф5 Р2 — семантический дедуп задач встречи. result=knn_merged|llm_merged|kept|skipped.',
       labelNames: ['result'] as const,
+    });
+
+    // ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3).
+    this.chatboxSyncsTotal = this.getOrCreateCounter({
+      name: 'z_chatbox_syncs_total',
+      help: 'Ф3 — синк ChatBox per scope. status=success|failed. Падения видны сразу (раньше синк-ошибка была только в логе воркера).',
+      labelNames: ['scope', 'status'] as const,
+    });
+    this.chatboxAnalyzesTotal = this.getOrCreateCounter({
+      name: 'z_chatbox_analyzes_total',
+      help: 'Ф3 — анализ закрытой сессии чата (LLM-summary + мост в граф). status=success|failed.',
+      labelNames: ['status'] as const,
+    });
+    this.chatboxPendingSessions = this.getOrCreateGauge({
+      name: 'z_chatbox_pending_sessions',
+      help: 'Ф3 — сколько закрытых сессий чата ждут анализа (analysisStatus=pending, по всем org). Растёт и не убывает → анализ встал.',
+    });
+    this.chatboxLastSyncTsSeconds = this.getOrCreateGauge({
+      name: 'z_chatbox_last_sync_ts_seconds',
+      help: 'Ф3 — unixtime последнего успешного синка ChatBox per scope. time()-max(...)>7200 → синк отстал.',
+      labelNames: ['scope'] as const,
     });
 
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
@@ -4224,6 +4255,32 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  /**
+   * Ф3 — один прогон синка ChatBox по scope (full/incremental/…). status:
+   * 'success' | 'failed'. Optional-safe для тестов без onModuleInit.
+   */
+  incChatboxSync(args: { scope: string; status: 'success' | 'failed' }): void {
+    this.chatboxSyncsTotal?.inc({ scope: args.scope, status: args.status });
+  }
+
+  /**
+   * Ф3 — один анализ закрытой сессии чата (мост в граф). status:
+   * 'success' | 'failed'.
+   */
+  incChatboxAnalyze(args: { status: 'success' | 'failed' }): void {
+    this.chatboxAnalyzesTotal?.inc({ status: args.status });
+  }
+
+  /** Ф3 — текущее число pending-сессий чата, ждущих анализа (gauge). */
+  setChatboxPendingSessions(count: number): void {
+    this.chatboxPendingSessions?.set(count);
+  }
+
+  /** Ф3 — unixtime последнего успешного синка ChatBox per scope (gauge). */
+  setChatboxLastSyncTs(args: { scope: string; tsSeconds: number }): void {
+    this.chatboxLastSyncTsSeconds?.set({ scope: args.scope }, args.tsSeconds);
   }
 
   /**

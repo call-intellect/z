@@ -56,6 +56,29 @@ export type ChatboxSyncStatusApi =
 
 export type ChatboxSyncScope = 'all' | 'customers' | 'managers' | 'chats';
 
+// --- Сводка «Чаты в памяти» (ТЗ 2026-06-11 remaining-handoff, блок A, Ф2) ---
+
+export type ChatboxMemorySummaryApi = {
+  /** Настроена ли интеграция (иначе сводки нет). */
+  configured: boolean;
+  /** Включён ли AI-анализ переписок. */
+  analysisEnabled: boolean;
+  /** Забрано диалогов (ChatboxChat). */
+  dialogs: number;
+  /** Сессий всего. */
+  sessions: number;
+  /** Проанализировано сессий (analysisStatus='done'). */
+  analyzed: number;
+  /** В работе (pending + analyzing). */
+  inProgress: number;
+  /** Ошибки анализа. */
+  failed: number;
+  /** Карточки памяти из переписки (RawEvent sourceType='chatbox'). */
+  blocks: number;
+  /** Задачи из переписки (Task sourceType='chatbox'). */
+  tasks: number;
+};
+
 export type SaveChatboxIntegrationRequest = {
   token?: string;
   workspaceId: string;
@@ -217,6 +240,12 @@ export const chatboxApi = {
 
   syncStatus: () =>
     apiClient.get<ChatboxSyncStatusApi>('/api/v1/chatbox/integration/sync/status'),
+
+  // Сводка «Чаты в памяти» — счётчики по диалогам/анализу/графу (Ф2).
+  memorySummary: () =>
+    apiClient.get<ChatboxMemorySummaryApi>(
+      '/api/v1/chatbox/integration/memory-summary',
+    ),
 
   // --- Просмотр чатов (Фаза 8) ---
 

@@ -37,6 +37,8 @@ import {
 } from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
 
+import { ChatboxMemorySummaryCard } from './ChatboxMemorySummaryCard';
+
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
@@ -561,6 +563,9 @@ function ConnectedView({
           </Button>
         </CardContent>
       </Card>
+
+      {/* Чаты в памяти — сводка анализа и графа */}
+      <ChatboxMemorySummaryCard />
 
       {/* Статус собранных данных */}
       <SyncStatusCard />

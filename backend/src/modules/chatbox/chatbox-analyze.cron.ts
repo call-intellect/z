@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
@@ -30,6 +31,10 @@ export class ChatboxAnalyzeCron {
     private readonly queue: ChatboxAnalyzeQueueService,
     @Inject(AdminSettingsService)
     private readonly adminSettings: AdminSettingsService,
+    // Gauge pending-сессий (Ф3). @Optional — тесты крона без метрик не падают.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
@@ -81,6 +86,22 @@ export class ChatboxAnalyzeCron {
             'analyze-sweep: не удалось поставить job — пропуск',
           );
         }
+      }
+
+      // Gauge pending-сессий (Ф3): системный总 по всем org (включая те, где
+      // анализ выключен — они копятся и не убывают → алёрт «копим, но не
+      // анализируем»). Отдельный лёгкий count, т.к. выборка выше ограничена
+      // SWEEP_BATCH и только enabled-тенантами.
+      try {
+        const totalPending = await this.prisma.chatboxChatSession.count({
+          where: { analysisStatus: 'pending', endedAt: { not: null } },
+        });
+        this.metrics?.setChatboxPendingSessions(totalPending);
+      } catch (gaugeErr) {
+        this.logger.warn(
+          { err: gaugeErr instanceof Error ? gaugeErr.message : String(gaugeErr) },
+          'analyze-sweep: не удалось обновить gauge pending-сессий',
+        );
       }
 
       this.logger.log(

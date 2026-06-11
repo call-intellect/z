@@ -9,6 +9,7 @@ import {
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../common/config/index';
+import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import type { DialogTurn } from '../ai/services/prompts/common';
@@ -66,6 +67,10 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    // Метрики анализа (Ф3). @Optional — тесты без метрик-сервиса не падают.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +140,8 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           rawEventId: res.rawEventId,
         },
       });
+      // Метрика анализа (Ф3): сессия успешно доведена до 'done'.
+      this.metrics?.incChatboxAnalyze({ status: 'success' });
       this.logger.log(
         `ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`,
       );
@@ -161,6 +168,8 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           data: { analysisStatus: 'failed' },
         })
         .catch(() => undefined);
+      // Метрика анализа (Ф3): сессия упала в 'failed'.
+      this.metrics?.incChatboxAnalyze({ status: 'failed' });
       this.logger.error(
         {
           tenantId,

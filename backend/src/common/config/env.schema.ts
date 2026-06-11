@@ -1289,6 +1289,16 @@ const SkillSchema = z.object({
    * (`knowledge.rolePrincipleMinObservations` / `…DedupThreshold`).
    */
   ROLE_PRINCIPLE_SYNTHESIS_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.3 (2026-06-12) — детектор ценностей/мотивации ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора ценностей/мотивации
+   * (revealed preferences): второй проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет явный trade-off («выбрал одно В УЩЕРБ другому»)
+   * и пишет SkillTrait layer='value' (что ставит выше при конфликте
+   * приоритетов) / layer='motivation' (что драйвит). Выкл → профиль
+   * наполняется только layer='skill' чертами (как до Э1.3).
+   */
+  VALUE_MOTIVATION_DETECT_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит

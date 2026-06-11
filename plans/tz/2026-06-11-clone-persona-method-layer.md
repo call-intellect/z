@@ -204,7 +204,7 @@ enum SkillTraitLayer {
 - **Acceptance:** на seed-данных роли с ≥порога reasoning-блоков синтезируются принципы с непустым `sourceBlockIds`; повторный прогон не дублирует (дедуп по embedding); греп «process, не черта» — промпт запрещает диагностическую лексику; spec + `build` зелёные.
 - **Закрывает:** R3, R4.
 
-### [ ] Фаза Э1.3 — Детектор ценностей/мотивации (revealed preferences)
+### [x] Фаза Э1.3 — Детектор ценностей/мотивации (revealed preferences)
 - **Картография:** `skill-trait-detect.prompt.ts` (образец), `specialist-3-7-skill.service/worker` (образец регистрации), routing-dispatcher.
 - **Входит:** промпт `value-motivation-detect` + специалист-воркер (по образцу 3.7), пишет SkillTrait `layer=value/motivation` из trade-off; человеческим языком; флаг kill-switch ON.
 - **Не входит:** научные ярлыки (не «по Schwartz» в выдаче), негативные формулировки.

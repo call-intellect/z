@@ -5,6 +5,7 @@ import {
   type SkillConfidence,
   type SkillProfile,
   type SkillTrait,
+  type SkillTraitLayer,
   Prisma,
 } from '@prisma/client';
 
@@ -37,6 +38,12 @@ import {
   SKILL_TRAIT_VERIFY_SYSTEM_PROMPT,
   SKILL_TRAIT_VERIFY_USER_TEMPLATE,
 } from '../prompts/skill-trait-verify.prompt';
+import {
+  VALUE_MOTIVATION_DETECT_JSON_SCHEMA,
+  VALUE_MOTIVATION_DETECT_SCHEMA_NAME,
+  VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT,
+  VALUE_MOTIVATION_DETECT_USER_TEMPLATE,
+} from '../prompts/value-motivation-detect.prompt';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { SkillTraitConceptService } from './skill-trait-concept.service';
@@ -381,6 +388,29 @@ export class Specialist37Service {
         else if (result === 'superseded') supersededCount++;
       }
 
+      // TZ clone-method Э1.3 — детектор ценностей/мотивации (revealed preferences).
+      // Второй проход по тем же группам; пишет SkillTrait layer=value|motivation.
+      // Kill-switch: cfg.skill.valueMotivationDetectEnabled.
+      if (this.cfg.skill.valueMotivationDetectEnabled) {
+        for (const group of eligibleGroups) {
+          const draft = await this.detectValueMotivation({
+            profile,
+            personName: profile.person.name,
+            group,
+          });
+          if (!draft) continue;
+
+          const result = await this.mergeOrCreate({
+            profile,
+            draft,
+            layer: draft.layer,
+          });
+          if (result === 'created') createdNew++;
+          else if (result === 'merged') mergedCount++;
+          else if (result === 'superseded') supersededCount++;
+        }
+      }
+
       // 5. Decay активных traits.
       await this.runDecay(profile.id);
 
@@ -723,13 +753,103 @@ export class Specialist37Service {
   }
 
   /**
+   * TZ clone-method Э1.3 — LLM-extraction ценности/мотивации из «решающего
+   * момента» (trade-off) в той же группе reasoning-блоков. Близнец
+   * detectTrait: тот же injection-guard, но taskType
+   * `value-motivation-detect` и схема со слоем layer ∈ {value, motivation}.
+   * Нет явного trade-off (sourceBlockIds=[]) → null — это НОРМА, не ошибка.
+   * Best-effort.
+   */
+  private async detectValueMotivation(args: {
+    profile: SkillProfile;
+    personName: string;
+    group: Array<{
+      blockId: string;
+      quote: string;
+      createdAt?: Date;
+    }>;
+  }): Promise<(TraitDraft & { layer: 'value' | 'motivation' }) | null> {
+    const quotesForLlm = args.group
+      .slice(0, 12)
+      .map((b) => ({
+        blockId: b.blockId,
+        quote: b.quote,
+        observedAt: (b.createdAt ?? new Date()).toISOString(),
+      }));
+
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
+    const guardOnDetect = this.isPromptInjectionGuardEnabled();
+    const rawUserDetect = VALUE_MOTIVATION_DETECT_USER_TEMPLATE({
+      personName: args.personName,
+      personRole: null,
+      quotes: quotesForLlm,
+    });
+    let result: LlmCallResult;
+    try {
+      result = await this.llm.call({
+        taskType: 'value-motivation-detect',
+        systemPrompt: guardOnDetect
+          ? withInjectionGuard(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT)
+          : VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT,
+        userMessage: guardOnDetect ? wrapUserData(rawUserDetect) : rawUserDetect,
+        tenantId: args.profile.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: VALUE_MOTIVATION_DETECT_SCHEMA_NAME,
+          schema: VALUE_MOTIVATION_DETECT_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'skill_profile', id: args.profile.id },
+        dataClass: 'internal',
+      });
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'value_motivation',
+        reason: 'llm_error',
+      });
+      this.logger.warn(
+        {
+          profileId: args.profile.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-7.detectValueMotivation: LLM упал — skip',
+      );
+      return null;
+    }
+
+    if (result.modelUsed) {
+      this.metrics.incCoreSpecialistLlmTokens({
+        type: 'value_motivation',
+        model: result.modelUsed,
+        tier: result.tier ?? 'primary',
+        tokens: (result.inputTokens ?? 0) + (result.outputTokens ?? 0),
+      });
+    }
+
+    const draft = parseValueMotivationDraft(result.text, (reason) => {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'value_motivation',
+        reason,
+      });
+    });
+    if (!draft) return null;
+    // Пустой sourceBlockIds = «решающего момента нет» — норма, не failure.
+    if (draft.sourceBlockIds.length === 0) return null;
+    return draft;
+  }
+
+  /**
    * KNN-merge нового trait'а с существующими активными traits того же
    * profileId. Применяет verdict: 'merge' / 'supersedes' / 'new'.
    */
   private async mergeOrCreate(args: {
     profile: SkillProfile;
     draft: TraitDraft;
+    /** TZ clone-method Э1.3 — слой черты; KNN-кандидаты и insert идут строго
+     *  в своём слое (value-черта не мёрджится со skill-чертой). Default 'skill'. */
+    layer?: SkillTraitLayer;
   }): Promise<'created' | 'merged' | 'superseded' | 'skipped'> {
+    const layer: SkillTraitLayer = args.layer ?? 'skill';
     const threshold = this.cfg.skill.traitSimilarityThreshold;
 
     // KNN-кандидаты через pgvector.
@@ -774,11 +894,13 @@ export class Specialist37Service {
            FROM "skill_traits"
            WHERE "profileId" = $1
              AND "status" = 'active'
+             AND "layer" = $3::"SkillTraitLayer"
              AND "embedding" IS NOT NULL
            ORDER BY "embedding" <=> $2::vector
            LIMIT ${Specialist37Service.MERGE_KNN_TOP_K}`,
           args.profile.id,
           vec,
+          layer,
         );
         // cosine_distance = 1 - cosine_sim. Ф5(F): фильтруем по ARBITRATION_FLOOR
         // (0.78) — кандидаты в [0.78,threshold) («band») всё равно судятся арбитром
@@ -815,6 +937,7 @@ export class Specialist37Service {
         profile: args.profile,
         draft: args.draft,
         embedding,
+        layer,
       });
     }
 
@@ -833,6 +956,7 @@ export class Specialist37Service {
           profile: args.profile,
           draft: args.draft,
           embedding,
+          layer,
         });
       }
       await this.mergeIntoExisting({
@@ -856,12 +980,14 @@ export class Specialist37Service {
           profile: args.profile,
           draft: args.draft,
           embedding,
+          layer,
         });
       }
       const newTraitId = await this.createNewTraitRaw({
         profile: args.profile,
         draft: args.draft,
         embedding,
+        layer,
       });
       if (!newTraitId) return 'skipped';
       await this.prisma.skillTrait.update({
@@ -875,6 +1001,7 @@ export class Specialist37Service {
       profile: args.profile,
       draft: args.draft,
       embedding,
+      layer,
     });
   }
 
@@ -983,6 +1110,8 @@ export class Specialist37Service {
     profile: SkillProfile;
     draft: TraitDraft;
     embedding: number[] | null;
+    /** TZ clone-method Э1.3 — слой черты (default 'skill'). */
+    layer?: SkillTraitLayer;
   }): Promise<'created' | 'skipped'> {
     const id = await this.createNewTraitRaw(args);
     return id ? 'created' : 'skipped';
@@ -992,11 +1121,15 @@ export class Specialist37Service {
     profile: SkillProfile;
     draft: TraitDraft;
     embedding: number[] | null;
+    /** TZ clone-method Э1.3 — слой черты (default 'skill'). */
+    layer?: SkillTraitLayer;
   }): Promise<string | null> {
     try {
       const trait = await this.prisma.skillTrait.create({
         data: {
           profileId: args.profile.id,
+          // TZ clone-method Э1.3 — слой черты (skill | value | motivation | …).
+          layer: args.layer ?? 'skill',
           category: args.draft.category.slice(0, 200),
           statement: args.draft.statement.slice(0, 2_000),
           confidence: args.draft.confidence as SkillConfidence,
@@ -1247,6 +1380,10 @@ export interface TraitDraft {
   sourceBlockIds: string[];
   firstObservedAt: string;
   lastConfirmedAt: string;
+  /** TZ clone-method Э1.3 — слой черты. Отсутствует у основного
+   *  skill-trait-detect (трактуется как 'skill'); у value-motivation-detect
+   *  обязателен и ∈ {value, motivation}. */
+  layer?: 'skill' | 'value' | 'motivation' | 'process_marker';
 }
 
 interface MergeVerdict {
@@ -1298,6 +1435,16 @@ function parseTraitDraft(
     typeof obj.lastConfirmedAt === 'string' && obj.lastConfirmedAt.length > 0
       ? obj.lastConfirmedAt
       : new Date().toISOString();
+  // TZ clone-method Э1.3 — опциональный слой черты; невалидное значение
+  // просто отбрасывается (основной skill-путь слой не присылает).
+  const layerRaw = obj.layer;
+  const layer =
+    layerRaw === 'skill' ||
+    layerRaw === 'value' ||
+    layerRaw === 'motivation' ||
+    layerRaw === 'process_marker'
+      ? layerRaw
+      : undefined;
   return {
     category,
     statement,
@@ -1305,7 +1452,25 @@ function parseTraitDraft(
     sourceBlockIds,
     firstObservedAt,
     lastConfirmedAt,
+    ...(layer ? { layer } : {}),
   };
+}
+
+/**
+ * TZ clone-method Э1.3 — парсер ответа `value-motivation-detect`: тот же
+ * TraitDraft, но layer ОБЯЗАТЕЛЕН и строго ∈ {value, motivation}.
+ */
+function parseValueMotivationDraft(
+  text: string,
+  onFailure: (reason: string) => void,
+): (TraitDraft & { layer: 'value' | 'motivation' }) | null {
+  const draft = parseTraitDraft(text, onFailure);
+  if (!draft) return null;
+  if (draft.layer !== 'value' && draft.layer !== 'motivation') {
+    onFailure('schema_validation');
+    return null;
+  }
+  return draft as TraitDraft & { layer: 'value' | 'motivation' };
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {

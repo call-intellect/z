@@ -1750,6 +1750,12 @@ export class TypedConfigService {
       cloneTopicMinBlocks: this.get('CLONE_TOPIC_MIN_BLOCKS'),
       // ── TZ clone-method Э0.1 — пост-LLM grounding-гейт (kill-switch, ON) ──
       cloneRespondGroundingEnabled: this.get('CLONE_RESPOND_GROUNDING_ENABLED'),
+      // ── TZ clone-method Э1.3 — детектор ценностей/мотивации (kill-switch, ON) ──
+      valueMotivationDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.valueMotivationDetectEnabled',
+        'VALUE_MOTIVATION_DETECT_ENABLED',
+        true,
+      ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',

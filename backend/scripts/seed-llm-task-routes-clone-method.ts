@@ -51,6 +51,24 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
   },
+  {
+    taskType: 'value-motivation-detect',
+    playbookSection:
+      '«clone-method Э1.3» — детектор ценностей/мотивации из trade-off (второй проход rebuild 3.7), дешёвый частый — flash; ollama только tertiary safety-net',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-flash',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' },
+    ],
+  },
 ];
 
 interface SeedStats {

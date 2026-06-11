@@ -180,6 +180,11 @@ export type LlmTaskType =
   //   носителей должности извлекает обобщённые принципы ПРОЦЕССА
   //   (`RolePrinciple`, situation + statement + grounding sourceBlockIds).
   | 'role-principle-synthesize'
+  // TZ clone-method Э1.3 (2026-06-12) — детектор ценностей/мотивации из
+  //   trade-off («решающих моментов») в reasoning-цитатах: второй проход
+  //   rebuild 3.7 пишет SkillTrait layer=value|motivation (clone-method Э1.3),
+  //   дешёвый частый — flash.
+  | 'value-motivation-detect'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -670,6 +675,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'skill-trait-concept-name',
   // TZ clone-method Э1.2 — Reflection-слой принципов роли
   'role-principle-synthesize',
+  // TZ clone-method Э1.3 — детектор ценностей/мотивации из trade-off, дешёвый частый — flash
+  'value-motivation-detect',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

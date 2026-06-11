@@ -1697,3 +1697,45 @@ enum SkillTraitStatus {
 - **`SupportCuratorAction`** (миграция `_curator_action`) — аудит решений ночного куратора контура (что/почему/verdict debate; soft-archive only).
 
 [[../index|← index]]
+
+## Слой метода клона — RolePrinciple + SkillTrait.layer + CloneQueryLog (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
+
+### `RolePrinciple` (новая, `@@map("role_principles")`) — Reflection-слой принципов роли
+
+Синтезированный ПРИНЦИП/паттерн решений ДОЛЖНОСТИ (не черта человека): «При срыве срока — сначала эскалирует владельцу с 2 вариантами, затем режет scope». Отдельный узел (не SkillTrait), потому что принцип = обобщение многих наблюдений с периодическим ресинтезом, а черта = одно наблюдение. Пишется cron'ом `RolePrincipleSynthesisCron` (05:30, см. [[../01_projects/workers-queues]]).
+
+- `tenantId` (FK `Org`, Cascade) + `roleId String` (**без FK** — принцип переживает ротацию носителя), `situation VarChar(200)` (метка-ситуация: «срыв срока», «выбор подрядчика»), `statement Text` (обобщённая поведенческая формулировка ПРОЦЕССА, без оценок личности).
+- Grounding: `sourceBlockIds String[]` (IdeaBlock.id, на которых построено обобщение, ≥2), `observationCount Int`, `confidence SkillConfidence`.
+- `embedding Unsupported("vector(1536)")?` (situation+statement — дедуп 0.85 / ретрив), `status RolePrincipleStatus @default(active)`, `supersededById String?`, `lastSynthesizedAt`.
+- **Новый enum `RolePrincipleStatus`**: `active` / `superseded` / `archived`.
+- Индексы: `@@index([tenantId, roleId, status])`, `@@index([tenantId, situation])` + **HNSW** `role_principles_embedding_hnsw_cosine_idx` (вне schema.prisma — `postgres-init.sql`, `bun run apply-postgres-init`).
+
+### `SkillTrait.layer` (+ новый enum `SkillTraitLayer`)
+
+Дискриминатор слоя черты — чтобы persona-compile v2 секционировал (без него черты и ценности смешивались бы в общий топ-20):
+
+```prisma
+enum SkillTraitLayer {
+  skill          // поведение при решениях (текущий дефолт — все существующие черты)
+  value          // что ставит выше при конфликте приоритетов (revealed preference)
+  motivation     // что драйвит в работе
+  process_marker // конструктивный маркер процесса (перечисляет критерии / перепроверяет)
+}
+```
+
+- **`SkillTrait += layer SkillTraitLayer @default(skill)`** — backward-compatible (существующие черты получают `skill`).
+- Новый индекс `@@index([profileId, layer, status])` — выборка слоя при сборке persona и KNN-merge детекторов (merge фильтрует кандидатов по layer — value не сливается со skill).
+- Пишут: `skill-trait-detect` (skill, как раньше), `value-motivation-detect` (value/motivation, Э1.3), `process-marker-detect` (process_marker, Э2.1).
+
+### `CloneQueryLog` (новая, `@@map("clone_query_logs")`) — журнал запросов к клону
+
+Лёгкий лог каждого вопроса клону (все 4 пути ask, включая отказы) — видимость владельцу, кто и что спрашивает у клонов, и доля отказов. Отдаётся через `GET /api/v1/clones/query-log` (OrgAdminGuard, см. [[../01_projects/api-layer]] §Clones).
+
+- `tenantId` (FK `Org`, Cascade), `cloneScope PersonaScope` (person/role), `cloneTargetId String`, `userId String` (кто спросил).
+- Вопрос **не хранится целиком**: `questionPreview VarChar(200)` + `questionHash` (sha256).
+- Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
+- Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
+
+[[../index|← index]]

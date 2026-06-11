@@ -71,6 +71,40 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧬 2026-06-12 — Слой метода клона (clone-persona-method-layer, Э0–ВАЛ)
+
+> Контракт: ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726` (8 фаз). ТЗ: `plans/tz/2026-06-11-clone-persona-method-layer.md`. second-brain: `01_projects/skill-and-clone.md` §«Доработки 2026-06-12», `02_architecture/data-model.md` §«Слой метода клона», `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md` §Clones.
+>
+> **Зачем для прода:** клон роли получает слой МЕТОДА работы. (Э0.1) grounding-гейт `clone-respond` — factual-ответ без опоры на наблюдения заменяется честным отказом (`'ungrounded'`), каждый вопрос клону пишется в журнал `CloneQueryLog` + новый `GET /api/v1/clones/query-log`. (Э1) ночной Reflection-синтез принципов роли (`RolePrinciple`, cron 05:30) + детектор ценностей/мотивации из trade-off. (Э2) активация PracticeSkill в ответах клона + детектор конструктивных маркеров процесса. (Э3) CDM-интервью носителя через probe (до 5 вопросов + cooldown 7 дн.). (ИНТ) persona-compile v2 — секционная сборка всех слоёв (пустые секции опускаются — деградация к v1). (ВАЛ) воскресная поведенческая A/B-оценка persona v1-vs-v2 (LLM-судья; только наблюдение, ничего не блокирует).
+>
+> **1 миграция (авто).** **1 новый HNSW-индекс (postgres-init).** **1 seed LLM-маршрутов (в STEPS).** **6 новых ENV-флагов — все default ON, в `.env` добавлять НИЧЕГО не нужно** (⚠ кроме проверки `PRACTICE_SKILLS_ENABLED`, см. Шаг 1). **Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (6 новых kill-switch, все default `true` — действий владельца НЕ требуют, строки информативные):**
+  - `CLONE_RESPOND_GROUNDING_ENABLED` (default true, действий не требует) — пост-LLM grounding-гейт clone-respond (отказ `'ungrounded'` без валидных цитат `[BLOCK:]`/`[DECISION:]`). Аварийный откат: `=false` + рестарт → поведение до Э0.1.
+  - `ROLE_PRINCIPLE_SYNTHESIS_ENABLED` (default true, действий не требует) — Reflection-cron синтеза принципов роли (05:30).
+  - `VALUE_MOTIVATION_DETECT_ENABLED` (default true, действий не требует) — детектор ценностей/мотивации в rebuild 3.7.
+  - `PROCESS_MARKER_DETECT_ENABLED` (default true, действий не требует) — детектор маркеров процесса в rebuild 3.7.
+  - `CDM_INTERVIEW_ENABLED` (default true, действий не требует) — CDM-интервью носителя через probe.
+  - `PERSONA_LAYER_VALIDATION_ENABLED` (default true, действий не требует) — воскресная поведенческая валидация persona v1-vs-v2 (только наблюдение).
+  - ⚠ **`PRACTICE_SKILLS_ENABLED` — СМЕНА ДЕФОЛТА false→true** (Э2.1: подмешивание процедур PracticeSkill в ответы клона). **Если в прод-`.env` стоит явная строка `PRACTICE_SKILLS_ENABLED=false` — УДАЛИТЬ её**, иначе фича останется выключенной (явный ENV перебивает новый code-default). Если строки в `.env` нет — действий не требуется.
+  - Реестр всех — `docs/operations/feature-flags.md` (тип A kill-switch, ON).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260612000000_clone_method_layer`, аддитивная, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): новая таблица `role_principles` (модель `RolePrinciple` + enum `RolePrincipleStatus`) + новая таблица `clone_query_logs` (модель `CloneQueryLog`) + enum `SkillTraitLayer` + колонка `skill_traits.layer` (default `'skill'` — существующие черты получают `skill`) + индекс `[profileId, layer, status]`. Проверка после выката: таблицы `role_principles` и `clone_query_logs` созданы, `skill_traits.layer` имеет default `'skill'`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Шаг 5 — postgres-init.sql — HNSW** — новый: `role_principles_embedding_hnsw_cosine_idx ON "role_principles" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine — дедуп принципов 0.85 при ресинтезе). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`; на штатном `up -d` агрегатор гоняет его сам).
+- **Шаг 7 — Seed-маршруты — 1 новый, идемпотентный, в STEPS** (`phase:'seed-llm-routes'`, alias `'clone-method'`): `docker compose exec backend bun run scripts/seed-llm-task-routes-clone-method.ts` — 5 новых LLM-маршрутов: `role-principle-synthesize` + `cdm-case-interview` (capable: `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b`), `value-motivation-detect` + `process-marker-detect` + `persona-behavior-judge` (flash: `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b`). Защищает `editedByAdmin`. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новые модели/enum в PrismaClient, 2 новых cron'а `RolePrincipleSynthesisCron`/`PersonaLayerValidationCron`, новый эндпоинт query-log, изменённые промпты clone-respond/persona-compile v2): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах backend поднялись `RolePrincipleSynthesisCron` и `PersonaLayerValidationCron`;
+  - (б) после первого ночного cron (05:30) `RolePrinciple` непуст для активных ролей с накопленными reasoning-блоками: SQL `SELECT count(*) FROM role_principles;` > 0;
+  - (в) persona роли (после пересборки) содержит секции «Мои принципы в типовых ситуациях» / «Типовые ситуации → как я действую»;
+  - (г) клон без опоры отказывается: вопрос на тему вне наблюдений → программный отказ, в `clone_query_logs` запись с `refusalReason='ungrounded'`;
+  - (д) `GET /api/v1/clones/query-log` (под owner/admin) отдаёт записи; Swagger `/api/docs` — тег `clones` содержит `query-log`;
+  - (е) метрики тикают: `curl -s localhost:3000/metrics | grep -E "role_principles_|clone_persona_layer"`;
+  - (ж) первые цифры A/B `clone_persona_layer_score{variant}` появятся после первого воскресного cron (вс 07:00).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧩 2026-06-11 — Консолидация отчёта встречи + отчёт→граф + апгрейд 3 промптов
 
 > Контракт: ветка `svdev`, коммиты `2501d72b` (Фаза 1 — консолидация), `13a6ac69` (Фаза 2 — отчёт→граф), `e4fded3c` (Фаза 3 — промпты). ТЗ: `plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md` (Ф1/Ф3) + суб-ТЗ `plans/tz/2026-06-11-report-to-graph-phase2.md` (Ф2). second-brain: `02_architecture/knowledge-core.md` §«Отчёт встречи → граф», `02_architecture/data-model.md`, `02_architecture/module-map.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.

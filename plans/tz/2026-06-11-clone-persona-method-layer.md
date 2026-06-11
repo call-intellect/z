@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-to-implement
+status: implemented
 feature: clone-persona-method-layer
 date: 2026-06-11
 owner: Сергей (владелец продукта Кора)
@@ -300,6 +300,25 @@ enum SkillTraitLayer {
 ---
 
 ## Итог
-_Заполняется `tz-orchestrator`._
+
+**Реализовано целиком — 8/8 фаз** (ветка `feature/clone-persona-method-layer`, 2026-06-12):
+
+| Фаза | Коммит | Что |
+|---|---|---|
+| Э1.1 | `6e8b470f` | Миграция `20260612000000_clone_method_layer`: `RolePrinciple` + `RolePrincipleStatus` + `SkillTraitLayer` + `SkillTrait.layer` (default skill) + `CloneQueryLog` + HNSW `role_principles.embedding` |
+| Э0.1 | `0507a87a` | clone-respond v2: пост-LLM grounding-гейт (`CLONE_RESPOND_GROUNDING_ENABLED`, отказ `'ungrounded'`) + правило честного частичного пробела + журнал `CloneQueryLog` на все 4 пути ask + `GET /api/v1/clones/query-log` |
+| Э1.2 | `91d552a5` | `RolePrincipleSynthesisService` + `RolePrincipleSynthesisCron` (05:30, Redis-lock, MAX 100 ролей): reasoning роли → группировка 0.78 → LLM `role-principle-synthesize` → валидация + код-гард лексики → дедуп 0.85 |
+| Э1.3 | `f12eedba` | Детектор `value-motivation-detect` (второй проход rebuild 3.7, только revealed preference) → SkillTrait layer=value/motivation |
+| Э2.1 | `f4bfa927` | Активация PracticeSkill (`PRACTICE_SKILLS_ENABLED` false→true) + детектор `process-marker-detect` (только конструктивные оси, код-гард стоп-маркеров) |
+| Э3.1 | `8fbb816d` | CDM-интервью через probe (`skill.cdm_interview`, лимит 5 + cooldown 7 дн., LLM `cdm-case-interview`) + ответ → RawEvent `signalTypeHint='reasoning'` + класс-фикс SegmentBuilder `notification_response` |
+| ИНТ.1 | `bae186a6` | persona-compile v2 — секционная сборка 5 слоёв (пустые секции опускаются, деградация к v1), build.service подтягивает все слои, v1-промпт deprecated (rollback) |
+| ВАЛ.1 | `41289726` | `PersonaLayerValidationService` + Cron (вс 07:00): A/B v1-vs-v2 через judge `persona-behavior-judge` на реальных кейсах, метрики `clone_persona_layer_score{variant}`, без human-approval |
+
+5 новых taskType в union+ALL+сид `seed-llm-task-routes-clone-method.ts` (в STEPS); 6 ENV-флагов kill-switch ON в `feature-flags.md`; second-brain обновлён (skill-and-clone / data-model / ai-jobs / workers-queues / api-layer); prod-deploy-log — блок «🧬 2026-06-12».
+
+**Что осталось:**
+- 3 vNext-заглушки (анти-scope, решение владельца): [`2026-06-12-clone-style-and-traits.md`](2026-06-12-clone-style-and-traits.md) (стиль/OCEAN) · [`2026-06-12-clone-learning-dpo-loop.md`](2026-06-12-clone-learning-dpo-loop.md) (фидбек→DPO + SkillUsage.outcome/editDistance) · [`2026-06-12-clone-snapshot-timeline.md`](2026-06-12-clone-snapshot-timeline.md) (таймлайн + правка принципов носителем). Строки — в `second-brain/04_не-сделано/README.md`.
+- Прод-выкат по runbook выше (`docs/operations/prod-deploy-log.md` §«🧬 2026-06-12»): миграция авто, `apply-postgres-init`, сид clone-method, ⚠ проверить/удалить явный `PRACTICE_SKILLS_ENABLED=false` в прод-`.env`.
+- Валидация v1-vs-v2 даст первые цифры (`clone_persona_layer_score{variant}`) после первого воскресного cron (вс 07:00) на проде.
 
 > **Запуск:** многофазное ТЗ. Вести через `tz-orchestrator`. Парный orchestrator-prompt — `plans/tz/2026-06-11-clone-persona-method-layer-orchestrator-prompt.md`.

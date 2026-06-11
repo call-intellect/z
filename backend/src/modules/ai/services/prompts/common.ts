@@ -147,6 +147,36 @@ export const fieldEnum = (values: readonly string[]) =>
 export const fieldNullableEnum = (values: readonly string[]) =>
   ({ type: ['string', 'null'] as const, enum: [...values, null] }) as const;
 
+// ─────────────────── ярлыки типов встреч (§3.0 ТЗ consolidation) ───────────
+//
+// Русский ярлык в винительном падеже для подстановки вместо кода `MeetingType`
+// в роль/метки промптов («Получаешь транскрипт встречи (тип: командную
+// встречу)»). Общий словарь для meeting-report-fast / type-sales /
+// client-meeting-split — чтобы не плодить копии. Ключи — строковые значения
+// enum MeetingType (см. schema.prisma). Неизвестный тип → fallback на сам код.
+
+/** Русские ярлыки типов встреч (винительный падеж). §3.0 ТЗ consolidation. */
+export const MEETING_TYPE_LABEL_RU: Record<string, string> = {
+  sales: 'продажную встречу',
+  custdev: 'custdev-интервью',
+  interview: 'собеседование',
+  standup: 'планёрку',
+  team: 'командную встречу',
+  plan_fact: 'встречу «план-факт»',
+  project: 'проектную встречу',
+  partner: 'встречу с партнёром',
+  customer_success: 'встречу с действующим клиентом',
+  review: 'обзорную встречу',
+  retrospective: 'ретроспективу',
+  task_discussion: 'обсуждение задачи',
+  sprint_review: 'разбор итогов спринта',
+};
+
+/** Ярлык типа встречи для промпта; fallback на сам код для неизвестных типов. */
+export function meetingTypeLabelRu(type: string): string {
+  return MEETING_TYPE_LABEL_RU[type] ?? type;
+}
+
 /**
  * Базовый wrap для system-промпта с инструкциями про tool-use.
  */

@@ -12,6 +12,7 @@
 import type { MeetingType } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { meetingTypeLabelRu } from './common';
 import {
   buildMeetingReportFastPrompt,
   buildMeetingReportFastSystemPrompt,
@@ -70,13 +71,14 @@ describe('meeting-report-fast — builder по типу встречи', () => {
     (type) => {
       const system = buildMeetingReportFastSystemPrompt({ meetingType: type });
       expect(system.length).toBeGreaterThan(0);
-      // Тип явно фигурирует в шапке промта (для diagnostic).
-      expect(system).toContain(`«${type}»`);
-      // Все 4 секции присутствуют как маркеры.
+      // Тип фигурирует в роли русским ярлыком (§3.0): «(тип: командную встречу)».
+      expect(system).toContain(`(тип: ${meetingTypeLabelRu(type)})`);
+      // Все 5 секций присутствуют как маркеры.
       expect(system).toContain('Секция 1: chapters');
       expect(system).toContain('Секция 2: tasks');
       expect(system).toContain('Секция 3: summary_markdown');
       expect(system).toContain('Секция 4: quality_score');
+      expect(system).toContain('Секция 5: data_quality');
       // Tool name присутствует.
       expect(system).toContain(MEETING_REPORT_FAST_TOOL_NAME);
       // Шаблон по типу инжектирован в секцию 3.
@@ -138,7 +140,7 @@ describe('meeting-report-fast — builder по типу встречи', () => {
       participants: ['Иван'],
       meetingDateIso: '2026-05-25',
     });
-    expect(system).toContain('«sales»');
+    expect(system).toContain('(тип: продажную встречу)');
     expect(user).toContain('Demo CRM');
     expect(user).toContain('Участники встречи (используй ТОЛЬКО эти имена): Иван');
   });

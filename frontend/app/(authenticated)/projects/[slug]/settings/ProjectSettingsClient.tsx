@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { projectsApi, type ProjectEmailInboxApi } from '@/api/tracker/projects.api';
 import { humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
-import { PROJECT_MEMBER_ROLE_LABELS } from '@/domain/tracker';
+import { PROJECT_MEMBER_ROLE_LABELS, memberDisplayName } from '@/domain/tracker';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { useProjectMembers } from '@/hooks/tracker/useProject';
 import { AssigneeAvatar } from '@/ui/tracker';
@@ -64,8 +64,8 @@ export function ProjectSettingsClient({ slug }: { slug: string }) {
                 className="flex items-center gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2"
               >
                 <AssigneeAvatar userId={m.userId} size={28} />
-                <span className="flex-1 truncate font-mono text-xs text-fg-secondary">
-                  {m.userId}
+                <span className="flex-1 truncate text-xs text-fg-secondary">
+                  {memberDisplayName(m)}
                 </span>
                 <span className="text-xs text-fg-tertiary">
                   {PROJECT_MEMBER_ROLE_LABELS[m.role as 5 | 15 | 20] ?? m.role}

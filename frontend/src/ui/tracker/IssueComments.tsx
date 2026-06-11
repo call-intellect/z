@@ -325,7 +325,7 @@ function CommentItem({
   comment: Comment;
   authorDisplayName: string | null;
 }) {
-  const name = authorDisplayName ?? comment.authorId.slice(0, 8);
+  const name = authorDisplayName ?? 'Участник';
   return (
     <li className="flex items-start gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2">
       <AssigneeAvatar userId={comment.authorId} size={28} />

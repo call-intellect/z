@@ -355,13 +355,13 @@ function CurationDetailView({
         <section className="mb-6">
           <h2 className="mb-2 text-sm font-medium">Связанные конфликты</h2>
           <ul className="space-y-1">
-            {item.relatedConflictIds.map((cid) => (
+            {item.relatedConflictIds.map((cid, idx) => (
               <li key={cid}>
                 <Link
                   href={`/curation/conflicts/${encodeURIComponent(cid)}`}
                   className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/5 px-2 py-1 text-xs text-warning underline-offset-2 hover:underline"
                 >
-                  Конфликт {cid}
+                  Конфликт {idx + 1}
                 </Link>
               </li>
             ))}

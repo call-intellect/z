@@ -130,14 +130,6 @@ export function ExperimentDetailClient({ id }: { id: string }) {
             {EXPERIMENT_STATUS_LABEL[detail.status]}
           </span>
         </div>
-        <p className="text-xs text-fg-secondary">
-          ID: <code className="font-mono">{detail.id}</code>
-          {detail.entityId ? (
-            <>
-              {' · '}entityId: <code className="font-mono">{detail.entityId}</code>
-            </>
-          ) : null}
-        </p>
       </header>
 
       <section className="rounded-md border border-border-subtle bg-bg-card p-4">

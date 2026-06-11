@@ -401,13 +401,13 @@ function IntakeCard({
         <div className="flex flex-wrap items-center gap-1.5">
           {item.suggestedProjectId && (
             <SuggestionChip>
-              📌 Проект «{shortId(item.suggestedProjectId)}»
+              📌 Проект «{item.suggestedProjectName ?? 'без названия'}»
             </SuggestionChip>
           )}
           {item.suggestedAssigneeId && (
             <SuggestionChip>
               <User size={11} aria-hidden />
-              Исполнитель {shortId(item.suggestedAssigneeId)}
+              Исполнитель {item.suggestedAssigneeName ?? 'не определён'}
             </SuggestionChip>
           )}
           {item.suggestedDueDate && (
@@ -422,7 +422,7 @@ function IntakeCard({
           {item.suggestedGoalId && (
             <SuggestionChip>
               <Target size={11} aria-hidden />
-              Цель «{shortId(item.suggestedGoalId)}»
+              Цель «{item.suggestedGoalTitle ?? 'без названия'}»
             </SuggestionChip>
           )}
           {item.suggestedPriority && (
@@ -506,11 +506,6 @@ function SuggestionChip({
       {children}
     </span>
   );
-}
-
-/** Короткое представление id (`abcd1234`) для chip'а — пока без join'ов. */
-function shortId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id;
 }
 
 // ─── Reject dialog ──────────────────────────────────────────────────────────

@@ -82,10 +82,25 @@ const STATUS_LABELS: Record<NotificationStatus, string> = {
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
+  // Источник кодов — backend conversational.service.ts (per-event policy map).
   'probe.question': 'Уточняющий вопрос',
+  'specialist.probe': 'Подсказка специалиста',
+  'proactive.notification': 'Подсказка Коры',
   'curation.pending': 'Нужна модерация',
   'system.message': 'Системное сообщение',
   'idea.status_changed': 'Изменён статус идеи',
+  'operations.weekly_digest': 'Сводка за неделю',
+  'operations.monthly_recap': 'Итоги месяца',
+  'goals.pulse': 'Пульс целей',
+  'issue.mention': 'Упоминание в задаче',
+  'event.reminder': 'Напоминание о событии',
+  'checkin.prompt': 'Время чек-ина',
+  'checkin.ack': 'Чек-ин принят',
+  'actions.reminder': 'Напоминание о подтверждениях',
+  'meeting.invite': 'Приглашение на встречу',
+  'support.ticket_created': 'Новое обращение в поддержку',
+  'support.ticket_reply': 'Ответ поддержки',
+  'chat.answer': 'Ответ ассистента',
 };
 
 export function notificationStatusLabel(s: NotificationStatus): string {

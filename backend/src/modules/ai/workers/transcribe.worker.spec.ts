@@ -482,6 +482,35 @@ describe('TranscribeWorker.process', () => {
     // submit/poll не вызываются — короткое замыкание на отсутствии треков.
     expect(deps.submit).not.toHaveBeenCalled();
   });
+
+  it('Ф2 (ASR ТЗ 2026-06-11): персистит voxResult.segments в slim-форме (без speaker/speakerId)', async () => {
+    const withSegments = {
+      status: 'COMPLETED' as const,
+      transcriptText: 'привет',
+      durationSeconds: 5,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+      // Vox отдаёт сегмент с speaker/speakerId — персист обязан их отбросить (Б2).
+      segments: [{ startSec: 1, endSec: 2, text: 'а', speaker: 'SPEAKER 1', speakerId: 1 }],
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => withSegments as unknown as typeof completedResult,
+    });
+    // Не «битое» аудио (words пусты, но есть текст и длительность) → без ре-submit.
+    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(Buffer.alloc(5000));
+    await run(worker);
+
+    // upsert получает segments как Array<{startSec,endSec,text}> — точно slim
+    // (массив-литерал в toHaveBeenCalledWith сверяется рекурсивно: лишние ключи
+    // speaker/speakerId провалили бы матч).
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          segments: [{ startSec: 1, endSec: 2, text: 'а' }],
+        }),
+      }),
+    );
+  });
 });
 
 describe('TranscribeWorker.onJobFailed (Фаза 11: развязка записи от AI-статуса)', () => {

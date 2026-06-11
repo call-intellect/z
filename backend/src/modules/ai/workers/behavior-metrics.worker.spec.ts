@@ -229,4 +229,78 @@ describe('BehaviorMetricsWorker.process', () => {
     expect(upsert).not.toHaveBeenCalled();
     expect(meetingUpdate).not.toHaveBeenCalled();
   });
+
+  it('Ф4 (ASR ТЗ 2026-06-11): дорожки с segments (words пустые) → НЕ low_confidence', async () => {
+    const meetingId = 'mtg_seg';
+    const meeting = {
+      id: meetingId,
+      tenantId: 'tenant_1',
+      startedAt: new Date('2026-05-21T10:00:00Z'),
+      endedAt: new Date('2026-05-21T10:05:00Z'), // 300s ≥ 60s
+      // words пустые, но есть segments → wordTimingsAvailable=true (Б5).
+      transcript: {
+        mergedS3Url: 'meetings/mtg_seg/merged.json',
+        tracks: [{ words: [], segments: [{ startSec: 0, endSec: 30, text: 'Привет' }] }],
+      },
+      participants: [
+        { id: 'p_alice', livekitIdentity: 'alice', name: 'Алиса', role: 'host' },
+        { id: 'p_bob', livekitIdentity: 'bob', name: 'Боб', role: 'participant' },
+      ],
+    };
+    const merged = {
+      meetingId,
+      turns: [
+        { speaker: 'alice', text: 'Привет всем!', startSec: 0, endSec: 30 },
+        { speaker: 'bob', text: 'Привет Алиса!', startSec: 30, endSec: 90 },
+      ],
+    };
+    const { worker, meetingUpdate, metricsRefs } = buildWorker({ meeting, merged });
+
+    await worker.process({ data: { meetingId, attempt: 1 } } as Parameters<
+      BehaviorMetricsWorker['process']
+    >[0]);
+
+    const updateCalls = meetingUpdate.mock.calls.map(
+      (c: unknown[]) => (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
+    );
+    expect(updateCalls).toContain('ready');
+    expect(updateCalls).not.toContain('low_confidence');
+    expect(metricsRefs.lowConfidence).not.toHaveBeenCalled();
+  });
+
+  it('Ф4 (ASR ТЗ 2026-06-11): ни words, ни segments → low_confidence (поведение по длительности)', async () => {
+    const meetingId = 'mtg_noseg';
+    const meeting = {
+      id: meetingId,
+      tenantId: 'tenant_1',
+      startedAt: new Date('2026-05-21T10:00:00Z'),
+      endedAt: new Date('2026-05-21T10:05:00Z'), // 300s ≥ 60s → low_confidence только из-за таймингов
+      transcript: {
+        mergedS3Url: 'meetings/mtg_noseg/merged.json',
+        tracks: [{ words: [], segments: [] }],
+      },
+      participants: [
+        { id: 'p_alice', livekitIdentity: 'alice', name: 'Алиса', role: 'host' },
+        { id: 'p_bob', livekitIdentity: 'bob', name: 'Боб', role: 'participant' },
+      ],
+    };
+    const merged = {
+      meetingId,
+      turns: [
+        { speaker: 'alice', text: 'Привет всем!', startSec: 0, endSec: 30 },
+        { speaker: 'bob', text: 'Привет Алиса!', startSec: 30, endSec: 90 },
+      ],
+    };
+    const { worker, meetingUpdate, metricsRefs } = buildWorker({ meeting, merged });
+
+    await worker.process({ data: { meetingId, attempt: 1 } } as Parameters<
+      BehaviorMetricsWorker['process']
+    >[0]);
+
+    const updateCalls = meetingUpdate.mock.calls.map(
+      (c: unknown[]) => (c[0] as { data: { behaviorMetricsStatus?: string } }).data.behaviorMetricsStatus,
+    );
+    expect(updateCalls).toContain('low_confidence');
+    expect(metricsRefs.lowConfidence).toHaveBeenCalled();
+  });
 });

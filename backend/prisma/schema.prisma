@@ -1536,6 +1536,10 @@ model TranscriptTrack {
   durationSeconds Float
   /// Array<{ word: string; startMs: number; endMs: number }>
   words           Json
+  /// Посегментные тайминги речи дорожки из Vox extendedResult.segments.
+  /// Array<{ startSec: number; endSec: number; text: string }> (секунды, float).
+  /// NULL для дорожек, расшифрованных до появления колонки (backfill не делаем).
+  segments        Json?
 
   @@unique([transcriptId, livekitIdentity])
   @@index([transcriptId])

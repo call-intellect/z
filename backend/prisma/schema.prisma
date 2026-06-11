@@ -6350,6 +6350,12 @@ enum ProbeStatus {
   /// W4.3 — outbound canEmit заблокировал доставку (и in_app fallback тоже rejected).
   /// Видно в `/admin/policy/dataclass` → «История нарушений».
   dropped_dataclass_gate
+  /// Probe Фаза 3 — deferrable-probe сверх бюджета отложен в батч-дайджест
+  /// (вместо dropped_rate_limit). ProbeDigestCron соберёт и пометит dispatched.
+  queued_digest
+  /// Probe Фаза 4 — повод закрылся сам между suggest и dispatch (recheck
+  /// предикатом PROBE_REASON_RECHECK показал, что пробел уже не актуален).
+  suppressed_stale
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.

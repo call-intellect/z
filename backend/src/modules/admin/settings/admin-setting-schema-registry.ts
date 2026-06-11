@@ -183,6 +183,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.reply_latency_rise.factor', z.number().positive()],
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],
+  // Probe Фаза 3 — батч-дайджест probe (касание-кап · час отправки UTC · рубильник).
+  ['probe.digestTouchCap', POSITIVE_INT],
+  ['probe.digestHourUtc', z.number().int().min(0).max(23)],
+  ['probe.digestEnabled', z.boolean()],
+  // Probe Фаза 5 — adaptive fatigue (cooldown темы · рубильник снижения частоты).
+  ['probe.topicCooldownHours', POSITIVE_INT],
+  ['probe.adaptiveFatigueEnabled', z.boolean()],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

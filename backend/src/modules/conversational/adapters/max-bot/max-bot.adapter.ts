@@ -764,6 +764,14 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const link = joinUrl ? `\n\nПрисоединиться:\n${joinUrl}` : '';
         return `Приглашение на встречу\n\n${who}${body}${link}`.slice(0, 4000);
       }
+      case 'probe.digest': {
+        // Probe Фаза 3 — батч-дайджест: человеческий текст уже собран в summary.
+        const summary = (payload['summary'] as string | undefined) ?? '';
+        return `Кора собрала вопросы:\n\n${summary}\n\nОтветьте на любой из них текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
+      }
       default:
         return `Уведомление: ${notification.eventType}`;
     }

@@ -603,6 +603,18 @@ function buildSettings(): SettingSeed[] {
     out.push({ key, value, category: 'platform', section: 'pending-actions', severity, description });
   }
 
+  // ── Probe-система Фаза 3/5 (probe.*) — батч-дайджест + adaptive fatigue.
+  const probe: Array<[string, unknown, Severity, string]> = [
+    ['probe.digestTouchCap', envInt('PROBE_DIGEST_TOUCH_CAP', 5), 'low', 'Максимум вопросов в одном батч-дайджесте probe'],
+    ['probe.digestHourUtc', envInt('PROBE_DIGEST_HOUR_UTC', 9), 'low', 'Час (UTC) ежедневной отправки дайджеста probe'],
+    ['probe.digestEnabled', envBool('PROBE_DIGEST_ENABLED', true), 'low', 'Рубильник батч-дайджеста probe (kill-switch, ON)'],
+    ['probe.topicCooldownHours', envInt('PROBE_TOPIC_COOLDOWN_HOURS', 48), 'low', 'Cooldown повтора одной темы probe одному человеку (часы)'],
+    ['probe.adaptiveFatigueEnabled', envBool('PROBE_ADAPTIVE_FATIGUE_ENABLED', true), 'low', 'Снижать частоту probe тем, кто не отвечает (kill-switch, ON)'],
+  ];
+  for (const [key, value, severity, description] of probe) {
+    out.push({ key, value, category: 'platform', section: 'probe', severity, description });
+  }
+
   // ── W4.3 (2026-05-25) — DataClass policy floors + channel defaults.
   // Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §4.
   // Эти ключи читаются `DataClassPolicyService.getFloor` и UI `/admin/policy/dataclass`.

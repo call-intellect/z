@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 
+import { probeWindow } from './probe-reason-policy';
 import type {
   ProbeSuggestInput,
   ProbeSuggestPayload,
@@ -109,6 +110,35 @@ export class ProbeService {
         input.recipientCandidates,
       );
       if (availableRecipients.length === 0) {
+        // Probe Фаза 3 R5: deferrable-probe сверх бюджета НЕ дропаем, а
+        // откладываем в батч-дайджест (status='queued_digest'); ProbeDigestCron
+        // соберёт его и доставит одним дайджестом. immediate-probe при
+        // исчерпанном бюджете сохраняет прежнее поведение (drop) — дайджест
+        // слишком медленный для срочного (R6).
+        if (probeWindow(input.reason) === 'deferrable') {
+          const priority = Math.round(
+            this.clamp01(input.priorityHint ?? 0.4) * 100,
+          );
+          const queued = await this.prisma.probeEvent.create({
+            data: {
+              tenantId: input.tenantId,
+              emittedByService: input.emittedByService,
+              reason: input.reason,
+              payload: this.payloadToJson(input.payload),
+              recipientCandidates: [...input.recipientCandidates],
+              contentHash,
+              priority,
+              status: 'queued_digest',
+            },
+          });
+          this.metrics.incProbeEvent({
+            emittedByService: input.emittedByService,
+            reason: input.reason,
+            status: 'queued_digest',
+          });
+          // НЕ enqueue dispatcher — дайджест-cron подберёт.
+          return { ok: true, probeEventId: queued.id };
+        }
         this.metrics.incProbeRateLimitDropped();
         this.metrics.incProbeEvent({
           emittedByService: input.emittedByService,

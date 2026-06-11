@@ -24,6 +24,25 @@ const ProbeQuestionPayloadSchema = z
   })
   .strict();
 
+// Probe Фаза 3 — батч-дайджест отложенных probe (queued_digest → ProbeDigestCron).
+const ProbeDigestPayloadSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          question: z.string().min(1).max(400),
+          objectTitle: z.string().max(200).optional(),
+          probeEventId: z.string(),
+        }),
+      )
+      .min(1)
+      .max(20),
+    total: z.number().int().nonnegative(),
+    /** Человеческий собранный текст (его рендерят каналы и кабинет). */
+    summary: z.string().max(4_000).optional(),
+  })
+  .strict();
+
 const CurationPendingPayloadSchema = z
   .object({
     resourceType: z.string().min(1),
@@ -379,6 +398,8 @@ const SupportTicketEventPayloadSchema = z
 
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
+  // Probe Фаза 3 — батч-дайджест отложенных probe.
+  ['probe.digest', ProbeDigestPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
   ['system.message', SystemMessagePayloadSchema],
   ['chat.answer', ChatAnswerPayloadSchema],

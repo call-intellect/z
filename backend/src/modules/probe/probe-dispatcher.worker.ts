@@ -31,6 +31,7 @@ import {
   PROBE_REASON_LABEL,
   PROBE_REASON_LABEL_DEFAULT,
 } from './probe-reason-labels';
+import { probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
 
 interface FormulatedProbe {
@@ -141,6 +142,20 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       probe.recipientCandidates,
     );
     if (candidates.length === 0) {
+      // Probe Фаза 3 R5: deferrable-probe, исчерпавший бюджет к моменту
+      // dispatch, откладываем в дайджест (а не дропаем). immediate — прежний drop.
+      if (probeWindow(probe.reason) === 'deferrable') {
+        await this.prisma.probeEvent.update({
+          where: { id: probe.id },
+          data: { status: 'queued_digest' },
+        });
+        this.metrics.incProbeEvent({
+          emittedByService: probe.emittedByService,
+          reason: probe.reason,
+          status: 'queued_digest',
+        });
+        return;
+      }
       await this.prisma.probeEvent.update({
         where: { id: probe.id },
         data: { status: 'dropped_rate_limit' },

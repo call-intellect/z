@@ -89,6 +89,12 @@ export interface SendNotificationInput {
 /** Per-event-type default-политика выбора каналов. */
 const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
+  // Probe Фаза 3 — батч-дайджест отложенных probe: те же каналы, что и
+  // probe.question (пользователь отвечает там же), но ОДНО сообщение вместо N.
+  'probe.digest': ['telegram_bot', 'max_bot', 'in_app'],
+  // Probe Фаза 6 — видимое следствие ответа («ваш ответ записан»). Доставляем
+  // туда же, где человек отвечал; in_app — fallback.
+  'probe.answer_acknowledged': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
   // TZ-1 Фаза 4.A (daily-value-engine) — смена статуса идеи. Раньше только

@@ -84,6 +84,8 @@ const STATUS_LABELS: Record<NotificationStatus, string> = {
 const EVENT_TYPE_LABELS: Record<string, string> = {
   // Источник кодов — backend conversational.service.ts (per-event policy map).
   'probe.question': 'Уточняющий вопрос',
+  'probe.digest': 'Вопросы от Коры',
+  'probe.answer_acknowledged': 'Ответ записан',
   'specialist.probe': 'Подсказка специалиста',
   'proactive.notification': 'Подсказка Коры',
   'curation.pending': 'Нужна модерация',

@@ -1316,6 +1316,15 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           : '';
         return `${head}\n\n${who}${body}${link}`.slice(0, 4000);
       }
+      case 'probe.digest': {
+        // Probe Фаза 3 — батч-дайджест: человеческий текст уже собран в summary.
+        const summary = (payload['summary'] as string | undefined) ?? '';
+        const head = '<b>Кора собрала вопросы</b>';
+        return `${head}\n\n${escapeHtml(summary)}\n\nОтветьте на любой из них текстом этим же сообщением.`.slice(
+          0,
+          4000,
+        );
+      }
       default: {
         return `Уведомление: ${escapeHtml(notification.eventType)}`;
       }

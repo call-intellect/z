@@ -1,0 +1,175 @@
+/**
+ * TZ clone-method (2026-06-12), Этап Э1.2 — Seed маршрутов LLM для taskType'ов
+ * метод-слоя клонов. Первый — `role-principle-synthesize` (Reflection-слой:
+ * ночной синтез принципов процесса должности из reasoning-цитат носителей).
+ * Позже сюда добавятся детекторы остальных под-этапов clone-method.
+ *
+ * Запуск:
+ *   bun run scripts/seed-llm-task-routes-clone-method.ts
+ *   bun run scripts/seed-llm-task-routes-clone-method.ts --update-existing
+ *
+ * Идемпотентность (skill `safe-seed-rules`):
+ *   - Записи с editedByAdmin=true НЕ перезаписываются (защита админ-правок).
+ *   - Без флага --update-existing — пропускаем существующие.
+ *   - С флагом — обновляем model/priority/isActive.
+ */
+
+import { type LlmRouteTier } from '@prisma/client';
+
+import { createPrismaClient } from './_lib/prisma';
+
+const prisma = createPrismaClient();
+
+interface TierEntry {
+  tier: LlmRouteTier;
+  providerName: string;
+  model: string;
+}
+
+interface TaskRouteSeed {
+  taskType: string;
+  playbookSection: string;
+  chain: TierEntry[];
+}
+
+const SEEDS: TaskRouteSeed[] = [
+  {
+    taskType: 'role-principle-synthesize',
+    playbookSection:
+      '«clone-method Э1.2» — синтез принципов роли (Reflection), редкий ночной cron, нужна capable-модель',
+    chain: [
+      {
+        tier: 'primary',
+        providerName: 'deepseek',
+        model: 'deepseek-v4-pro',
+      },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+];
+
+interface SeedStats {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  protectedByAudit: number;
+}
+
+async function applySeed(
+  seed: TaskRouteSeed,
+  updateExisting: boolean,
+  stats: SeedStats,
+): Promise<void> {
+  for (let i = 0; i < seed.chain.length; i++) {
+    const entry = seed.chain[i];
+    if (!entry) continue;
+    const priority = i;
+    const existing = await prisma.llmTaskRoute.findFirst({
+      where: {
+        taskType: seed.taskType,
+        tenantId: null,
+        tier: entry.tier,
+        providerName: entry.providerName,
+      },
+    });
+    if (!existing) {
+      await prisma.llmTaskRoute.create({
+        data: {
+          taskType: seed.taskType,
+          tenantId: null,
+          tier: entry.tier,
+          providerName: entry.providerName,
+          model: entry.model,
+          priority,
+          providers: null,
+          isActive: true,
+          editedByAdmin: false,
+        },
+      });
+      stats.inserted++;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
+      );
+      continue;
+    }
+    if (existing.editedByAdmin) {
+      stats.protectedByAudit++;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
+      );
+      continue;
+    }
+    if (!updateExisting) {
+      stats.skipped++;
+      continue;
+    }
+    if (
+      existing.model === entry.model &&
+      existing.priority === priority &&
+      existing.isActive === true
+    ) {
+      stats.skipped++;
+      continue;
+    }
+    await prisma.llmTaskRoute.update({
+      where: { id: existing.id },
+      data: {
+        model: entry.model,
+        priority,
+        isActive: true,
+      },
+    });
+    stats.updated++;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
+    );
+  }
+}
+
+async function main(): Promise<void> {
+  const updateExisting = process.argv.includes('--update-existing');
+  // eslint-disable-next-line no-console
+  console.log(
+    `=== seed-llm-task-routes-clone-method START (updateExisting=${updateExisting}) ===`,
+  );
+  // eslint-disable-next-line no-console
+  console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
+
+  const stats: SeedStats = {
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    protectedByAudit: 0,
+  };
+
+  for (const seed of SEEDS) {
+    await applySeed(seed, updateExisting, stats);
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `inserted=${stats.inserted}, updated=${stats.updated}, skipped=${stats.skipped}, protected_by_admin=${stats.protectedByAudit}`,
+  );
+  // eslint-disable-next-line no-console
+  console.log('=== seed-llm-task-routes-clone-method DONE ===');
+}
+
+main()
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('seed-llm-task-routes-clone-method FAILED:', err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+export { SEEDS };

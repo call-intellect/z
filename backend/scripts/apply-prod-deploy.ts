@@ -138,6 +138,9 @@ const STEPS: Step[] = [
     // contentMd орг-документа; capable + tool-use). Без маршрута поедет по
     // DEFAULT_FALLBACK_CHAIN; явный seed фиксирует deepseek-v4-pro primary.
     'compile-org-document',
+    // TZ clone-method Э1.2 (2026-06-12) — role-principle-synthesize (Reflection-
+    // слой принципов роли, ночной cron 05:30; deepseek-v4-pro primary).
+    'clone-method',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

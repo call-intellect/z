@@ -698,6 +698,9 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Clones=Roles Ф2 (2026-05-25) — версионирование клонов ролей ──
   private cloneRoleVersionCreatedTotal!: Counter<'role_id'>;
   private cloneRoleVersionsTotal!: Gauge<'role_id'>;
+  // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+  private rolePrinciplesSynthesizedTotal!: Counter<'outcome'>;
+  private rolePrinciplesActiveTotal!: Gauge<never>;
 
   // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
   private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
@@ -2914,6 +2917,18 @@ export class BusinessMetricsService implements OnModuleInit {
     this.skillTraitConceptsMergedTotal = this.getOrCreateCounter({
       name: 'skill_trait_concepts_merged_total',
       help: 'Фаза 2 clone-reliability — общее число операций слияния SkillTraitConcept в cron-нормализаторе.',
+      labelNames: [] as const,
+    });
+
+    // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+    this.rolePrinciplesSynthesizedTotal = this.getOrCreateCounter({
+      name: 'role_principles_synthesized_total',
+      help: 'TZ clone-method Э1.2 — исходы синтеза RolePrinciple ночным cron (outcome: created | merged | rejected_guard). rejected_guard = код-гард отбросил диагностическую лексику.',
+      labelNames: ['outcome'] as const,
+    });
+    this.rolePrinciplesActiveTotal = this.getOrCreateGauge({
+      name: 'role_principles_active_total',
+      help: 'TZ clone-method Э1.2 — gauge числа active RolePrinciple по всем Org (обновляется cron-синтезатором раз в сутки).',
       labelNames: [] as const,
     });
 
@@ -6530,6 +6545,26 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incSkillTraitConceptsMerged(): void {
     this.skillTraitConceptsMergedTotal.inc();
+  }
+
+  /**
+   * TZ clone-method Э1.2 — counter исходов синтеза RolePrinciple:
+   * created — новый принцип; merged — дедуп в существующий active;
+   * rejected_guard — отброшен код-гардом диагностической лексики.
+   */
+  incRolePrincipleSynthesized(args: {
+    outcome: 'created' | 'merged' | 'rejected_guard';
+  }): void {
+    this.rolePrinciplesSynthesizedTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
+   * TZ clone-method Э1.2 — gauge числа active RolePrinciple по всем Org.
+   * Обновляется RolePrincipleSynthesisCron после каждого прохода.
+   */
+  setRolePrinciplesActiveTotal(value: number): void {
+    if (value < 0) return;
+    this.rolePrinciplesActiveTotal.set(value);
   }
 
   /**

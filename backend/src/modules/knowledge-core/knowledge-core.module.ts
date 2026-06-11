@@ -34,6 +34,8 @@ import { PreferenceDatasetService } from './services/preference-dataset.service'
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
 import { RoleClonePersonaVersioningHandler } from './services/role-clone-persona-versioning.handler';
+// TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли.
+import { RolePrincipleSynthesisService } from './services/role-principle-synthesis.service';
 import { RouterService } from './services/router.service';
 import { SegmentBuilderService } from './services/segment-builder.service';
 import { SkillTraitConceptService } from './services/skill-trait-concept.service';
@@ -202,6 +204,10 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     ExecutablePersonaTriggerWatcherCron,
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
     SkillTraitConceptService,
+    // TZ clone-method Э1.2 — Reflection-слой: ночной синтез принципов
+    // процесса должности (`RolePrinciple`) из reasoning-блоков носителей.
+    // Cron-вызыватель (RolePrincipleSynthesisCron) живёт в WorkersModule.
+    RolePrincipleSynthesisService,
     // W4.1 (2026-05-25 KC-Temporal) — DataClassPolicyService.
     // Single source of truth для DataClass derive. На W4.1 работает в
     // shadow-режиме: специалисты вызывают `compareWithLegacy` рядом с
@@ -347,6 +353,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — экспортируется,
     // чтобы admin-модуль / cron-нормализатор / backfill-скрипт могли инжектить.
     SkillTraitConceptService,
+    // TZ clone-method Э1.2 — экспортируется для RolePrincipleSynthesisCron
+    // (WorkersModule) и тестов.
+    RolePrincipleSynthesisService,
     // W4.1 — экспортируется для специалистов 3.1–3.6 (shadow-вызовы) и
     // будущих enforce-call'ов на W4.2 + W4.3.
     DataClassPolicyService,

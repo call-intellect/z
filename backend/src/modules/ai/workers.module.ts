@@ -39,6 +39,8 @@ import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-repor
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+// TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли.
+import { RolePrincipleSynthesisCron } from '../knowledge-core/workers/role-principle-synthesis.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
@@ -238,6 +240,11 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // SBA β-2 — cron `0 *\/6 * * *`: пересборка профилей сотрудников
     // со свежей активностью за неделю.
     KnowledgeCloneRebuildCron,
+    // TZ clone-method Э1.2 — cron `30 5 * * *` (Redis-lock): синтез принципов
+    // процесса должности (`RolePrinciple`) из reasoning-блоков носителей,
+    // sweep Org→Role с общим бюджетом 100 ролей. Kill-switch
+    // ROLE_PRINCIPLE_SYNTHESIS_ENABLED (ON).
+    RolePrincipleSynthesisCron,
     // SBA β-3 — consumer `core.specialist-routing` jobName='3-3-decisions'.
     // Извлекает Decision из блоков (decision/rationale/decision_basis),
     // KNN+LLM supersede-detect, triage (deep review всегда).

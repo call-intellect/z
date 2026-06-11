@@ -197,7 +197,7 @@ enum SkillTraitLayer {
 - **Acceptance:** таблицы `role_principles` создана, колонка `skill_traits.layer` дефолт `skill` (повтор миграции — no-op на проде через migrate deploy); существующие SkillTrait получают layer=skill (backward-compatible); `bun run typecheck` зелёный.
 - **Закрывает:** R3 (часть).
 
-### [ ] Фаза Э1.2 — Reflection-синтезатор принципов (@Cron)
+### [x] Фаза Э1.2 — Reflection-синтезатор принципов (@Cron)
 - **Картография:** `knowledge-clone-rebuild.cron.ts` (образец), новый `role-principle-synthesize` промпт, `RolePrinciple`.
 - **Входит:** @Cron по образцу (sweep Org→Role с порогом наблюдений) → группирует reasoning-блоки роли по ситуациям → LLM `role-principle-synthesize` → upsert `RolePrinciple` с grounding-ссылками; дедуп по embedding; флаг kill-switch ON.
 - **Не входит:** оценочные черты носителя (только процесс роли); UI редактирования.

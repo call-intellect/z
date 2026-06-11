@@ -175,6 +175,11 @@ export type LlmTaskType =
   //   короткое каноническое имя (3-6 слов). Вызывается ТОЛЬКО при слиянии 2+
   //   концептов; при создании одиночной черты — берётся category как есть.
   | 'skill-trait-concept-name'
+  // TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли.
+  // 'role-principle-synthesize' — ночной cron: из групп reasoning-цитат
+  //   носителей должности извлекает обобщённые принципы ПРОЦЕССА
+  //   (`RolePrinciple`, situation + statement + grounding sourceBlockIds).
+  | 'role-principle-synthesize'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -663,6 +668,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'clone-respond',
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2
   'skill-trait-concept-name',
+  // TZ clone-method Э1.2 — Reflection-слой принципов роли
+  'role-principle-synthesize',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',

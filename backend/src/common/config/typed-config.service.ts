@@ -1774,6 +1774,24 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────── role principles (TZ clone-method Э1.2) ──
+  /**
+   * Reflection-слой принципов роли (`RolePrincipleSynthesisCron`).
+   * `synthesisEnabled` — kill-switch ночного синтеза `RolePrinciple`
+   * (ON; выкл → принципы не синтезируются, persona работает без них).
+   * Пороги minObservations/dedupThreshold — НЕ здесь: крутилки читаются
+   * сервисом через `getDynamic('knowledge.rolePrinciple…')` (AdminSetting).
+   */
+  get rolePrinciples() {
+    return {
+      synthesisEnabled: this.resolveSync<boolean>(
+        'knowledge.rolePrincipleSynthesisEnabled',
+        'ROLE_PRINCIPLE_SYNTHESIS_ENABLED',
+        true,
+      ),
+    } as const;
+  }
+
   // ─────────────────────────── ai-chat-quota (ТЗ 2026-05-31) ───────
   /**
    * ТЗ 2026-05-31 ai-chat-quota — единая per-user квота Concierge+Clones.

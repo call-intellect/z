@@ -1278,6 +1278,17 @@ const SkillSchema = z.object({
    * уходит пользователю как есть).
    */
   CLONE_RESPOND_GROUNDING_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) ночного синтеза принципов
+   * процесса должности (`RolePrincipleSynthesisCron`, 05:30): из
+   * reasoning-блоков носителей роли LLM извлекает обобщённые
+   * `RolePrinciple` с grounding-ссылками. Выкл → принципы роли не
+   * синтезируются, persona продолжает работать без секции принципов.
+   * Пороги (minObservations/dedupThreshold) — НЕ здесь, а в AdminSetting
+   * (`knowledge.rolePrincipleMinObservations` / `…DedupThreshold`).
+   */
+  ROLE_PRINCIPLE_SYNTHESIS_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит

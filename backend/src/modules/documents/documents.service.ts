@@ -426,6 +426,11 @@ export class DocumentsService {
   }): Promise<Document> {
     const doc = await this.prisma.document.findUnique({
       where: { id: args.documentId },
+      // D10 — имена загрузчика/роли для DocumentDto (uploaderName/attachedRoleName).
+      include: {
+        uploader: { select: { name: true } },
+        attachedRole: { select: { name: true } },
+      },
     });
     if (!doc || doc.deletedAt) {
       throw new NotFoundException({
@@ -459,6 +464,11 @@ export class DocumentsService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.document.findMany({
         where,
+        // D10 — имена загрузчика/роли для DocumentDto (uploaderName/attachedRoleName).
+        include: {
+          uploader: { select: { name: true } },
+          attachedRole: { select: { name: true } },
+        },
         orderBy: { createdAt: 'desc' },
         take: args.limit ?? 50,
         skip: args.offset ?? 0,

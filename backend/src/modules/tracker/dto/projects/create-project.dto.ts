@@ -11,16 +11,21 @@ import { z } from 'zod';
  */
 export const CreateProjectSchema = z
   .object({
+    // D2 (ТЗ 2026-06-11): slug/identifier опциональны — если не переданы,
+    // сервер генерит их из `name` (транслит + уникальный суффикс) внутри
+    // транзакции. Regex-валидация остаётся для случая «передан явно».
     slug: z
       .string()
       .min(2)
       .max(60)
-      .regex(/^[a-z0-9-]+$/u, 'Допустимы только латинские буквы в нижнем регистре, цифры и дефис'),
+      .regex(/^[a-z0-9-]+$/u, 'Допустимы только латинские буквы в нижнем регистре, цифры и дефис')
+      .optional(),
     identifier: z
       .string()
       .min(2)
       .max(5)
-      .regex(/^[A-Z][A-Z0-9]*$/u, 'Только заглавные латинские буквы и цифры, начиная с буквы'),
+      .regex(/^[A-Z][A-Z0-9]*$/u, 'Только заглавные латинские буквы и цифры, начиная с буквы')
+      .optional(),
     name: z.string().min(1).max(200),
     description: z.string().max(10_000).nullable().optional(),
     defaultAssigneeId: z.string().max(64).nullable().optional(),

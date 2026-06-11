@@ -9,6 +9,10 @@ import {
 import { Prisma, type Project, type ProjectMember } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import {
+  generateProjectIdentifier,
+  generateProjectSlug,
+} from '../utils/translit';
 import type { CreateProjectDto } from '../dto/projects/create-project.dto';
 import type {
   AddProjectMemberDto,
@@ -50,83 +54,112 @@ export class ProjectsService {
     tenantId: string,
     userId: string,
   ): Promise<ProjectResponseDto> {
-    // Проверка уникальности slug per tenant (даём явную 409).
-    const existing = await this.prisma.project.findUnique({
-      where: { tenantId_slug: { tenantId, slug: dto.slug } },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException({
-        ok: false,
-        error: { code: 'project_slug_taken', message: 'Slug проекта уже занят' },
+    // Явный slug проверяем заранее — дружелюбный 409. Если slug не передан,
+    // генерируем внутри транзакции из `name` (транслит + уникальный суффикс);
+    // финальный гарант уникальности — DB-constraint @@unique([tenantId, slug]).
+    if (dto.slug) {
+      const existing = await this.prisma.project.findUnique({
+        where: { tenantId_slug: { tenantId, slug: dto.slug } },
+        select: { id: true },
       });
-    }
-
-    const project = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.project.create({
-        data: {
-          tenantId,
-          slug: dto.slug,
-          identifier: dto.identifier,
-          name: dto.name,
-          description: dto.description ?? null,
-          ownerId: userId,
-          defaultAssigneeId: dto.defaultAssigneeId ?? null,
-          network: dto.network,
-          timezone: dto.timezone,
-          cycleViewEnabled: dto.cycleViewEnabled,
-          intakeViewEnabled: dto.intakeViewEnabled,
-          gantViewEnabled: dto.gantViewEnabled,
-          timeTrackingEnabled: dto.timeTrackingEnabled,
-          teamTemplateId: dto.teamTemplateId ?? null,
-          // Sprints (2026-05-27) — 4 опц. scope-поля. Инвариант ≤1 уже проверен
-          // CreateProjectSchema.superRefine; здесь просто прокидываем.
-          customerCardId: dto.customerCardId ?? null,
-          vendorId: dto.vendorId ?? null,
-          subjectPersonId: dto.subjectPersonId ?? null,
-          departmentId: dto.departmentId ?? null,
-        },
-      });
-      // Дефолтные статусы.
-      const states = await tx.issueState.createManyAndReturn({
-        data: DEFAULT_STATES.map((s) => ({
-          tenantId,
-          projectId: created.id,
-          name: s.name,
-          color: s.color,
-          category: s.category,
-          sequence: s.sequence,
-          isDefault: s.isDefault,
-        })),
-        select: { id: true, isDefault: true },
-      });
-      const defaultStateId = states.find((s) => s.isDefault)?.id ?? null;
-      // Сам пользователь — admin (role=20) проекта.
-      await tx.projectMember.create({
-        data: { projectId: created.id, userId, role: 20 },
-      });
-      // Tracker Boards (2026-05-27) — создаём default-доску сразу с проектом.
-      // Идемпотентно через @@unique([projectId, name]) (если будет повтор —
-      // backfill подберёт; здесь race-free, т.к. в той же транзакции).
-      await tx.board.create({
-        data: {
-          tenantId,
-          projectId: created.id,
-          name: 'Доска',
-          color: '#5EEAD4',
-          sequence: 0,
-          isDefault: true,
-        },
-      });
-      // Зафиксировать defaultStateId (необязательно — но удобно UI).
-      if (defaultStateId) {
-        return tx.project.update({
-          where: { id: created.id },
-          data: { defaultStateId },
+      if (existing) {
+        throw new ConflictException({
+          ok: false,
+          error: { code: 'project_slug_taken', message: 'Slug проекта уже занят' },
         });
       }
-      return created;
-    });
+    }
+
+    const runCreate = (): Promise<Project> =>
+      this.prisma.$transaction(async (tx): Promise<Project> => {
+        const slug = dto.slug ?? (await generateProjectSlug(dto.name, tenantId, tx));
+        const identifier =
+          dto.identifier ?? (await generateProjectIdentifier(dto.name, tenantId, tx));
+        const created = await tx.project.create({
+          data: {
+            tenantId,
+            slug,
+            identifier,
+            name: dto.name,
+            description: dto.description ?? null,
+            ownerId: userId,
+            defaultAssigneeId: dto.defaultAssigneeId ?? null,
+            network: dto.network,
+            timezone: dto.timezone,
+            cycleViewEnabled: dto.cycleViewEnabled,
+            intakeViewEnabled: dto.intakeViewEnabled,
+            gantViewEnabled: dto.gantViewEnabled,
+            timeTrackingEnabled: dto.timeTrackingEnabled,
+            teamTemplateId: dto.teamTemplateId ?? null,
+            // Sprints (2026-05-27) — 4 опц. scope-поля. Инвариант ≤1 уже проверен
+            // CreateProjectSchema.superRefine; здесь просто прокидываем.
+            customerCardId: dto.customerCardId ?? null,
+            vendorId: dto.vendorId ?? null,
+            subjectPersonId: dto.subjectPersonId ?? null,
+            departmentId: dto.departmentId ?? null,
+          },
+        });
+        // Дефолтные статусы.
+        const states = await tx.issueState.createManyAndReturn({
+          data: DEFAULT_STATES.map((s) => ({
+            tenantId,
+            projectId: created.id,
+            name: s.name,
+            color: s.color,
+            category: s.category,
+            sequence: s.sequence,
+            isDefault: s.isDefault,
+          })),
+          select: { id: true, isDefault: true },
+        });
+        const defaultStateId = states.find((s) => s.isDefault)?.id ?? null;
+        // Сам пользователь — admin (role=20) проекта.
+        await tx.projectMember.create({
+          data: { projectId: created.id, userId, role: 20 },
+        });
+        // Tracker Boards (2026-05-27) — создаём default-доску сразу с проектом.
+        // Идемпотентно через @@unique([projectId, name]) (если будет повтор —
+        // backfill подберёт; здесь race-free, т.к. в той же транзакции).
+        await tx.board.create({
+          data: {
+            tenantId,
+            projectId: created.id,
+            name: 'Доска',
+            color: '#5EEAD4',
+            sequence: 0,
+            isDefault: true,
+          },
+        });
+        // Зафиксировать defaultStateId (необязательно — но удобно UI).
+        if (defaultStateId) {
+          return tx.project.update({
+            where: { id: created.id },
+            data: { defaultStateId },
+          });
+        }
+        return created;
+      });
+
+    // P2002 на @@unique([tenantId, slug]) — гонка параллельной транзакции.
+    // Авто-slug → один ретрай (генератор подберёт свежий суффикс); явный slug,
+    // оказавшийся занятым в гонке → дружелюбный 409.
+    let project: Project;
+    try {
+      project = await runCreate();
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (!dto.slug) {
+          project = await runCreate();
+        } else {
+          throw new ConflictException({
+            ok: false,
+            error: { code: 'project_slug_taken', message: 'Slug проекта уже занят' },
+          });
+        }
+      } else {
+        throw err;
+      }
+    }
 
     return this.toResponse(project);
   }

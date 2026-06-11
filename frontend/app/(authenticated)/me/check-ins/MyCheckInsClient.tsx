@@ -7,6 +7,10 @@ import {
   type DailyCheckInApi,
   myCheckInsApi,
 } from '@/api/my-check-ins.api';
+import {
+  VoiceInputButton,
+  appendTranscript,
+} from '@/ui/components/voice/VoiceInputButton';
 
 /**
  * SBA β-8 — `/me/check-ins` (client).
@@ -118,6 +122,17 @@ export function MyCheckInsClient() {
               <option value="evening">Вечерний (что сделано)</option>
             </select>
           </label>
+        </div>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-xs text-fg-secondary">
+            {kind === 'morning' ? 'Планы на сегодня' : 'Что сделано'}
+          </span>
+          {/* Голосовой ВВОД: запись через MediaRecorder → серверный ASR (Vox),
+              расшифровка аппендится в поле. Где запись недоступна (нет
+              getUserMedia/MediaRecorder) — кнопка не появляется. iOS Safari ок. */}
+          <VoiceInputButton
+            onTranscript={(t) => setText((prev) => appendTranscript(prev, t))}
+          />
         </div>
         <textarea
           className="mb-2 w-full rounded border p-2 text-sm"

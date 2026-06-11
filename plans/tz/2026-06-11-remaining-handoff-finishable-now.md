@@ -82,7 +82,7 @@ E. Прод-операции владельца (не код)
 ### B2 — Ф3 exec разделы Команда/Дела/Цели + drill `[x]`
 - `MobileTeamClient`/`MobileDealsClient`/`MobileGoalsClient` (operations / `weekly-per-person` / `goalsPulse`/`goalTree`). Фокус «кому помочь», БЕЗ публичного «кто провалил» (Р4). Drill в существующие detail-страницы.
 
-### B3 — Ф4 manager «Моё»+«Чек-ин» `[ ]`
+### B3 — Ф4 manager «Моё»+«Чек-ин» `[x]` («Моё» = переиспользование `MyDailyBriefClient` через таб; голос — `VoiceInputButton` на серверном ASR Vox, iOS-совместимо)
 - `MobileMyDayClient` (контент таба «Моё» поверх ГОТОВОЙ страницы `/me/daily-brief`/`MyDailyBriefClient` — переиспользовать; позитивная рамка уже в `domain/me/daily-brief.ts`). `MobileCheckinClient` — поток `/me/check-ins`, поле текст + микрофон (ASR), без inline-кнопок (Р7).
 - **Acceptance:** grep запрещённых строк «провалил/просрочил/не сдал» в менеджерских строках = 0; ноль inline-кнопок-вариантов в системном вопросе.
 

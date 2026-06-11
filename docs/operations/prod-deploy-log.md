@@ -71,6 +71,34 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📱💬 2026-06-11 — Остаток пакета: Мобильная Кора Ф2–Ф7 (exec/manager + голос + утренний web-push) · ChatBox блок A (виджет/метрики/парсер)
+
+> Контракт: ветка `feature/remaining-handoff` (6 коммитов `9fcdc26c..daf72cbe` поверх фундамента `feature/finishable-now-2026-06-11`). ТЗ: `plans/tz/2026-06-11-mobile-cora-exec-manager.md`, `plans/tz/...chatbox-memory-finishing...` (блок A: Ф2/Ф3/Ф4). Handoff-ТЗ: `plans/tz/2026-06-11-remaining-handoff-finishable-now.md`.
+>
+> **Зачем для прода:** доводка остатка пакета «6 ТЗ» — два независимых направления. (1) **ChatBox блок A** — виджет «Чаты в памяти» на странице интеграции (новый эндпоинт `GET /api/v1/chatbox/integration/memory-summary` с counts: диалоги/сессии/проанализировано/в работе/ошибки + blocks/tasks из переписки) + prom-метрики синка/анализа + чистый парсер `extractChatboxOutboundId` ответа `sendMessage` (best-effort, форма ждёт боевой отправки). (2) **Мобильная Кора Ф2–Ф7** — exec «Обзор»/«Команда»/«Дела»/«Цели» через `MobileShell`-gate (десктоп не тронут), голосовой ввод в чек-ин (серверный ASR Vox), «Спросить»/«Память», и **первое подключение браузерного web-push** — новый `ExecMorningPushCron` (утреннее окно: «Требует тебя сегодня: N» → `/dashboard`).
+>
+> **Миграций / seed / patch / backfill — НЕТ.** **2 новых kill-switch + 1 крутилка (AdminSetting, code-default есть).** **VAPID-ENV нужны для нового exec-push** (без них — graceful no-op). **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (VAPID — без них браузерный web-push, ВКЛЮЧАЯ новый `ExecMorningPushCron`, graceful no-op):** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (backend) + `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (frontend build-ENV). Генерация: `npx web-push generate-vapid-keys` (публичный ключ продублировать в backend и frontend, `VAPID_SUBJECT` = `mailto:`-адрес). **Это первый крон, который реально вызывает `enqueuePushSend`** — без VAPID отправка молча no-op (ошибки нет). Реестр — `docs/operations/feature-flags.md` §VAPID. _(если VAPID уже заданы при выкате блока finishable-now — повторно не нужно.)_
+- **Шаг 1 — флаги (kill-switch / крутилка, code-fallback ON — сид не обязателен):**
+  - `operations.daily_digest.deliver_to_webpush` (AdminSetting, ENV-fallback `OPS_DIGEST_DELIVER_TO_WEBPUSH=true`, kill-switch, default ON). Доставка утреннего exec web-push «Требует тебя сегодня: N». Аварийный откат: `=false` → утренний exec-push не шлётся.
+  - `operations.daily_digest.webpush_morning_hour` (AdminSetting, ENV-fallback `OPS_DIGEST_WEBPUSH_MORNING_HOUR`, крутилка, default `9`). Час утреннего окна exec-push. super_admin может изменить из `/admin/settings`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Миграций / seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Прод-операция владельца (не код): ChatBox Ф0** — прогнать `patch-enable-chatbox-analysis.ts --apply` для уже подключённых интеграций, в т.ч. «Ооо луа» (~215 чатов, анализ переписки не запускался). См. «Опциональные ручные операции» выше; уже в STEPS (`phase:'patch'`), `--mode update` его выполнит. _(нужно для того, чтобы виджет «Чаты в памяти» показал ненулевые counts.)_
+- **Шаг 11 — Docker rebuild** — обязателен. Backend: новый эндпоинт `GET /api/v1/chatbox/integration/memory-summary`, prom-метрики `z_chatbox_*` + `z_exec_morning_push_delivered_total`, парсер `extractChatboxOutboundId`, новый `ExecMorningPushCron` (operations). Frontend: `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox`, мобильные экраны exec/manager (`src/ui/mobile/*`), голосовой ввод в чек-ин, кнопка `EnableMorningRemindersButton` на exec «Обзоре». Команда: `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `GET /api/v1/chatbox/integration/memory-summary` отдаёт counts (`dialogs`/`sessions`/`analyzed`/`inProgress`/`failed` + `blocks`/`tasks` + `analysisEnabled`);
+  - (б) `/metrics` содержит `z_chatbox_syncs_total`, `z_chatbox_analyzes_total`, `z_chatbox_pending_sessions`, `z_chatbox_last_sync_ts_seconds`, `z_exec_morning_push_delivered_total`;
+  - (в) `ExecMorningPushCron` — дождаться утреннего окна или прогнать вручную (`/admin/crons` → run, или вызвать метод), проверить `enqueuePushSend` и доставку на подписанное устройство, тап по уведомлению → `/dashboard`.
+- **Алерты (документировать в Grafana/Alertmanager):**
+  - `z_chatbox_pending_sessions > 0 and increase(z_chatbox_analyzes_total[1h]) == 0` — копим сессии, но анализ не идёт (цепочка знаний встала).
+  - `time() - max(z_chatbox_last_sync_ts_seconds) > 7200` — синк отстал > 2 ч (вебхуки/крон не доезжают).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📱💬 2026-06-11 — Финиш «сейчас» (6 ТЗ): ASR-сегменты · промпты-MASTER · кабинет-honesty · ChatBox память+задачи · Мобильная Кора · probe-fix
 
 > Контракт: ветка `feature/finishable-now-2026-06-11` (13 коммитов). ТЗ: `plans/tz/2026-06-11-asr-segment-timings-persist-and-merge.md`, `2026-06-11-prompt-polish-fewshot-org-and-reports.md`, `2026-06-11-org-extractor-and-compiler-finalize.md`, `2026-06-11-cabinet-inbox-nav-ui-honesty.md`, `2026-06-11-chatbox-memory-finishing-and-tasks-from-chat.md`, `2026-06-11-cabinet-leftovers-ui-probe-chat.md` (probe-fix).

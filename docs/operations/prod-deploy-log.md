@@ -71,6 +71,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔔 2026-06-11 — Probe-система Фаза 1 (формулировка + дайджест + recheck + fatigue + видимое следствие)
+
+> Контракт: ветка `svdev`, коммиты `5ed78b54..fa950cd1` (6 под-фаз). ТЗ: `plans/tz/2026-06-11-probe-system-upgrade-phase1.md`. Анализ: `plans/analysis/2026-06-11-proactive-clarifying-questions-probe-research.md`.
+>
+> **Зачем для прода:** переработка проактивных уточняющих вопросов (probe). (Ф1) переписан промпт `probe-formulate` — человеческие формулировки без машинных кодов (schema `probe_formulate_v3`). (Ф2) политика по типу пробела (окно срочности + предикаты «пробел ещё открыт?»). (Ф3) deferrable-probe сверх бюджета не дропается, а копится в `queued_digest` → новый `ProbeDigestCron` шлёт ОДНО сводное уведомление «Вопросы от Коры» 1×/день. (Ф4) recheck повода перед dispatch — если пробел закрылся сам, probe не шлётся (`suppressed_stale`). (Ф5) adaptive fatigue — меньше беспокоить тех, кто не отвечает, + cooldown темы. (Ф6) подтверждение «ваш ответ записан» после ответа.
+>
+> **1 миграция (авто, enum).** **5 новых AdminSetting-крутилок (code-default, действий владельца НЕ требуют).** **Docker rebuild backend+frontend обязателен** (новый enum в PrismaClient, новый cron, новые eventType, метрика).
+
+- **Шаг 1 — AdminSetting (5 крутилок, code-default есть — действий владельца НЕ требуют):** `probe.digestTouchCap` (5), `probe.digestHourUtc` (9 UTC), `probe.digestEnabled` (true, kill-switch), `probe.topicCooldownHours` (48), `probe.adaptiveFatigueEnabled` (true, kill-switch). Сид — `seed-admin-settings.ts` секция `probe` (опц., code-default активен — сид не обязателен для выката). Реестр флагов — `docs/operations/feature-flags.md` (`probe.digestEnabled` / `probe.adaptiveFatigueEnabled` — два kill-switch тип A).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260611120000_probe_status_digest`): `ALTER TYPE "ProbeStatus" ADD VALUE 'queued_digest'` + `'suppressed_stale'`. Аддитивна, безопасна, идемпотентность через сам Prisma (`migrate deploy` пропускает применённую миграцию). ⚠ `ALTER TYPE ... ADD VALUE` **не-транзакционна** — вынесена в отдельную миграцию. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** — это миграция схемы, не seed/patch/backfill.
+- **Миграций / seed / patch / backfill (кроме enum выше) — НЕТ.**
+- **Шаг 11 — Docker rebuild** — обязателен (новый enum-значение в PrismaClient, новый `ProbeDigestCron`, новые eventType `probe.digest` / `probe.answer_acknowledged` в `event-payload.registry.ts` + рендер telegram/max-bot, метрика `probe_outcome_total`; frontend: новые notification-label «Вопросы от Коры» / «Ответ записан»): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах backend поднялся `ProbeDigestCron`;
+  - (б) метрика тикает: `curl -s localhost:3000/metrics | grep probe_outcome_total`;
+  - (в) probe-вопрос в Telegram приходит **без машинных кодов / латиницы** (человеческая формулировка);
+  - (г) после ответа на probe приходит подтверждение «ваш ответ записан в память компании».
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📱💬 2026-06-11 — Остаток пакета: Мобильная Кора Ф2–Ф7 (exec/manager + голос + утренний web-push) · ChatBox блок A (виджет/метрики/парсер)
 
 > Контракт: ветка `feature/remaining-handoff` (6 коммитов `9fcdc26c..daf72cbe` поверх фундамента `feature/finishable-now-2026-06-11`). ТЗ: `plans/tz/2026-06-11-mobile-cora-exec-manager.md`, `plans/tz/...chatbox-memory-finishing...` (блок A: Ф2/Ф3/Ф4). Handoff-ТЗ: `plans/tz/2026-06-11-remaining-handoff-finishable-now.md`.

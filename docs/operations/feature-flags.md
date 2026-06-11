@@ -112,6 +112,8 @@ _(пусто — все доставки в Telegram авторизованы в
 | `CHATBOX_TASK_EXTRACTION_ENABLED` / `aiFeatures.chatboxTaskExtractionEnabled` | 🟢 ВКЛ | Извлечение задач из клиентской переписки (ChatBox Ф5): закрытая сессия → LLM-извлечение action items → `Task` с `sourceType='chatbox'`. Выкл → переписка по-прежнему мостится в граф, но задачи из неё не создаются. ENV-рубильник (zBool default true). (ТЗ chatbox-memory-finishing Ф5) |
 | `TASKS_CROSS_SOURCE_DEDUPE_ENABLED` / `aiFeatures.tasksCrossSourceDedupeEnabled` | 🟢 ВКЛ | Межисточниковый дедуп задач (ChatBox Ф6): задача из переписки, семантически совпадающая с задачей из встречи/трекера (cosine ≥ порога), не плодит дубль. Выкл → дедуп между источниками не работает (возможны повторы «встреча + чат»). ENV-рубильник (zBool default true). (ТЗ chatbox-memory-finishing Ф6) |
 | `operations.daily_digest.deliver_to_webpush` | 🟢 ВКЛ | Доставка утреннего exec web-push «Требует тебя сегодня: N» (`ExecMorningPushCron`, hourly, утреннее окно по таймзоне). Выкл → утренний exec-push не шлётся (без него Мобильная Кора работает, просто не напоминает). AdminSetting-ключ, ENV-fallback `OPS_DIGEST_DELIVER_TO_WEBPUSH=true`. (Мобильная Кора Ф7) |
+| `probe.adaptiveFatigueEnabled` | 🟢 ВКЛ | Снижение частоты уточняющих вопросов (probe) тем, кто на них не отвечает (бюджет режется вдвое получателю с низким engagement). Выкл → все получают полный бюджет probe (без учёта вовлечённости). AdminSetting-ключ (code-default true). (probe Ф1) |
+| `probe.digestEnabled` | 🟢 ВКЛ | Батч-дайджест отложенных probe (`ProbeDigestCron` собирает накопленные `queued_digest`-вопросы в одно сводное уведомление «Вопросы от Коры»). Выкл → дайджест не шлётся, отложенные probe копятся (не доставляются). AdminSetting-ключ (code-default true). (probe Ф1) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -150,6 +152,9 @@ _(пусто — все доставки в Telegram авторизованы в
 | `tasks.cross_source_dedupe_threshold` | 0.85 | Порог cosine-сходства, при котором задача из переписки считается дублем задачи из встречи/трекера и не создаётся повторно. Ниже порога — новая задача. AdminSetting (super_admin) | Межисточниковый дедуп задач (ТЗ chatbox-memory-finishing Ф6) |
 | `chatbox.match.name_fuzzy_enabled` | true | Включает нечёткое сопоставление сотрудника по имени (а не только по email) при матчинге участников переписки ChatBox с `Person`. AdminSetting (super_admin) | Матчинг участников ChatBox (ТЗ chatbox-memory-finishing Ф1) |
 | `operations.daily_digest.webpush_morning_hour` | 9 | Час утреннего окна exec-push «Требует тебя сегодня: N» (`ExecMorningPushCron` шлёт раз в сутки в этом локальном часу). AdminSetting (super_admin), ENV-fallback `OPS_DIGEST_WEBPUSH_MORNING_HOUR` | Утренний exec web-push (Мобильная Кора Ф7) |
+| `probe.digestTouchCap` | 5 | Максимум отложенных probe в одном дайджесте «Вопросы от Коры» (остальное копится до следующего прогона). AdminSetting (super_admin) | Батч-дайджест probe (probe Ф1) |
+| `probe.digestHourUtc` | 9 | Час суток (UTC), в который `ProbeDigestCron` фактически отправляет дайджест отложенных probe (сам cron тикает ежечасно). AdminSetting (super_admin) | Батч-дайджест probe (probe Ф1) |
+| `probe.topicCooldownHours` | 48 | Окно «тишины» по теме probe (ч): после отправки/игнора probe по теме повтор по той же теме дропается на этот срок (`probe:cooldown:*`). AdminSetting (super_admin) | Adaptive fatigue probe (probe Ф1) |
 
 ---
 

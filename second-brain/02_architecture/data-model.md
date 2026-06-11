@@ -987,6 +987,14 @@ Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` п�
 
 **`IdeaBlockLinkType` (новое значение):** `resolves` — запись `signalType='commitment_status'` закрывает исходное `commitment` через `IdeaBlockLink`.
 
+### Probe-система — enum `ProbeStatus` (2026-06-11, Фаза 1)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Полная сущность `ProbeEvent` и pipeline — [[../01_projects/probe-agent]].
+
+Жизненный цикл probe (`ProbeEvent.status`, enum `ProbeStatus`): `pending → dispatched` (успех) либо `dropped_dedup` / `dropped_rate_limit` / `dropped_cold_start` / `dropped_dataclass_gate` / `expired` (отбраковки). Фаза 1 добавила **два значения** (миграция `20260611120000_probe_status_digest` — `ALTER TYPE "ProbeStatus" ADD VALUE`, аддитивно):
+- **`queued_digest`** — deferrable-probe сверх бюджета получателя **отложен в батч-дайджест** (вместо `dropped_rate_limit`); `ProbeDigestCron` соберёт его в одно сводное уведомление `probe.digest` и пометит `dispatched`.
+- **`suppressed_stale`** — повод **закрылся сам между `suggest` и `dispatch`** (recheck-предикат `PROBE_REASON_RECHECK` показал, что пробел больше не актуален); probe не шлётся, LLM не зовётся.
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

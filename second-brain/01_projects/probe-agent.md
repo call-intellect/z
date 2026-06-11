@@ -88,7 +88,7 @@ ProbePriorityCron (*/15 * * * *):
 | `payload` | JSON | message, suggestedActions, contextCardId, contextCardKind, contextCardTitle, actionUrl, dataClass |
 | `recipientCandidates` | string[] | userId[] |
 | `selectedRecipientId` | string? | После dispatch |
-| `status` | ProbeStatus | pending → dispatched / dropped_dedup / dropped_rate_limit / dropped_cold_start / expired |
+| `status` | ProbeStatus | pending → dispatched / dropped_dedup / dropped_rate_limit / dropped_cold_start / expired / **queued_digest** (Ф3 — deferrable отложен в дайджест) / **suppressed_stale** (Ф4 — повод закрылся между suggest и dispatch) |
 | `dispatchedNotificationId` | string? | FK на Notification (α-1) |
 | `contentHash` | varchar(80) | sha256 для дедупа |
 | `priority` | int | 0..100, computed |
@@ -144,6 +144,51 @@ PROBE_COLD_START_MODE_HOURS=24
 - `ConversationalService.respondToProbe` → emit `notification.responded`.
 - `Specialist36Service.processBlock` → emit `idea.created`.
 - `Specialist36Service.changeStatus` → emit `idea.status_changed` (closing-loop).
+
+## Фаза 1 — политика инициирования + формулировка (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md) (6 под-фаз). Анализ корня «вопросы не понравились» — [`plans/analysis/2026-06-11-proactive-clarifying-questions-probe-research.md`](../../plans/analysis/2026-06-11-proactive-clarifying-questions-probe-research.md). Ветка `svdev`, коммиты `5ed78b54..fa950cd1`. Корень был не в тексте, а в **отсутствии политики инициирования** (когда/кому/как часто слать). Теперь это работает.
+
+### Ф1 — переписан промпт `probe-formulate` (коммит `5ed78b54`)
+
+Промпт `backend/src/modules/knowledge-core/prompts/probe-formulate.prompt.ts` переписан по методологии (§9-B анализа): SYSTEM получил **персону + правила + few-shot + self-check** и стал стабильным (cache-friendly — переменные данные в конце USER). Главное: USER больше **НЕ подаёт машинные коды** (`emittedByService`, сырой `reason`) — вместо них человеческий `reasonLabel` из нового словаря `backend/src/modules/probe/probe-reason-labels.ts` (`PROBE_REASON_LABEL` + `PROBE_REASON_FALLBACK`). Schema контракта поднята `probe_formulate_v2` → `probe_formulate_v3` (форма USER сменилась). Fallback при провале LLM теперь: `suggestedQuestion → PROBE_REASON_FALLBACK[reason] → generic` (раньше — сырой `humanizeProbeFallback(message)`, протекал техникой).
+
+### Ф2 — политика по типу пробела (коммит `cbe129b3`)
+
+Новый `backend/src/modules/probe/probe-reason-policy.ts`:
+- `PROBE_REASON_WINDOW` (`immediate` | `deferrable`, дефолт `deferrable`) + `probeWindow(reason)` — окно срочности повода (срочное шлём сразу, прочее можно отложить в дайджест);
+- `PROBE_REASON_RECHECK` — предикаты «пробел ещё открыт?»: перечитывают Decision / Idea / Regulation / Process / Policy по `contextCardId`, **tenant-изолированно** (используется в Ф4).
+
+### Ф3 — батч-дайджест отложенных probe (коммит `7c82a0f3`)
+
+Новое значение `ProbeStatus.queued_digest` (миграция, см. ниже): **deferrable**-probe сверх бюджета получателя больше **не дропается** (`dropped_rate_limit`), а откладывается (`queued_digest`) — гейт исправлен в **двух местах** (`ProbeService.suggest()` и `ProbeDispatcherWorker`). Новый `backend/src/modules/probe/probe-digest.cron.ts` (`ProbeDigestCron`, `@Cron('0 * * * *')`, фактически шлёт 1×/день в час `probe.digestHourUtc`): группирует `queued_digest` по `(tenantId, recipient)`, шлёт **ОДНО** уведомление `probe.digest` (≤ `probe.digestTouchCap`, дефолт 5), помечает вошедшие `dispatched` (идемпотентно — повтор = no-op). Текст собирает детерминированный билдер `backend/src/modules/probe/prompts/probe-digest.prompt.ts` (`buildProbeDigestSummary`, **без LLM**). `immediate`-probe при лимите **минует дайджест** (прежний drop, R6). Новый eventType `probe.digest` (Zod в `event-payload.registry.ts`, рендер в telegram + max-bot адаптерах, канал-политика `['telegram_bot','max_bot','in_app']`, фронт-label «Вопросы от Коры»). `ProbeDigestCron` зарегистрирован в `probe.module.ts`.
+
+### Ф4 — recheck повода перед dispatch (коммит `9b5a026a`)
+
+`ProbeDispatcherWorker.process()` перед `formulate()` перепроверяет повод (`PROBE_REASON_RECHECK`). Если пробел закрылся сам между `suggest` и `dispatch` → новый `ProbeStatus.suppressed_stale`, probe **НЕ шлётся**, LLM **не зовётся** (экономия + не дёргаем зря). Best-effort: ошибка предиката → probe всё равно уходит (recall важнее).
+
+### Ф5 — adaptive fatigue (коммит `8a993edc`)
+
+«Меньше беспокоить тех, кто не отвечает»:
+- новая метрика `probe_outcome_total{outcome, reason}` (`answered` из `ProbeResponseHandler`, `ignored` из `ProbePriorityCron` на истечении) — калибровочный сигнал для Фазы 2;
+- `ProbePriorityCron` пишет engagement-снимок в Redis; `ProbeService.filterByRateLimit` режет эффективный бюджет **вдвое** получателю с engagement ниже порога (kill-switch `probe.adaptiveFatigueEnabled`, ВКЛ);
+- **topic cooldown:** dispatcher (на dispatch) и priority-cron (на `ignored`) ставят ключ `probe:cooldown:{tenant}:{hash}` на `probe.topicCooldownHours` (дефолт 48ч); `suggest()` дропает тему на cooldown. Общие ключи — новый `backend/src/modules/probe/probe-fatigue.util.ts`. `ProbePriorityCron` теперь инжектит `RedisService` + `TypedConfigService`.
+
+### Ф6 — видимое следствие ответа (коммит `fa950cd1`)
+
+`ProbeResponseHandler` после ответа шлёт получателю подтверждение `probe.answer_acknowledged` («Спасибо! Ваш ответ записан в память компании.» + название объекта `contextCardTitle`). **Только текст** (не голос). Best-effort. `ProbeResponseHandler` теперь инжектит `ConversationalService`. Новый eventType (Zod + рендер telegram / max-bot + фронт-label «Ответ записан»).
+
+### Новые крутилки (AdminSetting, секция `probe`)
+
+Через `getDynamic` (code-default, прод-действий не требуют), зарегистрированы в `admin-setting-schema-registry.ts` + `seed-admin-settings.ts`: `probe.digestTouchCap` (5), `probe.digestHourUtc` (9), `probe.digestEnabled` (true, kill-switch), `probe.topicCooldownHours` (48), `probe.adaptiveFatigueEnabled` (true, kill-switch). Флаги `probe.digestEnabled` и `probe.adaptiveFatigueEnabled` — оба kill-switch (тип A, ВКЛ); дайджест / промпт / recheck / ack едут **без флага** (чистая замена поведения). Реестр флагов — [[../../docs/operations/feature-flags|feature-flags]].
+
+### Миграция
+
+`backend/prisma/migrations/20260611120000_probe_status_digest/migration.sql` — `ALTER TYPE "ProbeStatus" ADD VALUE 'queued_digest'` + `'suppressed_stale'` (аддитивно, безопасно).
+
+### Что осталось — Фаза 2/3 (отложено)
+
+Фаза 2 (LLM-judge ценности вопроса + семантический дедуп через pgvector + полный graph-answer-search) и Фаза 3 (re-ask петля + память предпочтений тона) ждут калибровочных данных `probe_outcome_total` из Ф5. Порядок A→B→C доказан анализом §10 Р3. См. реестр [[../04_не-сделано/README|не-сделано]].
 
 ## Что отложено
 

@@ -39,7 +39,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | specialist 3.6 (Ideas) | `idea-extract`, `idea-cluster-merge`, `idea-status-summarize` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.7 (Skill) | `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond` | **GPT-5.4 capable primary** (КРИТИЧНО) → OpenAI-mini → Ollama |
 | specialist 3.8 (Helpfulness) | `helpfulness-detect`, `helpfulness-trait-merge`, `helpfulness-spotlight-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
-| probe + dialog | `probe-formulate`, `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
+| probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
 | meeting analyze | `analyze-default`, `type-sales`, `type-interview`, `type-1on1`, ..., `review`, `retrospective`, `task_discussion` | по типу — см. `seed-llm-task-routes*.ts` |
@@ -448,5 +448,14 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - Прочее A6: telegram create/forward → один builder (`today` из SYSTEM в user); `issue-infer-fields` — убрана goal-ветка (`suggestedGoalId=null`); мёртвый `chat-v2-synthesize` MODE_PROMPTS удалён (полезное перенесено в боевой `synthetic.prompt`).
 
 [[../index|← index]]
+
+## Probe-система Фаза 1 — формулировка + дайджест (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Ветка `svdev`, коммиты `5ed78b54..fa950cd1`. Полная карта изменений — [[probe-agent]] §«Фаза 1»; cron — [[workers-queues]].
+
+- **`probe-formulate` переписан** — SYSTEM получил персону + правила + few-shot + self-check (стабильный, cache-friendly); USER больше не подаёт машинные коды (`emittedByService`/сырой `reason`), вместо них человеческий `reasonLabel` из словаря `probe-reason-labels.ts`. Schema контракта `probe_formulate_v2` → `probe_formulate_v3`. Fallback при провале LLM: `suggestedQuestion → PROBE_REASON_FALLBACK[reason] → generic`.
+- **`ProbeDigestCron` (`@Cron('0 * * * *')`) — БЕЗ LLM.** Билдер `buildProbeDigestSummary` (`probe/prompts/probe-digest.prompt.ts`) собирает текст батч-дайджеста отложенных probe **детерминированно**, не вызывая модель (новый taskType не вводится). Подробности cron'а — [[workers-queues]].
+- **`ProbeDispatcherWorker` (Ф4)** перед `formulate()` перепроверяет повод (`PROBE_REASON_RECHECK`) — если пробел закрылся сам, probe помечается `suppressed_stale` и **LLM не зовётся** (экономия вызовов).
+- **Новая метрика `probe_outcome_total{outcome,reason}`** (`answered`/`ignored`) — калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса; отложена до накопления данных).
 
 [[../index|← index]]

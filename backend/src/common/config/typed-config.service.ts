@@ -899,6 +899,9 @@ export class TypedConfigService {
       // на сыром транскрипте (один LLM-вызов). Включается флагом отдельно от
       // v2-агентов; producer — MergeWorker (после готовности транскрипта).
       meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
+      // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md
+      // §4): kill-switch вторичного пути готового отчёта в граф. Ship-On (ON).
+      reportIngestEnabled: this.get('REPORT_INGEST_ENABLED'),
       // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов).
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),

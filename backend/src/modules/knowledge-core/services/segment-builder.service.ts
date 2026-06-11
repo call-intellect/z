@@ -105,7 +105,74 @@ export class SegmentBuilderService {
     if (freeNote) {
       return [{ startMs: 0, endMs: 0, speakers: [], text: freeNote }];
     }
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md
+    // §2.1): payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown,
+    // chapters }` (см. ReportIngestAdapter). Разворачиваем в ГРАНУЛЯРНЫЕ
+    // сегменты — по одному на каждый факт/главу + один на summary, — чтобы
+    // block-ingest извлёк отдельный блок на факт, а не один склеенный fullText.
+    const report = this.tryGetReportSegments(payload);
+    if (report) {
+      return report;
+    }
     return this.buildFallback(payload);
+  }
+
+  // ─────────────────────────── meeting_report ─────────────────────────────
+
+  /**
+   * Разворачивает payload отчёта встречи в гранулярные сегменты. Возвращает
+   * null, если payload не является отчётом (`kind !== 'meeting_report'`) —
+   * тогда buildSegments идёт в fallback.
+   *
+   * Гранулярность критична: каждый факт — отдельный сегмент → отдельный
+   * IdeaBlock с нужным signalType. НЕ склеиваем в один сегмент.
+   * signalType определит LLM-extraction; новое поле Segment НЕ вводим.
+   */
+  private tryGetReportSegments(payload: unknown): Segment[] | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as {
+      kind?: unknown;
+      reportFacts?: unknown;
+      reportSummaryMarkdown?: unknown;
+      chapters?: unknown;
+    };
+    if (p.kind !== 'meeting_report') return null;
+
+    const segments: Segment[] = [];
+    const push = (text: string | null | undefined) => {
+      if (typeof text === 'string' && text.trim().length > 0) {
+        segments.push({ startMs: 0, endMs: 0, speakers: [], text: text.trim() });
+      }
+    };
+
+    // 1. По одному сегменту на каждый структурный факт.
+    if (Array.isArray(p.reportFacts)) {
+      for (const f of p.reportFacts) {
+        if (f && typeof f === 'object') {
+          push((f as { text?: unknown }).text as string | undefined);
+        }
+      }
+    }
+
+    // 2. Быстрое саммари — отдельным сегментом.
+    push(p.reportSummaryMarkdown as string | undefined);
+
+    // 3. По одному сегменту на каждую главу: «title: summary» (или только title).
+    if (Array.isArray(p.chapters)) {
+      for (const c of p.chapters) {
+        if (c && typeof c === 'object') {
+          const ch = c as { title?: unknown; summary?: unknown };
+          const title = typeof ch.title === 'string' ? ch.title.trim() : '';
+          const summary =
+            typeof ch.summary === 'string' ? ch.summary.trim() : '';
+          if (title && summary) push(`${title}: ${summary}`);
+          else if (title) push(title);
+          else if (summary) push(summary);
+        }
+      }
+    }
+
+    return segments;
   }
 
   private tryGetFullText(payload: unknown): string | null {

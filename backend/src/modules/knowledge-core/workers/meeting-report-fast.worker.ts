@@ -36,6 +36,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -103,6 +104,12 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     // (gate на создание пользовательского Task для action-items встречи).
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
+    // best-effort эмит `meeting.report-fast-ready` после готовности отчёта.
+    // @Optional — в старых unit-тестах воркера эмиттер не передаётся (no-op).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -409,6 +416,25 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     const durationSec = (Date.now() - startedAt) / 1000;
     this.metrics?.observeMeetingReportFastDuration?.(durationSec);
     this.metrics?.incMeetingReportFast?.({ tenant: tenantId, status });
+
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
+    // эмитим `meeting.report-fast-ready` ТОЛЬКО при ready/partial (на failed
+    // класть в граф нечего). Best-effort try/catch — сбой эмита НЕ откатывает
+    // уже записанный reportFastStatus (паттерн analyze.worker MEETING_AI_READY).
+    if (this.events && (status === 'ready' || status === 'partial')) {
+      try {
+        this.events.emit('meeting.report-fast-ready', {
+          meetingId,
+          tenantId,
+          status,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'meeting-report-fast: эмит meeting.report-fast-ready не удался (best-effort) — продолжаем',
+        );
+      }
+    }
 
     this.logger.log(
       {

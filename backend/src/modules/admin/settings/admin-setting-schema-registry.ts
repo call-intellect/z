@@ -51,6 +51,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutoThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationDeepReviewThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationStaleDynamicScoreThreshold', UNIT_INTERVAL],
+  // Report-to-graph Ф4 ГАРД A — cap уверенности блоков из отчёта встречи [0..1].
+  ['knowledge.reportBlockConfidenceCap', UNIT_INTERVAL],
   // Action Center «лестница доверия» A1/A2 — пороги [0..1].
   ['knowledge.curationProvisionalThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationAuditSampleRate', UNIT_INTERVAL],

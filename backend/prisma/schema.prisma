@@ -274,6 +274,13 @@ enum SourceType {
   /// Ежедневный чек-ин сотрудника (план/отчёт) → RawEvent → knowledge-core.
   /// Мост CheckinIngestService (ТЗ 2026-06-10-daily-checkin-to-graph-bridge).
   daily_checkin
+  /// Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2).
+  /// ВТОРИЧНЫЙ источник: выжимка fast-отчёта (summaryFast + структурные выводы
+  /// по типу встречи) идёт в граф отдельным RawEvent. Блоки помечаются
+  /// `IdeaBlock.primarySource='report'` с capped confidence (ГАРД A) — ниже
+  /// trust, чем у транскриптного primary. По одному `Source(type=meeting_report)`
+  /// на Org — создаётся лениво в ReportIngestAdapter.
+  meeting_report
 }
 
 enum DataClass {
@@ -3319,6 +3326,13 @@ model IdeaBlock {
   evidenceCount               Int                          @default(0)
   /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
   dynamicScore                Decimal                      @default(1.0) @db.Decimal(8, 4)
+  /// Фаза 2 «отчёт→граф» (ТЗ 2026-06-11-report-to-graph-phase2). Первичный
+  /// источник факта на УРОВНЕ блока (evidence может быть мульти-source):
+  /// 'transcript' (дословный, первичный) | 'report' (выжимка отчёта, вторичный).
+  /// null = исторические блоки → трактуются как 'transcript'. Детерминированный
+  /// machine-guard провенанса: ГАРД B в block-distill (транскрипт всегда
+  /// побеждает report при дедупе), ГАРД A в block-ingest (cap confidence report).
+  primarySource               String?                      @db.VarChar(16)
   /// Фаза 0b — пометка role-relevance из BlockExtractionService.
   /// Если true и roleId != null — блок учитывается RoleProfileAgent'ом (Фаза 0d).
   roleRelevant                Boolean                      @default(false)

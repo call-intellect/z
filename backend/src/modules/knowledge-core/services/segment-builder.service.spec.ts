@@ -96,6 +96,102 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
 });
 
 /**
+ * Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §2.1):
+ * payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown, chapters }`
+ * разворачивается в ГРАНУЛЯРНЫЕ сегменты — по одному на факт/главу + один на
+ * summary. Главное: НЕ один склеенный сегмент (иначе block-ingest не извлечёт
+ * отдельный блок на каждый факт).
+ */
+describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
+  const makeSvc = () =>
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('reportFacts[N] + summary + chapters → N + 1 + chapters сегментов (НЕ один)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      meetingId: 'm1',
+      meetingType: 'team',
+      reportSummaryMarkdown: 'Итоги встречи: договорились о релизе',
+      chapters: [
+        { title: 'Обсуждение', summary: 'Поговорили о сроках' },
+        { title: 'Решения', summary: 'Приняли план' },
+      ],
+      reportFacts: [
+        { reportKind: 'decision', text: 'Релиз 15 июня', speaker: 'Алиса' },
+        { reportKind: 'blocker', text: 'Не готова инфраструктура' },
+        { reportKind: 'task', text: 'Подготовить демо' },
+      ],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // 3 факта + 1 summary + 2 главы = 6 сегментов.
+    expect(segments).toHaveLength(6);
+    // По одному факту на сегмент (НЕ склеены).
+    expect(segments[0]!.text).toBe('Релиз 15 июня');
+    expect(segments[1]!.text).toBe('Не готова инфраструктура');
+    expect(segments[2]!.text).toBe('Подготовить демо');
+    // summary отдельным сегментом.
+    expect(segments[3]!.text).toBe('Итоги встречи: договорились о релизе');
+    // chapters: «title: summary».
+    expect(segments[4]!.text).toBe('Обсуждение: Поговорили о сроках');
+    expect(segments[5]!.text).toBe('Решения: Приняли план');
+    // Все report-сегменты — без speakers/времени.
+    for (const s of segments) {
+      expect(s.speakers).toEqual([]);
+      expect(s.startMs).toBe(0);
+      expect(s.endMs).toBe(0);
+    }
+  });
+
+  it('chapter только с title (без summary) → сегмент = title', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      reportSummaryMarkdown: '',
+      chapters: [{ title: 'Только заголовок', summary: '' }],
+      reportFacts: [],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Только заголовок');
+  });
+
+  it('пустые reportFacts + summary + chapters → 0 сегментов (не fallback на JSON)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      reportSummaryMarkdown: '',
+      chapters: [],
+      reportFacts: [],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // tryGetReportSegments вернул [] (а не null) → именно report-ветка, не fallback.
+    expect(segments).toHaveLength(0);
+  });
+
+  it('payload без kind=meeting_report → НЕ report-ветка (fallback)', () => {
+    const svc = makeSvc();
+    const payload = { kind: 'something_else', reportFacts: [{ text: 'x' }] };
+
+    const segments = svc.buildSegments(payload);
+
+    // Упал в fallback (JSON-stringify), report-ветка не сработала.
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toContain('something_else');
+  });
+});
+
+/**
  * Фаза 1 (meeting-identity) — сегмент несёт identity спикера
  * (participantId дорожки) для атрибуции авторства (role='subject').
  */

@@ -55,6 +55,7 @@ interface RawCandidateRow {
   mergedIntoId: string | null;
   evidenceCount: number;
   dynamicScore: string | number;
+  primarySource: string | null;
   createdAt: Date;
   updatedAt: Date;
   similarity: string | number;
@@ -115,6 +116,7 @@ export class BlockMergeService {
       SELECT b.id, b."tenantId", b.name, b."criticalQuestion", b."trustedAnswer",
              b.tags, b."signalType", b.confidence, b."dataClass", b.status,
              b."mergedIntoId", b."evidenceCount", b."dynamicScore",
+             b."primarySource",
              b."createdAt", b."updatedAt",
              1 - (b.embedding <=> (
                SELECT embedding FROM "IdeaBlock" WHERE id = $2
@@ -253,6 +255,10 @@ export class BlockMergeService {
       trustedAnswer: b.trustedAnswer,
       signalType: b.signalType,
       tags: b.tags,
+      // Report-to-graph Ф4 ГАРД B — источник кандидата для LLM-арбитра
+      // (report — вторичный, transcript — первичный). Исторические блоки без
+      // признака трактуем как транскриптные.
+      primarySource: b.primarySource ?? 'transcript',
     };
   }
 
@@ -279,6 +285,9 @@ export class BlockMergeService {
       mergedIntoId: r.mergedIntoId,
       evidenceCount: r.evidenceCount,
       dynamicScore: this.toDecimal(r.dynamicScore),
+      // Report-to-graph Ф4 ГАРД B — провенанс кандидата нужен пост-гарду
+      // block-distill (swapDirection) и summariseBlock (LLM видит источник).
+      primarySource: r.primarySource,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     } as unknown as IdeaBlock;

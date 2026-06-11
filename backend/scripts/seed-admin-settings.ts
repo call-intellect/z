@@ -229,6 +229,10 @@ function buildSettings(): SettingSeed[] {
   // ── Knowledge-Core пороги (knowledge.*) — ~40.
   const knowledge: Array<[string, unknown, Severity, string]> = [
     ['knowledge.distillMergeThreshold', envFloat('DISTILL_MERGE_THRESHOLD', 0.85), 'medium', 'KNN cosine-порог merge IdeaBlock'],
+    // Report-to-graph Ф4 ГАРД A — cap уверенности блоков из отчёта встречи
+    // (вторичный источник). Дефолт 0.6 — report виден в поиске, но ниже
+    // транскриптного primary.
+    ['knowledge.reportBlockConfidenceCap', envFloat('REPORT_BLOCK_CONFIDENCE_CAP', 0.6), 'medium', 'Cap уверенности блоков из отчёта встречи (вторичный источник)'],
     ['knowledge.distillDebounceMs', envInt('DISTILL_DEBOUNCE_MS', 30000), 'low', 'Дебаунс distill-воркера, мс'],
     ['knowledge.distillKnnTopK', envInt('DISTILL_KNN_TOP_K', 10), 'medium', 'KNN top-K для distill'],
     ['knowledge.entityMergeThreshold', envFloat('ENTITY_MERGE_THRESHOLD', 0.9), 'medium', 'KNN cosine-порог merge Entity'],

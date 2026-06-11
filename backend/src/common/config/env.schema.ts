@@ -711,6 +711,18 @@ const KnowledgeCoreSchema = z.object({
    */
   MEETING_REPORT_FAST_ENABLED: zBool(true),
 
+  /**
+   * Kill-switch вторичного пути «отчёт встречи → граф» (ТЗ
+   * plans/tz/2026-06-11-report-to-graph-phase2.md §4). Ship-On: дефолт ON.
+   * При `true` после готовности fast-отчёта (`reportFastStatus∈{ready,partial}`)
+   * `ReportIngestListener` заносит готовый отчёт (summaryFast + структурные
+   * выводы по типу встречи) в граф знаний как ВТОРИЧНЫЙ источник
+   * (`Source(type=meeting_report)`, `IdeaBlock.primarySource='report'`).
+   * Тип флага — аварийный рубильник: нужен только для экстренного отключения
+   * при инциденте, действий владельца не требует.
+   */
+  REPORT_INGEST_ENABLED: zBool(true),
+
   // ── Фаза 6: единый AI-чат поверх IdeaBlock'ов (5 scope: org/meeting/card/theme/entity) ──
   /**
    * Master-флаг ChatV2. По умолчанию `false` — существующие чат-эндпоинты

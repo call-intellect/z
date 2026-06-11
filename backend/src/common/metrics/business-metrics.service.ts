@@ -259,6 +259,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private personalDailyBriefDeliveredTotal!: Counter<'channel'>;
   private personalDailyBriefOpenedTotal!: Counter<string>;
   private knowsWhoMatchTotal!: Counter<'found'>;
+  // ── B6/Ф7 (mobile-cora-exec-manager §Ф7) — утренний exec web-push ──
+  private execMorningPushDeliveredTotal!: Counter<'channel'>;
 
   // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
   // Cardinality-safe: status ∈ new|recurring|resolved; decision_throughput —
@@ -1752,6 +1754,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'knows_who_match_total',
       help: 'TZ-1 Ф2 — поиск носителя знания «кто знает X» (found ∈ yes|no).',
       labelNames: ['found'] as const,
+    });
+
+    // ── B6/Ф7 (mobile-cora-exec-manager §Ф7) — утренний exec web-push ──
+    this.execMorningPushDeliveredTotal = this.getOrCreateCounter({
+      name: 'z_exec_morning_push_delivered_total',
+      help: 'B6/Ф7 — поставлен в очередь утренний exec web-push «Требует тебя сегодня» (channel=webpush).',
+      labelNames: ['channel'] as const,
     });
 
     // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
@@ -4778,6 +4787,13 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Counter `knows_who_match_total{found}`. */
   incKnowsWhoMatch(args: { found: 'yes' | 'no' }): void {
     this.knowsWhoMatchTotal.inc({ found: args.found });
+  }
+
+  // ──────────── B6/Ф7 (mobile-cora-exec-manager §Ф7) — exec web-push ────────
+
+  /** Counter `z_exec_morning_push_delivered_total{channel}`. */
+  incExecMorningPushDelivered(args: { channel: string }): void {
+    this.execMorningPushDeliveredTotal.inc({ channel: args.channel });
   }
 
   // ──────────────── TZ-1 Фаза 3.A/B/C — агенты исполнения ──────────────

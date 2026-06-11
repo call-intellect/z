@@ -32,6 +32,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { directorDashboardFromApi } from '@/domain/director-dashboard';
 import { fromOperationsOverviewApi } from '@/domain/operations-dashboard';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import { EnableMorningRemindersButton } from '@/ui/pwa/EnableMorningRemindersButton';
 import { ZoneTile } from '@/ui/mobile/shared/ZoneTile';
 import { GlanceGauge } from '@/ui/mobile/shared/GlanceGauge';
 import {
@@ -172,6 +173,13 @@ export function MobileOverviewClient() {
         <MessageCircle size={18} aria-hidden />
         Спросить Кору
       </Link>
+
+      {/* Ф7: установка PWA + подписка на утренний push «Требует тебя: N»
+          (доставляет ExecMorningPushCron). На устройствах без поддержки —
+          компонент сам себя прячет. */}
+      <div className="mt-3">
+        <EnableMorningRemindersButton />
+      </div>
     </div>
   );
 }

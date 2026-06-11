@@ -92,7 +92,7 @@ E. Прод-операции владельца (не код)
 ### B5 — Ф6 manager «Память» `[x]`
 - `MobileMemoryClient` — лента решений/договорённостей (`/decisions`/`/ideas`) + поиск, self-видимость по доступу.
 
-### B6 — Ф7 утренний exec-push + cold-start + установка PWA `[ ]`
+### B6 — Ф7 утренний exec-push + cold-start + установка PWA `[x]` (новый `ExecMorningPushCron` — ПЕРВОЕ подключение браузерного web-push через `enqueuePushSend`, утреннее окно+NX-идемпотентность, kill-switch `operations.daily_digest.deliver_to_webpush`; cold-start уже в B1/foundation; PWA-кнопка на «Обзоре». Прод: VAPID-ключи задаёт владелец — до них отправка graceful no-op)
 - `operations-daily-digest.cron.ts` — добавить доставку через `enqueuePushSend` (текст «Требует тебя сегодня: N», `actionUrl`→мобильный «Обзор»), под дневным бюджетом+тихими часами; kill-switch ON (AdminSetting `operations.daily_digest.deliver_to_webpush`), НЕ Telegram. Финализировать UX установки PWA (кнопка `EnableMorningRemindersButton` уже есть).
 - **Прод-зависимость:** VAPID-ключи (`VAPID_*` + `NEXT_PUBLIC_VAPID_PUBLIC_KEY`) — без них push no-op.
 - **Acceptance:** владелец с подпиской получает утренний push, тап → мобильный «Обзор»; дневной бюджет+тихие часы соблюдены; cold-start виден; smoke крона зелёный.

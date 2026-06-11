@@ -48,6 +48,7 @@ import { CheckinGraphIngestListener } from './workers/checkin-graph-ingest.liste
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
+import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
 import { OnboardingRampCron } from './workers/onboarding-ramp.cron';
 import { PromiseCascadeCron } from './workers/promise-cascade.cron';
@@ -186,6 +187,13 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     PersonalDailyBriefService,
     KnowsWhoService,
     PersonalDailyBriefCron,
+    // B6/Ф7 (mobile-cora-exec-manager §Ф7) — ПЕРВОЕ подключение браузерного
+    // web-push: утренний exec-крон @Cron('0 * * * *'), который зовёт
+    // CoreQueueService.enqueuePushSend для руководителей (owner/admin) с
+    // N = «Требует тебя сегодня» > 0. Без VAPID — graceful no-op (Ship-On).
+    // CoreQueueService/RedisService/BusinessMetricsService — @Global;
+    // PendingActionsService — из импортированного PendingActionsModule.
+    ExecMorningPushCron,
     // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров:
     // сервис (computeForTenant + чтение для эндпоинта) + cron @Cron('0 22 * * *').
     // BlockerSynthesisService инжектит Specialist35Service из @Global

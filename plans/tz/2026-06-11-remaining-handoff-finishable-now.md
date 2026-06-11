@@ -86,10 +86,10 @@ E. Прод-операции владельца (не код)
 - `MobileMyDayClient` (контент таба «Моё» поверх ГОТОВОЙ страницы `/me/daily-brief`/`MyDailyBriefClient` — переиспользовать; позитивная рамка уже в `domain/me/daily-brief.ts`). `MobileCheckinClient` — поток `/me/check-ins`, поле текст + микрофон (ASR), без inline-кнопок (Р7).
 - **Acceptance:** grep запрещённых строк «провалил/просрочил/не сдал» в менеджерских строках = 0; ноль inline-кнопок-вариантов в системном вопросе.
 
-### B4 — Ф5 таб «Спросить» (ChatV2/Concierge first-class) `[ ]`
+### B4 — Ф5 таб «Спросить» (ChatV2/Concierge first-class) `[x]`
 - `MobileAskClient` — переиспользовать ChatV2/«Помощник компании»; промпт-кнопки в один тап; голос-ВВОД (ASR), ответ ТОЛЬКО текстом (Р8), с citation. grep «🔊/Слушать» = 0.
 
-### B5 — Ф6 manager «Память» `[ ]`
+### B5 — Ф6 manager «Память» `[x]`
 - `MobileMemoryClient` — лента решений/договорённостей (`/decisions`/`/ideas`) + поиск, self-видимость по доступу.
 
 ### B6 — Ф7 утренний exec-push + cold-start + установка PWA `[ ]`

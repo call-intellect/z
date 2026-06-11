@@ -79,7 +79,7 @@ E. Прод-операции владельца (не код)
 - На `/dashboard` при мобильном viewport: строка «Требует тебя: N» (`requiresAction`/`signalCounters`) + 4 зоны (Команда/Дела/Главная цель/Что мешает) + полоса «Кора за неделю» (`valueStrip`) + кнопка «Спросить». Источники: `GET /dashboard/director` (`DirectorDashboardDto`) + `GET /operations/dashboard`. Cold-start (Р6) при пустом графе. Финансы НЕ показываем.
 - **Acceptance:** мобильный `/dashboard` рендерит «Обзор»; десктоп не изменён; тап зоны → раздел (Ф3); cold-start индикатор. typecheck/lint/build.
 
-### B2 — Ф3 exec разделы Команда/Дела/Цели + drill `[ ]`
+### B2 — Ф3 exec разделы Команда/Дела/Цели + drill `[x]`
 - `MobileTeamClient`/`MobileDealsClient`/`MobileGoalsClient` (operations / `weekly-per-person` / `goalsPulse`/`goalTree`). Фокус «кому помочь», БЕЗ публичного «кто провалил» (Р4). Drill в существующие detail-страницы.
 
 ### B3 — Ф4 manager «Моё»+«Чек-ин» `[ ]`

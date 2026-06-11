@@ -1013,6 +1013,8 @@ export interface LlmCallParams {
   tools?: LlmTool[];
   /** Опц. валидатор вывода. Если вернул false — router бросит LlmInvalidOutputError и попробует следующего провайдера. */
   validate?: (text: string) => boolean;
+  /** Per-call hard-timeout на dispatch (ms). Если не задан — глобальный dispatchTimeoutMs. */
+  timeoutMs?: number;
 }
 
 export interface LlmCallResult {
@@ -1481,6 +1483,10 @@ export class LlmRouterService implements OnModuleInit {
         // 30s — компромисс: дольше большинства LLM-ответов, но короче 60s
         // default'а Node fetch. Конфигурируется через ENV
         // LLM_ROUTER_DISPATCH_TIMEOUT_MS.
+        // Per-call override (params.timeoutMs): caller'ы с долгим синтезом
+        // (например chat-v2) могут поднять таймаут выше глобального, не трогая
+        // остальные вызовы. Если не задан — поведение байт-в-байт прежнее.
+        const effectiveTimeoutMs = params.timeoutMs ?? this.dispatchTimeoutMs;
         const out = await Promise.race([
           this.dispatch(entry, effectiveParams),
           new Promise<never>((_resolve, reject) =>
@@ -1488,10 +1494,10 @@ export class LlmRouterService implements OnModuleInit {
               () =>
                 reject(
                   new Error(
-                    `LLM dispatch timeout: ${entry.provider}/${entry.model} > ${this.dispatchTimeoutMs}ms`,
+                    `LLM dispatch timeout: ${entry.provider}/${entry.model} > ${effectiveTimeoutMs}ms`,
                   ),
                 ),
-              this.dispatchTimeoutMs,
+              effectiveTimeoutMs,
             ),
           ),
         ]);

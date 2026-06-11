@@ -75,6 +75,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.meetingAnalyzeV2DebounceMs', POSITIVE_INT],
   ['knowledge.chatV2TopBlocks', POSITIVE_INT],
   ['knowledge.chatV2GraphHops', POSITIVE_INT],
+  ['knowledge.chatV2SynthesisTimeoutMs', POSITIVE_INT],
   ['knowledge.insightFrequencyWindowDays', POSITIVE_INT],
   ['knowledge.ideaMinSupportersForCluster', POSITIVE_INT],
   ['knowledge.skillMinObservations', POSITIVE_INT],

@@ -859,6 +859,15 @@ export class TypedConfigService {
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
+      // §4 Ф3 (2026-06-11): свой hard-timeout синтеза chat-v2 (ms), независимый
+      // от глобального LLM_ROUTER_DISPATCH_TIMEOUT_MS — чтобы длинный ответ AI-чата
+      // не обрывался. Admin-editable крутилка (cacheMap → default; ENV не вводим).
+      // Дефолт 90с — комфортно выше ~28с реального синтеза.
+      chatV2SynthesisTimeoutMs: this.resolveSync<number>(
+        'knowledge.chatV2SynthesisTimeoutMs',
+        undefined,
+        90_000,
+      ),
       // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges retrieval filter.
       // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
       // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.

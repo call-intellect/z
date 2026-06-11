@@ -578,6 +578,10 @@ export class ChatV2Service {
       sourceRef: { type: scope, id: scopeId ?? tenantId },
       // Фаза 11/W4.2: max dataClass по retrieval pool (с учётом floor'а).
       dataClass: effectiveDataClass,
+      // §4 Ф3 (2026-06-11): свой hard-timeout синтеза chat-v2, независимый от
+      // глобального LLM_ROUTER_DISPATCH_TIMEOUT_MS — длинный ответ AI-чата не
+      // должен обрываться. Admin-editable (knowledge.chatV2SynthesisTimeoutMs).
+      timeoutMs: this.cfg.knowledgeCore.chatV2SynthesisTimeoutMs,
     });
 
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.

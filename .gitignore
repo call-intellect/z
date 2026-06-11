@@ -9,6 +9,9 @@ out/
 .env.*
 !.env.example
 
+# Локальные креды тестового кабинета (скилл qa-tester, Playwright-приёмка). НЕ коммитить.
+/.qa-cabinet.local.json
+
 *.log
 coverage/
 
@@ -45,3 +48,13 @@ backend/tmp/
 # Debug-скриншоты в корне (не для коммита — лежат в plans/analysis/<topic>/ если важны)
 /audit-board-*.png
 /v*-hero.png
+
+# Локальные тестовые медиа (звонки/записи) в корне — PII, НЕ коммитить (удаляются после теста).
+/*.mp3
+/*.wav
+/*.m4a
+/*.ogg
+/*.opus
+/*.aac
+/*.flac
+/*.amr

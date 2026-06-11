@@ -12,6 +12,7 @@ import {
 } from '@/api/brand-voice.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  brandVoiceArtifactStatusLabel,
   toBrandVoiceProfileDomain,
   type BrandVoiceProfileDomain,
 } from '@/domain/brand-voice';
@@ -410,7 +411,7 @@ function ArtifactsCard({
                     {a.name}
                   </div>
                   <div className="text-xs text-fg-tertiary">
-                    {a.mimeType} · {a.status}
+                    {a.mimeType} · {brandVoiceArtifactStatusLabel(a.status)}
                     {isUsed && ' · использован в последней сборке'}
                   </div>
                 </div>

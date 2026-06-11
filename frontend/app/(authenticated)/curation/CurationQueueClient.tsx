@@ -34,7 +34,7 @@ import {
 import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
-import { ReadablePayload } from './ReadablePayload';
+import { ReadablePayload } from '@/ui/readable-payload';
 
 const COMPLETENESS_CARD_TYPES_BY_RESOURCE: Partial<
   Record<string, CompletenessParentCardType>

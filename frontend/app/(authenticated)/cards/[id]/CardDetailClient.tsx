@@ -32,6 +32,9 @@ import { cardsApi } from '@/api/cards.api';
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import { CARD_KIND_LABELS, type CardKind, cardFromApi } from '@/domain/card';
+import { meetingStatusLabel } from '@/domain/meeting';
+import { meetingTypeLabel } from '@/domain/admin-prompt-template';
+import type { MeetingTypeApi } from '@/api/admin-prompt-templates.api';
 import { CardChat } from '@/ui/components/cards/CardChat';
 import { CardThemesSection } from '@/ui/components/cards/CardThemesSection';
 import { CurationBanner } from '@/ui/components/curation/CurationBanner';
@@ -297,7 +300,7 @@ export function CardDetailClient({ cardId }: { cardId: string }) {
                               {m.title}
                             </span>
                             <span className="text-xs text-fg-tertiary">
-                              {m.type}
+                              {meetingTypeLabel(m.type as MeetingTypeApi) ?? m.type}
                             </span>
                             <StatusBadge status={m.status} />
                           </div>
@@ -397,7 +400,7 @@ function StatusBadge({ status }: { status: string }) {
       : 'bg-bg-overlay text-fg-tertiary';
   return (
     <span className={cn('rounded-full px-1.5 py-0.5 text-[10px]', tone)}>
-      {status}
+      {meetingStatusLabel(status)}
     </span>
   );
 }

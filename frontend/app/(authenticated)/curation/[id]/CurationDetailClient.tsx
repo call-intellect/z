@@ -23,7 +23,7 @@ import {
 } from '@/domain/curation';
 import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
-import { ReadablePayload } from '../ReadablePayload';
+import { ReadablePayload } from '@/ui/readable-payload';
 import {
   AdminError,
   AdminForbidden,

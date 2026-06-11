@@ -408,6 +408,21 @@ export function isJoinableStatus(status: MeetingStatus): boolean {
 export const MEETING_STATUS_VIEWS: ReadonlyArray<{ status: MeetingStatus } & MeetingStatusView> =
   MEETING_STATUSES.map((status) => ({ status, ...meetingStatusView(status) }));
 
+/**
+ * Лейбл статуса встречи по сырому строковому коду (когда статус приходит как
+ * `string` из API-DTO, а не как типизированный `MeetingStatus`).
+ *
+ * Делегирует единственному источнику правды `meetingStatusView`. Для
+ * неизвестного кода (бэк добавил статус раньше фронта) — человеческий фолбэк
+ * `code.replaceAll('_', ' ')`, чтобы латиница не протекала в UI.
+ */
+export function meetingStatusLabel(status: string): string {
+  if ((MEETING_STATUSES as readonly string[]).includes(status)) {
+    return meetingStatusView(status as MeetingStatus).label;
+  }
+  return status.replaceAll('_', ' ');
+}
+
 // ─────────────── Говорящие загруженной записи (ТЗ-5 Ф5) ───────────────
 
 /**

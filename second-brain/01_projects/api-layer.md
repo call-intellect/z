@@ -171,13 +171,16 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| POST | `/api/v1/chat-v2/messages` | Задать вопрос (scope: org/card/project/**issue**) |
+| POST | `/api/v1/chat-v2/messages` | Задать вопрос (scope: org/card/project/**issue**). Синхронный — возвращает готовый `{text, citations, …}` одним ответом. Остаётся fallback'ом для стрима. |
+| POST | `/api/v1/chat-v2/messages/stream` | **То же, но SSE-стадии прогресса AI-чата** (2026-06-11, §4 Ф1). События `stage` (`understanding` «Понимаю вопрос» → `searching` «Ищу в памяти» → `writing` «Пишу ответ») → `done` (готовый ответ) / `error`. `onStage` пробрасывается `orchestration`→`synthesis`→`knowledge-core`, эмиссия на границах фаз (по образцу Concierge). Kill-switch `CHAT_V2_STREAMING_ENABLED` (default ON): OFF → `503` до начала SSE, фронт прозрачно откатывается на синхронный `POST /messages`. |
 | GET | `/api/v1/chat-v2/conversations` | Список диалогов |
 | GET | `/api/v1/chat-v2/conversations/:id` | Диалог с сообщениями |
 | POST | `/api/v1/chat-v2/conversations/:id/pin` | Закрепить/открепить |
 | POST | `/api/v1/chat-v2/conversations/:id/archive` | Архивировать |
 
 T6b: scope `'issue'` добавлен — `IssueChat` теперь работает на нём нативно.
+
+Таймаут синтеза `chat-v2` разведён от общего `LLM_ROUTER_DISPATCH_TIMEOUT_MS` через AdminSetting `knowledge.chatV2SynthesisTimeoutMs` (POSITIVE_INT, code-default 90000 мс; per-call `LlmCallParams.timeoutMs?` override в llm-router; 2026-06-11, §4 Ф3).
 
 ## Concierge + Voice
 

@@ -70,6 +70,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧹 2026-06-11 — ТЗ cabinet-leftovers (UI-протечки §1 Ф2–Ф5 · probe §3 · чат-стрим §4)
+
+> Контракт: `plans/tz/2026-06-11-cabinet-leftovers-ui-probe-chat.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (10 коммитов `d8902c49..afc7e1d2`).
+>
+> **Зачем для прода:** доводка кабинета — три независимых улучшения. (1) §1: технические протечки в UI убраны (enum→русский, cuid→имя, raw-json→текст, role-gate `/orchestrator`, маркеры `[BLOCK:]` не светятся в ответе чата). (2) §3: уведомление-вопрос (probe) про сотрудника теперь приходит самому сотруднику / его руководителю, а не владельцу; тексты модерации и probe — человеческие, без кодов/ID. (3) §4: AI-чат компании показывает стадии работы («Понимаю→Ищу→Пишу») через лёгкий SSE и больше не «зависает» молча; таймаут синтеза разведён от общего. **Миграций/seed/patch/backfill — НЕТ.** **2 новых ENV (kill-switch, default ON).** **1 новая AdminSetting (code-default есть).** **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (2 kill-switch, default ON — действий владельца НЕ требуют):**
+  - `PROBE_SUBJECT_ADDRESSING_ENABLED` (`cfg.probe.subjectAddressingEnabled`, zBool default `true`, §3 Ф1). При ON probe про сотрудника адресуется `[субъект, глава отдела, owner]` (субъект первым). Аварийный откат: `=false` в `.env` + рестарт → probe адресуется как раньше (глава отдела / админы, не субъект).
+  - `CHAT_V2_STREAMING_ENABLED` (`cfg.chatV2.streamingEnabled`, zBool default `true`, §4 Ф1). При ON работает SSE-эндпоинт стадий чата. Аварийный откат: `=false` → `POST /api/v1/chat-v2/messages/stream` отдаёт `503`, фронт прозрачно откатывается на синхронный `POST /api/v1/chat-v2/messages`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-default есть — действий НЕ требует):** `knowledge.chatV2SynthesisTimeoutMs` (таймаут синтеза AI-чата, POSITIVE_INT, code-default `90000` мс; не ENV, §4 Ф3). super_admin может изменить из админки `/admin/settings`.
+- **Миграций / seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен. Backend: новый SSE-эндпоинт `POST /api/v1/chat-v2/messages/stream`, `onStage` в `chat-v2`/`synthesis`/`knowledge-core`, per-call `timeoutMs` override в `llm-router`, адресация probe (`resolveProbeRecipients`), человеческие тексты модерации (`resource-type-ru`), `stripBlockMarkers` в синтезе чата. Frontend: стадии чата («Понимаю→Ищу→Пишу» + «Долго думаю» >45с + fallback), мапперы (`toolNameLabel`/`meetingStatusLabel`/`teamTemplateCategoryLabel`/`signalTypeLabel`), `ReadablePayload` в `src/ui`, role-gate `/orchestrator`. Команда: `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): в `/me/notifications` нет латиницы-кодов / сырого JSON; probe про сотрудника приходит ему/руководителю, **не владельцу**; AI-чат показывает стадии «Понимаю→Ищу→Пишу»; ответ чата без маркеров `[BLOCK:…]`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔗 2026-06-10 — Мост ежедневный чек-ин → граф знаний (`daily_checkin`)
 
 > Контракт: `plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10`.

@@ -39,7 +39,7 @@ const FLAG_KEY = 'knowledge.meetingTasksToTrackerOnly';
  */
 export interface MeetingActionItem {
   id: string;
-  meetingId: string;
+  meetingId: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -58,7 +58,7 @@ export interface MeetingActionItemSearchRow {
   id: string;
   title: string;
   status: string;
-  meetingId: string;
+  meetingId: string | null;
 }
 
 /**

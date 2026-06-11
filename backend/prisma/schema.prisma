@@ -1718,8 +1718,16 @@ model Task {
   /// tenant: Org, к которой принадлежит задача. После backfill — NOT NULL.
   tenantId         String?
   tenant           Org?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  meetingId        String
-  meeting          Meeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  /// D5 (ТЗ 2026-06-11 chatbox-tasks): задача может быть из переписки, не только
+  /// из встречи → nullable. FK сохраняется (теперь nullable). Backfill: существующие → sourceType='meeting'.
+  meetingId        String?
+  meeting          Meeting?   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  /// meeting | chatbox (расширяемо строкой, не enum).
+  sourceType       String     @default("meeting")
+  /// ChatboxChatSession.id — если задача из переписки.
+  sourceChatSessionId String?
+  /// ChatboxChat.id (денорм, для drill-down/ссылки на чат).
+  sourceChatId     String?
   userId           String
   user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   title            String
@@ -1747,6 +1755,8 @@ model Task {
   extractorVersion String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
+  /// D5/Р-2 — дополнительные источники задачи (межисточниковый дедуп).
+  sources          TaskSource[]
 
   @@index([userId, status])
   @@index([meetingId])
@@ -1754,6 +1764,30 @@ model Task {
   @@index([tenantId])
   /// Индекс для фильтра «мои задачи» по assigneeUserId.
   @@index([assigneeUserId])
+  @@index([tenantId, sourceType])
+  @@index([sourceChatSessionId])
+}
+
+/// D5/Р-2 (ТЗ 2026-06-11 chatbox-tasks) — дополнительные источники задачи.
+/// Первичный источник остаётся на Task.*; сюда пишем КАЖДУЮ привязку при
+/// межисточниковом дедупе (след не теряем). Идемпотентность — @@unique.
+model TaskSource {
+  id          String   @id @default(cuid())
+  tenantId    String
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// meeting | chatbox
+  sourceType  String
+  /// meetingId | chatSessionId
+  sourceRefId String
+  /// ChatboxChat.id (денорм, опц.)
+  chatId      String?
+  /// фрагмент-доказательство из источника
+  quote       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@unique([taskId, sourceType, sourceRefId])
+  @@index([tenantId, sourceType, sourceRefId])
 }
 
 model MeetingChapter {
@@ -11217,6 +11251,9 @@ model ChatboxCustomer {
   phone         String?
   email         String?
   externalCrmId String?
+  /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
+  linkedPersonId String?
+  linkMode       ChatboxMemberLinkMode @default(none)
   raw           Json?
   syncedAt      DateTime @default(now())
   createdAt     DateTime @default(now())
@@ -11227,6 +11264,7 @@ model ChatboxCustomer {
 
   @@unique([tenantId, externalId])
   @@index([tenantId])
+  @@index([tenantId, linkedPersonId])
 }
 
 /// ChatBox: identity клиента в конкретном мессенджере (ChannelClient).
@@ -11244,6 +11282,9 @@ model ChatboxChannelClient {
   email              String?
   avatarUrl          String?  @db.Text
   isBlocked          Boolean  @default(false)
+  /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
+  linkedPersonId     String?
+  linkMode           ChatboxMemberLinkMode @default(none)
   raw                Json?
   syncedAt           DateTime @default(now())
   createdAt          DateTime @default(now())
@@ -11254,6 +11295,7 @@ model ChatboxChannelClient {
 
   @@unique([tenantId, externalId])
   @@index([tenantId, customerId])
+  @@index([tenantId, linkedPersonId])
 }
 
 /// ChatBox: менеджер (Member воркспейса). Связь с Person Коры.

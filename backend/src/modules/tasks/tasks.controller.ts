@@ -179,7 +179,7 @@ export class TasksController {
 
   private mapTask(t: {
     id: string;
-    meetingId: string;
+    meetingId: string | null;
     userId: string;
     title: string;
     description: string | null;
@@ -197,7 +197,7 @@ export class TasksController {
     updatedAt: Date;
   }): {
     id: string;
-    meetingId: string;
+    meetingId: string | null;
     title: string;
     description: string | null;
     status: string;

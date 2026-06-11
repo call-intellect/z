@@ -28,7 +28,7 @@ import { TasksRepository } from './tasks.repository';
  */
 export interface MeetingTaskView {
   id: string;
-  meetingId: string;
+  meetingId: string | null;
   userId: string;
   title: string;
   description: string | null;

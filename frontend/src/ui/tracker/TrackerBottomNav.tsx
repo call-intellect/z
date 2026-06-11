@@ -3,43 +3,23 @@
 /**
  * TrackerBottomNav — нижняя навигация для мобильных устройств (≤md).
  *
- * 5 табов: Мои задачи / Проекты / Лента / Чек-ин / Профиль.
- * На больших экранах скрыт (sidebar заменяет).
+ * 5 табов берутся из единого источника `PRIMARY_NAV_ITEMS`
+ * (ТЗ Ф6 2026-06-11): Входящие / Проекты / Лента / Чек-ины / Я. Тот же
+ * источник питает «ежедневные» пункты десктоп-сайдбара — инвариант
+ * «mobile ⊆ desktop» проверяется гард-тестом `nav-subset.spec.ts`.
+ * На больших экранах навбар скрыт (sidebar заменяет).
  *
- * Wave 2 A8: бейдж непрочитанных задач на иконке «Инбокс». Подсветка через
+ * Wave 2 A8: бейдж непрочитанных задач на иконке «Входящие». Подсветка через
  * `useMyInboxCount` — пока backend не отдаёт total, рисуем точку-индикатор
  * («есть/нет»), не цифру. См. шапку `useMyInboxCount.ts`.
  */
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  Inbox,
-  FolderKanban,
-  Newspaper,
-  CheckCircle2,
-  User,
-  type LucideIcon,
-} from 'lucide-react';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useMyInboxCount } from '@/hooks/tracker/useMyInboxCount';
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  /** Wave 2 A8: если true — рендерим badge непрочитанных. */
-  withInboxBadge?: boolean;
-};
-
-const ITEMS: readonly NavItem[] = [
-  { href: '/me/inbox', label: 'Мои задачи', icon: Inbox, withInboxBadge: true },
-  { href: '/projects', label: 'Проекты', icon: FolderKanban },
-  { href: '/feed', label: 'Лента', icon: Newspaper },
-  { href: '/me/check-ins', label: 'Чек-ин', icon: CheckCircle2 },
-  { href: '/me', label: 'Профиль', icon: User },
-] as const;
+import { PRIMARY_NAV_ITEMS } from '@/ui/components/app-shell/primary-nav';
 
 export function TrackerBottomNav() {
   const pathname = usePathname() ?? '';
@@ -51,7 +31,7 @@ export function TrackerBottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border-subtle bg-bg-elevated md:hidden"
       aria-label="Главная навигация"
     >
-      {ITEMS.map((item) => {
+      {PRIMARY_NAV_ITEMS.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
         const showBadge = Boolean(item.withInboxBadge) && !isLoading && hasUnread;

@@ -71,6 +71,31 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧩 2026-06-11 — Консолидация отчёта встречи + отчёт→граф + апгрейд 3 промптов
+
+> Контракт: ветка `svdev`, коммиты `2501d72b` (Фаза 1 — консолидация), `13a6ac69` (Фаза 2 — отчёт→граф), `e4fded3c` (Фаза 3 — промпты). ТЗ: `plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md` (Ф1/Ф3) + суб-ТЗ `plans/tz/2026-06-11-report-to-graph-phase2.md` (Ф2). second-brain: `02_architecture/knowledge-core.md` §«Отчёт встречи → граф», `02_architecture/data-model.md`, `02_architecture/module-map.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.
+>
+> **Зачем для прода:** (Ф1) единое ядро отчёта = `meeting-report-fast` (один LLM-вызов); удалены дублирующие воркеры/очереди `chapters`/`tasks-extract`/`quality-score` (качество теперь пишет fast в каноничную `MeetingQualityScore`). (Ф2) после готовности fast-отчёта его чистая выжимка + структурные выводы идут в граф как **вторичный** источник (`meeting_report`) с защитой от галлюцинаций (транскрипт всегда побеждает report при дедупе). (Ф3) апгрейд 3 промптов отчётов (code-промпты, едут с кодом — отдельной seed-операции НЕ требуют).
+>
+> **2 миграции (авто).** **1 новый ENV kill-switch (default ON) + 1 AdminSetting-крутилка (code-fallback).** **Seed/patch/backfill — НЕТ.** **Docker rebuild backend обязателен** (новый enum в PrismaClient + новый listener/event).
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `REPORT_INGEST_ENABLED` (Ship-On, default `true`). Мост отчёт→граф. Аварийный откат: `=false` в `.env` + рестарт → отчёт в граф не попадает (граф только из транскрипта; сам отчёт пользователю не затронут). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback есть — действий владельца НЕ требует):** `knowledge.reportBlockConfidenceCap` (потолок уверенности report-блока в графе, code-fallback `0.6`). super_admin может изменить из `/admin/settings`. Сид не обязателен для выката (code-fallback активен).
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `source_type_meeting_report`: `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'meeting_report'` — **отдельным файлом** (`ADD VALUE` не-транзакционна; `IF NOT EXISTS` → повторный прогон безопасен).
+  - `idea_block_primary_source`: `ALTER TABLE "IdeaBlock" ADD COLUMN "primarySource" VARCHAR(16)` — nullable, **backfill НЕ нужен** (`null` трактуется как `'transcript'` в коде). Порядок: enum-миграция → потом column-миграция. **В STEPS агрегатора регистрировать НЕ нужно** (это миграции схемы, не seed/patch/backfill).
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новое значение enum `SourceType` в PrismaClient + новый `ReportIngestListener`/событие `meeting.report-fast-ready` + новое поле `IdeaBlock.primarySource`): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `docker compose exec backend grep -r "meeting.report-fast-ready" src/` — событие эмитится в `meeting-report-fast.worker` и слушается в `ReportIngestListener`;
+  - (б) после готовности отчёта тестовой встречи в БД появляется `RawEvent(sourceType='meeting_report', sourceExternalId='report_<id>')` (один на встречу) и `IdeaBlock` с `primarySource='report'`, `confidence ≤ 0.6`;
+  - (в) клиентский протокол (`client_protocol_md`) в граф НЕ попал (D6);
+  - (г) главы/задачи/резюме/качество встречи видны (из `meeting-report-fast` + каноничной `MeetingQualityScore`), спиннер гаснет, дублей задач нет.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🔔 2026-06-11 — Probe-система Фаза 1 (формулировка + дайджест + recheck + fatigue + видимое следствие)
 
 > Контракт: ветка `svdev`, коммиты `5ed78b54..fa950cd1` (6 под-фаз). ТЗ: `plans/tz/2026-06-11-probe-system-upgrade-phase1.md`. Анализ: `plans/analysis/2026-06-11-proactive-clarifying-questions-probe-research.md`.

@@ -320,13 +320,16 @@ LlmModelPrice {
 
 ```
 Source {
-  id, tenantId, type: SourceType (meeting|chat|phone_call|bot|email|web_form|external),
+  id, tenantId, type: SourceType (meeting|chat|phone_call|bot|email|web_form|external
+                                  |conversational|tracker_event|chatbox|daily_checkin|meeting_report),
   name, config Json?, dataClass: DataClass (public|internal|sensitive|private),
   isActive Boolean (default true), createdAt, updatedAt
   @@unique([tenantId, type, name])
   @@index([tenantId, isActive])
 }
 ```
+
+> **`SourceType.meeting_report`** (2026-06-11, миграция `source_type_meeting_report`) — вторичный источник графа: чистая выжимка AI-отчёта встречи (см. [[knowledge-core]] §«Отчёт встречи → граф»). Дефолтный `Source(type='meeting_report', name='Отчёты встреч Z')` lazy-upsert'ится `ReportIngestAdapter`. Enum-значение добавлено **отдельным файлом миграции** перед миграцией поля `IdeaBlock.primarySource` (`ALTER TYPE ... ADD VALUE` не выполняется в одной транзакции с другим DDL в части версий PG).
 
 Дефолтный `Source(type=meeting, name='Встречи Z')` создаётся **автоматически
 при создании Org** (см. `OrgsService.createForOwner`). Backfill для
@@ -389,6 +392,7 @@ IdeaBlock {
   embedding vector(1536),                -- text-embedding-3-small
   status (draft | canonical | merged_into | archived),
   mergedIntoId? → IdeaBlock,
+  primarySource? VARCHAR(16),            -- 'transcript' | 'report' | null=transcript (2026-06-11, миграция idea_block_primary_source)
   evidenceCount, dynamicScore Decimal(8,4),
   createdAt, updatedAt,
   search_tsv tsvector                    -- generated column (postgres-init.sql)
@@ -399,6 +403,8 @@ IdeaBlock {
 ```
 
 HNSW индекс на `embedding` через `vector_cosine_ops` + GIN на `search_tsv`.
+
+**Поле `primarySource String? @db.VarChar(16)`** (миграция `idea_block_primary_source`, ТЗ [`report-to-graph-phase2`](../../plans/tz/2026-06-11-report-to-graph-phase2.md)) — провенанс блока на уровне самого блока: `'transcript'` (дословный транскрипт, первичный) | `'report'` (вторичный — из AI-отчёта встречи, источник `SourceType.meeting_report`) | `null` (исторические блоки трактуются как `'transcript'`). Нужно на уровне блока (а не только evidence), т.к. LLM-арбитр дедупа слеп к источнику, а evidence бывает мульти-source. Детерминированный признак для merge/distill-гардов: транскрипт всегда побеждает report при дедупе; report-блок — capped confidence (≤ `knowledge.reportBlockConfidenceCap`, default 0.6) + заниженный dynamicScore. Поле nullable, backfill не нужен. Подробно — [[knowledge-core]] §«Отчёт встречи → граф».
 
 ### IdeaBlockEvidence
 

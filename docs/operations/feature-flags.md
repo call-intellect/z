@@ -114,6 +114,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `operations.daily_digest.deliver_to_webpush` | 🟢 ВКЛ | Доставка утреннего exec web-push «Требует тебя сегодня: N» (`ExecMorningPushCron`, hourly, утреннее окно по таймзоне). Выкл → утренний exec-push не шлётся (без него Мобильная Кора работает, просто не напоминает). AdminSetting-ключ, ENV-fallback `OPS_DIGEST_DELIVER_TO_WEBPUSH=true`. (Мобильная Кора Ф7) |
 | `probe.adaptiveFatigueEnabled` | 🟢 ВКЛ | Снижение частоты уточняющих вопросов (probe) тем, кто на них не отвечает (бюджет режется вдвое получателю с низким engagement). Выкл → все получают полный бюджет probe (без учёта вовлечённости). AdminSetting-ключ (code-default true). (probe Ф1) |
 | `probe.digestEnabled` | 🟢 ВКЛ | Батч-дайджест отложенных probe (`ProbeDigestCron` собирает накопленные `queued_digest`-вопросы в одно сводное уведомление «Вопросы от Коры»). Выкл → дайджест не шлётся, отложенные probe копятся (не доставляются). AdminSetting-ключ (code-default true). (probe Ф1) |
+| `REPORT_INGEST_ENABLED` | 🟢 ВКЛ | Мост отчёт встречи → граф знаний: по готовности быстрого AI-отчёта (`meeting.report-fast-ready`) его чистая выжимка + структурные выводы по типу кладутся в граф как **вторичный** источник (`RawEvent(sourceType='meeting_report')`). Выкл → отчёт в граф не попадает (граф питается только транскриптом, как раньше); сам отчёт пользователю не затрагивается. Рубильник на случай инцидента в block-ingest, действий владельца не требует. ENV-рубильник. (ТЗ report-to-graph-phase2 Ф3) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -155,6 +156,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `probe.digestTouchCap` | 5 | Максимум отложенных probe в одном дайджесте «Вопросы от Коры» (остальное копится до следующего прогона). AdminSetting (super_admin) | Батч-дайджест probe (probe Ф1) |
 | `probe.digestHourUtc` | 9 | Час суток (UTC), в который `ProbeDigestCron` фактически отправляет дайджест отложенных probe (сам cron тикает ежечасно). AdminSetting (super_admin) | Батч-дайджест probe (probe Ф1) |
 | `probe.topicCooldownHours` | 48 | Окно «тишины» по теме probe (ч): после отправки/игнора probe по теме повтор по той же теме дропается на этот срок (`probe:cooldown:*`). AdminSetting (super_admin) | Adaptive fatigue probe (probe Ф1) |
+| `knowledge.reportBlockConfidenceCap` | 0.6 | Потолок уверенности блока графа, извлечённого из AI-отчёта встречи (вторичный источник `meeting_report`): `confidence` report-блока ограничивается сверху этим значением (ГАРД A) — отчёт виден в поиске, но ранжируется ниже дословного транскрипта. AdminSetting (super_admin), code-fallback `0.6` | Отчёт встречи → граф (ТЗ report-to-graph-phase2 Ф4) |
 
 ---
 

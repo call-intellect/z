@@ -459,3 +459,30 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - **Новая метрика `probe_outcome_total{outcome,reason}`** (`answered`/`ignored`) — калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса; отложена до накопления данных).
 
 [[../index|← index]]
+
+## Консолидация отчёта встречи + отчёт→граф (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Ф1/Ф3) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Ф2). Коммиты `2501d72b` (Ф1), `13a6ac69` (Ф2), `e4fded3c` (Ф3). Граф/гарды — [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф»; очереди — [[workers-queues]].
+
+### Фаза 1 — единое ядро отчёта = `meeting-report-fast`
+
+Три отдельных LLM-job'а **удалены** (`meeting-report-fast` уже делал то же ядро одним вызовом):
+- **`chapters`** (бывший воркер `ai/workers/chapters.worker.ts` + очередь `ai.chapters`) — главы теперь только из fast (`MeetingChapter` версии `fast`).
+- **`tasks-extract`** (воркер `ai/workers/tasks-extract.worker.ts` + очередь `ai.tasks`) — задачи только из fast. ⚠ `task-extraction.service` + `prompts/tasks-structured` **НЕ** удалены (использует `chatbox-analyze.worker`); удалён сам воркер.
+- **`quality-score`** (воркер `ai/workers/quality-score.worker.ts` + очередь `ai.quality-score`) — качество теперь пишет `meeting-report-fast.worker.writeQualityScore` в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`); читатели `QualityScoreService` без изменений.
+
+`LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Регенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`.
+
+### Фаза 2 — событие `meeting.report-fast-ready` + `ReportIngestListener` (отчёт→граф)
+
+После готовности быстрого отчёта (`reportFastStatus ∈ {ready, partial}`) `meeting-report-fast.worker` эмитит EventEmitter2-событие **`meeting.report-fast-ready`** `{meetingId, tenantId, status}` (try/catch best-effort — сбой эмита не откатывает статус). Слушатель **`ReportIngestListener`** (`@OnEvent`) → `ReportIngestAdapter.ingestReport` → отдельный `RawEvent(sourceType='meeting_report')` → штатный block-ingest. **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие; LLM-извлечение делает обычный `block-ingest.worker`. Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON). На `'failed'` событие не эмитится. Защита от галлюцинаций (report — вторичный источник, транскрипт побеждает при дедупе) — гарды A/B, см. [[../02_architecture/knowledge-core]].
+
+### Фаза 3 — апгрейд 3 промптов отчётов (коммит `e4fded3c`)
+
+Промпты edited code-side (prompt registry с code-fallback, едут с деплоем кода, отдельной seed-операции не требуют; cache-friendly — стабильный SYSTEM):
+- **`meeting-report-fast`** (`ai/services/prompts/meeting-report-fast.prompt.ts`) — роль «Кора+память», блок-дискриминатор 6 сущностей (задача/идея/решение/договорённость/открытый вопрос/риск-проблема), лестница деградации, self-check, запрет англицизмов в `summary_markdown`, 5 секций. Схема: `recommendations.maxItems` 10→7, `strengths.maxItems` 8→4.
+- **`type-sales` / `extract_sales`** (`ai/services/prompts/type-sales.ts`) — роль «аналитик продаж», дискриминатор близких сущностей (боль/возражение/вопрос/критерий/блокер), few-shot дополнены всеми required-полями (`competitors`, `decision_criteria`, `what_hooked`, `main_blocker`, `data_quality`), tool description.
+- **`client-meeting-split`** (`ai/services/prompts/client-meeting-split.prompt.ts`) — принцип нейтральной фиксации недовольства без сокрытия, 3-й few-shot, чистка англ. жаргона.
+- **Новое:** общий словарь ярлыков типов встреч `MEETING_TYPE_LABEL_RU` / `meetingTypeLabelRu` в `ai/services/prompts/common.ts`.
+
+[[../index|← index]]

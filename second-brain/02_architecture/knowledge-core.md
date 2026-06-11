@@ -733,7 +733,59 @@ resourceType). Метрики: `curation_provisional_total`, `curation_audit_sam
 - `conversational` — свободные заметки из каналов общения (free_note; `ConversationalIngestAdapter`, см. [[../01_projects/conversational-channels]]).
 - `daily_checkin` (2026-06-10) — ежедневный чек-ин сотрудника (план/отчёт) → `RawEvent` через `CheckinIngestService`, событийный мост по образцу chatbox (`@OnEvent('checkin.created')`, `dataClass='sensitive'`, идемпотентность по `checkInId`, kill-switch `CHECKIN_GRAPH_INGEST_ENABLED`). Детали — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
 
+- `meeting_report` (2026-06-11) — **вторичный** источник: чистая выжимка AI-отчёта встречи (без ASR-шума). Подробно — §«Отчёт встречи → граф (вторичный источник)» ниже.
+
 Полный enum `SourceType` и контракт `RawEvent` — [[data-model]] §«Source / RawEvent».
+
+## Отчёт встречи → граф (вторичный источник, `meeting_report`, 2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Фаза 2 «отчёт встречи → граф», вариант Б — решение владельца) + головное ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) §2. Коммит `13a6ac69`. Гарды/код — [[code-pitfalls]].
+
+Раньше граф наполнялся **только** сырым транскриптом встречи; чистая выжимка AI-отчёта (`summaryFast` + структурные выводы по типу) в память НЕ попадала. Теперь после готовности быстрого отчёта она тоже идёт в граф — как **вторичный** источник (после транскрипта), с детерминированной защитой от галлюцинаций.
+
+### Путь данных
+
+```
+meeting-report-fast.worker (status='ready'|'partial')
+   ↓ событие EventEmitter2 'meeting.report-fast-ready' {meetingId, tenantId, status}  (try/catch best-effort)
+ReportIngestListener (@OnEvent, в ingest/knowledge-core)
+   ↓ ReportIngestAdapter.ingestReport(meetingId)
+      ├─ читает Meeting + AiResult.structuredData + fast-блок (chapters/tasks/summary)
+      ├─ report-fact-mapper.ts — switch(meeting.type) раскладывает ТОЛЬКО реально присутствующие
+      │  по Zod-схеме типа поля в плоские reportFacts[] (decision/risk/pain/task/next_step/blocker/summary_point)
+      └─ IngestService.ingest({ sourceExternalId:'report_'+meetingId, occurredAt:meeting.endedAt, dataClass:'internal' })
+   ↓ отдельный RawEvent(sourceType='meeting_report')   — НЕ дописывается к транскриптному RawEvent
+штатный pipeline: block-ingest → IdeaBlock(draft) → block-distill → canonical → специалисты/граф
+```
+
+- **Отдельный `Source(type='meeting_report', name='Отчёты встреч Z')`** (не переиспользуем `meeting`): так `IdeaBlockEvidence.sourceType` бесплатно получает `'meeting_report'`, источник машинно различим на уровне evidence.
+- **Гранулярность.** В `SegmentBuilderService.buildSegments` ветка `payload.kind==='meeting_report'` строит **по одному сегменту на каждый факт** (+ отдельные на `summaryFast` и каждую chapter) — block-ingest получает гранулярные блоки, а не один склеенный текст.
+- **D6 — граница конфиденциальности.** Клиентский протокол `client_protocol_md` **НИКОГДА** не попадает в граф (whitelist внутренних полей в `report-fact-mapper`, unit-тест на отсутствие подстроки). Протокол — нейтральный документ для клиента без внутренней аналитики, его факты не должны стать внутренними блоками.
+- **Что в граф из отчёта (вариант Б):** `summaryFast` + структурные выводы по типу встречи (`decisions`/`risks`/`pains`/`tasks`/…) — каждый отдельным гранулярным блоком с правильным `signalType`. Вариант А (плоский текст саммари) отклонён — теряет структуру/тип сигнала.
+
+### `IdeaBlock.primarySource` — trust на уровне блока
+
+Новое поле `IdeaBlock.primarySource String? @db.VarChar(16)` — значения `'transcript'` | `'report'`, `null` трактуется как `'transcript'` (исторические блоки). Источник нужен **на уровне блока** (а не только evidence), потому что LLM-арбитр дедупа (`summariseBlock`) слеп к источнику, а evidence может быть мульти-source. Это детерминированный признак для merge/distill-гардов, **не** soft-tag (тег + порог уверенности рушится при первой правке порога админом).
+
+### Защита от галлюцинаций (детерминированные гарды)
+
+Линза — **не доверять LLM-арбитру в вопросе провенанса**: `parseVerdict` защищает только от галлюцинации ИМЕНИ кандидата, не от неверного выбора при равном similarity. Поэтому каждый инвариант закрыт детерминированным гардом:
+
+- **ГАРД A — пониженный trust report на входе** (`block-ingest.worker` persistBlock). Report-блоки: `confidence` ограничивается сверху крутилкой `knowledge.reportBlockConfidenceCap` (AdminSetting, code-fallback `0.6`) + `primarySource='report'` + заниженный стартовый `dynamicScore` (≈0.7 vs 1.0) — report виден в поиске, но ранжируется НИЖЕ транскриптного primary. Синтетику для report-пути НЕ создаём. **Транскриптная ветка не затронута** (`primarySource='transcript'`, поведение побитово прежнее).
+- **ГАРД B — транскрипт ПОБЕЖДАЕТ при дедупе** (`block-distill.worker` между `judgeMerge` и `mergeInto`). При дедупе, когда НОВЫЙ блок `primarySource='transcript'`, а выбранный canonical `primarySource='report'` → `swapDirection(transcriptBlock, reportCanonicalId)`: транскрипт становится canonical-носителем, report → `merged_into`; **confidence нового canonical = `max(...)`, НЕ усреднение** (иначе высокоуверенный транскрипт просел бы). Срабатывает **СТРОГО** при `new=transcript && canonical=report` — случаи transcript↔transcript и report↔report **не затронуты** (обязательный регресс-тест). `summariseBlock` дополнен полем `primarySource`, +1 стабильная строка в SYSTEM `block-distill` (cache-friendly).
+- **ГАРД C упрощён** — report-only факт (без транскрипта-дубля) идёт штатным `markCanonical` (становится canonical, обогащает граф per Б), но остаётся **вторичным по весу**: capped confidence ≤ 0.6 + низкий `dynamicScore` + видимый `primarySource='report'`. Отдельного cron/TTL-archival НЕТ (удалено из scope как over-engineering).
+
+### ⚠️ Правило для любого будущего вторичного источника
+
+**ЛЮБОЙ новый вторичный источник графа ОБЯЗАН явно выставлять `primarySource`.** Дефолт `null→'transcript'` пропускает блок через авто-canonical как первичный — то есть необъявленный вторичный источник перехватит canonical у настоящего транскрипта. `block-distill` и `SegmentBuilder` — глобальные пути (дедуп всего графа); транскриптная ветка должна оставаться побитово прежней.
+
+### Ограничение (зафиксировано в реестре не-сделанного)
+
+Регенерация отчёта (тот же `idempotencyKey` по `occurredAt=meeting.endedAt`) **НЕ обновляет** граф — обновлённые факты не попадут. Для MVP приемлемо (отчёт завершённой встречи стабилен). Строка — [[../04_не-сделано/README|04_не-сделано]]; контракт — суб-ТЗ phase2 §4.2.
+
+### Консолидация отчётного слоя (Фаза 1, коммит `2501d72b`)
+
+Единое ядро отчёта встречи теперь делает **только** `meeting-report-fast` (один LLM-вызов): главы, задачи, резюме И качество. Дублирующие воркеры `chapters` / `tasks-extract` / `quality-score` (+ их очереди `ai.chapters`/`ai.tasks`/`ai.quality-score` и enqueue-методы) **удалены**. `meeting-report-fast.worker` пишет качество в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`) — читатели `QualityScoreService` без изменений. Перегенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`. `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Деталь — [[../01_projects/ai-jobs]] и [[../01_projects/workers-queues]].
 
 [[../index|← index]] · [[../01_projects/ingest-and-sources|Фаза 1: ingest]] ·
 [[../01_projects/llm-router|LLM Router]]

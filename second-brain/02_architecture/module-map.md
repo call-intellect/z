@@ -121,6 +121,18 @@ LiveKit чистит атрибуты автоматически при disconne
     читает `Meeting+Transcript+Participants+merged.json`, lazy-upsert
     дефолтного `Source(type=meeting, name='Встречи Z')`, payload =
     `{meetingId, type, title, participants, transcript.turns, roomChat}`.
+  - `adapters/report.adapter.ts` — `ReportIngestAdapter.ingestReport(meetingId)`
+    (отчёт→граф, 2026-06-11, коммит `13a6ac69`): читает `Meeting+AiResult.structuredData+fast-блок`,
+    через `report-fact-mapper.ts` раскладывает структурные выводы по типу
+    встречи в гранулярные факты, lazy-upsert `Source(type='meeting_report',
+    name='Отчёты встреч Z')`, создаёт **отдельный** `RawEvent(sourceType='meeting_report')`
+    (`sourceExternalId='report_'+meetingId`, `occurredAt=meeting.endedAt`).
+    Клиентский протокол `client_protocol_md` в граф НЕ попадает (whitelist, D6).
+    Подробно — [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф».
+  - `listeners/report-ingest.listener.ts` — `ReportIngestListener`
+    (`@OnEvent('meeting.report-fast-ready')`): по готовности быстрого отчёта
+    (status `ready`/`partial`) вызывает `ReportIngestAdapter.ingestReport`.
+    Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON).
   - `guards/ingest-token.guard.ts` — Bearer-токен из ENV `INGEST_INTERNAL_TOKEN`,
     timingSafeEqual.
   - `ingest.controller.ts` — `POST /api/v1/ingest` (под `IngestTokenGuard`,
@@ -2363,5 +2375,20 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **Изоляция контура (R-INV-1):** позитивный pre-retrieval фильтр `contourGroupId` в `ChatV2RetrievalService.collectPool` (все ветки пула + `expandViaGraph`) — **безусловный**, не зависит от `KNOWLEDGE_ACCESS_ENFORCEMENT`. CI-негатив-тест `contour-isolation.spec.ts`.
 - **4 taskType:** `support-clone-draft`/`support-contour-curate` (DeepSeek V4 Pro), `support-answer-critic`/`support-edit-classify` (`deepseek-v4-flash`, Б9). Сид `seed-llm-task-routes-support.ts`.
 - **Флаги:** `SUPPORT_DESK_ENABLED` (kill-switch ON), `SUPPORT_CURATOR_ENABLED` (kill-switch ON), `feature.support_desk` (entitlement-решение владельца, вендор-эксклюзив), AdminSetting `support.vendor_org_id` (параметр владельца — без него seed'ы no-op), `support_critic_min_groundedness` (0.6), `support_promote_min_csat` (4).
+
+[[../index|← index]]
+
+## Консолидация отчёта встречи + отчёт→граф (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Фазы 1/3) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Фаза 2). Коммиты `2501d72b` (Ф1), `13a6ac69` (Ф2), `e4fded3c` (Ф3). Граф/гарды — [[knowledge-core]] §«Отчёт встречи → граф»; jobs/очереди — [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
+
+### Удалённые модули (Фаза 1 — единое ядро отчёта = `meeting-report-fast`)
+- **Воркеры:** `ai/workers/chapters.worker.ts`, `ai/workers/tasks-extract.worker.ts`, `ai/workers/quality-score.worker.ts` — **удалены** (дублировали главы/задачи/качество, которые fast уже делает одним вызовом).
+- **Сервис/промпты:** `ai/services/chapter-extraction.service.ts`, `ai/services/prompts/chapters`, `ai/services/prompts/meeting-quality-score` — удалены. **Отклонение:** `task-extraction.service` + `prompts/tasks-structured` **НЕ удалены** — их использует `chatbox-analyze.worker`.
+- **Очереди:** из `QUEUE_NAMES` убраны `ai.chapters`/`ai.tasks`/`ai.quality-score`; из `AiQueueService` — `enqueueChapters`/`enqueueTasksExtract`/`enqueueQualityScore`.
+- `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). `meeting-report-fast.worker.writeQualityScore` теперь пишет каноничную `MeetingQualityScore` + `Meeting.qualityScoreStatus='ready'`; regenerate глав/качества/полного отчёта → `CoreQueueService.enqueueMeetingReportFast`.
+
+### Новые модули (Фаза 2 — отчёт→граф)
+- `ingest/adapters/report.adapter.ts` (`ReportIngestAdapter`), `ingest/report-fact-mapper.ts` (per-type раскладка), `listeners/report-ingest.listener.ts` (`ReportIngestListener` `@OnEvent('meeting.report-fast-ready')`), ветка `payload.kind==='meeting_report'` в `segment-builder.service.ts`. Гарды A/B в `block-ingest.worker`/`block-merge.service`/`block-distill.worker`. Подробно — [[knowledge-core]].
 
 [[../index|← index]]

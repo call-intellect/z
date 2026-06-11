@@ -29,7 +29,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 | `core.intake-auto-triage` | `meeting-extract-actions.worker` | `intake-auto-triage.worker` | 2 | confidence ≥ 0.92 → auto-Issue |
 | `core.card-rollup-v2` | on-event (debounce 60s) | `card-rollup-v2.worker` | 2 | AI rollup карточки |
 | (legacy) `core.card-rollup` | on-event (debounce 5s) | `card-rollup.worker` | 2 | Legacy (живёт до Фаз 5/6) |
-| **`core.meeting-report-fast` (ТЗ 2026-05-25)** | `merge.worker` (после готовности транскрипта; рядом с `ai.analyze`) | `meeting-report-fast.worker` | 2 | Один LLM-вызов на сыром транскрипте → главы + задачи + summary + quality_score → `Meeting.reportFastStatus`. ENV kill-switch `MEETING_REPORT_FAST_ENABLED`. Параллельно с legacy v2 для A/B. См. [meeting-report-pipeline](meeting-report-pipeline.md). |
+| **`core.meeting-report-fast` (ТЗ 2026-05-25; единое ядро отчёта с 2026-06-11)** | `merge.worker` (после готовности транскрипта; рядом с `ai.analyze`) | `meeting-report-fast.worker` | 2 | Один LLM-вызов на сыром транскрипте → главы + задачи + summary + quality_score → `Meeting.reportFastStatus`. **С 2026-06-11 — единственное ядро отчёта** (дублирующие очереди `ai.chapters`/`ai.tasks`/`ai.quality-score` удалены): пишет качество в каноничную `MeetingQualityScore` + `Meeting.qualityScoreStatus='ready'`. По готовности (`ready`/`partial`) эмитит событие `meeting.report-fast-ready` → `ReportIngestListener` (отчёт→граф, см. §ниже). ENV kill-switch `MEETING_REPORT_FAST_ENABLED`. См. [meeting-report-pipeline](meeting-report-pipeline.md). |
 | **`core.feedback-digest` (2026-05-25)** | `feedback-digest.cron` (`0 1 * * *` UTC) + ручной `POST /admin/feedback/digest/run` | `feedback-digest.worker` | 1 | Ночной AI-прогон по `FeedbackMessage`: кластеризация в `FeedbackTopic` через taskType `feedback-cluster` (DeepSeek V4 Pro). Redis-lock `feedback:digest:lock` (TTL 30 мин). Глобальная фича (без tenant). См. [[feedback]]. |
 | **`core.specialists-combined` (Фаза 6 §3, 2026-05-26)** | `block-distill.worker` (после canonical-блока, если `SPECIALISTS_COMBINED_ENABLED=true`) | `specialists-combined.worker` (`SpecialistsCombinedWorker`) | 2 | Б+ объединённый вызов: один LLM (`knowledge-specialists-combined`, DeepSeek V4 Pro) извлекает 8 типов сущностей сразу — decisions / ideas / insights / experiments / regulations / knowledge_categories / skill_traits / helpfulness_traits. Параллельно со старой `core.specialist-routing` (A/B). ~3.7× дешевле по эвалу `judge-specialists-bplus-vs-g`. Флаг `SPECIALISTS_COMBINED_ENABLED` (default off). |
 | **`onboarding.demo-seed` (ТЗ 2026-05-31)** | `OnboardingService.completeWelcome` (после welcome-онбординга, если `!demoWorkspaceSeededAt`) | `demo-seed.worker` (`DemoSeedWorker`) | 2 | Авто-заливка демо-кабинета «ТехноСтрим» новой Org. jobId=`demo-seed:<orgId>` (идемпотентно). Precondition: `Subscription.status==='DEMO'` (иначе skip). Делегирует в `seedDemoWorkspace`. См. [[onboarding-wizard]]. |
@@ -195,5 +195,21 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 - Повторный запуск после успешного отката = no-op.
 
 **Флаги:** `--dry-run`, `--update-existing`, `--task <name>` (один taskType для отладки). Работает только с `tenantId=null` (глобальные дефолты); per-tenant откат — отдельный сценарий через `/admin/llm-routes`.
+
+[[../index|← index]]
+
+## Консолидация отчёта + отчёт→граф: удалённые очереди + listener (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Ф1) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Ф2). Коммиты `2501d72b`, `13a6ac69`. Подробно — [[ai-jobs]] §«Консолидация отчёта встречи + отчёт→граф», [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф».
+
+### Удалены очереди `AiQueueService` (Фаза 1)
+- `ai.chapters` (+ воркер `chapters.worker`, метод `enqueueChapters`),
+- `ai.tasks` (+ воркер `tasks-extract.worker`, метод `enqueueTasksExtract`),
+- `ai.quality-score` (+ воркер `quality-score.worker`, метод `enqueueQualityScore`).
+
+Дублировали главы/задачи/качество — теперь это делает единый `meeting-report-fast.worker`. Качество пишется в каноничную `MeetingQualityScore`. ⚠ `task-extraction.service` оставлен (использует `chatbox-analyze.worker`).
+
+### Новый listener `ReportIngestListener` (Фаза 2, отчёт→граф)
+**`ReportIngestListener`** (`@OnEvent('meeting.report-fast-ready')`, в ingest/knowledge-core) — НЕ новая BullMQ-очередь и НЕ cron, а событийный listener. По готовности быстрого отчёта (`status ∈ {ready, partial}`) вызывает `ReportIngestAdapter.ingestReport(meetingId)` → отдельный `RawEvent(sourceType='meeting_report')` → штатная `core.raw-events` → block-ingest. Best-effort (сбой моста не откатывает `reportFastStatus`). Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON). На `'failed'` событие не эмитится.
 
 [[../index|← index]]

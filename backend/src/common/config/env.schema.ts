@@ -425,6 +425,15 @@ const AiFeatureFlagsSchema = z.object({
    * готова и выкатывается ON.
    */
   DOC_COMPILER_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 prompts-finalization A1.2 — kill-switch строгого гейта
+   * `isOrgNorm` для regulation-экстракторов. При `true` (default ON) фрагменты
+   * с `isOrgNorm=false` (чужая практика / гипотетика / разовое поручение / голое
+   * упоминание) НЕ создают карточку-документ. При `false` — старое поведение
+   * «создавать всегда» (recall-страховка при ложных срабатываниях гейта).
+   * Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  REGULATION_GATE_STRICT_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */

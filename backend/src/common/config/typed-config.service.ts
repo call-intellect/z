@@ -699,6 +699,16 @@ export class TypedConfigService {
         'DOC_COMPILER_ENABLED',
         true,
       ),
+      /**
+       * ТЗ 2026-06-11 prompts-finalization A1.2 — строгий гейт `isOrgNorm`
+       * для regulation-экстракторов (kill-switch, default ON). false →
+       * recall-страховка: гейт игнорируется, старое поведение «создавать всегда».
+       */
+      regulationGateStrict: this.resolveSync<boolean>(
+        'aiFeatures.regulationGateStrict',
+        'REGULATION_GATE_STRICT_ENABLED',
+        true,
+      ),
     } as const;
   }
 

@@ -336,13 +336,18 @@ function NotificationDetail({
             <p className="whitespace-pre-wrap">{payload.question}</p>
           </div>
         )}
-        {payload.context && (
+        {/* probe.question: человеческий вопрос рендерит ProbeAnswerInput ниже;
+            «контекстные» блоки (context/summary/title) для него — это сырой
+            payload.message (латиница-имена классов + cuid), дублирование и
+            протечка → прячем. Для остальных типов уведомлений контекст
+            содержателен — гард строго по isProbeQuestion. */}
+        {!isProbeQuestion && payload.context && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">Контекст</div>
             <p className="whitespace-pre-wrap">{payload.context}</p>
           </div>
         )}
-        {payload.summary && (
+        {!isProbeQuestion && payload.summary && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
               Карточка
@@ -350,7 +355,7 @@ function NotificationDetail({
             <p className="whitespace-pre-wrap">{payload.summary}</p>
           </div>
         )}
-        {payload.title && (
+        {!isProbeQuestion && payload.title && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">Заголовок</div>
             <p className="whitespace-pre-wrap font-medium">{payload.title}</p>

@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { AiQueueService } from '../ai-queue.service';
 
 import { LlmRouterService } from './llm-router.service';
@@ -55,12 +56,13 @@ export interface RegenerateSectionInput {
 /**
  * Сервис регенерации AI-отчёта.
  *
- *   - `regenerateMeeting` — полная регенерация: bumps recapVersion, сбрасывает
- *     analyze/chapters/tasks статусы, ставит analyze (с опц. templateId).
- *     Embeddings НЕ перезапускаем — текст транскрипта не менялся.
+ *   - `regenerateMeeting` — полная регенерация: bumps recapVersion, ставит
+ *     analyze (с опц. templateId) + перезапускает meeting-report-fast (главы /
+ *     задачи / качество встречи). Embeddings НЕ перезапускаем — текст
+ *     транскрипта не менялся.
  *   - `regenerateSection` — частичная: одна секция через `LlmRouter`
  *     с `taskType='regenerate-section'`. recapVersion инкрементируется.
- *     Не трогает chapters/tasks/embeddings.
+ *     Не трогает meeting-report-fast/embeddings.
  *
  * Optimistic lock — `expectedRecapVersion` сравнивается атомарно через
  * `prisma.meeting.update` с `where: { id, recapVersion }`.
@@ -75,6 +77,7 @@ export class RegenerateService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AiQueueService) private readonly queue: AiQueueService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
@@ -117,8 +120,6 @@ export class RegenerateService {
         },
         data: {
           recapVersion: { increment: 1 },
-          chaptersStatus: 'queued',
-          tasksStatus: 'queued',
           status: 'ai_processing',
         },
         select: { recapVersion: true },
@@ -154,15 +155,18 @@ export class RegenerateService {
         );
       });
 
-    // Перезапускаем analyze + chapters + tasks. Embeddings НЕ трогаем.
+    // Перезапускаем analyze + meeting-report-fast (главы / задачи / качество).
+    // Embeddings НЕ трогаем. reason=`v<recapVersion>` варьирует jobId, чтобы
+    // дедуп removeOnComplete не съел повторную постановку.
     await Promise.all([
       this.queue.enqueueAnalyzeWithTemplate(
         input.meetingId,
         updated.recapVersion,
         input.templateId,
       ),
-      this.queue.enqueueChapters(input.meetingId, updated.recapVersion),
-      this.queue.enqueueTasksExtract(input.meetingId, updated.recapVersion),
+      this.coreQueue.enqueueMeetingReportFast(input.meetingId, {
+        reason: `v${updated.recapVersion}`,
+      }),
     ]);
 
     this.logger.log(

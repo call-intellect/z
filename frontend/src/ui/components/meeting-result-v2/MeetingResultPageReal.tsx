@@ -726,7 +726,12 @@ function MeetingHeader({
 }
 
 function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
-  const states = [meeting.chaptersStatus, meeting.tasksStatus, meeting.embeddingsStatus];
+  // Консолидация отчётов (ТЗ 2026-06-11 §1.2.1): главы/задачи теперь делает
+  // единый meeting-report-fast, отдельных воркеров chapters/tasks больше нет —
+  // их статусы (chaptersStatus/tasksStatus) более не выставляются и убраны из
+  // условия (иначе спиннер висел бы вечно). Остаётся embeddingsStatus
+  // (transcript-index жив).
+  const states = [meeting.embeddingsStatus];
   const inProgress = states.some((s) => s === 'queued' || s === 'processing');
   if (!inProgress) return null;
   return (

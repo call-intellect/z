@@ -177,7 +177,8 @@ describe('PromptResolverService', () => {
     expect(result.versionId).toBeNull();
     // Проверяем, что system-промпт из встроенного code-модуля type-sales.ts
     // действительно про продажи (Z-AI-agent-rules: code-fallback ОБЯЗАТЕЛЕН).
-    expect(result.systemPrompt).toContain('продажная встреча');
+    // ТЗ consolidation Ф3.2 (A2): роль «аналитик продаж в Коре».
+    expect(result.systemPrompt).toContain('аналитик продаж');
     expect(result.toolName).toBe('extract_sales');
     expect(metrics.incPromptResolverFallback).toHaveBeenCalledWith({ reason: 'db_empty' });
     expect(metrics.incPromptResolver).toHaveBeenCalledWith({ source: 'code_fallback' });

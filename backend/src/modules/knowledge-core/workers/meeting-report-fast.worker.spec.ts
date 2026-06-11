@@ -35,8 +35,14 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
   worker: MeetingReportFastWorker;
   created: CreatedTask[];
   upsert: ReturnType<typeof vi.fn>;
+  qualityUpsert: ReturnType<typeof vi.fn>;
+  meetingUpdate: ReturnType<typeof vi.fn>;
 } {
   const created: CreatedTask[] = [];
+  // Доводка 2 (ТЗ consolidation §1.2.2) — writeQualityScore пишет в каноничную
+  // таблицу MeetingQualityScore + Meeting.qualityScoreStatus одной транзакцией.
+  const qualityUpsert = vi.fn(async () => ({}));
+  const meetingUpdate = vi.fn(async () => ({}));
   const prisma = {
     task: {
       findMany: vi.fn(async () => [] as Array<{ title: string }>),
@@ -53,6 +59,12 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
     aiResult: {
       upsert: vi.fn(async () => ({})),
     },
+    $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        meeting: { update: meetingUpdate },
+        meetingQualityScore: { upsert: qualityUpsert },
+      }),
+    ),
   };
 
   const assigneeResolver = new TaskAssigneeResolverService();
@@ -79,7 +91,31 @@ function buildWorker(opts?: { trackerOnly?: boolean }): {
     undefined, // metrics @Optional()
   );
 
-  return { worker, created, upsert: prisma.aiResult.upsert };
+  return {
+    worker,
+    created,
+    upsert: prisma.aiResult.upsert,
+    qualityUpsert,
+    meetingUpdate,
+  };
+}
+
+/** Валидный quality_score под схему MeetingReportFastQualityScoreSchema. */
+function qualityScore(): Record<string, unknown> {
+  return {
+    overallScore: 72,
+    categories: {
+      preparation: 70,
+      structure: 75,
+      clarity: 70,
+      outcomes: 80,
+      engagement: 65,
+    },
+    recommendations: [
+      { text: 'Озвучить повестку в первые 5 минут.', severity: 'info', category: 'preparation' },
+    ],
+    strengths: ['Конкретные итоги.'],
+  };
 }
 
 function task(
@@ -276,5 +312,63 @@ describe('MeetingReportFastWorker.writeSummary — S6-01 upsert', () => {
       modelUsed: 'deepseek:v4',
     });
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeetingReportFastWorker.writeQualityScore — Доводка 2 (каноничная таблица)', () => {
+  it('валидный quality_score → upsert MeetingQualityScore (маппинг 5 категорий) + qualityScoreStatus=ready', async () => {
+    const { worker, qualityUpsert, meetingUpdate } = buildWorker();
+    await (worker as any).writeQualityScore({
+      meetingId: 'm-1',
+      tenantId: 't-1',
+      qualityScore: qualityScore(),
+    });
+    // Meeting.update — снимок JSON + статус ready.
+    expect(meetingUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'm-1' },
+        data: expect.objectContaining({ qualityScoreStatus: 'ready' }),
+      }),
+    );
+    // Каноничная таблица — маппинг categories.* → *Score.
+    expect(qualityUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { meetingId: 'm-1' },
+        create: expect.objectContaining({
+          meetingId: 'm-1',
+          tenantId: 't-1',
+          overallScore: 72,
+          preparationScore: 70,
+          structureScore: 75,
+          clarityScore: 70,
+          outcomesScore: 80,
+          engagementScore: 65,
+        }),
+      }),
+    );
+  });
+
+  it('quality_score без overallScore → skip (ни upsert, ни meeting.update)', async () => {
+    const { worker, qualityUpsert, meetingUpdate } = buildWorker();
+    const bad = qualityScore();
+    delete (bad as Record<string, unknown>).overallScore;
+    await (worker as any).writeQualityScore({
+      meetingId: 'm-1',
+      tenantId: 't-1',
+      qualityScore: bad,
+    });
+    expect(qualityUpsert).not.toHaveBeenCalled();
+    expect(meetingUpdate).not.toHaveBeenCalled();
+  });
+
+  it('quality_score null → skip', async () => {
+    const { worker, qualityUpsert, meetingUpdate } = buildWorker();
+    await (worker as any).writeQualityScore({
+      meetingId: 'm-1',
+      tenantId: 't-1',
+      qualityScore: null,
+    });
+    expect(qualityUpsert).not.toHaveBeenCalled();
+    expect(meetingUpdate).not.toHaveBeenCalled();
   });
 });

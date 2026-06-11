@@ -8,13 +8,14 @@ import { QualityScoreService } from './quality-score.service';
 /**
  * Модуль HTTP-side для quality-score (Фаза C §7).
  *
- * Воркер `ai.quality-score` живёт в WorkersModule + AiModule (PromptResolver,
- * LlmRouter). Здесь — только эндпоинты чтения / регенерации / org-настроек /
- * org-агрегата.
+ * Качество встречи считает ЕДИНЫЙ воркер `meeting-report-fast` (core-очередь)
+ * и пишет в MeetingQualityScore. Здесь — только эндпоинты чтения / регенерации /
+ * org-настроек / org-агрегата.
  *
  * Зависимости через @Global модули:
  *   - PrismaService / RedisService / BusinessMetricsService — auto-imported.
- *   - AiQueueService — из AiModule (enqueue регенерации).
+ *   - CoreQueueService — из @Global CoreQueueModule (enqueue регенерации
+ *     meeting-report-fast).
  */
 @Module({
   imports: [AuthModule],

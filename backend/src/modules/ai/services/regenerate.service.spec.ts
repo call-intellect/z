@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { CoreQueueService } from '../../core-queue/core-queue.service';
 import type { AiQueueService } from '../ai-queue.service';
 
 import type { LlmRouterService } from './llm-router.service';
@@ -64,9 +65,11 @@ function build(opts: BuildOpts = {}) {
 
   const queue = {
     enqueueAnalyzeWithTemplate: vi.fn(async () => undefined),
-    enqueueChapters: vi.fn(async () => undefined),
-    enqueueTasksExtract: vi.fn(async () => undefined),
   } as unknown as AiQueueService;
+
+  const coreQueue = {
+    enqueueMeetingReportFast: vi.fn(async () => undefined),
+  } as unknown as CoreQueueService;
 
   const router = {
     call: vi.fn(async () => ({
@@ -82,12 +85,12 @@ function build(opts: BuildOpts = {}) {
     workspace: { maxRegeneratePerMeetingPerDay: 5 },
   } as unknown as TypedConfigService;
 
-  const svc = new RegenerateService(prisma, queue, router, cfg);
-  return { svc, findUnique, update, aiResultUpdate, auditCreate, auditCount, queue, router, txn };
+  const svc = new RegenerateService(prisma, queue, coreQueue, router, cfg);
+  return { svc, findUnique, update, aiResultUpdate, auditCreate, auditCount, queue, coreQueue, router, txn };
 }
 
 describe('RegenerateService.regenerateMeeting', () => {
-  it('happy path: bumps version, ставит analyze/chapters/tasks', async () => {
+  it('happy path: bumps version, ставит analyze + meeting-report-fast', async () => {
     const ctx = build({});
     const out = await ctx.svc.regenerateMeeting({
       meetingId: 'm-1',
@@ -96,8 +99,9 @@ describe('RegenerateService.regenerateMeeting', () => {
     });
     expect(out.recapVersion).toBe(2);
     expect(ctx.queue.enqueueAnalyzeWithTemplate).toHaveBeenCalledWith('m-1', 2, undefined);
-    expect(ctx.queue.enqueueChapters).toHaveBeenCalledWith('m-1', 2);
-    expect(ctx.queue.enqueueTasksExtract).toHaveBeenCalledWith('m-1', 2);
+    expect(ctx.coreQueue.enqueueMeetingReportFast).toHaveBeenCalledWith('m-1', {
+      reason: 'v2',
+    });
   });
 
   it('templateId передаётся в analyze', async () => {

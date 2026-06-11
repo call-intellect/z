@@ -376,6 +376,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     try {
       await this.writeQualityScore({
         meetingId,
+        tenantId,
         qualityScore: parsed.quality_score,
       });
     } catch (err) {
@@ -625,7 +626,12 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Сохраняет quality_score целиком в Meeting.reportFastQualityScore (Json).
+   * Сохраняет quality_score в ДВА места одной транзакцией:
+   *   1. Meeting.reportFastQualityScore (Json) — сырой снимок результата
+   *      meeting-report-fast + Meeting.qualityScoreStatus='ready'.
+   *   2. Каноничная таблица MeetingQualityScore (upsert) — её читают
+   *      QualityScoreService.getForMeeting / getOrgDashboard БЕЗ изменений
+   *      (маппинг полей идентичен упразднённому quality-score.worker'у).
    * Защищается от пустого/неожиданного объекта: если у `qualityScore` нет хотя бы
    * `overallScore` числом — лог warn и пропуск (не пишем мусор). Структуру
    * гарантирует zod-схема `MeetingReportFastQualityScoreSchema`, поэтому в
@@ -633,6 +639,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
    */
   private async writeQualityScore(args: {
     meetingId: string;
+    tenantId: string;
     qualityScore: MeetingReportFastOutput['quality_score'] | null | undefined;
   }): Promise<void> {
     const qs = args.qualityScore;
@@ -650,11 +657,41 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    await this.prisma.meeting.update({
-      where: { id: args.meetingId },
-      data: {
-        reportFastQualityScore: qs as unknown as Prisma.InputJsonValue,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.meeting.update({
+        where: { id: args.meetingId },
+        data: {
+          reportFastQualityScore: qs as unknown as Prisma.InputJsonValue,
+          qualityScoreStatus: 'ready',
+        },
+      });
+      await tx.meetingQualityScore.upsert({
+        where: { meetingId: args.meetingId },
+        create: {
+          meetingId: args.meetingId,
+          tenantId: args.tenantId,
+          overallScore: qs.overallScore,
+          preparationScore: qs.categories.preparation,
+          structureScore: qs.categories.structure,
+          clarityScore: qs.categories.clarity,
+          outcomesScore: qs.categories.outcomes,
+          engagementScore: qs.categories.engagement,
+          recommendations: qs.recommendations as unknown as Prisma.InputJsonValue,
+          strengths: qs.strengths as unknown as Prisma.InputJsonValue,
+          promptTemplateVersionId: null,
+        },
+        update: {
+          overallScore: qs.overallScore,
+          preparationScore: qs.categories.preparation,
+          structureScore: qs.categories.structure,
+          clarityScore: qs.categories.clarity,
+          outcomesScore: qs.categories.outcomes,
+          engagementScore: qs.categories.engagement,
+          recommendations: qs.recommendations as unknown as Prisma.InputJsonValue,
+          strengths: qs.strengths as unknown as Prisma.InputJsonValue,
+          computedAt: new Date(),
+        },
+      });
     });
   }
 

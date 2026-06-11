@@ -75,7 +75,7 @@ E. Прод-операции владельца (не код)
 > `frontend/src/ui/mobile/exec/*` · `manager/*` · `shared/*` и навесить их на тот же роут под мобильным viewport
 > (через `MobileShell`, как описано в исходном ТЗ §Б4).
 
-### B1 — Ф2 exec «Обзор» (`MobileOverviewClient`) `[ ]`
+### B1 — Ф2 exec «Обзор» (`MobileOverviewClient`) `[x]`
 - На `/dashboard` при мобильном viewport: строка «Требует тебя: N» (`requiresAction`/`signalCounters`) + 4 зоны (Команда/Дела/Главная цель/Что мешает) + полоса «Кора за неделю» (`valueStrip`) + кнопка «Спросить». Источники: `GET /dashboard/director` (`DirectorDashboardDto`) + `GET /operations/dashboard`. Cold-start (Р6) при пустом графе. Финансы НЕ показываем.
 - **Acceptance:** мобильный `/dashboard` рендерит «Обзор»; десктоп не изменён; тап зоны → раздел (Ф3); cold-start индикатор. typecheck/lint/build.
 

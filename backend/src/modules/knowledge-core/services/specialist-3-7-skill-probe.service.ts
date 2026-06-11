@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProbeService } from '../../probe/probe.service';
@@ -36,6 +37,8 @@ export class Specialist37ProbeService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
   ) {}
@@ -185,6 +188,7 @@ export class Specialist37ProbeService {
         prisma: this.prisma,
         tenantId: args.tenantId,
         subjectPersonId: args.personId,
+        subjectAddressingEnabled: this.cfg.probe.subjectAddressingEnabled,
       });
     } catch (err) {
       this.logger.debug(

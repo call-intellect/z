@@ -1633,6 +1633,8 @@ export class TypedConfigService {
    *
    * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify:
    *   - `responseClassifyEnabled` — master-флаг LLM-классификации ответа.
+   *   - `subjectAddressingEnabled` — само-подтверждение probe субъектом
+   *     (cabinet-leftovers §3, 2026-06-11): probe идёт первым самому X.
    *   - `voiceInputEnabled` — приём голосовых ответов на probe (Фаза 0.3).
    *   - `responseClassifyMinConfidence` — порог confidence для accept.
    */
@@ -1648,6 +1650,7 @@ export class TypedConfigService {
       ),
       coldStartModeHours: this.get('PROBE_COLD_START_MODE_HOURS'),
       responseClassifyEnabled: this.get('PROBE_RESPONSE_CLASSIFY_ENABLED'),
+      subjectAddressingEnabled: this.get('PROBE_SUBJECT_ADDRESSING_ENABLED'),
       voiceInputEnabled: this.get('PROBE_VOICE_INPUT_ENABLED'),
       responseClassifyMinConfidence: this.get(
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',

@@ -1160,6 +1160,14 @@ const ProbeSchema = z.object({
    */
   PROBE_RESPONSE_CLASSIFY_ENABLED: zBool(true),
   /**
+   * Cabinet-leftovers §3 (2026-06-11) — само-подтверждение probe субъектом.
+   * При `true` probe «про сотрудника X» (skill/expertise) идёт ПЕРВЫМ самому X
+   * (само-подтверждение), затем главе его отдела, затем owner/admin как
+   * последний fallback. При `false` — старое поведение (глава-only / admin,
+   * субъекту probe НЕ шлётся). Kill-switch, дефолт ON (Ship-On).
+   */
+  PROBE_SUBJECT_ADDRESSING_ENABLED: zBool(true),
+  /**
    * Master-флаг приёма голосовых ответов на probe (Фаза 0.3).
    * Зарезервирован сейчас, чтобы не плодить отдельные ENV-патчи позже.
    * Используется в волне 0.3 (telegram-bot + ASR).

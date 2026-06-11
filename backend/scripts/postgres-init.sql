@@ -399,6 +399,26 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- TZ clone-method (2026-06-11) — RolePrinciple (Reflection-слой принципов роли).
+--    HNSW индекс на role_principles.embedding (cosine) для KNN-дедупа при
+--    синтезе принципов и ретрива «похожих принципов» в persona-compile v2.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'role_principles'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "role_principles_embedding_hnsw_cosine_idx"
+      ON "role_principles" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — Семантический индекс
 --    категорий профиля знаний (Person.knowledgeProfile.categories[]).
 --    HNSW индекс на person_knowledge_category_embeddings.embedding для

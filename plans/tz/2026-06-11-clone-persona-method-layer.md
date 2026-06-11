@@ -192,7 +192,7 @@ enum SkillTraitLayer {
 - **Acceptance:** spec — ответ без опоры → отказ (не галлюцинация); `CloneQueryLog` пишется (tenant-изоляция); `bun run typecheck && build` зелёные.
 - **Закрывает:** R1, R2.
 
-### [ ] Фаза Э1.1 — Модель RolePrinciple + layer (миграция)
+### [x] Фаза Э1.1 — Модель RolePrinciple + layer (миграция)
 - **Входит:** `prisma:migrate --name clone_method_layer` (RolePrinciple + RolePrincipleStatus + SkillTraitLayer + SkillTrait.layer default skill); `prisma:generate`.
 - **Acceptance:** таблицы `role_principles` создана, колонка `skill_traits.layer` дефолт `skill` (повтор миграции — no-op на проде через migrate deploy); существующие SkillTrait получают layer=skill (backward-compatible); `bun run typecheck` зелёный.
 - **Закрывает:** R3 (часть).

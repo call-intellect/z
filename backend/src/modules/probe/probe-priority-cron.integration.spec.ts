@@ -23,8 +23,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { RedisService } from '../../common/redis/redis.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import type { ConversationalService } from '../conversational/conversational.service';
 import type { IngestService } from '../ingest/ingest.service';
 
 import { ProbePriorityCron } from './probe-priority.cron';
@@ -182,7 +184,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
   // темы в Redis + читает probe.topicCooldownHours; мокаем оба зависимостями.
   const redisMock = {
     client: { set: vi.fn().mockResolvedValue('OK') },
-  } as unknown as import('../../common/redis/redis.service').RedisService;
+  } as unknown as RedisService;
   const cfgMock = {
     getDynamic: vi.fn().mockResolvedValue(48),
   } as unknown as TypedConfigService;
@@ -209,7 +211,17 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
         responseClassifyMinConfidence: args?.minConfidence ?? 0.5,
       },
     } as unknown as TypedConfigService;
-    return new ProbeResponseHandler(prisma, metrics, ingestAdapter, llm, cfg);
+    const conversational = {
+      sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
+    } as unknown as ConversationalService;
+    return new ProbeResponseHandler(
+      prisma,
+      metrics,
+      ingestAdapter,
+      llm,
+      cfg,
+      conversational,
+    );
   }
 
   it('handler: notification.responded для probe.* → создаёт RawEvent и инкрементит probe_closed_total', async () => {

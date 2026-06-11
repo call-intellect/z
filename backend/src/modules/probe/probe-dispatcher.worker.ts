@@ -25,13 +25,13 @@ import {
 } from '../knowledge-core/prompts/probe-formulate.prompt';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
+import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
 import {
   PROBE_REASON_FALLBACK,
   PROBE_REASON_FALLBACK_DEFAULT,
   PROBE_REASON_LABEL,
   PROBE_REASON_LABEL_DEFAULT,
 } from './probe-reason-labels';
-import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
 import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
 

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { type DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -7,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import { ConversationalService } from '../conversational/conversational.service';
 
 import type { NotificationRespondedPayload } from './probe.types';
 import {
@@ -53,6 +55,8 @@ export class ProbeResponseHandler {
     private readonly ingestAdapter: ConversationalIngestAdapter,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -123,6 +127,16 @@ export class ProbeResponseHandler {
       // сигнал для Фазы 2, парный к «ignored» из priority-cron).
       this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
 
+      // Probe Фаза 6 (R11): видимое следствие — подтверждение «ответ записан»
+      // (+ название объекта). Не голосом (только текст). Best-effort: ошибка
+      // подтверждения не валит уже завершённый closing-loop.
+      await this.sendAnswerAck({
+        tenantId: event.tenantId,
+        recipientUserId: event.recipientUserId,
+        probePayload,
+        probeId: probe.id,
+      });
+
       this.logger.log(
         `probe.responded: probeId=${probe.id} eventType=${event.eventType} kind=${kind ?? 'unknown'} classified=${classification ? `${classification.unclear ? 'unclear' : 'ok'}(${classification.confidence.toFixed(2)})` : 'skipped'} (closing-loop applied)`,
       );
@@ -135,6 +149,61 @@ export class ProbeResponseHandler {
         'ProbeResponseHandler: внутренняя ошибка — пропускаю',
       );
     }
+  }
+
+  /**
+   * Probe Фаза 6 (R11) — видимое следствие ответа: отправить получателю
+   * подтверждение «ваш ответ записан в память компании» + название объекта
+   * (`contextCardTitle`). Только текст (НЕ голос). Best-effort: ошибка
+   * подтверждения не валит уже завершённый closing-loop.
+   */
+  private async sendAnswerAck(args: {
+    tenantId: string;
+    recipientUserId: string;
+    probePayload: Record<string, unknown>;
+    probeId: string;
+  }): Promise<void> {
+    try {
+      const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
+      const text = title
+        ? `Спасибо! Ваш ответ записан в память компании. По теме «${title}».`
+        : 'Спасибо! Ваш ответ записан в память компании.';
+      await this.conversational.sendNotification({
+        tenantId: args.tenantId,
+        recipientUserId: args.recipientUserId,
+        eventType: 'probe.answer_acknowledged',
+        payload: {
+          text,
+          // summary — для рендера в кабинете (NotificationsClient) и каналах.
+          summary: text,
+          ...(title ? { objectTitle: title } : {}),
+          probeEventId: args.probeId,
+        },
+        dataClass: this.extractDataClass(args.probePayload),
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeId: args.probeId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeResponseHandler: подтверждение ответа не отправлено — пропускаю',
+      );
+    }
+  }
+
+  /** dataClass из payload probe (как в dispatcher), дефолт internal. */
+  private extractDataClass(payload: Record<string, unknown>): DataClass {
+    const dc = payload.dataClass;
+    if (
+      dc === 'public' ||
+      dc === 'internal' ||
+      dc === 'sensitive' ||
+      dc === 'private'
+    ) {
+      return dc;
+    }
+    return 'internal';
   }
 
   /**

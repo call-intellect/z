@@ -43,6 +43,17 @@ const ProbeDigestPayloadSchema = z
   })
   .strict();
 
+// Probe Фаза 6 — видимое следствие: подтверждение «ваш ответ записан».
+const ProbeAnswerAckPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(400),
+    objectTitle: z.string().max(200).optional(),
+    probeEventId: z.string().optional(),
+    /** Дубль text для generic-рендера (кабинет читает payload.summary). */
+    summary: z.string().max(400).optional(),
+  })
+  .strict();
+
 const CurationPendingPayloadSchema = z
   .object({
     resourceType: z.string().min(1),
@@ -400,6 +411,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
   // Probe Фаза 3 — батч-дайджест отложенных probe.
   ['probe.digest', ProbeDigestPayloadSchema],
+  // Probe Фаза 6 — видимое следствие ответа («ваш ответ записан»).
+  ['probe.answer_acknowledged', ProbeAnswerAckPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
   ['system.message', SystemMessagePayloadSchema],
   ['chat.answer', ChatAnswerPayloadSchema],

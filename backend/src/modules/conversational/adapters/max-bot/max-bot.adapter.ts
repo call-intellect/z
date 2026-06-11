@@ -772,6 +772,14 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
           4000,
         );
       }
+      case 'probe.answer_acknowledged': {
+        // Probe Фаза 6 — видимое следствие: текст подтверждения уже человеческий.
+        const text =
+          (payload['text'] as string | undefined) ??
+          (payload['summary'] as string | undefined) ??
+          'Спасибо! Ваш ответ записан.';
+        return `${text}`.slice(0, 4000);
+      }
       default:
         return `Уведомление: ${notification.eventType}`;
     }

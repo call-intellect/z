@@ -282,7 +282,7 @@ export class ProbeService {
     // Probe Фаза 5 (R9) — adaptive fatigue: тем, кто почти не отвечает (низкий
     // engagement_rate, снимок пишет priority-cron), режем эффективный бюджет.
     // Простое правило без LLM. Kill-switch probe.adaptiveFatigueEnabled.
-    let adaptiveOn = true;
+    let adaptiveOn: boolean;
     try {
       adaptiveOn = await this.cfg.getDynamic<boolean>(
         'probe.adaptiveFatigueEnabled',

@@ -20,6 +20,7 @@ import type { BusinessMetricsService } from '../../common/metrics/business-metri
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import type { ConversationalService } from '../conversational/conversational.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -120,12 +121,16 @@ function makeHandler(args: {
       responseClassifyMinConfidence: args.minConfidence ?? 0.5,
     },
   } as unknown as TypedConfigService;
+  const conversational = {
+    sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
+  } as unknown as ConversationalService;
   return new ProbeResponseHandler(
     args.mocks.prisma,
     args.mocks.metrics,
     args.mocks.ingestAdapter,
     llm,
     cfg,
+    conversational,
   );
 }
 

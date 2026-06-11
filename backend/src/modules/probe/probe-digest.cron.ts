@@ -8,13 +8,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConversationalService } from '../conversational/conversational.service';
 
 import {
-  buildProbeDigestSummary,
-  type ProbeDigestItem,
-} from './prompts/probe-digest.prompt';
-import {
   PROBE_REASON_FALLBACK,
   PROBE_REASON_FALLBACK_DEFAULT,
 } from './probe-reason-labels';
+import {
+  buildProbeDigestSummary,
+  type ProbeDigestItem,
+} from './prompts/probe-digest.prompt';
 
 /**
  * Probe-система Фаза 3 (2026-06-11) — ProbeDigestCron.

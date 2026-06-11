@@ -727,6 +727,15 @@ const KnowledgeCoreSchema = z.object({
    * clone_style не реализован — fallback на synthetic.
    */
   CHAT_V2_DEFAULT_MODE: z.enum(['factual', 'synthetic', 'clone_style']).default('synthetic'),
+  /**
+   * §4 Ф1 (2026-06-11) — kill-switch стриминга стадий прогресса AI-чата
+   * (SSE-эндпоинт `POST /api/v1/chat-v2/messages/stream`). ON по умолчанию
+   * (Ship-On): эндпоинт шлёт стадии «Понимаю вопрос → Ищу в памяти → Пишу
+   * ответ» через Server-Sent Events. При OFF — эндпоинт возвращает 503, фронт
+   * откатывается на синхронный `POST /api/v1/chat-v2/messages` (он неизменен).
+   * Это аварийный рубильник, действий владельца не требует.
+   */
+  CHAT_V2_STREAMING_ENABLED: zBool(true),
 
   // ── KC-Temporal (2026-05-25) W1.1 Bitemporal fields ──────────────────
   /**

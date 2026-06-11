@@ -42,6 +42,14 @@ import { ReasoningChainService } from './reasoning-chain.service';
  */
 export type { ChatV2Scope } from './chat-v2-retrieval.service';
 
+/**
+ * §4 Ф1 (2026-06-11) — стадии прогресса AI-чата для SSE-стриминга. Эмитятся
+ * через опциональный колбэк `onStage` по ходу `ask()`, чтобы пользователь
+ * видел, что система работает («Понимаю вопрос → Ищу в памяти → Пишу ответ»).
+ * Это НЕ посимвольный стрим токенов — только крупные фазы.
+ */
+export type ChatV2Stage = 'understanding' | 'searching' | 'writing';
+
 export interface ChatV2Input {
   tenantId: string;
   userId: string;
@@ -91,6 +99,14 @@ export interface ChatV2Input {
    * Если не задан — используется BASE_SYSTEM_PROMPT (default).
    */
   systemPromptOverride?: string | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Дефолт undefined = текущее поведение (никаких эмиссий). Вызывается
+   * 'searching' ПЕРЕД retrieval+loadContextBlocks и 'writing' ПЕРЕД синтез-
+   * вызовом LLM. Стадия 'understanding' эмитится раньше — в оркестраторе.
+   * Колбэк должен быть НЕблокирующим и не бросать (caller оборачивает в try).
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface ChatV2Citation {
@@ -380,6 +396,14 @@ export class ChatV2Service {
       filtered: input.structuralFilters ? 'yes' : 'no',
     });
 
+    // §4 Ф1 (2026-06-11) — стадия «Ищу в памяти»: эмитим ПЕРЕД retrieval +
+    // loadContextBlocks. Колбэк опционален и не должен бросать — оборачиваем.
+    try {
+      input.onStage?.('searching');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем синтез */
+    }
+
     // 1) Retrieval blockId'ов под scope.
     //
     // SBA α-5 dialog-layer:
@@ -569,6 +593,13 @@ export class ChatV2Service {
       enforcementChat === 'enforce' && derivedChat
         ? derivedChat.dataClass
         : legacyDataClass;
+    // §4 Ф1 (2026-06-11) — стадия «Пишу ответ»: эмитим ПЕРЕД синтез-вызовом
+    // LLM. Колбэк опционален и не должен бросать — оборачиваем.
+    try {
+      input.onStage?.('writing');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем синтез */
+    }
     const result = await this.llm.call({
       taskType: 'chat-v2',
       systemPrompt: finalSystem,

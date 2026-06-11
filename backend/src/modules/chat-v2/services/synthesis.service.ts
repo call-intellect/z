@@ -11,6 +11,7 @@ import {
   type ChatV2Citation,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
+  type ChatV2Stage,
 } from '../../knowledge-core/services/chat-v2.service';
 import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
 import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
@@ -64,6 +65,12 @@ export interface SynthesisInput {
     | 'analytical'
     | 'clone_roleplay'
     | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Прозрачно пробрасывается в knowledge-core ChatV2Service.ask (стадии
+   * 'searching'/'writing'). Дефолт undefined = текущее поведение.
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface SynthesisResult {
@@ -208,6 +215,8 @@ export class SynthesisService {
       intent: input.intent ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,
+      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE).
+      onStage: input.onStage,
     });
 
     // Сохраняем blockIds в RetrievalCache (если был miss).

@@ -1147,6 +1147,9 @@ export class TypedConfigService {
       conversationTtlDays: this.get('CHAT_V2_CONVERSATION_TTL_DAYS'),
       cleanupCron: this.get('CHAT_V2_CLEANUP_CRON'),
       defaultMode: this.get('CHAT_V2_DEFAULT_MODE'),
+      // §4 Ф1 (2026-06-11) — kill-switch SSE-стриминга стадий прогресса
+      // AI-чата (POST /chat-v2/messages/stream). ON по умолчанию (Ship-On).
+      streamingEnabled: this.get('CHAT_V2_STREAMING_ENABLED'),
     } as const;
   }
 

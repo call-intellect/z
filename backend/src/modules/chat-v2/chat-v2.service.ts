@@ -13,6 +13,8 @@ import { AnswerCacheService } from '../dialog-layer/services/answer-cache.servic
 import { DialogService } from '../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
 
+import type { ChatV2Stage } from '../knowledge-core/services/chat-v2.service';
+
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
 
@@ -43,6 +45,15 @@ export interface AskInput {
    * conversation и для outbound reply через ConversationalService).
    */
   channelKindOrigin?: string | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Дефолт undefined = текущее поведение (синхронный `/messages` его не
+   * передаёт). Эмитит 'understanding' в начале ask (до dialog-классификации),
+   * затем пробрасывается через SynthesisService в knowledge-core ChatV2Service,
+   * который эмитит 'searching' и 'writing'. При AnswerCache-HIT (быстрый путь)
+   * стадии searching/writing не сработают — это нормально.
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface ChatAnswer {
@@ -77,6 +88,14 @@ export class ChatV2OrchestrationService {
   ) {}
 
   async ask(input: AskInput): Promise<ChatAnswer> {
+    // §4 Ф1 (2026-06-11) — стадия «Понимаю вопрос»: эмитим в самом начале,
+    // ДО dialog-классификации. Колбэк опционален и не должен бросать.
+    try {
+      input.onStage?.('understanding');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем ask */
+    }
+
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
     const scopeRefId = input.scopeRefId ?? null;
@@ -223,6 +242,9 @@ export class ChatV2OrchestrationService {
       // bot-adapter раньше и сюда не доходят; для безопасности маппим
       // их в 'factual'.
       intent: narrowToChatIntent(dialogResult.intent),
+      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE) до
+      // knowledge-core ChatV2Service (стадии 'searching'/'writing').
+      onStage: input.onStage,
     });
 
     const durationSeconds = (Date.now() - startedAt) / 1000;

@@ -108,6 +108,9 @@ _(пусто — все доставки в Telegram авторизованы в
 | `CHECKIN_GRAPH_INGEST_ENABLED` | 🟢 ВКЛ | Мост ежедневный чек-ин → knowledge-core (`CheckinIngestService`): на событие `checkin.created` завершённый чек-ин (план/отчёт) кладётся в `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest (граф знаний). Best-effort, рядом с `CheckinSentimentAnalyzerWorker`. Рубильник на случай инцидента в block-ingest, действий владельца не требует. Выкл → чек-ины в граф не попадают (sentiment/обработка чек-ина не затронуты). ENV-рубильник (`betaOps.checkinGraphIngestEnabled`, zBool default true). (ТЗ daily-checkin-to-graph-bridge) |
 | `PROBE_SUBJECT_ADDRESSING_ENABLED` | 🟢 ВКЛ | Адресация уточняющих вопросов (probe) про сотрудника — самому сотруднику (само-подтверждение), затем главе его отдела, затем владельцу; НЕ владельцу напрямую. Выкл → прежнее поведение (глава отдела / админы, субъекту не шлётся). ENV-рубильник (`cfg.probe.subjectAddressingEnabled`, zBool default true). (ТЗ cabinet-leftovers §3 Ф1) |
 | `CHAT_V2_STREAMING_ENABLED` | 🟢 ВКЛ | Стадии прогресса AI-чата через SSE («Понимаю → Ищу → Пишу») на `POST /chat-v2/messages/stream`. Выкл → эндпоинт отдаёт 503, фронт прозрачно откатывается на синхронный `/messages` (ответ приходит без стадий). Посимвольного стрима токенов нет (отдельный follow-up). ENV-рубильник (`cfg.chatV2.streamingEnabled`, zBool default true). (ТЗ cabinet-leftovers §4 Ф1) |
+| `REGULATION_GATE_STRICT_ENABLED` / `aiFeatures.regulationGateStrict` | 🟢 ВКЛ | Строгий булев гейт `isOrgNorm` в regulation/policy/instruction-экстракторах — режет «не-нормы» (личные мнения, разовые факты) до записи орг-документа (промпты-MASTER A1.2). Выкл → recall-страховка: гейт мягкий, спорное пропускается в дедуп (риск шума, не пропуска нормы). ENV-рубильник (zBool default true). (Волна A1.2 master-prompt-fleet) |
+| `CHATBOX_TASK_EXTRACTION_ENABLED` / `aiFeatures.chatboxTaskExtractionEnabled` | 🟢 ВКЛ | Извлечение задач из клиентской переписки (ChatBox Ф5): закрытая сессия → LLM-извлечение action items → `Task` с `sourceType='chatbox'`. Выкл → переписка по-прежнему мостится в граф, но задачи из неё не создаются. ENV-рубильник (zBool default true). (ТЗ chatbox-memory-finishing Ф5) |
+| `TASKS_CROSS_SOURCE_DEDUPE_ENABLED` / `aiFeatures.tasksCrossSourceDedupeEnabled` | 🟢 ВКЛ | Межисточниковый дедуп задач (ChatBox Ф6): задача из переписки, семантически совпадающая с задачей из встречи/трекера (cosine ≥ порога), не плодит дубль. Выкл → дедуп между источниками не работает (возможны повторы «встреча + чат»). ENV-рубильник (zBool default true). (ТЗ chatbox-memory-finishing Ф6) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -143,6 +146,23 @@ _(пусто — все доставки в Telegram авторизованы в
 | `support_critic_min_groundedness` | 0.6 | Минимальный groundedness-балл черновика клона (truthful/total). Ниже → исход `clarify`/`escalate` вместо «ответить» (R-INV-5) | Клон-черновик поддержки (ТЗ support-desk-clone Ф3) |
 | `support_promote_min_csat` | 4 | Минимальный CSAT (1..5) для промоута принятого ответа клона в контур памяти (гейт качества против само-отравления, R-INV-2) | Петля обучения поддержки (ТЗ support-desk-clone Ф3) |
 | `knowledge.chatV2SynthesisTimeoutMs` | 90000 | Таймаут синтеза ответа AI-чата (мс), отдельный от глобального `LLM_ROUTER_DISPATCH_TIMEOUT_MS` — чтобы длинный синтез chat-v2 (~28с) не обрывался. AdminSetting (super_admin), code-default 90с | AI-чат chat-v2 (ТЗ cabinet-leftovers §4 Ф3) |
+| `tasks.cross_source_dedupe_threshold` | 0.85 | Порог cosine-сходства, при котором задача из переписки считается дублем задачи из встречи/трекера и не создаётся повторно. Ниже порога — новая задача. AdminSetting (super_admin) | Межисточниковый дедуп задач (ТЗ chatbox-memory-finishing Ф6) |
+| `chatbox.match.name_fuzzy_enabled` | true | Включает нечёткое сопоставление сотрудника по имени (а не только по email) при матчинге участников переписки ChatBox с `Person`. AdminSetting (super_admin) | Матчинг участников ChatBox (ТЗ chatbox-memory-finishing Ф1) |
+
+---
+
+---
+
+## 🔑 НЕ флаг, но ждёт прод-ENV: VAPID-ключи push (Мобильная Кора)
+
+Это **не флаг вкл/выкл**, а ENV-секреты web-push. Их **наличие = включённая отправка** push в Мобильной Коре; **отсутствие = push молча no-op** (без ошибки, фича просто не шлёт уведомления). Действие владельца требуется: сгенерировать пару VAPID и положить в прод-`.env`.
+
+| Ключ | Где | Что без него |
+|---|---|---|
+| `VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` | backend `.env` | сервер не подписывает и не отправляет web-push (отправка no-op) |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | frontend build-ENV | браузер не оформляет подписку (PushSubscription не создаётся) |
+
+Пара генерируется одним прогоном (`npx web-push generate-vapid-keys`); публичный ключ дублируется в backend и frontend, `VAPID_SUBJECT` = `mailto:`-адрес. До их установки Мобильная Кора работает без push (Ф0+Ф1 не зависят от push). См. `docs/operations/prod-deploy-log.md` Шаг 1.
 
 ---
 

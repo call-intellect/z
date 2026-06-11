@@ -585,6 +585,19 @@ Card {
 - `extractorVersion: String?` — `'v2'` если задача создана `meeting-analyze-v2.worker`'ом, NULL = legacy.
 - `assigneeUserId: String?` — жёсткая связь с `User.id` (relation `assignee`, `onDelete: SetNull`). Заполняется AI-pipeline после ТЗ 2026-05-25 `hard-participant-identification`: `ParticipantContextService.loadForMeeting` отдаёт participants → промпт (`tasks-v2` / `tasks-structured`) → LLM возвращает `assigneeUserId` → `TaskAssigneeResolverService` валидирует против participants (галлюцинации режутся, ≥2 кандидатов → null + метрика `z_task_assignee_ambiguous_total`). `assigneeRaw` сохраняется ВСЕГДА — для UI fallback и гостей. Index `@@index([assigneeUserId])` — для фильтра «мои задачи».
 
+**`Task` — source-поля (миграция `20260611110000_chatbox_tasks_and_customer_link`, ТЗ chatbox-memory-finishing Ф5/Ф6):** задача больше не обязана быть из встречи.
+- `meetingId: String?` — **стал nullable** (был NOT NULL): задача может родиться из переписки ChatBox или трекера. ⚠ Каскад на view-типы: все читатели «задач встречи» (`where:{meetingId}`) и UI-мапперы должны допускать `meetingId=null` (см. [[code-pitfalls]] §«meetingId nullable»).
+- `sourceType: String @default("meeting")` (FK на модель `TaskSource`) — `'meeting'` | `'chatbox'` | … : откуда пришла задача. Backfill пустых → `'meeting'`: `scripts/backfill-task-source-type.ts` (safety no-op, колонка с дефолтом).
+- `sourceChatSessionId: String?` / `sourceChatId: String?` — для `sourceType='chatbox'`: на какую сессию/чат переписки опирается задача (извлечена `chatbox` task-extractor'ом Ф5, гейт `CHATBOX_TASK_EXTRACTION_ENABLED`).
+- **Межисточниковый дедуп (Ф6):** задача из переписки, семантически совпадающая (cosine ≥ `tasks.cross_source_dedupe_threshold`, дефолт 0.85) с задачей из встречи/трекера, не плодит дубль. Гейт `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`.
+
+**`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
+
+**ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
+- `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний.
+- `linkMode: String?` — как установлена связка (ручная/по email/нечёткий матчинг по имени, гейт `chatbox.match.name_fuzzy_enabled`).
+Это снимает прежнее ограничение «`ChatboxCustomer` не связан с `Person`/`Entity`» (см. реестр не-сделанного).
+
 **`MeetingChapter` дополнительно:**
 - `evidenceBlockIds: String[]` (default `[]`) — id блоков главы.
 - `extractorVersion: String?` — `'v2'` или NULL (legacy).
@@ -1438,6 +1451,14 @@ voxTaskId  String?   // id задачи транскрибации в Vox (ASR) 
 ### `TranscriptTrack @@unique([transcriptId, livekitIdentity])` (Фаза 1, коммит `d5077155`)
 
 Уникальный ключ на пару «транскрипт × участник (по `livekitIdentity`)`. Дорожки теперь пишутся через `upsert` (а не `create`) — повторный прогон транскрибации одного участника обновляет существующую запись, не плодит дубли. Это нижний слой per-track идемпотентности (вместе с `AudioTrack.voxTaskId`).
+
+### `TranscriptTrack.segments` (миграция `20260611100000_transcript_track_segments`, ТЗ asr-segment-timings-persist-and-merge)
+
+```prisma
+segments  Json?   // посегментные тайминги Vox (start/end/text по сегментам дорожки)
+```
+
+Vox-модель `v3_e2e_rnnt` отдаёт **посегментные** (а не пословные) тайминги в `extendedResult.segments` — даже при `diar:false`. Раньше эти тайминги терялись на этапе персиста+мерджа: транскрипт собирался «дорожками подряд» (сначала весь говорящий A, потом весь B), поведенческие метрики выходили абсурдными. Теперь сегменты сохраняются в `TranscriptTrack.segments` и `merger.ts` сводит дорожки **по времени** (interleave по `start`), а не подряд. Корень и форма ответа — см. [[code-pitfalls]] §«Vox: сегментные тайминги в extendedResult».
 
 ### `Insight.dataClassAudit` / `Decision.dataClassAudit` (Фаза 8, коммит `22446248`)
 

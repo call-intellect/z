@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { ProbeAnswerInput } from '@/ui/components/probe/ProbeAnswerInput';
+import { ReadablePayload } from '@/ui/readable-payload';
 
 type Filter = 'unread' | 'pending_response' | 'all';
 type Tab = 'inbox' | 'proactive';
@@ -344,7 +345,7 @@ function NotificationDetail({
         {payload.summary && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
-              Карточка{payload.resourceType ? ` (${payload.resourceType})` : ''}
+              Карточка
             </div>
             <p className="whitespace-pre-wrap">{payload.summary}</p>
           </div>
@@ -429,9 +430,16 @@ function NotificationDetail({
             <div className="text-xs uppercase text-muted-foreground">
               Ваш ответ ({n.respondedAt?.toLocaleString('ru-RU') ?? '—'})
             </div>
-            <pre className="whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-              {JSON.stringify(n.responsePayload, null, 2)}
-            </pre>
+            {(() => {
+              const rp = n.responsePayload as Record<string, unknown>;
+              const raw = rp.response ?? rp.text ?? rp.value;
+              const answerText = typeof raw === 'string' ? raw.trim() : '';
+              return answerText ? (
+                <p className="whitespace-pre-wrap text-sm">{answerText}</p>
+              ) : (
+                <ReadablePayload value={n.responsePayload} />
+              );
+            })()}
           </div>
         )}
 

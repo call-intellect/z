@@ -197,5 +197,5 @@ export function teamTemplateCategoryLabel(category: string): string {
     events: 'События',
     technology: 'Технологии',
   };
-  return map[category] ?? category;
+  return map[category] ?? category.replaceAll('_', ' ');
 }

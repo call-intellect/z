@@ -225,7 +225,7 @@ enum SkillTraitLayer {
 - **Acceptance:** probe формирует CDM-вопросы по реальному кейсу (греп: «почему выбрали / что насторожило / альтернативы»); transcript сохраняется как высокоприоритетный источник и попадает в reasoning-пул роли; нет inline_keyboard; spec + `build` зелёные.
 - **Закрывает:** R8.
 
-### [ ] Фаза ИНТ.1 — persona-compile v2 (секционная сборка) — KEYSTONE
+### [x] Фаза ИНТ.1 — persona-compile v2 (секционная сборка) — KEYSTONE
 - **Зависит от:** Э1.2, Э1.3, Э2.1 (иначе секции пусты).
 - **Картография:** `executable-persona-compile.prompt.ts`, `executable-persona-build.service.ts` (`buildForProfile`/`buildForRole`/`compilePersonaPrompt`).
 - **Входит:** v2-промпт с 5 секциями; `build.service` подтягивает: черты(layer=skill) + ценности/мотивацию(layer=value/motivation) + RolePrinciple + активные PracticeSkill роли + process_marker; компилирует как правила процесса с якорями; пустые секции опускаются.

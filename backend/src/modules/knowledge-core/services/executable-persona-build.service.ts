@@ -18,8 +18,11 @@ import {
 } from '../../ai/services/prompts/common';
 import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
 import {
-  EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
-  EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE,
+  EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT,
+  EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE,
+  type PersonaCompilePracticeSkillInput,
+  type PersonaCompilePrincipleInput,
+  type PersonaCompileTraitInput,
 } from '../prompts/executable-persona-compile.prompt';
 
 import { DataClassPolicyService } from './dataclass-policy.service';
@@ -100,7 +103,9 @@ export class ExecutablePersonaBuildService {
             select: { id: true, tenantId: true, name: true, relationship: true },
           },
           traits: {
-            where: { status: 'active' },
+            // ИНТ.1 (R9) — в «черты подхода» идёт только слой skill; ценности /
+            // мотивация / маркеры процесса выбираются отдельными запросами ниже.
+            where: { status: 'active', layer: 'skill' },
             orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
             take: 20,
           },
@@ -109,16 +114,87 @@ export class ExecutablePersonaBuildService {
       if (!profile) return null;
       if (profile.person.relationship !== 'employee') return null;
       if (profile.status !== 'active') return null;
+      // Гейт минимума — по skill-чертам (как до ИНТ.1, деградация совместима).
       if (profile.traits.length < this.cfg.persona.minTraits) return null;
 
-      // LLM compile.
+      // ИНТ.1 (R9) — новые слои метода: values/motivations/processMarkers
+      // (топ-5 на слой), принципы активной роли person'а, процедуры
+      // PracticeSkill(scope='person'). Все слои best-effort: пусто → секция
+      // в промпте опускается, выход эквивалентен v1-поведению.
+      const personId = profile.person.id;
+      const [values, motivations, processMarkers, roleId, practiceSkillRows] =
+        await Promise.all([
+          this.findTopTraitsByLayer({ profileId: profile.id, layer: 'value' }),
+          this.findTopTraitsByLayer({
+            profileId: profile.id,
+            layer: 'motivation',
+          }),
+          this.findTopTraitsByLayer({
+            profileId: profile.id,
+            layer: 'process_marker',
+          }),
+          this.findActiveRoleIdForPerson({
+            tenantId: profile.tenantId,
+            personId,
+          }),
+          this.prisma.practiceSkill.findMany({
+            where: {
+              tenantId: profile.tenantId,
+              scope: 'person',
+              scopeRefId: personId,
+              status: 'active',
+            },
+            orderBy: [
+              { pinned: 'desc' },
+              { successRate: { sort: 'desc', nulls: 'last' } },
+            ],
+            take: 5,
+          }),
+        ]);
+      const principles = roleId
+        ? await this.prisma.rolePrinciple.findMany({
+            where: {
+              tenantId: profile.tenantId,
+              roleId,
+              status: 'active',
+            },
+            orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
+            take: 5,
+          })
+        : [];
+      const practiceSkills = this.parsePracticeSkillsForPrompt(
+        practiceSkillRows,
+      );
+
+      // LLM compile (v2 — секционная сборка из всех слоёв метода).
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: profile.tenantId,
         personName: profile.person.name,
         personRole: null,
         traits: profile.traits,
+        values,
+        motivations,
+        processMarkers,
+        principles: principles.map((p) => ({
+          situation: p.situation,
+          statement: p.statement,
+          observationCount: p.observationCount,
+          confidence: p.confidence,
+        })),
+        practiceSkills,
       });
       if (!personaPrompt) return null;
+
+      // ИНТ.1 — аудит «какие черты вошли»: skill-черты + values/motivations/
+      // processMarkers (все — SkillTrait.id). Принципы (RolePrinciple) и
+      // процедуры (PracticeSkill) в includedTraitIds НЕ кладём — это не
+      // SkillTrait-id, поле по контракту хранит только их.
+      const includedTraitIds = [
+        ...profile.traits.map((t) => t.id),
+        ...values.map((t) => t.id),
+        ...motivations.map((t) => t.id),
+        ...processMarkers.map((t) => t.id),
+      ];
 
       // Insert new + supersede previous.
       const nextVersion = await this.nextVersion({
@@ -171,7 +247,7 @@ export class ExecutablePersonaBuildService {
             scopeRefId: null,
             version: nextVersion,
             personaPrompt,
-            includedTraitIds: profile.traits.map((t) => t.id),
+            includedTraitIds,
             status: 'active',
             builtFromTraitsCount: profile.traits.length,
             triggerReason,
@@ -261,7 +337,8 @@ export class ExecutablePersonaBuildService {
         include: {
           person: { select: { name: true, relationship: true } },
           traits: {
-            where: { status: 'active' },
+            // ИНТ.1 (R9) — агрегация «черт подхода» только по слою skill.
+            where: { status: 'active', layer: 'skill' },
             orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
             take: 10,
           },
@@ -286,13 +363,79 @@ export class ExecutablePersonaBuildService {
         where: { id: args.roleId },
         select: { name: true },
       });
+
+      // ИНТ.1 (R9) — слои метода для роли: values/motivations/processMarkers
+      // агрегируются по тем же profiles (топ-3 на человека, cap 5 после
+      // dedupe по концепту); принципы — RolePrinciple роли напрямую;
+      // процедуры — union PracticeSkill(scope='role') + scope='person'
+      // людей роли (cap 5, приоритет pinned → successRate).
+      const profileIds = activeProfiles.map((p) => p.id);
+      const [values, motivations, processMarkers, principles, practiceSkillRows] =
+        await Promise.all([
+          this.aggregateLayerTraitsForProfiles({ profileIds, layer: 'value' }),
+          this.aggregateLayerTraitsForProfiles({
+            profileIds,
+            layer: 'motivation',
+          }),
+          this.aggregateLayerTraitsForProfiles({
+            profileIds,
+            layer: 'process_marker',
+          }),
+          this.prisma.rolePrinciple.findMany({
+            where: {
+              tenantId: args.tenantId,
+              roleId: args.roleId,
+              status: 'active',
+            },
+            orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
+            take: 5,
+          }),
+          this.prisma.practiceSkill.findMany({
+            where: {
+              tenantId: args.tenantId,
+              status: 'active',
+              OR: [
+                { scope: 'role', scopeRefId: args.roleId },
+                { scope: 'person', scopeRefId: { in: personIds } },
+              ],
+            },
+            orderBy: [
+              { pinned: 'desc' },
+              { successRate: { sort: 'desc', nulls: 'last' } },
+            ],
+            take: 5,
+          }),
+        ]);
+      const practiceSkills = this.parsePracticeSkillsForPrompt(
+        practiceSkillRows,
+      );
+
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: args.tenantId,
         personName: role?.name ?? 'роль',
         personRole: role?.name ?? null,
         traits: dedupedTraits,
+        values,
+        motivations,
+        processMarkers,
+        principles: principles.map((p) => ({
+          situation: p.situation,
+          statement: p.statement,
+          observationCount: p.observationCount,
+          confidence: p.confidence,
+        })),
+        practiceSkills,
       });
       if (!personaPrompt) return null;
+
+      // ИНТ.1 — см. комментарий в buildForProfile: только SkillTrait-id;
+      // RolePrinciple/PracticeSkill в includedTraitIds не кладём.
+      const includedTraitIds = [
+        ...dedupedTraits.map((t) => t.id),
+        ...values.map((t) => t.id),
+        ...motivations.map((t) => t.id),
+        ...processMarkers.map((t) => t.id),
+      ];
 
       const nextVersion = await this.nextVersion({
         profileId: null,
@@ -346,7 +489,7 @@ export class ExecutablePersonaBuildService {
             scopeRefId: args.roleId,
             version: nextVersion,
             personaPrompt,
-            includedTraitIds: dedupedTraits.map((t) => t.id),
+            includedTraitIds,
             status: 'active',
             builtFromTraitsCount: dedupedTraits.length,
             triggerReason,
@@ -432,6 +575,128 @@ export class ExecutablePersonaBuildService {
     return out;
   }
 
+  /**
+   * ИНТ.1 (R9) — топ-5 активных черт профиля заданного слоя
+   * (value / motivation / process_marker). Сортировка — как у skill-черт.
+   */
+  private findTopTraitsByLayer(args: {
+    profileId: string;
+    layer: 'value' | 'motivation' | 'process_marker';
+  }): Promise<SkillTrait[]> {
+    return this.prisma.skillTrait.findMany({
+      where: { profileId: args.profileId, status: 'active', layer: args.layer },
+      orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
+      take: 5,
+    });
+  }
+
+  /**
+   * ИНТ.1 (R9) — агрегация черт слоя по нескольким профилям (для role-persona):
+   * топ-3 на человека → общий пул → dedupe по концепту → cap 5.
+   */
+  private async aggregateLayerTraitsForProfiles(args: {
+    profileIds: string[];
+    layer: 'value' | 'motivation' | 'process_marker';
+  }): Promise<SkillTrait[]> {
+    if (args.profileIds.length === 0) return [];
+    const rows = await this.prisma.skillTrait.findMany({
+      where: {
+        profileId: { in: args.profileIds },
+        status: 'active',
+        layer: args.layer,
+      },
+      orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
+      // Safety-cap: до 50 профилей × топ-3 — 300 строк с запасом.
+      take: 300,
+    });
+    // rows отсортированы глобально → относительный порядок внутри профиля
+    // сохраняется; берём первые 3 на профиль.
+    const perProfileCount = new Map<string, number>();
+    const picked: SkillTrait[] = [];
+    for (const row of rows) {
+      const count = perProfileCount.get(row.profileId) ?? 0;
+      if (count >= 3) continue;
+      perProfileCount.set(row.profileId, count + 1);
+      picked.push(row);
+    }
+    return this.dedupeTraitsByConcept(picked).slice(0, 5);
+  }
+
+  /**
+   * ИНТ.1 (R9) — активная роль person'а: union PersonRole(validTo=null) +
+   * Appointment(active/acting, validTo=null) — обратный вариант паттерна из
+   * `role-principle-synthesis.service.ts`. Берём первый roleId; нет роли → null.
+   */
+  private async findActiveRoleIdForPerson(args: {
+    tenantId: string;
+    personId: string;
+  }): Promise<string | null> {
+    const [personRoleRows, appointmentRows] = await Promise.all([
+      this.prisma.personRole.findMany({
+        where: {
+          tenantId: args.tenantId,
+          personId: args.personId,
+          validTo: null,
+        },
+        select: { roleId: true },
+        take: 5,
+      }),
+      this.prisma.appointment.findMany({
+        where: {
+          tenantId: args.tenantId,
+          personId: args.personId,
+          validTo: null,
+          status: { in: ['active', 'acting'] },
+        },
+        select: { roleId: true },
+        take: 5,
+      }),
+    ]);
+    return (
+      [...personRoleRows, ...appointmentRows].map((r) => r.roleId)[0] ?? null
+    );
+  }
+
+  /**
+   * ИНТ.1 (R9) — нормализует PracticeSkill из БД-формата (Json-поля как
+   * unknown) в формат user-шаблона v2. Безопасно к мусорному Json: скилл с
+   * битыми/пустыми steps или без триггера пропускается, сборка не падает
+   * (паттерн `toPromptSkills` из clones.service.ts).
+   */
+  private parsePracticeSkillsForPrompt(
+    rows: ReadonlyArray<{ trigger: unknown; steps: unknown; redFlags: unknown }>,
+  ): PersonaCompilePracticeSkillInput[] {
+    const out: PersonaCompilePracticeSkillInput[] = [];
+    for (const s of rows) {
+      const trigger = typeof s.trigger === 'string' ? s.trigger.trim() : '';
+      if (trigger.length === 0) continue;
+      const stepsArr = Array.isArray(s.steps) ? s.steps : [];
+      const steps = stepsArr
+        .filter(
+          (st): st is Record<string, unknown> => !!st && typeof st === 'object',
+        )
+        .map((st, idx) => ({
+          order: typeof st.order === 'number' ? st.order : idx + 1,
+          action: typeof st.action === 'string' ? st.action.trim() : '',
+        }))
+        .filter((st) => st.action.length > 0);
+      if (steps.length === 0) continue;
+      const redFlags = Array.isArray(s.redFlags)
+        ? (s.redFlags as unknown[]).filter(
+            (v): v is string => typeof v === 'string',
+          )
+        : [];
+      out.push({ trigger, steps, redFlags });
+    }
+    return out;
+  }
+
+  /**
+   * ИНТ.1 (R9) — компиляция persona-prompt по v2-шаблонам (секционная сборка
+   * из всех слоёв метода). Новые слои опциональны (default []) — при пустых
+   * выход эквивалентен прежнему v1-поведению (только черты).
+   * taskType НЕ меняется ('executable-persona-compile').
+   */
   private async compilePersonaPrompt(args: {
     tenantId: string;
     personName: string;
@@ -442,10 +707,15 @@ export class ExecutablePersonaBuildService {
       confidence: string;
       observationCount: number;
     }>;
+    values?: ReadonlyArray<PersonaCompileTraitInput>;
+    motivations?: ReadonlyArray<PersonaCompileTraitInput>;
+    principles?: ReadonlyArray<PersonaCompilePrincipleInput>;
+    practiceSkills?: ReadonlyArray<PersonaCompilePracticeSkillInput>;
+    processMarkers?: ReadonlyArray<PersonaCompileTraitInput>;
   }): Promise<string | null> {
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (traits, исходно из транскриптов).
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const rawUser = EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE({
+    const rawUser = EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE({
       personName: args.personName,
       personRole: args.personRole,
       traits: args.traits.map((t) => ({
@@ -454,14 +724,19 @@ export class ExecutablePersonaBuildService {
         confidence: t.confidence,
         observationCount: t.observationCount,
       })),
+      values: args.values ?? [],
+      motivations: args.motivations ?? [],
+      principles: args.principles ?? [],
+      practiceSkills: args.practiceSkills ?? [],
+      processMarkers: args.processMarkers ?? [],
     });
     let result: LlmCallResult;
     try {
       result = await this.llm.call({
         taskType: 'executable-persona-compile',
         systemPrompt: guardOn
-          ? withInjectionGuard(EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT)
-          : EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT,
+          ? withInjectionGuard(EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT)
+          : EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT,
         userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         dataClass: 'internal',

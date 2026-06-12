@@ -2,12 +2,16 @@
  * Clones=Roles Ф5 (2026-05-25) — unit-проверка, что `buildForRole`
  * прокидывает `dataClass='internal'` в Prisma create.
  *
+ * TZ clone-method ИНТ.1 (2026-06-12) — persona-compile v2: секционная сборка
+ * из слоёв метода (values/motivations/RolePrinciple/PracticeSkill/markers).
+ * Добавлены тесты на наполнение/деградацию секций, layer-фильтр выборки,
+ * union процедур role+person и устойчивость к битому steps-Json.
+ *
  * Не покрываем полный pipeline (LLM, embeddings, метрики) — это
- * integration-test scope. Сюда — только DataClass-аспект.
+ * integration-test scope.
  */
 
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -17,16 +21,136 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { DataClassPolicyService } from './dataclass-policy.service';
 import { ExecutablePersonaBuildService } from './executable-persona-build.service';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Фабрика моков (ИНТ.1): prisma-база отвечает пустыми массивами на все новые
+// запросы v2 (skillTrait по layer / rolePrinciple / practiceSkill /
+// appointment) — каждый тест переопределяет нужные delegates через spread.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const makeCreateSpy = () =>
+  vi.fn(async (q: { data: Record<string, unknown> }) => ({
+    id: 'p-1',
+    ...q.data,
+    status: q.data.status,
+  }));
+
+const makeUpdateManySpy = () => vi.fn(async () => ({ count: 0 }));
+
+function makePrismaBase(args: {
+  createSpy: ReturnType<typeof makeCreateSpy>;
+  updateManySpy: ReturnType<typeof makeUpdateManySpy>;
+}) {
+  return {
+    org: { findUnique: vi.fn(async () => null) },
+    personRole: { findMany: vi.fn(async (_q: unknown) => [] as unknown[]) },
+    appointment: { findMany: vi.fn(async (_q: unknown) => [] as unknown[]) },
+    skillTrait: { findMany: vi.fn(async (_q: unknown) => [] as unknown[]) },
+    rolePrinciple: { findMany: vi.fn(async (_q: unknown) => [] as unknown[]) },
+    practiceSkill: { findMany: vi.fn(async (_q: unknown) => [] as unknown[]) },
+    role: { findUnique: vi.fn(async () => ({ name: 'Маркетолог' })) },
+    executablePersona: {
+      findFirst: vi.fn(async () => ({ version: 1 })),
+      updateMany: args.updateManySpy,
+      create: args.createSpy,
+    },
+    $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        executablePersona: {
+          updateMany: args.updateManySpy,
+          create: args.createSpy,
+        },
+      }),
+    ),
+  };
+}
+
+function makeService(prisma: unknown) {
+  const llm = {
+    call: vi.fn(async () => ({
+      text: 'A'.repeat(200),
+      modelUsed: 'mock',
+      tier: 'primary',
+      inputTokens: 10,
+      outputTokens: 20,
+    })),
+  };
+  const metrics = {
+    observePersonaBuildDuration: vi.fn(),
+    incCoreSpecialistCards: vi.fn(),
+    incExecutablePersonaSnapshot: vi.fn(),
+    setExecutablePersonaSnapshotLag: vi.fn(),
+    incCoreSpecialistLlmTokens: vi.fn(),
+  };
+  const dataClassPolicy = {
+    derive: vi.fn(() => ({
+      dataClass: 'internal' as const,
+      subjectPersonId: null,
+      audit: {},
+    })),
+    compareWithLegacy: vi.fn(),
+  };
+  const cfg = {
+    persona: { minTraits: 3, roleAggMinPersons: 1 },
+    aiFeatures: { promptInjectionGuardEnabled: false },
+    // buildForProfile читает cfg.dataClassPolicy.enforcement (W4.1/W4.2).
+    dataClassPolicy: { enforcement: 'off' },
+  };
+  const svc = new ExecutablePersonaBuildService(
+    prisma as PrismaService,
+    cfg as unknown as TypedConfigService,
+    llm as unknown as LlmRouterService,
+    metrics as unknown as BusinessMetricsService,
+    dataClassPolicy as unknown as DataClassPolicyService,
+  );
+  return { svc, llm, metrics, dataClassPolicy };
+}
+
+/** userMessage первого вызова llm.call (guard выключен в cfg → raw template). */
+function getUserMessage(llm: { call: ReturnType<typeof vi.fn> }): string {
+  const arg = llm.call.mock.calls[0]?.[0] as
+    | { userMessage: string }
+    | undefined;
+  if (!arg) throw new Error('llm.call не был вызван');
+  return arg.userMessage;
+}
+
+const makeSkillTraitRow = (
+  id: string,
+  over: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  id,
+  category: 'подход',
+  statement: 'обычно сначала собирает данные, потом решает',
+  confidence: 'high',
+  observationCount: 5,
+  conceptId: null,
+  ...over,
+});
+
+/** Профиль для buildForProfile: 3 skill-черты, employee, active. */
+const makeProfileRow = () => ({
+  id: 'sp-1',
+  status: 'active',
+  tenantId: 't-1',
+  person: {
+    id: 'person-1',
+    tenantId: 't-1',
+    name: 'Анна',
+    relationship: 'employee',
+  },
+  traits: [
+    makeSkillTraitRow('skill-1'),
+    makeSkillTraitRow('skill-2'),
+    makeSkillTraitRow('skill-3'),
+  ],
+});
+
 describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation', () => {
   it('создаёт ExecutablePersona(scope=role) с dataClass=internal', async () => {
-    const createSpy = vi.fn(async (q: { data: Record<string, unknown> }) => ({
-      id: 'p-1',
-      ...q.data,
-      status: q.data.status,
-    }));
-    const updateManySpy = vi.fn(async () => ({ count: 0 }));
-
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
     const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
           { personId: 'person-A' },
@@ -39,113 +163,24 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
             id: 'sp-A',
             person: { name: 'A', relationship: 'employee' },
             traits: [
-              {
-                id: 't1',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
-                observationCount: 5,
-              },
-              {
-                id: 't2',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
-                observationCount: 5,
-              },
-              {
-                id: 't3',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
-                observationCount: 5,
-              },
+              makeSkillTraitRow('t1', { conceptId: undefined }),
+              makeSkillTraitRow('t2', { conceptId: undefined }),
+              makeSkillTraitRow('t3', { conceptId: undefined }),
             ],
           },
           {
             id: 'sp-B',
             person: { name: 'B', relationship: 'employee' },
             traits: [
-              {
-                id: 't4',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
-                observationCount: 5,
-              },
-              {
-                id: 't5',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
-                observationCount: 5,
-              },
+              makeSkillTraitRow('t4', { conceptId: undefined }),
+              makeSkillTraitRow('t5', { conceptId: undefined }),
             ],
           },
         ]),
       },
-      role: {
-        findUnique: vi.fn(async () => ({ name: 'Маркетолог' })),
-      },
-      executablePersona: {
-        findFirst: vi.fn(async () => ({ version: 1 })),
-        updateMany: updateManySpy,
-        create: createSpy,
-      },
-      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
-        cb({
-          executablePersona: {
-            updateMany: updateManySpy,
-            create: createSpy,
-          },
-        }),
-      ),
-    } as unknown as PrismaService;
-
-    const cfg = {
-      persona: { minTraits: 3, roleAggMinPersons: 1 },
-      aiFeatures: { promptInjectionGuardEnabled: false },
-    } as unknown as TypedConfigService;
-
-    const llm = {
-      call: vi.fn(async () => ({
-        text: 'A'.repeat(200),
-        modelUsed: 'mock',
-        tier: 'primary',
-        inputTokens: 10,
-        outputTokens: 20,
-      })),
-    } as unknown as LlmRouterService;
-
-    const metrics = {
-      observePersonaBuildDuration: vi.fn(),
-      incCoreSpecialistCards: vi.fn(),
-      incExecutablePersonaSnapshot: vi.fn(),
-      setExecutablePersonaSnapshotLag: vi.fn(),
-      incCoreSpecialistLlmTokens: vi.fn(),
-    } as unknown as BusinessMetricsService;
-
-    const dataClassPolicy = {
-      derive: vi.fn(() => ({
-        dataClass: 'internal' as const,
-        subjectPersonId: null,
-        audit: {},
-      })),
-      compareWithLegacy: vi.fn(),
-    } as unknown as DataClassPolicyService;
-
-    const svc = new ExecutablePersonaBuildService(
-      prisma,
-      cfg,
-      llm,
-      metrics,
-      dataClassPolicy,
-    );
-
-    // tenantTopLabel требует prisma.org.findUnique — мокаем минимально.
-    (prisma as unknown as { org: unknown }).org = {
-      findUnique: vi.fn(async () => null),
     };
+
+    const { svc, dataClassPolicy } = makeService(prisma);
 
     const result = await svc.buildForRole({
       tenantId: 't-1',
@@ -180,14 +215,10 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
   });
 
   it('Ф7 (H) — схлопывает черты с одинаковым conceptId (3 носителя → 1 черта)', async () => {
-    const createSpy = vi.fn(async (q: { data: Record<string, unknown> }) => ({
-      id: 'p-1',
-      ...q.data,
-      status: q.data.status,
-    }));
-    const updateManySpy = vi.fn(async () => ({ count: 0 }));
-
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
     const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
           { personId: 'person-A' },
@@ -202,133 +233,54 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
             person: { name: 'A', relationship: 'employee' },
             traits: [
               // общий концепт — представитель с max observationCount (3)
-              {
-                id: 'shared-A',
-                category: 'cat',
-                statement: 's',
+              makeSkillTraitRow('shared-A', {
                 confidence: 'medium',
                 observationCount: 3,
                 conceptId: 'concept-1',
-              },
+              }),
               // уникальная черта A (свой conceptId)
-              {
-                id: 'uniq-A',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
+              makeSkillTraitRow('uniq-A', {
                 observationCount: 1,
                 conceptId: 'concept-A',
-              },
+              }),
             ],
           },
           {
             id: 'sp-B',
             person: { name: 'B', relationship: 'employee' },
             traits: [
-              {
-                id: 'shared-B',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
+              makeSkillTraitRow('shared-B', {
                 observationCount: 1,
                 conceptId: 'concept-1',
-              },
+              }),
               // уникальная черта B без conceptId (не схлопывается)
-              {
-                id: 'uniq-B',
-                category: 'cat',
-                statement: 's',
+              makeSkillTraitRow('uniq-B', {
                 confidence: 'low',
                 observationCount: 1,
                 conceptId: null,
-              },
+              }),
             ],
           },
           {
             id: 'sp-C',
             person: { name: 'C', relationship: 'employee' },
             traits: [
-              {
-                id: 'shared-C',
-                category: 'cat',
-                statement: 's',
+              makeSkillTraitRow('shared-C', {
                 confidence: 'low',
                 observationCount: 2,
                 conceptId: 'concept-1',
-              },
-              {
-                id: 'uniq-C',
-                category: 'cat',
-                statement: 's',
-                confidence: 'high',
+              }),
+              makeSkillTraitRow('uniq-C', {
                 observationCount: 4,
                 conceptId: 'concept-C',
-              },
+              }),
             ],
           },
         ]),
       },
-      role: {
-        findUnique: vi.fn(async () => ({ name: 'Маркетолог' })),
-      },
-      executablePersona: {
-        findFirst: vi.fn(async () => ({ version: 1 })),
-        updateMany: updateManySpy,
-        create: createSpy,
-      },
-      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
-        cb({
-          executablePersona: {
-            updateMany: updateManySpy,
-            create: createSpy,
-          },
-        }),
-      ),
-    } as unknown as PrismaService;
-
-    const cfg = {
-      persona: { minTraits: 3, roleAggMinPersons: 1 },
-      aiFeatures: { promptInjectionGuardEnabled: false },
-    } as unknown as TypedConfigService;
-
-    const llm = {
-      call: vi.fn(async () => ({
-        text: 'A'.repeat(200),
-        modelUsed: 'mock',
-        tier: 'primary',
-        inputTokens: 10,
-        outputTokens: 20,
-      })),
-    } as unknown as LlmRouterService;
-
-    const metrics = {
-      observePersonaBuildDuration: vi.fn(),
-      incCoreSpecialistCards: vi.fn(),
-      incExecutablePersonaSnapshot: vi.fn(),
-      setExecutablePersonaSnapshotLag: vi.fn(),
-      incCoreSpecialistLlmTokens: vi.fn(),
-    } as unknown as BusinessMetricsService;
-
-    const dataClassPolicy = {
-      derive: vi.fn(() => ({
-        dataClass: 'internal' as const,
-        subjectPersonId: null,
-        audit: {},
-      })),
-      compareWithLegacy: vi.fn(),
-    } as unknown as DataClassPolicyService;
-
-    const svc = new ExecutablePersonaBuildService(
-      prisma,
-      cfg,
-      llm,
-      metrics,
-      dataClassPolicy,
-    );
-
-    (prisma as unknown as { org: unknown }).org = {
-      findUnique: vi.fn(async () => null),
     };
+
+    const { svc, llm } = makeService(prisma);
 
     const result = await svc.buildForRole({
       tenantId: 't-1',
@@ -346,9 +298,7 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
 
     // concept-1 представлен РОВНО одной чертой — представитель shared-A
     // (max observationCount=3 среди shared-A/B/C).
-    const sharedIds = includedIds.filter((id) =>
-      id.startsWith('shared-'),
-    );
+    const sharedIds = includedIds.filter((id) => id.startsWith('shared-'));
     expect(sharedIds).toEqual(['shared-A']);
 
     // Все остальные (разные conceptId + null) — на месте.
@@ -362,5 +312,273 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
 
     // В compile уходит дедуплицированный список (длина traits = 4).
     expect(llm.call).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ExecutablePersonaBuildService — persona-compile v2 слои метода (ИНТ.1)', () => {
+  it('слои заполнены → userMessage содержит «Ценности», «Принципы роли», «Процедуры», «Когда:»', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: { findUnique: vi.fn(async () => makeProfileRow()) },
+      skillTrait: {
+        findMany: vi.fn(async (q: { where: { layer: string } }) => {
+          if (q.where.layer === 'value') {
+            return [
+              makeSkillTraitRow('val-1', {
+                category: 'качество',
+                statement: 'при дедлайне выбирает качество, а не скорость',
+              }),
+            ];
+          }
+          if (q.where.layer === 'motivation') {
+            return [
+              makeSkillTraitRow('mot-1', {
+                category: 'автономия',
+                statement: 'берётся за задачи, где сам выбирает способ',
+              }),
+            ];
+          }
+          if (q.where.layer === 'process_marker') {
+            return [
+              makeSkillTraitRow('mark-1', {
+                category: 'варианты',
+                statement:
+                  'перед рекомендацией перечисляет варианты и критерий',
+              }),
+            ];
+          }
+          return [];
+        }),
+      },
+      personRole: { findMany: vi.fn(async () => [{ roleId: 'role-1' }]) },
+      rolePrinciple: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'rp-1',
+            situation: 'срыв срока',
+            statement:
+              'сначала эскалирует владельцу с 2 вариантами, потом режет scope',
+            observationCount: 4,
+            confidence: 'high',
+          },
+        ]),
+      },
+      practiceSkill: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'ps-1',
+            trigger: 'клиент возражает на цену',
+            steps: [
+              { order: 1, action: 'выслушать возражение до конца' },
+              { order: 2, action: 'назвать ценность, не скидку' },
+            ],
+            redFlags: ['не давить'],
+            pinned: false,
+            successRate: 0.8,
+          },
+        ]),
+      },
+    };
+
+    const { svc, llm } = makeService(prisma);
+    const result = await svc.buildForProfile({ profileId: 'sp-1' });
+
+    expect(result).not.toBeNull();
+    const userMessage = getUserMessage(llm);
+    expect(userMessage).toContain('Ценности');
+    expect(userMessage).toContain('Мотивация в работе');
+    expect(userMessage).toContain('Принципы роли');
+    expect(userMessage).toContain('Процедуры');
+    expect(userMessage).toContain('Когда:');
+    expect(userMessage).toContain('Маркеры процесса');
+
+    // includedTraitIds — skill-черты + values/motivations/markers
+    // (RolePrinciple/PracticeSkill ids НЕ попадают — это не SkillTrait).
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[] } },
+    ])[0];
+    expect(createArg.data.includedTraitIds).toEqual(
+      expect.arrayContaining(['skill-1', 'val-1', 'mot-1', 'mark-1']),
+    );
+    expect(createArg.data.includedTraitIds).not.toContain('rp-1');
+    expect(createArg.data.includedTraitIds).not.toContain('ps-1');
+  });
+
+  it('новые слои пусты → деградация к v1-поведению: только черты, без секций слоёв', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: { findUnique: vi.fn(async () => makeProfileRow()) },
+    };
+
+    const { svc, llm } = makeService(prisma);
+    const result = await svc.buildForProfile({ profileId: 'sp-1' });
+
+    expect(result).not.toBeNull();
+    const userMessage = getUserMessage(llm);
+    expect(userMessage).toContain('Черты подхода');
+    expect(userMessage).toContain('обычно сначала собирает данные');
+    expect(userMessage).not.toContain('Ценности');
+    expect(userMessage).not.toContain('Мотивация в работе');
+    expect(userMessage).not.toContain('Принципы роли');
+    expect(userMessage).not.toContain('Процедуры');
+    expect(userMessage).not.toContain('Маркеры процесса');
+  });
+
+  it('выборка traits фильтрует layer=skill (и слои — каждый своим запросом)', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: {
+        findUnique: vi.fn(async (_q: unknown) => makeProfileRow()),
+      },
+    };
+
+    const { svc } = makeService(prisma);
+    await svc.buildForProfile({ profileId: 'sp-1' });
+
+    const findUniqueArg = prisma.skillProfile.findUnique.mock
+      .calls[0]?.[0] as unknown as {
+      include: { traits: { where: Record<string, unknown> } };
+    };
+    expect(findUniqueArg.include.traits.where).toMatchObject({
+      status: 'active',
+      layer: 'skill',
+    });
+
+    // Отдельные запросы по слоям value/motivation/process_marker.
+    const layerQueries = prisma.skillTrait.findMany.mock.calls.map(
+      (c) => (c[0] as { where: { layer: string } }).where.layer,
+    );
+    expect(layerQueries).toEqual(
+      expect.arrayContaining(['value', 'motivation', 'process_marker']),
+    );
+  });
+
+  it('buildForRole: practiceSkills — union scope role+person; values агрегируются по профилям', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      personRole: {
+        findMany: vi.fn(async () => [
+          { personId: 'person-A' },
+          { personId: 'person-B' },
+        ]),
+      },
+      skillProfile: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'sp-A',
+            person: { name: 'A', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('t1'),
+              makeSkillTraitRow('t2'),
+              makeSkillTraitRow('t3'),
+            ],
+          },
+          {
+            id: 'sp-B',
+            person: { name: 'B', relationship: 'employee' },
+            traits: [makeSkillTraitRow('t4')],
+          },
+        ]),
+      },
+      skillTrait: {
+        findMany: vi.fn(async (q: { where: { layer: string } }) =>
+          q.where.layer === 'value'
+            ? [
+                makeSkillTraitRow('val-A', {
+                  profileId: 'sp-A',
+                  category: 'качество',
+                  statement: 'выбирает качество при конфликте со сроком',
+                }),
+                makeSkillTraitRow('val-B', {
+                  profileId: 'sp-B',
+                  category: 'прозрачность',
+                  statement: 'предпочитает ранние плохие новости поздним',
+                  observationCount: 2,
+                }),
+              ]
+            : [],
+        ),
+      },
+      practiceSkill: {
+        findMany: vi.fn(async (_q: unknown) => [
+          {
+            id: 'ps-role',
+            trigger: 'возражение на цену',
+            steps: [{ order: 1, action: 'назвать ценность' }],
+            redFlags: [],
+          },
+        ]),
+      },
+    };
+
+    const { svc, llm } = makeService(prisma);
+    const result = await svc.buildForRole({
+      tenantId: 't-1',
+      roleId: 'role-1',
+    });
+
+    expect(result).not.toBeNull();
+
+    // Union процедур: scope='role' (roleId) + scope='person' (люди роли).
+    const psArg = prisma.practiceSkill.findMany.mock
+      .calls[0]?.[0] as unknown as { where: { OR: unknown[] } };
+    expect(psArg.where.OR).toEqual([
+      { scope: 'role', scopeRefId: 'role-1' },
+      { scope: 'person', scopeRefId: { in: ['person-A', 'person-B'] } },
+    ]);
+
+    // values агрегированы (оба профиля) и попали в userMessage + аудит.
+    const userMessage = getUserMessage(llm);
+    expect(userMessage).toContain('Ценности из проявленных выборов (2)');
+    expect(userMessage).toContain('Процедуры');
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[] } },
+    ])[0];
+    expect(createArg.data.includedTraitIds).toEqual(
+      expect.arrayContaining(['val-A', 'val-B']),
+    );
+  });
+
+  it('битый steps-Json у PracticeSkill → скилл пропущен, сборка не падает', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: { findUnique: vi.fn(async () => makeProfileRow()) },
+      practiceSkill: {
+        findMany: vi.fn(async () => [
+          {
+            id: 'ps-broken',
+            trigger: 'битый-скилл-триггер',
+            steps: 'не-массив-вовсе',
+            redFlags: { oops: true },
+          },
+          {
+            id: 'ps-ok',
+            trigger: 'валидный-скилл-триггер',
+            steps: [{ order: 1, action: 'сделать шаг' }],
+            redFlags: ['не спешить'],
+          },
+        ]),
+      },
+    };
+
+    const { svc, llm } = makeService(prisma);
+    const result = await svc.buildForProfile({ profileId: 'sp-1' });
+
+    expect(result).not.toBeNull();
+    const userMessage = getUserMessage(llm);
+    expect(userMessage).toContain('валидный-скилл-триггер');
+    expect(userMessage).not.toContain('битый-скилл-триггер');
+    // Счётчик в заголовке блока — только валидные скиллы.
+    expect(userMessage).toContain('Процедуры (1)');
   });
 });

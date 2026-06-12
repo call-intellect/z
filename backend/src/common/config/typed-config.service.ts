@@ -1115,9 +1115,11 @@ export class TypedConfigService {
    * Параметры `PracticeSkillExtractor`/`Retrieval`/`Evaluator` сервисов
    * (Agents v2 §C1).
    *
-   *   - `enabled` — мастер-флаг retrieval'а в clone-respond. Default false;
-   *     extraction-cron всё равно работает (наполняет shadow), но в промпт
-   *     skill'ы не подмешиваются, пока флаг не включат.
+   *   - `enabled` — аварийный рубильник (kill-switch) retrieval'а в
+   *     clone-respond. Default true (ТЗ clone-persona-method-layer Э2.1 —
+   *     Ship-On активация): активные процедуры подмешиваются в ответы клона.
+   *     Выкл → retrieval перестаёт подмешивать; extraction/evaluator
+   *     продолжают копить shadow (этим флагом не гейтятся).
    *   - `minTraitsForExtract` — минимум активных SkillTrait в концепте,
    *     ниже которого extractor пропускает concept (рано извлекать procedure).
    *   - `shadowTrafficShare` — стартовый `trafficShare` для новых skill'ов.
@@ -1781,6 +1783,32 @@ export class TypedConfigService {
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 1 ──
       cloneTopicSimilarityThreshold: this.get('CLONE_TOPIC_SIMILARITY_THRESHOLD'),
       cloneTopicMinBlocks: this.get('CLONE_TOPIC_MIN_BLOCKS'),
+      // ── TZ clone-method Э0.1 — пост-LLM grounding-гейт (kill-switch, ON) ──
+      cloneRespondGroundingEnabled: this.get('CLONE_RESPOND_GROUNDING_ENABLED'),
+      // ── TZ clone-method Э1.3 — детектор ценностей/мотивации (kill-switch, ON) ──
+      valueMotivationDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.valueMotivationDetectEnabled',
+        'VALUE_MOTIVATION_DETECT_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method Э2.1 — детектор маркеров процесса (kill-switch, ON) ──
+      processMarkerDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.processMarkerDetectEnabled',
+        'PROCESS_MARKER_DETECT_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method Э3.1 — CDM-интервью носителя через probe (kill-switch, ON) ──
+      cdmInterviewEnabled: this.resolveSync<boolean>(
+        'knowledge.cdmInterviewEnabled',
+        'CDM_INTERVIEW_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method ВАЛ.1 — поведенческая валидация persona v1-vs-v2 (kill-switch, ON) ──
+      personaLayerValidationEnabled: this.resolveSync<boolean>(
+        'knowledge.personaLayerValidationEnabled',
+        'PERSONA_LAYER_VALIDATION_ENABLED',
+        true,
+      ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',
@@ -1802,6 +1830,24 @@ export class TypedConfigService {
   get cloneV2() {
     return {
       enabled: this.get('CLONE_V2_ENABLED'),
+    } as const;
+  }
+
+  // ─────────────────────── role principles (TZ clone-method Э1.2) ──
+  /**
+   * Reflection-слой принципов роли (`RolePrincipleSynthesisCron`).
+   * `synthesisEnabled` — kill-switch ночного синтеза `RolePrinciple`
+   * (ON; выкл → принципы не синтезируются, persona работает без них).
+   * Пороги minObservations/dedupThreshold — НЕ здесь: крутилки читаются
+   * сервисом через `getDynamic('knowledge.rolePrinciple…')` (AdminSetting).
+   */
+  get rolePrinciples() {
+    return {
+      synthesisEnabled: this.resolveSync<boolean>(
+        'knowledge.rolePrincipleSynthesisEnabled',
+        'ROLE_PRINCIPLE_SYNTHESIS_ENABLED',
+        true,
+      ),
     } as const;
   }
 

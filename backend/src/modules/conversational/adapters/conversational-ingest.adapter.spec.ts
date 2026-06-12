@@ -198,4 +198,46 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
       .mock.calls[0]![0] as { dataClass: string };
     expect(call.dataClass).toBe('sensitive');
   });
+
+  // ─── TZ clone-method Э3.1 — questionText + signalTypeHint ────────────
+  it('questionText и signalTypeHint попадают в rawPayload (signalTypeHint — top-level, его читает block-ingest)', async () => {
+    const { adapter, ingest } = makeAdapter();
+
+    await adapter.ingestNotificationResponse({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      notificationId: 'notif-cdm-1',
+      eventType: 'probe.question',
+      payload: { text: 'Рассматривал выкат в пятницу' },
+      questionText: 'Какие альтернативы вы рассматривали?',
+      signalTypeHint: 'reasoning',
+    });
+
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![0] as { payload: Record<string, unknown> };
+    expect(call.payload).toMatchObject({
+      kind: 'notification_response',
+      questionText: 'Какие альтернативы вы рассматривали?',
+      signalTypeHint: 'reasoning',
+    });
+  });
+
+  it('без signalTypeHint — ключа в rawPayload НЕТ; questionText по умолчанию null', async () => {
+    const { adapter, ingest } = makeAdapter();
+
+    await adapter.ingestNotificationResponse({
+      tenantId: 'org-1',
+      userId: 'user-1',
+      notificationId: 'notif-plain-1',
+      eventType: 'probe.question',
+      payload: { text: 'Просто ответ' },
+    });
+
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0]![0] as { payload: Record<string, unknown> };
+    expect(
+      Object.prototype.hasOwnProperty.call(call.payload, 'signalTypeHint'),
+    ).toBe(false);
+    expect(call.payload.questionText).toBeNull();
+  });
 });

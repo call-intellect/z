@@ -109,6 +109,10 @@ export class ProbeResponseHandler {
         }
       }
 
+      // TZ clone-method Э3.1 — вопрос, который реально задали человеку
+      // (каскад как у классификатора), и маркер high-priority reasoning:
+      // ответ на CDM-интервью — это рассказ носителя «как я решал», ему
+      // детерминированно ставится signalType='reasoning' в block-ingest.
       await this.ingestResponseAsRawEvent({
         tenantId: event.tenantId,
         userId: event.recipientUserId,
@@ -118,6 +122,9 @@ export class ProbeResponseHandler {
         sourceChannelKind: kind,
         contextBlockId: event.contextBlockId,
         contextCardId: event.contextCardId,
+        questionText: this.extractQuestionText(probePayload),
+        signalTypeHint:
+          probe.reason === 'skill.cdm_interview' ? 'reasoning' : undefined,
       });
       this.metrics.incProbeClosed({
         tenantTop: this.normalizeTenantTop(event.tenantId),
@@ -234,19 +241,10 @@ export class ProbeResponseHandler {
     const response = this.extractResponseText(args.eventPayload);
     if (!response) return null;
 
-    // question — то, что задал probe-formulate. Приоритет:
-    //   1. payload.formulatedQuestion — реально отправленный пользователю вопрос
-    //      (его пишет ProbeDispatcherWorker после LLM probe-formulate; Agents v2 Фаза 0.2).
-    //   2. payload.question — legacy ключ (на случай старых записей).
-    //   3. payload.suggestedQuestion — fallback specialist'a (если LLM упал в dispatcher'е).
-    //   4. payload.message — исходный текст от specialist'a.
-    //   5. probe.reason — последний fallback (машинный код, плохо классифицируется).
+    // question — то, что задал probe-formulate (каскад extractQuestionText);
+    // последний fallback — probe.reason (машинный код, плохо классифицируется).
     const question =
-      this.toStringOrUndef(args.probePayload.formulatedQuestion) ??
-      this.toStringOrUndef(args.probePayload.question) ??
-      this.toStringOrUndef(args.probePayload.suggestedQuestion) ??
-      this.toStringOrUndef(args.probePayload.message) ??
-      args.probeReason;
+      this.extractQuestionText(args.probePayload) ?? args.probeReason;
 
     // A2: оборачиваем сырой пользовательский ввод (свободный ответ сотрудника
     // на probe + текст вопроса) в анти-инъекционные маркеры. asr не нужен
@@ -335,6 +333,27 @@ export class ProbeResponseHandler {
   }
 
   /**
+   * Вопрос, который реально задали человеку. Приоритет:
+   *   1. payload.formulatedQuestion — реально отправленный пользователю вопрос
+   *      (его пишет ProbeDispatcherWorker после LLM probe-formulate; Agents v2 Фаза 0.2).
+   *   2. payload.question — legacy ключ (на случай старых записей).
+   *   3. payload.suggestedQuestion — fallback specialist'a (если LLM упал в dispatcher'е).
+   *   4. payload.message — исходный текст от specialist'a.
+   * Используется классификатором (`tryClassifyResponse`) и closing-loop'ом
+   * (`ingestResponseAsRawEvent` → SegmentBuilder, TZ clone-method Э3.1).
+   */
+  private extractQuestionText(
+    probePayload: Record<string, unknown>,
+  ): string | undefined {
+    return (
+      this.toStringOrUndef(probePayload.formulatedQuestion) ??
+      this.toStringOrUndef(probePayload.question) ??
+      this.toStringOrUndef(probePayload.suggestedQuestion) ??
+      this.toStringOrUndef(probePayload.message)
+    );
+  }
+
+  /**
    * Записывает ответ как `RawEvent` через ConversationalIngestAdapter.
    * Ошибки логируем, но не пробрасываем — основной flow ответа
    * (Notification.respondedAt) уже завершён, дублировать его не нужно.
@@ -348,6 +367,10 @@ export class ProbeResponseHandler {
     sourceChannelKind: string | null;
     contextBlockId: string | null;
     contextCardId: string | null;
+    /** Э3.1 — вопрос, который реально задали (для SegmentBuilder). */
+    questionText?: string;
+    /** Э3.1 — детерминированный signalType ответа (CDM → 'reasoning'). */
+    signalTypeHint?: string;
   }): Promise<void> {
     try {
       await this.ingestAdapter.ingestNotificationResponse({
@@ -359,6 +382,8 @@ export class ProbeResponseHandler {
         sourceChannelKind: args.sourceChannelKind,
         contextBlockId: args.contextBlockId,
         contextCardId: args.contextCardId,
+        questionText: args.questionText,
+        signalTypeHint: args.signalTypeHint,
       });
     } catch (err) {
       this.logger.warn(

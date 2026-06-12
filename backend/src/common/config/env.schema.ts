@@ -1274,6 +1274,76 @@ const SkillSchema = z.object({
    * программный отказ ДО вызова модели (анти-deepfake). Default 2.
    */
   CLONE_TOPIC_MIN_BLOCKS: z.coerce.number().int().positive().default(2),
+  // ── TZ clone-method Э0.1 (2026-06-12) — пост-LLM grounding-гейт ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) пост-LLM grounding-гейта
+   * clone-respond: если ответ модели не содержит ни одной валидной
+   * цитаты-опоры (`[BLOCK:id]` / `[DECISION:id]` из subgraph) — ответ
+   * считается ungrounded и заменяется программным отказом
+   * (анти-галлюцинация). Выкл → поведение как до Э0.1 (ответ без опоры
+   * уходит пользователю как есть).
+   */
+  CLONE_RESPOND_GROUNDING_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) ночного синтеза принципов
+   * процесса должности (`RolePrincipleSynthesisCron`, 05:30): из
+   * reasoning-блоков носителей роли LLM извлекает обобщённые
+   * `RolePrinciple` с grounding-ссылками. Выкл → принципы роли не
+   * синтезируются, persona продолжает работать без секции принципов.
+   * Пороги (minObservations/dedupThreshold) — НЕ здесь, а в AdminSetting
+   * (`knowledge.rolePrincipleMinObservations` / `…DedupThreshold`).
+   */
+  ROLE_PRINCIPLE_SYNTHESIS_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.3 (2026-06-12) — детектор ценностей/мотивации ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора ценностей/мотивации
+   * (revealed preferences): второй проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет явный trade-off («выбрал одно В УЩЕРБ другому»)
+   * и пишет SkillTrait layer='value' (что ставит выше при конфликте
+   * приоритетов) / layer='motivation' (что драйвит). Выкл → профиль
+   * наполняется только layer='skill' чертами (как до Э1.3).
+   */
+  VALUE_MOTIVATION_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э2.1 (2026-06-12) — детектор маркеров процесса ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора конструктивных
+   * маркеров процесса: третий проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет повторяемый ПРИЁМ проработки решений
+   * («перечисляет критерии перед выбором», «перепроверяет оценки
+   * данными») и пишет SkillTrait layer='process_marker'. Оценочные оси
+   * («избегает решений», «не решает сам») запрещены промптом и
+   * код-гардом. Выкл → профиль без process_marker-черт (как до Э2.1).
+   */
+  PROCESS_MARKER_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э3.1 (2026-06-12) — CDM-интервью носителя через probe ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) CDM-интервью носителя роли:
+   * Кора по свежим reasoning-кейсам сама задаёт носителю до 5 не наводящих
+   * вопросов ретроспективного разбора (Critical Decision Method — «почему
+   * выбрали этот вариант», «какие альтернативы отвергли») через
+   * probe-систему; ответ попадает в граф как high-priority reasoning
+   * (signalTypeHint='reasoning'). Выкл → новые CDM-вопросы не задаются;
+   * ответы на уже заданные продолжают обрабатываться. Лимиты — НЕ здесь,
+   * а в AdminSetting (`knowledge.cdmInterviewMaxQuestions`, default 5 /
+   * `knowledge.cdmInterviewCooldownDays`, default 7).
+   */
+  CDM_INTERVIEW_ENABLED: zBool(true),
+  // ── TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) еженедельной поведенческой
+   * валидации persona (`PersonaLayerValidationCron`, вс 07:00 — после
+   * persona-build 06:00 SUN): на реальных кейсах роли (свежие
+   * reasoning-блоки с trustedAnswer) сравнивает ответы клона с persona v1
+   * (baseline «только черты», deprecated v1-промпт) и v2 (все слои метода)
+   * через LLM-judge `persona-behavior-judge`. Результат — только метрика
+   * `clone_persona_layer_score{variant}` + лог: ничего не блокирует и не
+   * меняет (persona v2 уже активна по Ship-On; R10 — без
+   * human-approval-гейтов). Выкл → еженедельная оценка не запускается;
+   * на работу клона не влияет. Число кейсов на роль — НЕ здесь, а в
+   * AdminSetting (`knowledge.personaValidationCasesPerRole`, default 3).
+   */
+  PERSONA_LAYER_VALIDATION_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит
@@ -1874,8 +1944,12 @@ const TrackerSchema = z.object({
   // Сложены сюда, в TrackerSchema, чтобы не удлинять `.merge` цепочку EnvSchema
   // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.practiceSkills`.
   //
-  //   - PRACTICE_SKILLS_ENABLED — мастер-флаг retrieval'а в clone-respond.
-  //     Default false — включаем после ручной валидации extraction на одной Org.
+  //   - PRACTICE_SKILLS_ENABLED — аварийный рубильник (kill-switch, тип A)
+  //     retrieval'а PracticeSkill в clone-respond. Фича ВКЛ (default true):
+  //     retrieval подмешивает активные процедуры в ответы клона. Выкл →
+  //     retrieval перестаёт подмешивать процедуры, extraction/evaluator
+  //     продолжают копить shadow (они этим флагом не гейтятся).
+  //     (ТЗ clone-persona-method-layer Э2.1 — Ship-On активация)
   //   - PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT — минимум активных SkillTrait
   //     внутри concept'а, ниже которого extractor пропускает concept.
   //   - PRACTICE_SKILLS_SHADOW_TRAFFIC — стартовый trafficShare для status='shadow'.
@@ -1888,7 +1962,7 @@ const TrackerSchema = z.object({
   //     превышать baseline, чтобы promote из shadow в active.
   //   - PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA — на сколько composite score должен
   //     быть ХУЖЕ baseline, чтобы archive скилл.
-  PRACTICE_SKILLS_ENABLED: zBool(false),
+  PRACTICE_SKILLS_ENABLED: zBool(true),
   PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT: z.coerce.number().int().positive().default(5),
   PRACTICE_SKILLS_SHADOW_TRAFFIC: z.coerce.number().min(0).max(1).default(0.1),
   PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),

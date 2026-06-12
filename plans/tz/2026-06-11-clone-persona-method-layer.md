@@ -1,6 +1,6 @@
 ---
 type: tz
-status: ready-to-implement
+status: implemented
 feature: clone-persona-method-layer
 date: 2026-06-11
 owner: Сергей (владелец продукта Кора)
@@ -185,47 +185,47 @@ enum SkillTraitLayer {
 
 Граф: **Э0** ∥ **Э1** ∥ **Э2** (данные-производители независимы) → **ИНТ** (persona-compile v2, зависит от Э1+Э2) → **ВАЛ** (валидация). **Э3** (CDM-интервью) ∥ Э1/Э2, его выход — высокоприоритетные reasoning-блоки, которые кормят те же детекторы/синтез.
 
-### [ ] Фаза Э0.1 — clone-respond v2: grounding + отказ + журнал
+### [x] Фаза Э0.1 — clone-respond v2: grounding + отказ + журнал
 - **Картография:** `clone-respond.prompt.ts`, `clones.service.ts` (anti-fake topic-density), новая модель `CloneQueryLog`.
 - **Входит:** per-claim grounding (утверждение ↔ IdeaBlock/Entity); отказ при пробеле; запись `CloneQueryLog`.
 - **Не входит:** правовой контур/согласие (владелец), per-claim UI-цитаты в чате (vNext).
 - **Acceptance:** spec — ответ без опоры → отказ (не галлюцинация); `CloneQueryLog` пишется (tenant-изоляция); `bun run typecheck && build` зелёные.
 - **Закрывает:** R1, R2.
 
-### [ ] Фаза Э1.1 — Модель RolePrinciple + layer (миграция)
+### [x] Фаза Э1.1 — Модель RolePrinciple + layer (миграция)
 - **Входит:** `prisma:migrate --name clone_method_layer` (RolePrinciple + RolePrincipleStatus + SkillTraitLayer + SkillTrait.layer default skill); `prisma:generate`.
 - **Acceptance:** таблицы `role_principles` создана, колонка `skill_traits.layer` дефолт `skill` (повтор миграции — no-op на проде через migrate deploy); существующие SkillTrait получают layer=skill (backward-compatible); `bun run typecheck` зелёный.
 - **Закрывает:** R3 (часть).
 
-### [ ] Фаза Э1.2 — Reflection-синтезатор принципов (@Cron)
+### [x] Фаза Э1.2 — Reflection-синтезатор принципов (@Cron)
 - **Картография:** `knowledge-clone-rebuild.cron.ts` (образец), новый `role-principle-synthesize` промпт, `RolePrinciple`.
 - **Входит:** @Cron по образцу (sweep Org→Role с порогом наблюдений) → группирует reasoning-блоки роли по ситуациям → LLM `role-principle-synthesize` → upsert `RolePrinciple` с grounding-ссылками; дедуп по embedding; флаг kill-switch ON.
 - **Не входит:** оценочные черты носителя (только процесс роли); UI редактирования.
 - **Acceptance:** на seed-данных роли с ≥порога reasoning-блоков синтезируются принципы с непустым `sourceBlockIds`; повторный прогон не дублирует (дедуп по embedding); греп «process, не черта» — промпт запрещает диагностическую лексику; spec + `build` зелёные.
 - **Закрывает:** R3, R4.
 
-### [ ] Фаза Э1.3 — Детектор ценностей/мотивации (revealed preferences)
+### [x] Фаза Э1.3 — Детектор ценностей/мотивации (revealed preferences)
 - **Картография:** `skill-trait-detect.prompt.ts` (образец), `specialist-3-7-skill.service/worker` (образец регистрации), routing-dispatcher.
 - **Входит:** промпт `value-motivation-detect` + специалист-воркер (по образцу 3.7), пишет SkillTrait `layer=value/motivation` из trade-off; человеческим языком; флаг kill-switch ON.
 - **Не входит:** научные ярлыки (не «по Schwartz» в выдаче), негативные формулировки.
 - **Acceptance:** на цитатах с явным trade-off извлекается value/motivation-черта с `sourceBlockIds`; на цитатах без выбора-в-ущерб — пусто; layer проставлен; spec + `build` зелёные.
 - **Закрывает:** R5.
 
-### [ ] Фаза Э2.1 — Активация PracticeSkill (RPD) + детектор маркеров процесса
+### [x] Фаза Э2.1 — Активация PracticeSkill (RPD) + детектор маркеров процесса
 - **Картография:** `PracticeSkill` extraction/evaluator (существуют), флаг PracticeSkill, `process-marker-detect` (новый, образец skill-trait-detect).
 - **Входит:** включить extraction/evaluator `PracticeSkill` (kill-switch ON); детектор `process-marker-detect` → SkillTrait `layer=process_marker` (только конструктивные оси).
 - **Не входит:** новая модель под RPD (reuse PracticeSkill); оценочные оси.
 - **Acceptance:** `PracticeSkill` извлекается и доходит до status active по evaluator; process-marker черты пишутся с layer; греп — нет осей «avoidant/dependent/избегает/не решает сам» в промпте/выдаче; spec + `build` зелёные.
 - **Закрывает:** R6, R7.
 
-### [ ] Фаза Э3.1 — CDM-интервью носителя через probe
+### [x] Фаза Э3.1 — CDM-интервью носителя через probe
 - **Картография:** `specialist-3-7-skill-probe.service.ts`, probe-система (`feedback_probe_no_buttons_text_voice_only`), ingest (новый высокоприоритетный sourceType/флаг для transcript).
 - **Входит:** расширить 3.7-probe на ретроспективный разбор 3-5 реальных кейсов по CDM (не наводящие вопросы, текст/голос); transcript → RawEvent с пометкой «interview» (high-priority контекст клона), кормит детекторы Э1/Э2.
 - **Не входит:** автоинтервью без участия носителя; inline-кнопки.
 - **Acceptance:** probe формирует CDM-вопросы по реальному кейсу (греп: «почему выбрали / что насторожило / альтернативы»); transcript сохраняется как высокоприоритетный источник и попадает в reasoning-пул роли; нет inline_keyboard; spec + `build` зелёные.
 - **Закрывает:** R8.
 
-### [ ] Фаза ИНТ.1 — persona-compile v2 (секционная сборка) — KEYSTONE
+### [x] Фаза ИНТ.1 — persona-compile v2 (секционная сборка) — KEYSTONE
 - **Зависит от:** Э1.2, Э1.3, Э2.1 (иначе секции пусты).
 - **Картография:** `executable-persona-compile.prompt.ts`, `executable-persona-build.service.ts` (`buildForProfile`/`buildForRole`/`compilePersonaPrompt`).
 - **Входит:** v2-промпт с 5 секциями; `build.service` подтягивает: черты(layer=skill) + ценности/мотивацию(layer=value/motivation) + RolePrinciple + активные PracticeSkill роли + process_marker; компилирует как правила процесса с якорями; пустые секции опускаются.
@@ -233,7 +233,7 @@ enum SkillTraitLayer {
 - **Acceptance:** persona роли с заполненными слоями содержит секции «принципы решений» и «типовые ситуации→ход» (греп в результате); при пустых слоях — деградирует к текущему поведению (только черты); длина в контракте; SYSTEM стабилен (cache); spec + `build` зелёные.
 - **Закрывает:** R9.
 
-### [ ] Фаза ВАЛ.1 — Валидация по поведению (composite-judge + A/B)
+### [x] Фаза ВАЛ.1 — Валидация по поведению (composite-judge + A/B)
 - **Зависит от:** ИНТ.1.
 - **Картография:** evaluator `PracticeSkill` + `preference-dataset.service.ts` (образцы), метрики.
 - **Входит:** composite-judge оценивает, отвечает ли клон **как роль** на реальных кейсах (поведение, не самоотчёт); A/B persona-v1 vs v2; метрики `clone_persona_layer_score`.
@@ -300,6 +300,25 @@ enum SkillTraitLayer {
 ---
 
 ## Итог
-_Заполняется `tz-orchestrator`._
+
+**Реализовано целиком — 8/8 фаз** (ветка `feature/clone-persona-method-layer`, 2026-06-12):
+
+| Фаза | Коммит | Что |
+|---|---|---|
+| Э1.1 | `6e8b470f` | Миграция `20260612000000_clone_method_layer`: `RolePrinciple` + `RolePrincipleStatus` + `SkillTraitLayer` + `SkillTrait.layer` (default skill) + `CloneQueryLog` + HNSW `role_principles.embedding` |
+| Э0.1 | `0507a87a` | clone-respond v2: пост-LLM grounding-гейт (`CLONE_RESPOND_GROUNDING_ENABLED`, отказ `'ungrounded'`) + правило честного частичного пробела + журнал `CloneQueryLog` на все 4 пути ask + `GET /api/v1/clones/query-log` |
+| Э1.2 | `91d552a5` | `RolePrincipleSynthesisService` + `RolePrincipleSynthesisCron` (05:30, Redis-lock, MAX 100 ролей): reasoning роли → группировка 0.78 → LLM `role-principle-synthesize` → валидация + код-гард лексики → дедуп 0.85 |
+| Э1.3 | `f12eedba` | Детектор `value-motivation-detect` (второй проход rebuild 3.7, только revealed preference) → SkillTrait layer=value/motivation |
+| Э2.1 | `f4bfa927` | Активация PracticeSkill (`PRACTICE_SKILLS_ENABLED` false→true) + детектор `process-marker-detect` (только конструктивные оси, код-гард стоп-маркеров) |
+| Э3.1 | `8fbb816d` | CDM-интервью через probe (`skill.cdm_interview`, лимит 5 + cooldown 7 дн., LLM `cdm-case-interview`) + ответ → RawEvent `signalTypeHint='reasoning'` + класс-фикс SegmentBuilder `notification_response` |
+| ИНТ.1 | `bae186a6` | persona-compile v2 — секционная сборка 5 слоёв (пустые секции опускаются, деградация к v1), build.service подтягивает все слои, v1-промпт deprecated (rollback) |
+| ВАЛ.1 | `41289726` | `PersonaLayerValidationService` + Cron (вс 07:00): A/B v1-vs-v2 через judge `persona-behavior-judge` на реальных кейсах, метрики `clone_persona_layer_score{variant}`, без human-approval |
+
+5 новых taskType в union+ALL+сид `seed-llm-task-routes-clone-method.ts` (в STEPS); 6 ENV-флагов kill-switch ON в `feature-flags.md`; second-brain обновлён (skill-and-clone / data-model / ai-jobs / workers-queues / api-layer); prod-deploy-log — блок «🧬 2026-06-12».
+
+**Что осталось:**
+- 3 vNext-заглушки (анти-scope, решение владельца): [`2026-06-12-clone-style-and-traits.md`](2026-06-12-clone-style-and-traits.md) (стиль/OCEAN) · [`2026-06-12-clone-learning-dpo-loop.md`](2026-06-12-clone-learning-dpo-loop.md) (фидбек→DPO + SkillUsage.outcome/editDistance) · [`2026-06-12-clone-snapshot-timeline.md`](2026-06-12-clone-snapshot-timeline.md) (таймлайн + правка принципов носителем). Строки — в `second-brain/04_не-сделано/README.md`.
+- Прод-выкат по runbook выше (`docs/operations/prod-deploy-log.md` §«🧬 2026-06-12»): миграция авто, `apply-postgres-init`, сид clone-method, ⚠ проверить/удалить явный `PRACTICE_SKILLS_ENABLED=false` в прод-`.env`.
+- Валидация v1-vs-v2 даст первые цифры (`clone_persona_layer_score{variant}`) после первого воскресного cron (вс 07:00) на проде.
 
 > **Запуск:** многофазное ТЗ. Вести через `tz-orchestrator`. Парный orchestrator-prompt — `plans/tz/2026-06-11-clone-persona-method-layer-orchestrator-prompt.md`.

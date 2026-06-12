@@ -39,12 +39,16 @@ interface Mocks {
  * Дефолтный priority=80 — выше порога immediatePushMinPriority (70, Autonomy
  * W0 Ф0.2), чтобы тесты dispatch-пути не задевал priority-гейт.
  */
-function buildProbe(payload: Record<string, unknown>, priority = 80) {
+function buildProbe(
+  payload: Record<string, unknown>,
+  priority = 80,
+  reason = 'decision.confirm_status',
+) {
   return {
     id: 'probe-disp-1',
     tenantId: 'org-disp',
     emittedByService: '3-3-decisions',
-    reason: 'decision.confirm_status',
+    reason,
     payload,
     recipientCandidates: ['user-1'],
     selectedRecipientId: null,
@@ -63,8 +67,9 @@ function makeMocks(args: {
   llmResponse?: { text: string };
   llmThrow?: Error;
   probePriority?: number;
+  reason?: string;
 }): Mocks {
-  const probe = buildProbe(args.probePayload, args.probePriority);
+  const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
   const updateCalls: Array<{
     where: unknown;
     data: Record<string, unknown>;
@@ -327,5 +332,61 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     expect(
       vi.mocked(mocks.conversational.sendNotification),
     ).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TZ clone-method Э3.1 — CDM-вопрос НЕ переформулируется: он уже построен
+ * LLM `cdm-case-interview` строго по методике критических решений (открытый,
+ * не наводящий); прогон через probe-formulate мог бы сделать его наводящим.
+ */
+describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', () => {
+  it('reason=skill.cdm_interview + suggestedQuestion → LLM probe-formulate НЕ вызывается, вопрос уходит КАК ЕСТЬ', async () => {
+    const cdmQuestion =
+      'Какие ещё варианты вы рассматривали, когда переносили релиз, и почему от них отказались?';
+    const mocks = makeMocks({
+      probePayload: {
+        message: 'Вопрос + краткий контекст кейса',
+        suggestedQuestion: cdmQuestion,
+        contextCardId: 'profile-1',
+        contextCardKind: 'skill_profile',
+      },
+      reason: 'skill.cdm_interview',
+    });
+
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    // LLM probe-formulate не дёргался.
+    expect(mocks.llmCall).not.toHaveBeenCalled();
+    // Вопрос сохранён без изменений.
+    expect(mocks.updateCalls).toHaveLength(1);
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
+      string,
+      unknown
+    >;
+    expect(newPayload.formulatedQuestion).toBe(cdmQuestion);
+  });
+
+  it('reason=skill.cdm_interview БЕЗ suggestedQuestion → обычный путь probe-formulate (LLM вызван)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'Контекст без готового вопроса' },
+      reason: 'skill.cdm_interview',
+      llmResponse: {
+        text: JSON.stringify({ question: 'Расскажете, как принимали это решение?' }),
+      },
+    });
+
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
+      string,
+      unknown
+    >;
+    expect(newPayload.formulatedQuestion).toBe(
+      'Расскажете, как принимали это решение?',
+    );
   });
 });

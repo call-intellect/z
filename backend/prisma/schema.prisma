@@ -2704,6 +2704,10 @@ model Org {
   /// Канонизация SkillTrait'ов разных сотрудников в общий концепт.
   skillTraitConcepts   SkillTraitConcept[]  @relation("SkillTraitConceptTenant")
 
+  // ── TZ clone-method (2026-06-11) — Reflection-слой + журнал клона ──
+  rolePrinciples RolePrinciple[] @relation("RolePrincipleTenant")
+  cloneQueryLogs CloneQueryLog[] @relation("CloneQueryLogTenant")
+
   /// Org-настройки Слоя 4 (curation). См. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §8.
   /// Структура: `{ autoThreshold: 0.85, deepReviewThreshold: 0.6,
   /// criticalTypes: ['regulation','process','decision'], itemExpiryDays: 30 }`.
@@ -8099,6 +8103,10 @@ model SkillTrait {
   conceptId String?
   concept   SkillTraitConcept? @relation(fields: [conceptId], references: [id], onDelete: SetNull)
 
+  /// TZ clone-method (2026-06-11) — слой черты (skill | value | motivation |
+  /// process_marker). persona-compile v2 секционирует по нему.
+  layer SkillTraitLayer @default(skill)
+
   profile    SkillProfile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
   categoryFk SkillTraitCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
@@ -8107,6 +8115,7 @@ model SkillTrait {
   @@index([profileId, categoryId])
   @@index([categoryId])
   @@index([conceptId])
+  @@index([profileId, layer, status])
   @@map("skill_traits")
 }
 
@@ -8150,6 +8159,88 @@ enum SkillTraitConceptStatus {
   active
   merged_into
   archived
+}
+
+/// TZ clone-method (2026-06-11) — дискриминатор СЛОЯ черты: persona-compile v2
+/// отбирает черты по слою (подход/ценности/мотивация/маркеры процесса), без
+/// него черты и ценности смешиваются в одном топ-20.
+enum SkillTraitLayer {
+  skill          // поведение при решениях (текущий дефолт)
+  value          // что ставит выше при конфликте приоритетов (revealed preference)
+  motivation     // что драйвит в работе
+  process_marker // конструктивный маркер процесса (перечисляет критерии / перепроверяет)
+}
+
+/// TZ clone-method (2026-06-11) — RolePrinciple — синтезированный ПРИНЦИП/паттерн
+/// решений роли (Reflection-слой, Park 2023). НЕ черта человека («осторожный»),
+/// а обобщённый ПРОЦЕСС роли («типовой ход: сначала пилот на 5%, потом раскатка»).
+/// Синтезируется периодическим cron из накопленных reasoning-блоков должности,
+/// с обратными ссылками на наблюдения (grounding). Отдельный узел: черта = одно
+/// наблюдение, принцип = обобщение многих.
+model RolePrinciple {
+  id                String                       @id @default(uuid())
+  tenantId          String
+  /// Role.id — принцип процесса ДОЛЖНОСТИ (переживает ротацию носителя).
+  /// Без FK (как PracticeSkill.scopeRefId) — архивация вместо каскада.
+  roleId            String
+  /// Краткая метка-ситуация, к которой относится принцип («срыв срока», «выбор подрядчика»).
+  situation         String                       @db.VarChar(200)
+  /// Обобщённая ПОВЕДЕНЧЕСКАЯ формулировка процесса (без оценок личности):
+  /// «При срыве срока — сначала эскалирует владельцу с 2 вариантами, затем режет scope».
+  statement         String                       @db.Text
+  /// IdeaBlock.id, на которых построено обобщение (grounding-trail, ≥ порога).
+  sourceBlockIds    String[]                     @default([])
+  observationCount  Int                          @default(0)
+  confidence        SkillConfidence
+  /// Эмбеддинг (situation+statement) — дедуп/ретрив. HNSW — postgres-init.sql.
+  embedding         Unsupported("vector(1536)")?
+  status            RolePrincipleStatus          @default(active)
+  supersededById    String?
+  lastSynthesizedAt DateTime                     @default(now())
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  org Org @relation("RolePrincipleTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, roleId, status])
+  @@index([tenantId, situation])
+  @@map("role_principles")
+}
+
+/// TZ clone-method (2026-06-11) — жизненный цикл принципа роли.
+enum RolePrincipleStatus {
+  active
+  superseded
+  archived
+}
+
+/// TZ clone-method (2026-06-11), Этап 0 — лёгкий журнал запросов к клону,
+/// видимый владельцу Org. Пишется на каждый ask (включая отказы).
+/// Текст вопроса храним превью+hash (не полный текст — он уже в ChatV2Message).
+model CloneQueryLog {
+  id               String       @id @default(uuid())
+  tenantId         String
+  /// person | role — какой клон спрашивали (reuse PersonaScope).
+  cloneScope       PersonaScope
+  /// personId (scope=person) или roleId (scope=role) — без FK (как PracticeSkill.scopeRefId).
+  cloneTargetId    String
+  /// User.id спросившего.
+  userId           String
+  /// Первые 200 символов вопроса — для списка у владельца.
+  questionPreview  String       @db.VarChar(200)
+  /// sha256(вопроса) — дедуп/аналитика без хранения полного текста.
+  questionHash     String       @db.VarChar(64)
+  /// true — ответ опёрся на наблюдения (grounded); false — отказ или ответ без опоры.
+  answeredGrounded Boolean
+  /// Причина отказа, если был: 'topic_starved' | 'ungrounded' | null.
+  refusalReason    String?      @db.VarChar(64)
+  createdAt        DateTime     @default(now())
+
+  tenant Org @relation("CloneQueryLogTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, cloneTargetId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("clone_query_logs")
 }
 
 /// Agents v2 Фаза C1 (2026-05-30) — PracticeSkill — выполняемая процедура

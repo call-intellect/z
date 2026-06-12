@@ -142,6 +142,9 @@ const STEPS: Step[] = [
     // знаний: debate-conflict-arbiter[-critic|-supporter|-neutral]; cheap-цепочка
     // как у curation-verify, supporter primary gpt-5.4-mini для diversity).
     'conflict-arbiter',
+    // TZ clone-method Э1.2 (2026-06-12) — role-principle-synthesize (Reflection-
+    // слой принципов роли, ночной cron 05:30; deepseek-v4-pro primary).
+    'clone-method',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

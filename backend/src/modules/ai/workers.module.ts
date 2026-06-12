@@ -36,9 +36,13 @@ import { KnowledgeCloneRebuildCron } from '../knowledge-core/workers/knowledge-c
 // ТЗ 2026-05-25 llm-architecture §3 — Specialists Combined (Variant Б+).
 import { KnowledgeCloneRebuildWorker } from '../knowledge-core/workers/knowledge-clone-rebuild.worker';
 import { MeetingReportFastWorker } from '../knowledge-core/workers/meeting-report-fast.worker';
+// TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona v1-vs-v2.
+import { PersonaLayerValidationCron } from '../knowledge-core/workers/persona-layer-validation.cron';
 import { ProcessDetectorWorker } from '../knowledge-core/workers/process-detector.worker';
 import { ProcessTemplateCompletenessCron } from '../knowledge-core/workers/process-template-completeness.cron';
 import { ReframingCron } from '../knowledge-core/workers/reframing.cron';
+// TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли.
+import { RolePrincipleSynthesisCron } from '../knowledge-core/workers/role-principle-synthesis.cron';
 import { SkillManagerDigestCron } from '../knowledge-core/workers/skill-manager-digest.cron';
 import { SkillProfileRebuildWorker } from '../knowledge-core/workers/skill-profile-rebuild.worker';
 import { SkillProfileRecalibrateCron } from '../knowledge-core/workers/skill-profile-recalibrate.cron';
@@ -238,6 +242,18 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // SBA β-2 — cron `0 *\/6 * * *`: пересборка профилей сотрудников
     // со свежей активностью за неделю.
     KnowledgeCloneRebuildCron,
+    // TZ clone-method Э1.2 — cron `30 5 * * *` (Redis-lock): синтез принципов
+    // процесса должности (`RolePrinciple`) из reasoning-блоков носителей,
+    // sweep Org→Role с общим бюджетом 100 ролей. Kill-switch
+    // ROLE_PRINCIPLE_SYNTHESIS_ENABLED (ON).
+    RolePrincipleSynthesisCron,
+    // TZ clone-method ВАЛ.1 — cron `0 7 * * SUN` (Redis-lock, после
+    // persona-build 06:00 SUN): поведенческая валидация persona v1-vs-v2 на
+    // реальных кейсах роли через LLM-judge; sweep Org→Role (только роли с
+    // активной role-persona) с бюджетом 10 ролей. Только метрика
+    // clone_persona_layer_score{variant} + лог — ничего не блокирует (R10).
+    // Kill-switch PERSONA_LAYER_VALIDATION_ENABLED (ON).
+    PersonaLayerValidationCron,
     // SBA β-3 — consumer `core.specialist-routing` jobName='3-3-decisions'.
     // Извлекает Decision из блоков (decision/rationale/decision_basis),
     // KNN+LLM supersede-detect, triage (deep review всегда).

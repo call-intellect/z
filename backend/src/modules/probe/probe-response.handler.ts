@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { type DataClass } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -7,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import { ConversationalService } from '../conversational/conversational.service';
 
 import type { NotificationRespondedPayload } from './probe.types';
 import {
@@ -53,6 +55,8 @@ export class ProbeResponseHandler {
     private readonly ingestAdapter: ConversationalIngestAdapter,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
   ) {}
 
   @OnEvent('notification.responded')
@@ -105,6 +109,10 @@ export class ProbeResponseHandler {
         }
       }
 
+      // TZ clone-method Э3.1 — вопрос, который реально задали человеку
+      // (каскад как у классификатора), и маркер high-priority reasoning:
+      // ответ на CDM-интервью — это рассказ носителя «как я решал», ему
+      // детерминированно ставится signalType='reasoning' в block-ingest.
       await this.ingestResponseAsRawEvent({
         tenantId: event.tenantId,
         userId: event.recipientUserId,
@@ -114,10 +122,26 @@ export class ProbeResponseHandler {
         sourceChannelKind: kind,
         contextBlockId: event.contextBlockId,
         contextCardId: event.contextCardId,
+        questionText: this.extractQuestionText(probePayload),
+        signalTypeHint:
+          probe.reason === 'skill.cdm_interview' ? 'reasoning' : undefined,
       });
       this.metrics.incProbeClosed({
         tenantTop: this.normalizeTenantTop(event.tenantId),
         source: kind ?? 'unknown',
+      });
+      // Probe Фаза 5 (R10): человек ответил = исход «answered» (калибровочный
+      // сигнал для Фазы 2, парный к «ignored» из priority-cron).
+      this.metrics.incProbeOutcome({ outcome: 'answered', reason: probe.reason });
+
+      // Probe Фаза 6 (R11): видимое следствие — подтверждение «ответ записан»
+      // (+ название объекта). Не голосом (только текст). Best-effort: ошибка
+      // подтверждения не валит уже завершённый closing-loop.
+      await this.sendAnswerAck({
+        tenantId: event.tenantId,
+        recipientUserId: event.recipientUserId,
+        probePayload,
+        probeId: probe.id,
       });
 
       this.logger.log(
@@ -132,6 +156,61 @@ export class ProbeResponseHandler {
         'ProbeResponseHandler: внутренняя ошибка — пропускаю',
       );
     }
+  }
+
+  /**
+   * Probe Фаза 6 (R11) — видимое следствие ответа: отправить получателю
+   * подтверждение «ваш ответ записан в память компании» + название объекта
+   * (`contextCardTitle`). Только текст (НЕ голос). Best-effort: ошибка
+   * подтверждения не валит уже завершённый closing-loop.
+   */
+  private async sendAnswerAck(args: {
+    tenantId: string;
+    recipientUserId: string;
+    probePayload: Record<string, unknown>;
+    probeId: string;
+  }): Promise<void> {
+    try {
+      const title = this.toStringOrUndef(args.probePayload.contextCardTitle);
+      const text = title
+        ? `Спасибо! Ваш ответ записан в память компании. По теме «${title}».`
+        : 'Спасибо! Ваш ответ записан в память компании.';
+      await this.conversational.sendNotification({
+        tenantId: args.tenantId,
+        recipientUserId: args.recipientUserId,
+        eventType: 'probe.answer_acknowledged',
+        payload: {
+          text,
+          // summary — для рендера в кабинете (NotificationsClient) и каналах.
+          summary: text,
+          ...(title ? { objectTitle: title } : {}),
+          probeEventId: args.probeId,
+        },
+        dataClass: this.extractDataClass(args.probePayload),
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          probeId: args.probeId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeResponseHandler: подтверждение ответа не отправлено — пропускаю',
+      );
+    }
+  }
+
+  /** dataClass из payload probe (как в dispatcher), дефолт internal. */
+  private extractDataClass(payload: Record<string, unknown>): DataClass {
+    const dc = payload.dataClass;
+    if (
+      dc === 'public' ||
+      dc === 'internal' ||
+      dc === 'sensitive' ||
+      dc === 'private'
+    ) {
+      return dc;
+    }
+    return 'internal';
   }
 
   /**
@@ -162,19 +241,10 @@ export class ProbeResponseHandler {
     const response = this.extractResponseText(args.eventPayload);
     if (!response) return null;
 
-    // question — то, что задал probe-formulate. Приоритет:
-    //   1. payload.formulatedQuestion — реально отправленный пользователю вопрос
-    //      (его пишет ProbeDispatcherWorker после LLM probe-formulate; Agents v2 Фаза 0.2).
-    //   2. payload.question — legacy ключ (на случай старых записей).
-    //   3. payload.suggestedQuestion — fallback specialist'a (если LLM упал в dispatcher'е).
-    //   4. payload.message — исходный текст от specialist'a.
-    //   5. probe.reason — последний fallback (машинный код, плохо классифицируется).
+    // question — то, что задал probe-formulate (каскад extractQuestionText);
+    // последний fallback — probe.reason (машинный код, плохо классифицируется).
     const question =
-      this.toStringOrUndef(args.probePayload.formulatedQuestion) ??
-      this.toStringOrUndef(args.probePayload.question) ??
-      this.toStringOrUndef(args.probePayload.suggestedQuestion) ??
-      this.toStringOrUndef(args.probePayload.message) ??
-      args.probeReason;
+      this.extractQuestionText(args.probePayload) ?? args.probeReason;
 
     // A2: оборачиваем сырой пользовательский ввод (свободный ответ сотрудника
     // на probe + текст вопроса) в анти-инъекционные маркеры. asr не нужен
@@ -263,6 +333,27 @@ export class ProbeResponseHandler {
   }
 
   /**
+   * Вопрос, который реально задали человеку. Приоритет:
+   *   1. payload.formulatedQuestion — реально отправленный пользователю вопрос
+   *      (его пишет ProbeDispatcherWorker после LLM probe-formulate; Agents v2 Фаза 0.2).
+   *   2. payload.question — legacy ключ (на случай старых записей).
+   *   3. payload.suggestedQuestion — fallback specialist'a (если LLM упал в dispatcher'е).
+   *   4. payload.message — исходный текст от specialist'a.
+   * Используется классификатором (`tryClassifyResponse`) и closing-loop'ом
+   * (`ingestResponseAsRawEvent` → SegmentBuilder, TZ clone-method Э3.1).
+   */
+  private extractQuestionText(
+    probePayload: Record<string, unknown>,
+  ): string | undefined {
+    return (
+      this.toStringOrUndef(probePayload.formulatedQuestion) ??
+      this.toStringOrUndef(probePayload.question) ??
+      this.toStringOrUndef(probePayload.suggestedQuestion) ??
+      this.toStringOrUndef(probePayload.message)
+    );
+  }
+
+  /**
    * Записывает ответ как `RawEvent` через ConversationalIngestAdapter.
    * Ошибки логируем, но не пробрасываем — основной flow ответа
    * (Notification.respondedAt) уже завершён, дублировать его не нужно.
@@ -276,6 +367,10 @@ export class ProbeResponseHandler {
     sourceChannelKind: string | null;
     contextBlockId: string | null;
     contextCardId: string | null;
+    /** Э3.1 — вопрос, который реально задали (для SegmentBuilder). */
+    questionText?: string;
+    /** Э3.1 — детерминированный signalType ответа (CDM → 'reasoning'). */
+    signalTypeHint?: string;
   }): Promise<void> {
     try {
       await this.ingestAdapter.ingestNotificationResponse({
@@ -287,6 +382,8 @@ export class ProbeResponseHandler {
         sourceChannelKind: args.sourceChannelKind,
         contextBlockId: args.contextBlockId,
         contextCardId: args.contextCardId,
+        questionText: args.questionText,
+        signalTypeHint: args.signalTypeHint,
       });
     } catch (err) {
       this.logger.warn(

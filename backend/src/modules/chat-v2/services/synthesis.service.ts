@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { ChatV2Mode, ChatV2Scope } from '@prisma/client';
+import type { ChatV2Mode, ChatV2Scope, DataClass } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
@@ -11,6 +11,7 @@ import {
   type ChatV2Citation,
   type ChatV2Output,
   type ChatV2Scope as KnowledgeChatV2Scope,
+  type ChatV2Stage,
 } from '../../knowledge-core/services/chat-v2.service';
 import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
 import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
@@ -64,6 +65,12 @@ export interface SynthesisInput {
     | 'analytical'
     | 'clone_roleplay'
     | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Прозрачно пробрасывается в knowledge-core ChatV2Service.ask (стадии
+   * 'searching'/'writing'). Дефолт undefined = текущее поведение.
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface SynthesisResult {
@@ -73,6 +80,13 @@ export interface SynthesisResult {
   llmMeta: Record<string, unknown>;
   /** Если есть подсказка про противоречия — короткий текст для UI. */
   uncertaintyNote: string | null;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа (из knowledge-core
+   * ChatV2Output.dataClass). Для clone-пути (ClonesService.askPerson)
+   * derived класс недоступен — консервативно 'sensitive' (личный корпус
+   * сотрудника).
+   */
+  dataClass: DataClass;
 }
 
 @Injectable()
@@ -132,6 +146,9 @@ export class SynthesisService {
           retrievalMeta: { mode: 'clone_style', usedBlockIds: [] },
           llmMeta: { mode: 'clone_style' },
           uncertaintyNote: null,
+          // M-1 — askPerson не возвращает derived класс; ответ построен на
+          // личном корпусе сотрудника → консервативно 'sensitive'.
+          dataClass: 'sensitive',
         };
       } catch (err) {
         this.logger.warn(
@@ -208,6 +225,8 @@ export class SynthesisService {
       intent: input.intent ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,
+      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE).
+      onStage: input.onStage,
     });
 
     // Сохраняем blockIds в RetrievalCache (если был miss).
@@ -250,6 +269,7 @@ export class SynthesisService {
         retrievalMeta,
         llmMeta,
         uncertaintyNote,
+        dataClass: result.dataClass,
       };
     }
 
@@ -259,6 +279,7 @@ export class SynthesisService {
       retrievalMeta,
       llmMeta,
       uncertaintyNote,
+      dataClass: result.dataClass,
     };
   }
 

@@ -23,6 +23,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { MeetingTypeEditDialog } from './MeetingTypeEditDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 /**
  * `/admin/content/meeting-types` — CRUD конфигурации типов встреч (Z-Admin
@@ -81,7 +82,7 @@ export function MeetingTypesClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Контент' },
         { label: 'Типы встреч' },
       ]}

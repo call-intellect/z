@@ -1,10 +1,13 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { ADMIN_BRAND } from '@/ui/components/admin/brand';
+
 import { AdminShell } from './AdminShell';
 
 export const metadata: Metadata = {
-  title: 'Z-Admin',
+  // Дочерние страницы задают только название раздела → вкладка «Раздел · Кора-Админ».
+  title: { default: ADMIN_BRAND, template: `%s · ${ADMIN_BRAND}` },
 };
 
 /**

@@ -4,6 +4,7 @@ import type { Prisma, ProcessTemplate } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { OwnerResolverService } from '../../knowledge-core/services/owner-resolver.service';
 import { ProbeService } from '../../probe/probe.service';
 import type { ProcessTemplateDefinitionDto } from '../dto/processes.dto';
 
@@ -37,6 +38,10 @@ export class ProcessTemplateProbeService {
     private readonly metrics: BusinessMetricsService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
+    // W2 autonomy (2026-06-12) — адресация step_without_owner: владелец
+    // шаблона / держатели роли-владельца. Optional: без него прежнее поведение.
+    @Optional() @Inject(OwnerResolverService)
+    private readonly ownerResolver?: OwnerResolverService,
   ) {}
 
   /**
@@ -79,11 +84,18 @@ export class ProcessTemplateProbeService {
         });
       }
       if (stepsWithoutOwner.length > 0) {
+        // W2 autonomy (2026-06-12): АВТО-запись в definitionJson ЗАПРЕЩЕНА —
+        // probe-выбор кандидатов остаётся. Меняем только адресата и текст:
+        // владелец шаблона получает вопрос лично; роль-владелец с несколькими
+        // держателями — вопрос-выбор с именами (Р2.2), не «Назначить?».
+        const target = await this.stepOwnerProbeTarget(template, recipients);
         await this.emit({
           template,
           reason: 'process_template.step_without_owner',
-          message: `В процессе «${template.name}» у ${stepsWithoutOwner.length} шага(ов) не назначен ответственный. Назначить?`,
-          recipients,
+          message:
+            target.message ??
+            `В процессе «${template.name}» у ${stepsWithoutOwner.length} шага(ов) не назначен ответственный. Назначить?`,
+          recipients: target.recipients,
           suggestedActions: ['Назначить ответственных', 'Открыть шаблон'],
         });
       }
@@ -176,6 +188,71 @@ export class ProcessTemplateProbeService {
         );
       }
     }
+  }
+
+  /**
+   * W2 autonomy — адресат/текст probe `step_without_owner`:
+   *   1. У шаблона есть ownerPersonId → вопрос адресуем лично владельцу
+   *      шаблона (он отвечает за шаги), не всем admin'ам.
+   *   2. Иначе ownerRoleId: единственный держатель → ему лично; несколько →
+   *      вопрос-выбор с именами (Р2.2: «Иванов или Петров?»).
+   *   3. Иначе — прежние получатели и прежний текст.
+   */
+  private async stepOwnerProbeTarget(
+    template: ProcessTemplate,
+    fallbackRecipients: readonly string[],
+  ): Promise<{ recipients: string[]; message?: string }> {
+    try {
+      if (template.ownerPersonId) {
+        const person = await this.prisma.person.findFirst({
+          where: {
+            id: template.ownerPersonId,
+            tenantId: template.tenantId,
+          },
+          select: { userId: true },
+        });
+        if (person?.userId) {
+          return { recipients: [person.userId] };
+        }
+        return { recipients: [...fallbackRecipients] };
+      }
+      if (template.ownerRoleId && this.ownerResolver) {
+        const resolution = await this.ownerResolver.resolve({
+          tenantId: template.tenantId,
+          roleId: template.ownerRoleId,
+        });
+        if (resolution.kind === 'resolved') {
+          return { recipients: [resolution.userId] };
+        }
+        if (resolution.kind === 'ambiguous') {
+          const persons = await this.prisma.person.findMany({
+            where: {
+              tenantId: template.tenantId,
+              userId: { in: resolution.candidates },
+              deletedAt: null,
+            },
+            select: { name: true },
+            take: 10,
+          });
+          const names = persons.map((p) => p.name).filter((n) => n.length > 0);
+          if (names.length >= 2) {
+            return {
+              recipients: [...fallbackRecipients],
+              message: `В процессе «${template.name}» есть шаги без ответственного. Кого назначить ответственным: ${names.join(' или ')}?`,
+            };
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          templateId: template.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'process-template probe: stepOwnerProbeTarget упал — прежние получатели',
+      );
+    }
+    return { recipients: [...fallbackRecipients] };
   }
 
   private async resolveRecipients(

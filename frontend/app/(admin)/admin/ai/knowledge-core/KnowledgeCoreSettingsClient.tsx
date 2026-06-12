@@ -49,6 +49,7 @@ import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
 import { ApiError } from '@/api/api-error';
 import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
 import { Button } from '@/ui/shadcn/button';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 // ───────────────────────────────────────── Схемы ──
 
@@ -379,7 +380,7 @@ export function KnowledgeCoreSettingsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Knowledge-Core настройки' },
       ]}

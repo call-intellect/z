@@ -240,7 +240,11 @@ export class VoxService {
         if (wordsCount === 0 && textLength > 0) {
           const ro = (raw ?? {}) as Record<string, unknown>;
           const nestedRo = (ro.result ?? ro.data ?? {}) as Record<string, unknown>;
-          const segs = ro.segments ?? nestedRo.segments;
+          // extendedResult.segments — основной источник посегментных таймингов
+          // на v3_e2e_rnnt (приходят и при diar:false). Без этой ветки лог
+          // врёт `hasSegments:false` на встречах, где сегменты реально есть.
+          const extForSegs = (ro.extendedResult ?? {}) as Record<string, unknown>;
+          const segs = ro.segments ?? nestedRo.segments ?? extForSegs.segments;
           const firstSegmentKeys =
             Array.isArray(segs) && segs[0] && typeof segs[0] === 'object'
               ? Object.keys(segs[0] as object)
@@ -435,12 +439,14 @@ function parseVoxResult(raw: unknown): {
     }
   }
 
-  // ТЗ-5 Ф3 (upload-диаризация) — сегменты диаризации. Vox с
-  // `diarizationEnabled:true` кладёт `extendedResult.segments[]` (Ф0 smoke):
-  // `{ start, end, speaker, speaker_id, text }`, где start/end — СЕКУНДЫ
-  // (float). Парсим АДДИТИВНО: per-track путь (живой конвейер) сюда не
-  // попадает (diarizationEnabled:false → segments отсутствуют), а word-level
-  // парсинг выше использует `segments[].words` независимо.
+  // Сегменты Vox `extendedResult.segments[]` `{ start, end, speaker,
+  // speaker_id, text }`, где start/end — СЕКУНДЫ (float). Парсим АДДИТИВНО.
+  // ВАЖНО (ТЗ 2026-06-11 asr-segment-timings §3.2, 3 прод-прогона): на
+  // v3_e2e_rnnt сегменты приходят И при `diarizationEnabled:false` — живой
+  // per-track конвейер их ТОЖЕ получает (persist→merge даёт переплётку реплик
+  // по ролям/времени). Прежняя посылка «diar:false → segments отсутствуют»
+  // опровергнута эмпирически. Word-level парсинг выше использует
+  // `segments[].words` независимо.
   const diarizedSegmentsRaw =
     extended.segments ?? obj.segments ?? nested.segments;
   const segments = Array.isArray(diarizedSegmentsRaw)

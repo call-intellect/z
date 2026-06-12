@@ -43,8 +43,8 @@ export function mapDailyDigestRowsToTrend(
 ): DailyDigestTrendPointDto[] {
   return rowsDesc
     .map((r) => {
-      const m = (r.metricsJson ?? {}) as Record<string, any>;
-      const goals = (m.goals ?? {}) as Record<string, any>;
+      const m = (r.metricsJson ?? {}) as Record<string, unknown>;
+      const goals = (m.goals ?? {}) as Record<string, unknown>;
       return {
         dateLocal: r.dateLocal,
         totalCheckIns: Number(m.totalCheckIns ?? 0),

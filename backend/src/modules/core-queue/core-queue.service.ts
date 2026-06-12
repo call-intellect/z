@@ -230,10 +230,15 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
    */
   async enqueueMeetingReportFast(
     meetingId: string,
-    opts?: { delayMs?: number },
+    opts?: { delayMs?: number; reason?: string },
   ): Promise<void> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.MEETING_REPORT_FAST);
-    const jobId = `meeting_report_fast_${meetingId}`;
+    // С `reason` jobId варьируется (`..._<reason>`) — это нужно для regenerate:
+    // removeOnComplete очереди держит успешный job 24ч, поэтому повтор с тем же
+    // jobId был бы съеден дедупом. Producer'ы без reason (MergeWorker) — как было.
+    const jobId = opts?.reason
+      ? `meeting_report_fast_${meetingId}_${opts.reason}`
+      : `meeting_report_fast_${meetingId}`;
     const payload: MeetingReportFastJobData = { meetingId };
     const jobOpts: JobsOptions = { jobId };
     if (opts?.delayMs !== undefined && opts.delayMs > 0) {
@@ -241,7 +246,7 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     }
     await q.add('meeting-report-fast', this.stamp(payload), jobOpts);
     this.logger.debug(
-      `enqueue core.meeting-report-fast meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms`,
+      `enqueue core.meeting-report-fast meetingId=${meetingId} delay=${opts?.delayMs ?? 0}ms reason=${opts?.reason ?? '-'}`,
     );
   }
 

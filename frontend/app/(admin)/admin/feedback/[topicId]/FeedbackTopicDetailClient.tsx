@@ -38,6 +38,7 @@ import { MergeTopicDialog } from '../components/MergeTopicDialog';
 import { RenameTopicDialog } from '../components/RenameTopicDialog';
 import { TopicDetail } from '../components/TopicDetail';
 import { TopicItemsList } from '../components/TopicItemsList';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type DetailDialogKind = 'rename' | 'merge' | 'archive' | null;
 
@@ -94,7 +95,7 @@ export function FeedbackTopicDetailClient({ topicId }: { topicId: string }) {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Обратная связь', href: '/admin/feedback' },
         { label: detail ? detail.title : 'Блок' },
       ]}

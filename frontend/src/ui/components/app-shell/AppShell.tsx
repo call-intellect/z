@@ -14,6 +14,8 @@ import { PaywallBanner } from '@/ui/components/PaywallBanner';
 import { PaywallModal } from '@/ui/components/PaywallModal';
 import { ReferralPromoStrip } from '@/ui/components/app-shell/ReferralPromoStrip';
 import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
+import { MobileShell } from '@/ui/mobile/MobileShell';
+import { MobileTabBar } from '@/ui/mobile/MobileTabBar';
 
 /**
  * AppShell — основной layout для авторизованного кабинета.
@@ -61,8 +63,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         <PaywallModal />
 
         {/* Mobile bottom navigation (≤md). На desktop bottom-nav скрыт —
-            навигация идёт через sidebar. */}
-        <TrackerBottomNav />
+            навигация идёт через sidebar.
+
+            ТЗ 2026-06-11 mobile-cora Ф1 (Б1/Б2): viewport-gate `MobileShell`
+            рендерит РОВНО ОДНО дерево навигации — ниже md role-aware
+            `MobileTabBar` (exec/manager), на md+ исторический `TrackerBottomNav`
+            (сам `md:hidden`, на десктопе невидим → визуальный диф desktop = 0).
+            Свопается только нижняя навигация, контент `children` рендерится
+            один раз → без двойного fetch. */}
+        <MobileShell mobile={<MobileTabBar />} desktop={<TrackerBottomNav />} />
 
         {/* Глобальная ⌘K палитра. Wave 2 B2: рендерится внутри Provider'а,
             keyboard listener живёт в Provider'е, открытие — из любого

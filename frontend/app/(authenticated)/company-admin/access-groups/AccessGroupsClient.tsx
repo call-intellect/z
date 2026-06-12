@@ -538,7 +538,7 @@ function AddMemberPicker({
     return all
       .filter((p: PersonDomainApi) => !excludeIds.has(p.id))
       .filter((p: PersonDomainApi) =>
-        q.length === 0 ? false : p.fullName.toLowerCase().includes(q),
+        q.length === 0 ? false : (p.fullName?.toLowerCase().includes(q) ?? false),
       )
       .slice(0, 8);
   }, [personsSwr.data, excludeIds, query]);

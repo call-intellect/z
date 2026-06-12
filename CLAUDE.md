@@ -149,6 +149,7 @@
 | Изменения в `backend/scripts/postgres-init.sql` | **`prod-deploy-log.md` Шаг 5** (новые HNSW/GIN/partial/extension) |
 | Новая ENV в `backend/src/common/config/env.schema.ts` | **`prod-deploy-log.md` Шаг 1** |
 | Новый флаг (kill-switch / решение владельца) | **`docs/operations/feature-flags.md`** (реестр флагов) + **`prod-deploy-log.md` Шаг 1** |
+| Новый / переписанный LLM-промпт (system/user) | **`docs/methodology/prompts/`** — сверить с чек-листом методологии; удачный промпт добавить эталоном в `examples/` |
 
 3. **Запиши рефлексию** в `second-brain/05_история/YYYY-MM-DD-краткое-название.md`:
    - что было поставлено

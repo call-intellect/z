@@ -48,6 +48,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const MIN_REASON_LENGTH = 10;
 
@@ -62,7 +63,7 @@ export function RetentionClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Записи и медиа' },
         { label: 'Сроки хранения' },
       ]}

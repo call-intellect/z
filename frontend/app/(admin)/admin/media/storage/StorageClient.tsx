@@ -54,6 +54,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'buckets', label: 'Бакеты', icon: Boxes },
@@ -77,7 +78,7 @@ export function StorageClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Записи и медиа' },
         { label: 'S3 хранилище' },
       ]}

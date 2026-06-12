@@ -171,13 +171,16 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| POST | `/api/v1/chat-v2/messages` | Задать вопрос (scope: org/card/project/**issue**) |
+| POST | `/api/v1/chat-v2/messages` | Задать вопрос (scope: org/card/project/**issue**). Синхронный — возвращает готовый `{text, citations, …}` одним ответом. Остаётся fallback'ом для стрима. |
+| POST | `/api/v1/chat-v2/messages/stream` | **То же, но SSE-стадии прогресса AI-чата** (2026-06-11, §4 Ф1). События `stage` (`understanding` «Понимаю вопрос» → `searching` «Ищу в памяти» → `writing` «Пишу ответ») → `done` (готовый ответ) / `error`. `onStage` пробрасывается `orchestration`→`synthesis`→`knowledge-core`, эмиссия на границах фаз (по образцу Concierge). Kill-switch `CHAT_V2_STREAMING_ENABLED` (default ON): OFF → `503` до начала SSE, фронт прозрачно откатывается на синхронный `POST /messages`. |
 | GET | `/api/v1/chat-v2/conversations` | Список диалогов |
 | GET | `/api/v1/chat-v2/conversations/:id` | Диалог с сообщениями |
 | POST | `/api/v1/chat-v2/conversations/:id/pin` | Закрепить/открепить |
 | POST | `/api/v1/chat-v2/conversations/:id/archive` | Архивировать |
 
 T6b: scope `'issue'` добавлен — `IssueChat` теперь работает на нём нативно.
+
+Таймаут синтеза `chat-v2` разведён от общего `LLM_ROUTER_DISPATCH_TIMEOUT_MS` через AdminSetting `knowledge.chatV2SynthesisTimeoutMs` (POSITIVE_INT, code-default 90000 мс; per-call `LlmCallParams.timeoutMs?` override в llm-router; 2026-06-11, §4 Ф3).
 
 ## Concierge + Voice
 
@@ -218,6 +221,15 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 | POST | `/api/v1/pending-actions/confirm` | One-tap подтверждение light curation → delegate в `CurationService.decide` (approve), RBAC внутри. | self (RBAC curation) |
 
 Блок `requiresAction` отдаётся также в `GET /api/v1/dashboard/director` (`DirectorDashboardDto`, персонально по `userId`, best-effort). Источник: `plans/tz/2026-06-02-action-center-pending-confirmations.md` (Часть B).
+
+### Probe-система Фаза 1 — новые notification eventType (2026-06-11)
+
+ТЗ — [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Доставка — не REST, а `ConversationalService.sendNotification`; Zod-payload в `conversational/types/event-payload.registry.ts`, рендер в telegram + max-bot адаптерах, фронт-label в `frontend/src/domain/conversational.ts`. Подробности — [[probe-agent]] §«Фаза 1».
+
+| eventType | Когда | Канал-политика | Фронт-label |
+|---|---|---|---|
+| `probe.digest` | `ProbeDigestCron` (1×/день в `probe.digestHourUtc`) — ОДНО сводное уведомление с отложенными `queued_digest`-probe (≤ `probe.digestTouchCap`) | `['telegram_bot','max_bot','in_app']` | «Вопросы от Коры» |
+| `probe.answer_acknowledged` | `ProbeResponseHandler` после ответа на probe — подтверждение «Ваш ответ записан в память компании» (только текст, best-effort) | telegram / max-bot / in_app | «Ответ записан» |
 
 ## Org / RBAC / Admin / LLM
 
@@ -313,6 +325,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | **POST** | `/api/v1/clones/roles/:roleId/conversations` | **Многотуровый диалог с клоном роли v2** — те же dialog-layer / режимы. Агрегатный клон роли. | owner/admin/granted | **Фаза 7 §9 (2026-05-26)** |
 | **GET** | `/api/v1/clones/conversations?cloneType&cloneRefId&cursor&limit` | Мои диалоги с конкретным клоном (cursor-pagination, маппинг на `ChatV2Conversation(scope='card')` — отдельной модели `CloneConversation` нет). | granted через CloneAccessGrant | **2026-05-26** |
 | **GET** | `/api/v1/me/clone-access` | Что мне выдано (для frontend-хука `useMyCloneAccess`). Грейсфул на 404 — пустой массив. | authenticated | **2026-05-26** |
+| **GET** | `/api/v1/clones/query-log?cloneTargetId=&limit=&offset=` | **Журнал запросов к клонам** (`CloneQueryLog`): кто/когда/какой клон спрашивал, questionPreview (200 симв.) + sha256-хэш, answeredGrounded, refusalReason (`'ungrounded'` — отказ grounding-гейта). Пагинация limit/offset, фильтр по cloneTargetId. Пишется на каждый ask всех 4 путей, вкл. отказы. См. [[skill-and-clone]] §«Доработки 2026-06-12». | OrgAdminGuard (owner/admin) | **clone-method Э0.1 (2026-06-12)** |
 
 ⚠ **Ролевые клоны (решение 2026-05-25).** ExecutablePersona строится по должности, а не по сотруднику. UI-страницы — только `/clones`, `/clones/[roleId]`, `/clones/[roleId]/chat/[conversationId]` и `/admin/clones`. Старые `/me/clone` и `/persons/[id]/skill-profile` удалены. См. [[skill-and-clone]].
 
@@ -509,6 +522,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 | DELETE | `/api/v1/chatbox/integration` | отключить (снять webhook, status→disconnected) | delete |
 | POST | `/api/v1/chatbox/integration/sync` | ручной синк `{scope:'all'\|'customers'\|'managers'\|'chats'}` → BullMQ job | manage |
 | GET | `/api/v1/chatbox/integration/sync/status` | статус последних синков | read |
+| GET | `/api/v1/chatbox/integration/memory-summary` | **сводка «Чаты в памяти» (блок A, 2026-06-11):** counts `{dialogs, sessions, analyzed, inProgress, failed}` + `blocks` (`RawEvent` `sourceType='chatbox'`) + `tasks` (`Task` `sourceType='chatbox'`) + `analysisEnabled`. Питает виджет `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` | read |
 | GET | `/api/v1/chatbox/chats` | список чатов (фильтры `status`/`channelType`/`customerExternalId`, пагинация) | read |
 | GET | `/api/v1/chatbox/chats/:id` | чат + клиент(unified) + менеджер + сессии | read |
 | GET | `/api/v1/chatbox/chats/:id/messages` | сообщения чата | read |
@@ -640,6 +654,8 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-05 (ChatBox-интеграция):** добавлен раздел «ChatBox-интеграция» — `/chatbox/integration(+workspaces,sync,sync/status)`, `/chatbox/chats(+/:id,/messages,POST send)`, `/chatbox/members(+/:id/link)`, inbound webhook `/webhooks/chatbox/:tenantId/:secret`. Новый RBAC-ресурс `chatbox`, privacy-инвариант (super_admin без bypass на текст переписки). См. [plans/tz/2026-06-05-chatbox-integration.md](../../plans/tz/2026-06-05-chatbox-integration.md).
 - **2026-06-05 (пакет улучшений дашбордов B/D/G/E):** новые эндпоинты `GET /dashboard/operations/weekly-per-person` (D, план-факт по людям), `GET /dashboard/people-at-risk` (G, люди под риском), `PATCH /me/promises/:blockId/reschedule` (E, перенос срока обещания), `GET|POST /me/social-contribution/opt-out` (E, Redis-preference); `GET /dashboard/pulse-patterns` дополнен `goalVector.primaryGoalId/proScore/contraScore/byDepartment` (B, компас); `GET /me/social-contribution` дополнен `constructiveFeedbackCount` (E). Сервисы — [[../02_architecture/module-map]] §«Пакет улучшений дашбордов». Контракты — `plans/tz/2026-06-05-{goal-vector-compass,weekly-per-person-plan-fact,employee-pulse-and-people-at-risk,personal-cabinet-me}.md`.
 - **2026-06-06 (надёжность отчёта встречи):** `GET /meetings/:id/reports/:reportId` теперь отдаёт **200 и для primary-отчёта** (когда `reportId === aiResult.id`) — `get()` синтезирует `ReportDetailDto` из `AiResult` (`output` = `structuredData` или `{summary}`, `promptTemplateVersionId: null`), зеркаля primary-ветку `list()`. Раньше искал только `MeetingReport` → 404 на «Открыть» основного отчёта (S6-07). Контракт additional-отчётов не изменён (primary-ветка только при совпадении `aiResult.id`). См. [plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md](../../plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md) Ф1.
+- **2026-06-11 (Probe-система Фаза 1):** добавлены два notification eventType `probe.digest` (батч-дайджест отложенных probe от `ProbeDigestCron`, канал-политика `['telegram_bot','max_bot','in_app']`, label «Вопросы от Коры») и `probe.answer_acknowledged` (подтверждение «ваш ответ записан» от `ProbeResponseHandler`, label «Ответ записан»). Zod в `event-payload.registry.ts`, рендер telegram/max-bot. См. [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md).
 - **2026-06-06 (Трекер + Встречи, B5):** новый эндпоинт `POST /meetings/:id/invitees` — допригласить участников на joinable-встречу (host-only, `@RequireSubscription`, идемпотентно по `userId`/`personId`); переиспользует `seedInviteeInTx` + `deliverMeetingInvites` (та же логика, что при создании встречи). Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`. См. [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
+- **2026-06-12 (слой метода клона, Э0.1):** новый эндпоинт `GET /api/v1/clones/query-log` (OrgAdminGuard, пагинация limit/offset, фильтр `cloneTargetId`) — журнал запросов к клонам (модель `CloneQueryLog`: questionPreview+sha256, answeredGrounded, refusalReason `'ungrounded'`). Пишется на каждый ask всех 4 путей, вкл. программные отказы grounding-гейта (`CLONE_RESPOND_GROUNDING_ENABLED`). См. [[skill-and-clone]] §«Доработки 2026-06-12», [plans/tz/2026-06-11-clone-persona-method-layer.md](../../plans/tz/2026-06-11-clone-persona-method-layer.md).
 
 [[../index|← index]]

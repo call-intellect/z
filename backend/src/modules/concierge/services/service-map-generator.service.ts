@@ -1,5 +1,7 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
+import type { LlmTool } from '../../ai/services/llm.types';
+
 /**
  * SBA γ-2 — ServiceMapGeneratorService.
  *
@@ -32,6 +34,11 @@ export interface ToolSchema {
   parameters: ToolParameterSchema;
   /** Имя другого tool'а, который откатывает это действие. */
   undoableVia?: string;
+  /**
+   * Семантически не мутирует состояние (чистый расчёт / «задать вопрос»),
+   * даже если HTTP-метод POST — confirm не нужен, undo-log не пишется.
+   */
+  readOnly?: boolean;
   /** RBAC ResourceType, который нужен для tool'а (см. RbacService). */
   rbacResource?: string;
   /** Действие RBAC (`read`/`write`/`delete`). */
@@ -67,10 +74,14 @@ export class ServiceMapGeneratorService implements OnModuleInit {
    *     { name, description, parameters: {...JSON Schema...} },
    *     ...
    *   ]
+   *
+   * Ф6 assistant-channels (2026-06-11): опц. `names` — канальный whitelist;
+   * если задан, во фрагмент попадают только перечисленные инструменты.
+   * Без аргумента поведение прежнее (все tools) — web-чат не меняется.
    */
-  buildToolUsePromptFragment(): string {
+  buildToolUsePromptFragment(names?: string[]): string {
     return JSON.stringify(
-      this.toolsCache.map((t) => ({
+      this.filterTools(names).map((t) => ({
         name: t.name,
         description: t.description,
         parameters: t.parameters,
@@ -80,7 +91,44 @@ export class ServiceMapGeneratorService implements OnModuleInit {
     );
   }
 
+  /**
+   * Ф3 assistant-channels (2026-06-11) — native function-calling.
+   *
+   * Маппинг whitelist `ToolSchema` → `LlmTool` для `LlmCallParams.tools`:
+   * провайдер получает tools нативно (tool_choice='auto' ставится адаптером),
+   * а SYSTEM собирается без JSON-инструкции и списка инструментов
+   * (см. `buildSystemPrompt` в concierge.service.ts). `parameters` уже в
+   * формате JSON Schema `{type:'object', properties, required?}` — переносим
+   * как есть в `input_schema`.
+   *
+   * Ф6 assistant-channels (2026-06-11): опц. `names` — канальный whitelist;
+   * если задан, провайдер видит только перечисленные инструменты. Без
+   * аргумента — все tools (web-чат, обратная совместимость).
+   */
+  toLlmTools(names?: string[]): LlmTool[] {
+    return this.filterTools(names).map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: {
+        type: 'object',
+        properties: t.parameters.properties,
+        ...(t.parameters.required ? { required: t.parameters.required } : {}),
+      },
+    }));
+  }
+
   // ──────────────────────────── private ────────────────────────────────
+
+  /**
+   * Ф6 — сужение реестра по канальному whitelist'у. `undefined` → все tools
+   * (прежнее поведение); массив → только перечисленные имена (порядок
+   * реестра сохраняется, неизвестные имена молча игнорируются).
+   */
+  private filterTools(names?: string[]): ToolSchema[] {
+    if (!names) return this.toolsCache;
+    const allow = new Set(names);
+    return this.toolsCache.filter((t) => allow.has(t.name));
+  }
 
   /**
    * MVP-список tools. Каждый соответствует существующему REST-эндпоинту.
@@ -170,6 +218,9 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         },
         rbacResource: 'chat_v2_conversation',
         rbacAction: 'write',
+        // POST создаёт сообщение в разговоре chat-v2, но для пользователя
+        // это «задать вопрос» — отмена бессмысленна, confirm не нужен.
+        readOnly: true,
       },
       {
         name: 'list_tasks',
@@ -318,6 +369,8 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         },
         rbacResource: 'event_card',
         rbacAction: 'read',
+        // POST, но чистый расчёт свободного слота — ничего не создаёт.
+        readOnly: true,
       },
       {
         name: 'delete_event',
@@ -410,22 +463,27 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'person',
         rbacAction: 'read',
       },
+      // Ф6 assistant-channels (2026-06-11) — фикс бага: раньше tool указывал
+      // на несуществующий роут дашборда (404). Реальный роут —
+      // GET /api/v1/dashboard/operations/open-commitments
+      // (operations-dashboard.controller.ts), query строго по
+      // OpenCommitmentsQuerySchema (.strict(): только days/limit, оба опц.).
       {
         name: 'list_overdue_promises',
         description:
-          'Получить список просроченных обещаний компании, команды или человека. Используй для «какие обещания просрочены», «кто что не сделал».',
+          'Получить открытые и просроченные обещания компании за окно дней (с именами авторов и получателей). Используй для «какие обещания просрочены», «кто что не сделал».',
         method: 'GET',
-        path: '/api/v1/dashboard/commitment-reliability',
+        path: '/api/v1/dashboard/operations/open-commitments',
         parameters: {
           type: 'object',
           properties: {
-            scope: {
-              type: 'string',
-              description: 'company | team | person.',
+            days: {
+              type: 'number',
+              description: 'Окно в днях (1..180). По умолчанию 14.',
             },
-            scopeId: {
-              type: 'string',
-              description: 'ID team или person если scope не company.',
+            limit: {
+              type: 'number',
+              description: 'Сколько обещаний вернуть (1..500). По умолчанию 100.',
             },
           },
         },

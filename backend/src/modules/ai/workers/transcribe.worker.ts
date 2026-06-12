@@ -586,6 +586,14 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       transcriptText: voxResult.transcriptText,
       durationSeconds: voxResult.durationSeconds,
       words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
+      // Посегментные тайминги (slim-форма Б2): спикер известен по дорожке,
+      // поэтому speaker/speaker_id не храним. Источник — Vox
+      // extendedResult.segments (приходят и при diarizationEnabled:false).
+      segments: (voxResult.segments ?? []).map((s) => ({
+        startSec: s.startSec,
+        endSec: s.endSec,
+        text: s.text,
+      })) as unknown as Prisma.InputJsonValue,
     };
     await this.prisma.transcriptTrack.upsert({
       where: {

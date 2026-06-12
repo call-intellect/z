@@ -17,6 +17,10 @@ import { Textarea } from '@/ui/shadcn/textarea';
 import { ScrollArea } from '@/ui/shadcn/scroll-area';
 import { cn } from '@/ui/shadcn/lib/utils';
 import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
+import {
+  VoiceInputButton,
+  appendTranscript,
+} from '@/ui/components/voice/VoiceInputButton';
 
 /**
  * Общий компонент org-scope AI-чата (Фаза 8 шаг 5).
@@ -40,6 +44,15 @@ import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
  *     для inline-style). По умолчанию — высота на остаток flex-родителя.
  *   - `placeholder` — кастомный плейсхолдер для textarea.
  *   - `intro` — кастомная подсказка в пустом состоянии.
+ *
+ * АДДИТИВНЫЕ опц. пропсы (мобильный «Спросить», B4/Ф5) — все с дефолтом-off,
+ * десктоп без них = байт-в-байт прежнее поведение:
+ *   - `suggestedPrompts` — промпт-кнопки в один тап над полем ввода. Тап
+ *     подставляет текст в поле и фокусирует его (пользователь дополняет «…»
+ *     и отправляет). Отправку/citations НЕ дублируем.
+ *   - `voiceInput` — показать кнопку голосового ВВОДА (`VoiceInputButton`,
+ *     серверный ASR Vox, iOS ок) рядом с полем. Только ВВОД, без TTS/озвучки
+ *     (см. [[concierge_text_only_output]]).
  */
 export type OrgChatPanelProps = {
   withHistory?: boolean;
@@ -48,6 +61,10 @@ export type OrgChatPanelProps = {
   intro?: React.ReactNode;
   /** Доп.класс на корневой контейнер (обёртка `.flex.flex-col`). */
   className?: string;
+  /** Промпт-кнопки в один тап над полем ввода (дефолт — нет). */
+  suggestedPrompts?: string[];
+  /** Показать кнопку голосового ВВОДА рядом с полем (дефолт — нет). */
+  voiceInput?: boolean;
 };
 
 type ChatMessage = {
@@ -63,12 +80,15 @@ export function OrgChatPanel({
   placeholder = 'Спросите про команду, сделки, продукт, риски…',
   intro,
   className,
+  suggestedPrompts,
+  voiceInput = false,
 }: OrgChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(!withHistory);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // История диалога — только если запрошена.
   useEffect(() => {
@@ -129,6 +149,29 @@ export function OrgChatPanel({
     }
   }
 
+  // Тап по промпт-кнопке: подставляем шаблон в поле и фокусируем — пользователь
+  // дополняет «…» и отправляет сам (НЕ автоотправка). Не дублируем логику
+  // sendMessage — переиспользуем тот же `input`/`sendOrgChatWithFallback`.
+  function applySuggestedPrompt(prompt: string) {
+    if (sending) return;
+    setInput(prompt);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      // Каретку — в конец, чтобы можно было сразу дописывать.
+      const end = el.value.length;
+      el.setSelectionRange(end, end);
+    });
+  }
+
+  // Голосовой ВВОД: распознанный текст аппендим к текущему вводу (общая чистая
+  // функция appendTranscript), фокус возвращаем в поле. Без TTS/озвучки.
+  function onVoiceTranscript(text: string) {
+    setInput((prev) => appendTranscript(prev, text));
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
   return (
     <div
       className={cn(
@@ -162,8 +205,24 @@ export function OrgChatPanel({
         )}
       </ScrollArea>
       <div className="border-t border-border-subtle p-3 pb-20 sm:pr-20">
+        {suggestedPrompts && suggestedPrompts.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {suggestedPrompts.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => applySuggestedPrompt(p)}
+                disabled={sending}
+                className="rounded-full border border-border-subtle bg-bg-elevated px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-accent/60 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <Textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
@@ -172,6 +231,13 @@ export function OrgChatPanel({
             rows={2}
             className="resize-none"
           />
+          {voiceInput && (
+            <VoiceInputButton
+              onTranscript={onVoiceTranscript}
+              className="h-10 w-10"
+              title="Голосовой ввод вопроса"
+            />
+          )}
           <Button
             onClick={() => void sendMessage()}
             disabled={sending || !input.trim()}

@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { ChatboxApiClient } from './chatbox-api.client';
-import { ChatboxChatsService } from './chatbox-chats.service';
+import {
+  ChatboxChatsService,
+  extractChatboxOutboundId,
+} from './chatbox-chats.service';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
 import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
@@ -429,5 +432,93 @@ describe('ChatboxChatsService.sendMessage', () => {
       response: { error: { code: 'chatbox_chat_not_found' } },
     });
     expect(integration.getConfigForSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('extractChatboxOutboundId (чистый хелпер)', () => {
+  it('плоский { id }', () => {
+    expect(extractChatboxOutboundId({ id: 'x' })).toEqual({
+      id: 'x',
+      createdAt: null,
+      senderId: null,
+      senderName: null,
+    });
+  });
+
+  it('вложенный message.messageId', () => {
+    expect(extractChatboxOutboundId({ message: { messageId: 'y' } })).toEqual({
+      id: 'y',
+      createdAt: null,
+      senderId: null,
+      senderName: null,
+    });
+  });
+
+  it('вложенный data.external_id числом → String()', () => {
+    expect(extractChatboxOutboundId({ data: { external_id: 7 } })).toEqual({
+      id: '7',
+      createdAt: null,
+      senderId: null,
+      senderName: null,
+    });
+  });
+
+  it('обёртка result с приоритетом id-ключей', () => {
+    expect(
+      extractChatboxOutboundId({ result: { _id: 'z', text: 'привет' } }),
+    ).toEqual({
+      id: 'z',
+      createdAt: null,
+      senderId: null,
+      senderName: null,
+    });
+  });
+
+  it('форма ответа без id-ключей → id=null (синтетический ключ выберет вызывающий)', () => {
+    expect(extractChatboxOutboundId({ foo: 1 })).toEqual({
+      id: null,
+      createdAt: null,
+      senderId: null,
+      senderName: null,
+    });
+  });
+
+  it('createdAt и sender (id+name) из вложенной обёртки', () => {
+    expect(
+      extractChatboxOutboundId({
+        message: {
+          id: 'm1',
+          created_at: '2026-06-11T10:00:00.000Z',
+          sender: { id: 'u1', name: 'Менеджер' },
+        },
+      }),
+    ).toEqual({
+      id: 'm1',
+      createdAt: '2026-06-11T10:00:00.000Z',
+      senderId: 'u1',
+      senderName: 'Менеджер',
+    });
+  });
+
+  it('sender как from.{id,name} (альтернативное имя)', () => {
+    expect(
+      extractChatboxOutboundId({ id: 'm2', from: { id: 'f1', name: 'Бот' } }),
+    ).toEqual({
+      id: 'm2',
+      createdAt: null,
+      senderId: 'f1',
+      senderName: 'Бот',
+    });
+  });
+
+  it('некорректный raw (null/строка/число) → все поля null', () => {
+    for (const bad of [null, undefined, 'str', 42]) {
+      expect(extractChatboxOutboundId(bad)).toEqual({
+        id: null,
+        createdAt: null,
+        senderId: null,
+        senderName: null,
+      });
+    }
   });
 });

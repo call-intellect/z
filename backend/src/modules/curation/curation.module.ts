@@ -8,16 +8,17 @@ import { ConflictService } from './services/conflict.service';
 import { CurationService } from './services/curation.service';
 import { CuratorRoutingService } from './services/curator-routing.service';
 import { CardStaleDetectorCron } from './workers/card-stale-detector.cron';
-import { CurationAutotuneCron } from './workers/curation-autotune.cron';
-import { CurationItemLifecycleCron } from './workers/curation-item-lifecycle.cron';
 import {
   CompletenessScannerCron,
   CompletenessScannerService,
 } from './workers/completeness-scanner.cron';
+import { ConflictArbiterCron } from './workers/conflict-arbiter.cron';
 import {
   ConsistencyCheckerCron,
   ConsistencyCheckerService,
 } from './workers/consistency-checker.cron';
+import { CurationAutotuneCron } from './workers/curation-autotune.cron';
+import { CurationItemLifecycleCron } from './workers/curation-item-lifecycle.cron';
 
 /**
  * CurationModule (SBA α-4 — Layer 4 Curation Foundation + wave 2).
@@ -36,6 +37,9 @@ import {
  *     (AI-судья провизорной канонизации критических карточек). CurationService
  *     инжектит его через @Optional(): в worker-процессе без AiModule зависимость
  *     null → критические карточки безопасно идут к человеку (deep), как раньше.
+ *     Autonomy W1 (2026-06-12): тот же сервис нужен ConflictArbiterCron
+ *     (ночной LLM-арбитр конфликтов), тоже через @Optional() — без AiModule
+ *     конфликты остаются open.
  *
  * Экспортирует CurationService и ConflictService — публичный API для
  * специалистов Слоя 3 (вызывают triage / report). Также экспортирует
@@ -53,6 +57,8 @@ import {
     CurationItemLifecycleCron,
     // ── Action Center A2 «лестница доверия» (2026-06-02) ──
     CurationAutotuneCron,
+    // ── Autonomy W1 «LLM-арбитр конфликтов» (2026-06-12) ──
+    ConflictArbiterCron,
     // ── SBA α-4 wave 2 ──
     CompletenessScannerService,
     CompletenessScannerCron,

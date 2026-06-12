@@ -45,6 +45,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type StatusState =
   | { kind: 'loading' }
@@ -92,7 +93,7 @@ export function MaintenanceClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Бэкапы и обслуживание' },
       ]}

@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
-import type { AiQueueService } from '../ai/ai-queue.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 
 import type { ChaptersRepository } from './chapters.repository';
 import { ChaptersService } from './chapters.service';
@@ -22,7 +22,7 @@ describe('ChaptersService', () => {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  let queue: { enqueueChapters: ReturnType<typeof vi.fn> };
+  let coreQueue: { enqueueMeetingReportFast: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     prisma = {
@@ -39,14 +39,14 @@ describe('ChaptersService', () => {
       update: vi.fn(async () => ({ id: 'c1' })),
       delete: vi.fn(async () => ({ id: 'c1' })),
     };
-    queue = { enqueueChapters: vi.fn(async () => undefined) };
+    coreQueue = { enqueueMeetingReportFast: vi.fn(async () => undefined) };
   });
 
   function make(): ChaptersService {
     return new ChaptersService(
       prisma as unknown as PrismaService,
       repo as unknown as ChaptersRepository,
-      queue as unknown as AiQueueService,
+      coreQueue as unknown as CoreQueueService,
     );
   }
 
@@ -77,34 +77,25 @@ describe('ChaptersService', () => {
   });
 
   describe('regenerate (idempotency)', () => {
-    it('chaptersStatus=processing → 409', async () => {
+    it('reportFastStatus=processing → 409', async () => {
       prisma.meeting.findUnique
         .mockResolvedValueOnce({ ownerId: 'u1', deletedAt: null })
-        .mockResolvedValueOnce({ chaptersStatus: 'processing' });
+        .mockResolvedValueOnce({ reportFastStatus: 'processing' });
       const svc = make();
       await expect(svc.regenerate('m1', 'u1')).rejects.toBeInstanceOf(ConflictException);
-      expect(queue.enqueueChapters).not.toHaveBeenCalled();
+      expect(coreQueue.enqueueMeetingReportFast).not.toHaveBeenCalled();
     });
 
-    it('chaptersStatus=queued → 409', async () => {
+    it('reportFastStatus=ready → перезапускает meeting-report-fast', async () => {
       prisma.meeting.findUnique
         .mockResolvedValueOnce({ ownerId: 'u1', deletedAt: null })
-        .mockResolvedValueOnce({ chaptersStatus: 'queued' });
-      const svc = make();
-      await expect(svc.regenerate('m1', 'u1')).rejects.toBeInstanceOf(ConflictException);
-    });
-
-    it('chaptersStatus=ready → ставит queued + enqueue', async () => {
-      prisma.meeting.findUnique
-        .mockResolvedValueOnce({ ownerId: 'u1', deletedAt: null })
-        .mockResolvedValueOnce({ chaptersStatus: 'ready' });
+        .mockResolvedValueOnce({ reportFastStatus: 'ready' });
       const svc = make();
       const r = await svc.regenerate('m1', 'u1');
-      expect(prisma.meeting.update).toHaveBeenCalledWith({
-        where: { id: 'm1' },
-        data: { chaptersStatus: 'queued' },
-      });
-      expect(queue.enqueueChapters).toHaveBeenCalledWith('m1');
+      expect(coreQueue.enqueueMeetingReportFast).toHaveBeenCalledWith(
+        'm1',
+        expect.objectContaining({ reason: expect.stringMatching(/^regen-\d+$/) }),
+      );
       expect(r).toEqual({ status: 'queued' });
     });
   });

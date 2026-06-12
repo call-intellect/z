@@ -296,10 +296,15 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       //     текста, который LLM смог бы выделить): создаём один синтетический
       //     блок c hint-ом — чтобы графовая модель знала о факте события.
       const signalHint = this.tryGetSignalTypeHint(payload);
+      // Report-to-graph Ф4 ГАРД A — на report-пути синтетику НЕ форсим:
+      // отчёт вторичен, пусть LLM извлекает реальные блоки; нет блоков —
+      // нет блоков. Синтетика остаётся только для трекер-событий.
+      const isReportEvent = event.sourceType === 'meeting_report';
       const blocksInOrder = this.applySignalTypeHint(
         extraction.blocksInOrder,
         signalHint,
         payload,
+        isReportEvent,
       );
       const { typed } = extraction;
       this.logger.log(
@@ -990,9 +995,13 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     blocks: ExtractedBlock[],
     hint: SignalType | null,
     payload: unknown,
+    isReportEvent = false,
   ): ExtractedBlock[] {
     if (!hint) return blocks;
     if (blocks.length === 0) {
+      // Report-to-graph Ф4 ГАРД A — для отчёта встречи синтетику НЕ создаём
+      // (вторичный источник; нет извлечённых блоков — оставляем пусто).
+      if (isReportEvent) return [];
       const synthetic = this.buildSyntheticBlock(hint, payload);
       return synthetic ? [synthetic] : [];
     }
@@ -1076,6 +1085,30 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       const bitemporalEnabled = this.cfg.bitemporal.enabled;
       const validFromValue: Date | null = bitemporalEnabled ? event.occurredAt : null;
 
+      // Report-to-graph Ф4 ГАРД A — пониженный trust блоков из отчёта встречи.
+      // Отчёт — ВТОРИЧНЫЙ источник относительно транскрипта (первичный,
+      // дословный). Детерминированно по event.sourceType, а не по soft-тегу:
+      //   - confidence: cap сверху крутилкой knowledge.reportBlockConfidenceCap
+      //     (code-fallback 0.6) — report никогда не получает высокую уверенность.
+      //   - primarySource: 'report' для отчёта, 'transcript' иначе — машинно
+      //     различимый провенанс для гардов merge/distill (summariseBlock слеп
+      //     к источнику, поэтому нужен явный признак на самом блоке).
+      //   - dynamicScore: report стартует ниже (0.7) транскриптного primary (1.0),
+      //     поэтому ранжируется ниже в поиске/клонах/дашборде.
+      // Транскриптная ветка (isReport=false) остаётся ПОБИТОВО прежней:
+      // confidence как из LLM, dynamicScore не переопределяется (дефолт 1.0).
+      const isReport = event.sourceType === 'meeting_report';
+      const reportConfidenceCap = isReport
+        ? await this.cfg.getDynamic<number>(
+            'knowledge.reportBlockConfidenceCap',
+            undefined,
+            0.6,
+          )
+        : 1;
+      const effectiveConfidence = isReport
+        ? Math.min(block.confidence, reportConfidenceCap)
+        : block.confidence;
+
       const blockId = await this.prisma.$transaction(async (tx) => {
         const ideaBlock = await tx.ideaBlock.create({
           data: {
@@ -1085,12 +1118,14 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
             trustedAnswer: block.trustedAnswer,
             tags: block.tags,
             signalType: block.signalType,
-            confidence: new Prisma.Decimal(block.confidence.toFixed(3)),
+            confidence: new Prisma.Decimal(effectiveConfidence.toFixed(3)),
             dataClass: event.dataClass,
             status: 'draft',
             evidenceCount: 1,
             roleRelevant,
             roleId,
+            primarySource: isReport ? 'report' : 'transcript',
+            ...(isReport ? { dynamicScore: new Prisma.Decimal('0.7') } : {}),
             ...(validFromValue !== null ? { validFrom: validFromValue } : {}),
             ...(isCommitment
               ? {

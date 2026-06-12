@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 
+import { MobileShell } from '@/ui/mobile/MobileShell';
+import { MobileMemoryClient } from '@/ui/mobile/manager/MobileMemoryClient';
+
 import { DecisionsListClient } from './DecisionsListClient';
 
 export const metadata: Metadata = {
@@ -18,5 +21,12 @@ export const metadata: Metadata = {
  * ротации. См. plans/tz/2026-05-21-sba-beta-3-specialist-3-3-decisions.md.
  */
 export default function DecisionsPage() {
-  return <DecisionsListClient />;
+  // Ниже md — мобильный таб «Память» (лента решений + поиск); md+ — десктопный
+  // master-detail реестр БЕЗ изменений (инвариант №1).
+  return (
+    <MobileShell
+      mobile={<MobileMemoryClient />}
+      desktop={<DecisionsListClient />}
+    />
+  );
 }

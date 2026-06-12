@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AdminMeetingCompareSummaries } from '@/ui/components/admin/AdminMeetingCompareSummaries';
 
 export const metadata: Metadata = {
-  title: 'Сравнение отчётов v2 vs fast — Z-Admin',
+  title: 'Сравнение отчётов v2 vs fast',
 };
 
 type Props = { params: Promise<{ id: string }> };

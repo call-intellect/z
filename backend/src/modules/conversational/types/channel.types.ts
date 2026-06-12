@@ -76,6 +76,20 @@ export type InboundMessage =
       kind: 'morning' | 'evening';
       rawText: string;
       originChannelBindingId?: string;
+    }
+  // Ф5 assistant-channels (2026-06-11) — свободный ход диалога с единым
+  // AI-помощником (ConciergeService). При включённом kill-switch
+  // ASSISTANT_CHANNEL_ROUTING_ENABLED адаптеры Telegram/MAX отправляют сюда
+  // всё свободное (бывшие chat_query/task/show_tasks/free_note); подписчик —
+  // AssistantChannelBridge (модуль concierge). Чек-ин (план/отчёт) сюда НЕ
+  // попадает — остаётся daily_checkin_self.
+  | {
+      type: 'assistant_turn';
+      userId: string;
+      tenantId: string;
+      text: string;
+      originChannelBindingId?: string;
+      metadata?: Record<string, unknown>;
     };
 
 /**

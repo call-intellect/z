@@ -59,6 +59,20 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'openai-via-proxy', model: 'gpt-4o-mini' },
     ],
   },
+  // Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций в
+  // каналах: классификация ответа пользователя (confirm|reject|unclear).
+  // Дёшевый частый вызов — primary deepseek-v4-flash (правило проекта:
+  // ollama qwen3.5:9b — только safety-net, не primary).
+  {
+    taskType: 'assistant-confirm-classify',
+    playbookSection:
+      'Ф6 assistant-channels — judge подтверждения действия (confirm|reject|unclear), дёшево/часто.',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      { tier: 'secondary', providerName: 'ollama', model: 'qwen3.5:9b' },
+      { tier: 'tertiary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
+    ],
+  },
 ];
 
 interface SeedStats {

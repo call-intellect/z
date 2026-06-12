@@ -96,6 +96,102 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
 });
 
 /**
+ * Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §2.1):
+ * payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown, chapters }`
+ * разворачивается в ГРАНУЛЯРНЫЕ сегменты — по одному на факт/главу + один на
+ * summary. Главное: НЕ один склеенный сегмент (иначе block-ingest не извлечёт
+ * отдельный блок на каждый факт).
+ */
+describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
+  const makeSvc = () =>
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('reportFacts[N] + summary + chapters → N + 1 + chapters сегментов (НЕ один)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      meetingId: 'm1',
+      meetingType: 'team',
+      reportSummaryMarkdown: 'Итоги встречи: договорились о релизе',
+      chapters: [
+        { title: 'Обсуждение', summary: 'Поговорили о сроках' },
+        { title: 'Решения', summary: 'Приняли план' },
+      ],
+      reportFacts: [
+        { reportKind: 'decision', text: 'Релиз 15 июня', speaker: 'Алиса' },
+        { reportKind: 'blocker', text: 'Не готова инфраструктура' },
+        { reportKind: 'task', text: 'Подготовить демо' },
+      ],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // 3 факта + 1 summary + 2 главы = 6 сегментов.
+    expect(segments).toHaveLength(6);
+    // По одному факту на сегмент (НЕ склеены).
+    expect(segments[0]!.text).toBe('Релиз 15 июня');
+    expect(segments[1]!.text).toBe('Не готова инфраструктура');
+    expect(segments[2]!.text).toBe('Подготовить демо');
+    // summary отдельным сегментом.
+    expect(segments[3]!.text).toBe('Итоги встречи: договорились о релизе');
+    // chapters: «title: summary».
+    expect(segments[4]!.text).toBe('Обсуждение: Поговорили о сроках');
+    expect(segments[5]!.text).toBe('Решения: Приняли план');
+    // Все report-сегменты — без speakers/времени.
+    for (const s of segments) {
+      expect(s.speakers).toEqual([]);
+      expect(s.startMs).toBe(0);
+      expect(s.endMs).toBe(0);
+    }
+  });
+
+  it('chapter только с title (без summary) → сегмент = title', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      reportSummaryMarkdown: '',
+      chapters: [{ title: 'Только заголовок', summary: '' }],
+      reportFacts: [],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Только заголовок');
+  });
+
+  it('пустые reportFacts + summary + chapters → 0 сегментов (не fallback на JSON)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'meeting_report' as const,
+      reportSummaryMarkdown: '',
+      chapters: [],
+      reportFacts: [],
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // tryGetReportSegments вернул [] (а не null) → именно report-ветка, не fallback.
+    expect(segments).toHaveLength(0);
+  });
+
+  it('payload без kind=meeting_report → НЕ report-ветка (fallback)', () => {
+    const svc = makeSvc();
+    const payload = { kind: 'something_else', reportFacts: [{ text: 'x' }] };
+
+    const segments = svc.buildSegments(payload);
+
+    // Упал в fallback (JSON-stringify), report-ветка не сработала.
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toContain('something_else');
+  });
+});
+
+/**
  * Фаза 1 (meeting-identity) — сегмент несёт identity спикера
  * (participantId дорожки) для атрибуции авторства (role='subject').
  */
@@ -227,5 +323,95 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
       Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
     ).toBe(false);
     expect(segments[0]!.authorPersonId).toBeUndefined();
+  });
+});
+
+/**
+ * TZ clone-method Э3.1 — ответ на probe (`kind:'notification_response'`)
+ * распознаётся как чистый текстовый сегмент «Вопрос Коры: … Ответ …»,
+ * а не JSON-stringify обёртка (фикс класса: чинит ВСЕ probe-ответы,
+ * не только CDM — раньше userId/eventType/respondsToNotificationId уходили
+ * LLM как шум через buildFallback).
+ */
+describe('SegmentBuilderService — notification_response (clone-method Э3.1)', () => {
+  const makeSvc = () =>
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('questionText + response.text → 1 сегмент «Вопрос Коры: …\\n\\nОтвет …» (НЕ JSON.stringify)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      respondsToNotificationId: 'notif-1',
+      eventType: 'probe.question',
+      questionText: 'Какие альтернативы вы рассматривали и почему отвергли?',
+      response: { text: 'Рассматривал выкат в пятницу, но отказался из-за риска.' },
+      signalTypeHint: 'reasoning',
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe(
+      'Вопрос Коры: Какие альтернативы вы рассматривали и почему отвергли?\n\nОтвет сотрудника: Рассматривал выкат в пятницу, но отказался из-за риска.',
+    );
+    // Служебные поля payload НЕ протекают в текст сегмента.
+    expect(segments[0]!.text).not.toContain('notification_response');
+    expect(segments[0]!.text).not.toContain('userId');
+    expect(segments[0]!.text).not.toContain('respondsToNotificationId');
+    expect(segments[0]!.text).not.toContain('{');
+  });
+
+  it('без questionText → сегмент только из текста ответа', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      questionText: null,
+      response: { text: 'Да, всё подтверждаю.' },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Да, всё подтверждаю.');
+    expect(segments[0]!.text).not.toContain('Вопрос Коры');
+  });
+
+  it('каскад ключей response: answer тоже распознаётся; строковый response — как есть', () => {
+    const svc = makeSvc();
+    const byAnswer = svc.buildSegments({
+      kind: 'notification_response' as const,
+      response: { answer: 'Ответ через ключ answer' },
+    });
+    expect(byAnswer).toHaveLength(1);
+    expect(byAnswer[0]!.text).toBe('Ответ через ключ answer');
+
+    const byString = svc.buildSegments({
+      kind: 'notification_response' as const,
+      response: 'Ответ строкой',
+    });
+    expect(byString).toHaveLength(1);
+    expect(byString[0]!.text).toBe('Ответ строкой');
+  });
+
+  it('пустой response → fallback на старое поведение (JSON.stringify)', () => {
+    const svc = makeSvc();
+    const payload = {
+      kind: 'notification_response' as const,
+      userId: 'u1',
+      questionText: 'Вопрос есть, ответа нет',
+      response: {},
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // Упал в buildFallback: текст — JSON-stringify обёртки.
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toContain('notification_response');
   });
 });

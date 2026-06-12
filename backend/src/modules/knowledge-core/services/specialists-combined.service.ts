@@ -40,6 +40,7 @@ import {
   type SkillConfidence,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -128,6 +129,9 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   /**
@@ -456,6 +460,26 @@ export class SpecialistsCombinedService {
       // standard (process/policy сейчас тоже схлопываются в regulation, как и
       // раньше — это поведение НЕ меняем).
       if (r.kind === 'instruction') continue;
+      // A2.2 (ТЗ 2026-06-11) — анти-плодёж гейт isOrgNorm (тот же смысл, что у
+      // single-экстрактора): фрагмент с isOrgNorm=false (чужая практика /
+      // гипотетика / разовое поручение) НЕ создаёт регламент. Исключение —
+      // заявленная потребность (extractionStatus нужен/обсуждается). Kill-switch
+      // regulationGateStrict (default ON); OFF → старое поведение.
+      let gateStrict: boolean;
+      try {
+        gateStrict = this.cfg?.aiFeatures.regulationGateStrict !== false;
+      } catch {
+        gateStrict = true;
+      }
+      const isDeclaredNeed =
+        r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается';
+      if (gateStrict && r.isOrgNorm === false && !isDeclaredNeed) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'regulation',
+          reason: 'not_a_norm',
+        });
+        continue;
+      }
       try {
         await this.prisma.regulation.upsert({
           where: {

@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 
 import { AdminMeetingsTable } from '@/ui/components/admin/AdminMeetingsTable';
 import { AdminSection } from '@/ui/components/admin/AdminSection';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 export const metadata: Metadata = {
-  title: 'Все встречи — Z-Admin',
+  title: 'Все встречи',
 };
 
 /**
@@ -22,7 +23,7 @@ export default function AdminMediaMeetingsPage() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Записи и медиа' },
         { label: 'Все встречи' },
       ]}

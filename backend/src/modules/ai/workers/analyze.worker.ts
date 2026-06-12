@@ -433,19 +433,20 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     // 10. enqueue notify.
     await this.queue.enqueueNotify(meetingId);
 
-    // 11. Параллельные стадии M3: chapters / tasks-extract / transcript-index.
+    // 11. Параллельные стадии: transcript-index + ingest в knowledge-core.
+    //     Главы / задачи / качество встречи теперь делает ЕДИНЫЙ воркер
+    //     `meeting-report-fast` (core-очередь), здесь они не ставятся.
     //
-    //   - Выставляем status='queued' заранее, чтобы UI сразу показал спиннер.
-    //   - Запускаем все три как Promise.all — ошибка добавления одной не
-    //     должна блокировать остальные. Поэтому используем allSettled.
+    //   - Выставляем embeddingsStatus='queued' заранее, чтобы UI сразу показал
+    //     спиннер индексации.
+    //   - Запускаем обе стадии как Promise.allSettled — ошибка добавления одной
+    //     не должна блокировать другую.
     //   - На ошибку добавления — пишем failureReason, но НЕ меняем общий
     //     status (он уже ai_ready: основное саммари есть и доступно).
     try {
       await this.prisma.meeting.update({
         where: { id: meetingId },
         data: {
-          chaptersStatus: 'queued',
-          tasksStatus: 'queued',
           embeddingsStatus: 'queued',
         },
       });
@@ -460,12 +461,10 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       // meeting_ingest_failed{reason} и RE-THROW, чтобы allSettled пометил
       // 'ingest' как rejected → попал в ветку `failed` ниже → записался
       // meeting.failureReason='post-analyze enqueue: ingest=...'. failureReason
-      // НЕ меняет общий status (остаётся ai_ready — саммари доступно), как уже
-      // сделано для chapters/tasks. Невидимый раньше обрыв теперь виден через
-      // failureReason + метрику; восстановление — ретрай-cron meeting-reingest.
+      // НЕ меняет общий status (остаётся ai_ready — саммари доступно).
+      // Невидимый раньше обрыв теперь виден через failureReason + метрику;
+      // восстановление — ретрай-cron meeting-reingest.
       const settled = await Promise.allSettled([
-        this.queue.enqueueChapters(meetingId, enqueueAttempt),
-        this.queue.enqueueTasksExtract(meetingId, enqueueAttempt),
         this.queue.enqueueTranscriptIndex(meetingId, enqueueAttempt),
         this.meetingIngest.ingestMeeting(meetingId).catch((err) => {
           const reason = classifyIngestFailure(err);
@@ -483,7 +482,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         }),
       ]);
       const failed = settled
-        .map((r, i) => ({ r, name: ['chapters', 'tasks', 'embeddings', 'ingest'][i] }))
+        .map((r, i) => ({ r, name: ['embeddings', 'ingest'][i] }))
         .filter((x) => x.r.status === 'rejected');
       if (failed.length > 0) {
         const reason = failed
@@ -527,18 +526,9 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
     }
 
-    // 13. Фаза C — quality-score. Ставим job в очередь ai.quality-score
-    //     после ai_ready. Сам воркер внутри проверит skip-условия
-    //     (тип в org.qualityScoreDisabledForTypes / duration < 3 мин)
-    //     и при необходимости пометит встречу как 'disabled'. Идемпотентный
-    //     jobId `quality:<meetingId>` — повторный analyze не создаст дубль.
-    await this.queue
-      .enqueueQualityScore(meetingId)
-      .catch((err) =>
-        this.logger.warn(
-          `analyze: enqueueQualityScore упал: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-      );
+    // 13. Качество встречи (quality-score) больше НЕ ставится отсюда — его
+    //     считает ЕДИНЫЙ воркер `meeting-report-fast` (core-очередь) и пишет
+    //     в MeetingQualityScore + Meeting.qualityScoreStatus='ready'.
 
     // 13a. Pulse Wave 6 §6.3 — Meeting-ROI-Scorer (event-driven). Считается
     //      детерминистически из БД (decisions/commitments/tasks/duration/

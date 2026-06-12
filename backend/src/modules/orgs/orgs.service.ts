@@ -381,7 +381,7 @@ export class OrgsService {
     if (!n) return true;
     const local = (email ?? '').split('@')[0]?.trim().toLowerCase() ?? '';
     if (local && n.toLowerCase() === local) return true;
-    return /^[A-Za-z0-9._+\-]+$/.test(n);
+    return /^[A-Za-z0-9._+-]+$/.test(n);
   }
 
   /** Сменить роль участника. Только owner/admin. */

@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { Loader2, MessagesSquare, RefreshCw, Trash2, Users } from 'lucide-react';
+import {
+  Contact,
+  Loader2,
+  MessagesSquare,
+  RefreshCw,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -29,6 +36,8 @@ import {
   SelectValue,
 } from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
+
+import { ChatboxMemorySummaryCard } from './ChatboxMemorySummaryCard';
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
@@ -535,6 +544,28 @@ function ConnectedView({
           </Button>
         </CardContent>
       </Card>
+
+      {/* Клиенты и сотрудники */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Клиенты и сотрудники</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-fg-secondary">
+            Свяжите клиентов Чат бокса с карточками людей компании, чтобы Кора
+            верно приписывала знания из переписок.
+          </p>
+          <Button asChild variant="outline">
+            <Link href="/chats/integrations/chatbox/customers">
+              <Contact size={14} />
+              Клиенты и сотрудники
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Чаты в памяти — сводка анализа и графа */}
+      <ChatboxMemorySummaryCard />
 
       {/* Статус собранных данных */}
       <SyncStatusCard />

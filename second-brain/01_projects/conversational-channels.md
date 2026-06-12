@@ -444,4 +444,28 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 - Архитектура `Notification` / `NotificationDelivery` / `ChannelBindingPreferences` — не меняется.
 - MAX-бот остаётся per-tenant (как сейчас), это решение только про Telegram.
 
+---
+
+# Единый мозг помощника — Telegram/MAX как окна к ConciergeService (реализовано 2026-06-12)
+
+> **ТЗ:** [plans/tz/2026-06-11-assistant-channels-telegram-max.md](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) (Ф1–Ф6, ветка `feature/assistant-channels-and-autonomy`). Анализ: `plans/analysis/2026-06-11-telegram-agentic-interface.md` + PLAIN-документ Точка А→Б.
+
+**Решение владельца:** один помощник-мозг (ConciergeService), Telegram и кабинет — окна к нему. Отдельные интенты-«второй мозг» в Telegram отвергнуты.
+
+**Как работает:**
+- **Свободный текст/голос** из Telegram/MAX (бывшие `chat_query`/`free_note`) идёт inbound-типом **`assistant_turn`** → мост `AssistantChannelBridge` (модуль concierge) → `ConciergeService`. Kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON); при OFF — прежний узкий классификатор бит-в-бит.
+- **Память диалога per-binding** — Redis `concierge:channel-conv:<bindingId>`, TTL 24ч: помощник в канале помнит контекст разговора.
+- **Голос** → Vox ASR → тот же помощник (как текст).
+- **Чек-ин (`daily_checkin_self`) и task-intent** остаются прежними ветками — от флага не зависят.
+- **Whitelist инструментов по каналу:** SELF (свои данные) для всех, MANAGER-инструменты — по RBAC-роли. Read-only инструменты помечены `ToolSchema.readOnly` (`find_free_slot`, `ask_chat_v2`).
+- **Текстовое подтверждение мутаций** — без кнопок (принцип zero-button): событие `confirm_required`, ожидание в Redis (TTL 300с, атомарный consume), ответ «да/нет» эвристикой + LLM-judge `assistant-confirm-classify`.
+- **Ответ — одним сообщением** через событие `chat.answer` в канал-источник. Solicited-ответ доставляется при `dataClass` internal и critical при валидном binding (включая глобальный Telegram-канал); если из chat-v2 пришёл derived `sensitive`/`private` — вместо текста уходит указатель «откройте в кабинете» (рассинхрона-молчания больше нет).
+- **Ack на заметку** — `free_note` теперь подтверждается событием `note.ack` («записал в память»), а не молчанием.
+- **Проактивные события** — 10+ eventType рендерятся текстом и в Telegram, и в MAX (универсальная ветка title+body + спец-кейсы); `checkin.prompt` приходит текстом вопроса.
+- **Деградации** (quota chat-v2 / внутренняя ошибка) — русскими текстами, не молчанием.
+- **Native function-calling** в самом помощнике — kill-switch `CONCIERGE_NATIVE_TOOLS_ENABLED` (ON); для каналов ToolRouter работает в режиме `authMode='service'` (self-signed session JWT 60с, loopback `CONCIERGE_LOOPBACK_BASE_URL`).
+- Метрика: `z_assistant_turn_total`.
+
+**vNext (см. реестр не-сделано):** стрим в Telegram, чек-ин через помощника, инструмент `create_task` (ждёт policy intake_issue/write), расширение руководительских инструментов.
+
 [[../index|← index]]

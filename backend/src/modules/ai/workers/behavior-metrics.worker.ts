@@ -101,7 +101,7 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
       include: {
-        transcript: { include: { tracks: { select: { words: true } } } },
+        transcript: { include: { tracks: { select: { words: true, segments: true } } } },
         participants: true,
       },
     });
@@ -148,10 +148,14 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       isGuest: p.role === 'guest',
     }));
 
-    // Если ни у одной дорожки нет пословных таймингов — поведение посчитано
-    // по длительности дорожек (приблизительно) → помечаем lowConfidence.
+    // Тайминги доступны, если у дорожки есть пословные ИЛИ посегментные
+    // тайм-коды (оба точны для речевых метрик: union/crosstalk/доли). Иначе
+    // поведение посчитано по длительности дорожек (приблизительно) →
+    // помечаем lowConfidence (Б5). Имя параметра калькулятора не меняем.
     const wordTimingsAvailable = (meeting.transcript?.tracks ?? []).some(
-      (t) => Array.isArray(t.words) && (t.words as unknown[]).length > 0,
+      (t) =>
+        (Array.isArray(t.words) && (t.words as unknown[]).length > 0) ||
+        (Array.isArray(t.segments) && (t.segments as unknown[]).length > 0),
     );
 
     // 3. Расчёт.

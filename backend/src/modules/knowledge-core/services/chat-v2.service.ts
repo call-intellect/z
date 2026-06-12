@@ -42,6 +42,14 @@ import { ReasoningChainService } from './reasoning-chain.service';
  */
 export type { ChatV2Scope } from './chat-v2-retrieval.service';
 
+/**
+ * §4 Ф1 (2026-06-11) — стадии прогресса AI-чата для SSE-стриминга. Эмитятся
+ * через опциональный колбэк `onStage` по ходу `ask()`, чтобы пользователь
+ * видел, что система работает («Понимаю вопрос → Ищу в памяти → Пишу ответ»).
+ * Это НЕ посимвольный стрим токенов — только крупные фазы.
+ */
+export type ChatV2Stage = 'understanding' | 'searching' | 'writing';
+
 export interface ChatV2Input {
   tenantId: string;
   userId: string;
@@ -91,6 +99,14 @@ export interface ChatV2Input {
    * Если не задан — используется BASE_SYSTEM_PROMPT (default).
    */
   systemPromptOverride?: string | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Дефолт undefined = текущее поведение (никаких эмиссий). Вызывается
+   * 'searching' ПЕРЕД retrieval+loadContextBlocks и 'writing' ПЕРЕД синтез-
+   * вызовом LLM. Стадия 'understanding' эмитится раньше — в оркестраторе.
+   * Колбэк должен быть НЕблокирующим и не бросать (caller оборачивает в try).
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface ChatV2Citation {
@@ -118,6 +134,15 @@ export interface ChatV2Output {
   usedBlockIds: string[];
   inputTokens: number;
   outputTokens: number;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа: effectiveDataClass из
+   * retrieval pool (maxDataClass legacy / DataClassPolicy на enforce — тот
+   * же, что уходит в llm.call). Каналы-мосты используют его, чтобы НЕ лить
+   * sensitive/private текст во внешний канал (Telegram/MAX), а слать
+   * указатель «откройте в кабинете». Для пустого контекста — 'internal'
+   * (ответ-заглушка без данных).
+   */
+  dataClass: DataClass;
 }
 
 /**
@@ -380,6 +405,14 @@ export class ChatV2Service {
       filtered: input.structuralFilters ? 'yes' : 'no',
     });
 
+    // §4 Ф1 (2026-06-11) — стадия «Ищу в памяти»: эмитим ПЕРЕД retrieval +
+    // loadContextBlocks. Колбэк опционален и не должен бросать — оборачиваем.
+    try {
+      input.onStage?.('searching');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем синтез */
+    }
+
     // 1) Retrieval blockId'ов под scope.
     //
     // SBA α-5 dialog-layer:
@@ -471,6 +504,8 @@ export class ChatV2Service {
         usedBlockIds: [],
         inputTokens: 0,
         outputTokens: 0,
+        // M-1 — пустой контекст: ответ-заглушка без данных.
+        dataClass: 'internal',
       };
     }
 
@@ -569,6 +604,13 @@ export class ChatV2Service {
       enforcementChat === 'enforce' && derivedChat
         ? derivedChat.dataClass
         : legacyDataClass;
+    // §4 Ф1 (2026-06-11) — стадия «Пишу ответ»: эмитим ПЕРЕД синтез-вызовом
+    // LLM. Колбэк опционален и не должен бросать — оборачиваем.
+    try {
+      input.onStage?.('writing');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем синтез */
+    }
     const result = await this.llm.call({
       taskType: 'chat-v2',
       systemPrompt: finalSystem,
@@ -578,6 +620,10 @@ export class ChatV2Service {
       sourceRef: { type: scope, id: scopeId ?? tenantId },
       // Фаза 11/W4.2: max dataClass по retrieval pool (с учётом floor'а).
       dataClass: effectiveDataClass,
+      // §4 Ф3 (2026-06-11): свой hard-timeout синтеза chat-v2, независимый от
+      // глобального LLM_ROUTER_DISPATCH_TIMEOUT_MS — длинный ответ AI-чата не
+      // должен обрываться. Admin-editable (knowledge.chatV2SynthesisTimeoutMs).
+      timeoutMs: this.cfg.knowledgeCore.chatV2SynthesisTimeoutMs,
     });
 
     // 6) Парсим citations: [BLOCK:<id>] → primaryMeetingEvidence блока.
@@ -596,6 +642,8 @@ export class ChatV2Service {
       usedBlockIds,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
+      // M-1 — derived класс ответа (тот же, что ушёл в llm.call).
+      dataClass: effectiveDataClass,
     };
   }
 

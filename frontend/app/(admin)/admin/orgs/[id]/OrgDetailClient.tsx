@@ -35,6 +35,7 @@ import {
 import { useAdminQuery } from '../../useAdminQuery';
 import { BillingAdminClient } from './billing/BillingAdminClient';
 import { AdminSubscriptionClient } from './subscription/AdminSubscriptionClient';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type Props = { orgId: string };
 
@@ -59,7 +60,7 @@ export function OrgDetailClient({ orgId }: Props) {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Организации', href: '/admin/orgs' },
         { label: orgId },
       ]}

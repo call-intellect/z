@@ -76,6 +76,13 @@ export class MultiAgentDebateService {
       'empathetic-supporter': 'debate-curation-verify-supporter',
       'neutral-judge': 'debate-curation-verify-neutral',
     },
+    // Autonomy W1 (2026-06-12) — Conflict-Arbiter: ночной LLM-арбитр
+    // конфликтов знаний (ConflictItem open → авто-резолв при консенсусе).
+    'conflict-arbiter': {
+      'strict-critic': 'debate-conflict-arbiter-critic',
+      'empathetic-supporter': 'debate-conflict-arbiter-supporter',
+      'neutral-judge': 'debate-conflict-arbiter-neutral',
+    },
   };
 
   /**
@@ -496,9 +503,14 @@ export type DebateStance =
  * Семейство debate-задачи. Определяет, какие stance-specific `LlmTaskType`'ы
  * и SYSTEM-промпты использовать. Default — `decision-supersede` (специалист
  * 3-3, историческое поведение). `curation-verify` (A1) — AI-судья канонизации
- * критических карточек Слоя 4.
+ * критических карточек Слоя 4. `conflict-arbiter` (Autonomy W1, 2026-06-12) —
+ * ночной арбитр конфликтов знаний (ConflictItem open → keep_old | accept_new |
+ * merge | evolving | escalate).
  */
-export type DebateTaskFamily = 'decision-supersede' | 'curation-verify';
+export type DebateTaskFamily =
+  | 'decision-supersede'
+  | 'curation-verify'
+  | 'conflict-arbiter';
 
 export interface DebateRequest {
   task: string;
@@ -618,6 +630,36 @@ const CURATION_VERIFY_SYSTEM_PROMPTS: Record<DebateStance, string> = {
 };
 
 /**
+ * Autonomy W1 (2026-06-12) — stance-промпты семейства `conflict-arbiter`:
+ * два утверждения памяти компании конфликтуют (existing vs new) — арбитр
+ * выбирает исход. Verdict строго `keep_old | accept_new | merge | evolving |
+ * escalate`. Авто-резолвятся кроном ТОЛЬКО keep_old / accept_new / merge;
+ * evolving и escalate оставляют конфликт open (см. ConflictArbiterCron).
+ *
+ * Совместимость с prompt caching: SYSTEM каждого stance — стабильная строка
+ * без переменных данных (payload'ы карточек / relationType / evidence приходят
+ * в конце USER-message через `buildUserMessage`). См. feedback
+ * `LLM-промпты — обязательно cache-friendly`.
+ */
+const CONFLICT_ARBITER_SYSTEM_PROMPTS: Record<DebateStance, string> = {
+  'strict-critic': [
+    'Ты — строгий критик-хранитель памяти компании. Два утверждения памяти компании конфликтуют: существующее (existing) и новое (new). Реши, какой исход верен.',
+    'Ты консервативен: при любом сомнении сохраняй проверенное существующее знание (keep_old). Если данных недостаточно, источники ненадёжны или цена ошибки высока — голосуй escalate (передать человеку).',
+    'Verdict строго: keep_old | accept_new | merge | evolving | escalate. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+  'empathetic-supporter': [
+    'Ты — арбитр обновления памяти компании. Два утверждения памяти компании конфликтуют: существующее (existing) и новое (new). Реши, какой исход верен.',
+    'Ты за актуальность знаний: если новое утверждение обосновано (свежее, конкретнее, подтверждено материалами дела) — голосуй accept_new. Но не принимай новое лишь потому, что оно новое: без обоснованности это не обновление.',
+    'Verdict строго: keep_old | accept_new | merge | evolving | escalate. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+  'neutral-judge': [
+    'Ты — нейтральный арбитр памяти компании. Два утверждения памяти компании конфликтуют: существующее (existing) и новое (new). Взвесь оба без предпочтений: ни критик, ни сторонник.',
+    'Если оба утверждения частично верны и дополняют друг друга — merge. Если оба верны, но в разное время (новое сменило старое с какого-то момента) — evolving. Если для решения нужна управленческая оценка или знание вне материалов дела — escalate. Иначе выбери keep_old или accept_new по фактам.',
+    'Verdict строго: keep_old | accept_new | merge | evolving | escalate. Reasoning — до 200 слов. Верни JSON по схеме debate_vote_v1: verdict + reasoning + confidence (0..1).',
+  ].join('\n'),
+};
+
+/**
  * Резолв SYSTEM-промптов по семейству задачи. Каждое семейство — свой набор
  * stance-промптов. Default-семейство — `decision-supersede`.
  */
@@ -627,6 +669,7 @@ const STANCE_SYSTEM_PROMPTS_BY_FAMILY: Record<
 > = {
   'decision-supersede': STANCE_SYSTEM_PROMPTS,
   'curation-verify': CURATION_VERIFY_SYSTEM_PROMPTS,
+  'conflict-arbiter': CONFLICT_ARBITER_SYSTEM_PROMPTS,
 };
 
 export const DEBATE_VOTE_SCHEMA_NAME = 'debate_vote_v1';

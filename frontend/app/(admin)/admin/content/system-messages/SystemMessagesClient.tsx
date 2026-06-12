@@ -27,6 +27,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { MessageEditDialog } from './MessageEditDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'banner', label: 'Баннеры' },
@@ -104,7 +105,7 @@ export function SystemMessagesClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Контент' },
         { label: 'Системные сообщения' },
       ]}

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { CatalogClient } from './CatalogClient';
 
 export const metadata: Metadata = {
-  title: 'Каталог LLM — Z-Admin',
+  title: 'Каталог LLM',
 };
 
 /**

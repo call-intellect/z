@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SkillTraitConceptsClient } from './SkillTraitConceptsClient';
 
 export const metadata: Metadata = {
-  title: 'Смысловые блоки навыка — Z-Admin',
+  title: 'Смысловые блоки навыка',
 };
 
 /**

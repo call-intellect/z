@@ -414,6 +414,31 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 **Уборка (Ф7):** удалён мёртвый `frontend/app/(authenticated)/dashboard/DashboardClient.tsx` (0 импортёров — роутинг идёт через `DashboardRouter` → `DirectorDashboardClient`/редирект на `/me`).
 
+## Мобильная Кора — презентационный слой `src/ui/mobile/*` (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-mobile-cora-exec-manager.md`](../../plans/tz/2026-06-11-mobile-cora-exec-manager.md) (Ф0–Ф7). Ветки `feature/finishable-now-2026-06-11` (Ф0+Ф1) → `feature/remaining-handoff` (Ф2–Ф7, коммиты `7aa1e3ed..daf72cbe`). Мобильный — **отдельный презентационный слой поверх существующих роутов**: `MobileShell`-gate (через `useIsMobile`) на странице рендерит мобильное дерево, **десктоп не меняется** (та же `page.tsx` отдаёт десктопный клиент при `!mobile`). Дубли страниц не плодятся — мобайл переиспользует те же API/эндпоинты.
+
+**Гейт `MobileShell` врезан в роуты** (десктопный клиент не тронут):
+
+| Роут | Мобильный экран | Десктоп (без изменений) |
+|---|---|---|
+| `/dashboard` | `MobileOverviewClient` (exec «Обзор» — читает `/dashboard/director` + `/dashboard/operations/overview`) | `DirectorDashboardClient` |
+| `/dashboard/operations` | `MobileTeamClient` (exec «Команда») | `OperationsDashboardClient` |
+| `/dashboard/operations/weekly` | `MobileDealsClient` (exec «Дела») | `WeeklyDigestClient` |
+| `/goals` | `MobileGoalsClient` (exec «Цели») | `GoalsClient` |
+| `/chat` | `MobileAskClient` («Спросить» — переиспользует `OrgChatPanel` + аддитивные опц. пропсы `suggestedPrompts`/`voiceInput`, дефолт-off → десктоп не тронут; промпт-кнопки по роли, голос-ВВОД, ответ только текст с citation) | `ChatV2` (`/chat` рендерит ChatV2) |
+| `/decisions` | `MobileMemoryClient` («Память» — `decisionsApi.list` + поиск) | реестр решений |
+| `/me/daily-brief` | **переиспользование** готового `MyDailyBriefClient` (таб «Моё» — дубль не плодили) | тот же `MyDailyBriefClient` |
+| `/me/check-ins` | таб «Чек-ин» + `VoiceInputButton` (голосовой ввод) | `/me/check-ins` |
+
+**Голосовой ввод `src/ui/components/voice/VoiceInputButton.tsx`** — запись `MediaRecorder` + `pickSupportedMimeType` → `voiceApi.transcribe` (серверный ASR Vox, iOS-совместимо; клон паттерна `ProbeAnswerInput`, **не** Web Speech API — тот не работает на iOS Safari). Вшит в `/me/check-ins`.
+
+**Утренний exec-push (Ф7):** кнопка `EnableMorningRemindersButton` на exec «Обзоре» (`MobileOverviewClient`) — оформляет push-подписку (если задан `NEXT_PUBLIC_VAPID_PUBLIC_KEY`). Доставку шлёт новый бэк-крон `ExecMorningPushCron` (см. [[workers-queues]]).
+
+**Примитивы `src/ui/mobile/shared/*`:** `ZoneTile`, `StatusDot`, `GlanceGauge`, `DrillList` (зональные плитки/индикаторы/мини-датчик/drill-вниз), `MobileAskClient`, `MobileMemoryClient`. Exec-экраны — `src/ui/mobile/exec/{MobileOverviewClient,MobileTeamClient,MobileDealsClient,MobileGoalsClient}.tsx`; manager — `src/ui/mobile/manager/MobileMemoryClient.tsx`.
+
+**ChatBox-виджет (блок A, 2026-06-11):** `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox` — сводка «Чаты в памяти» (counts диалоги/сессии/проанализировано/в работе/ошибки + блоки/задачи из переписки), читает `GET /api/v1/chatbox/integration/memory-summary` (см. [[api-layer]] §ChatBox).
+
 ## История
 
 - **2026-05-25:** создан в рамках handoff Wave 1-3. Документированы T1, T2, T5 (settings секция), feed/spotlights обновления.

@@ -1,9 +1,37 @@
 import { describe, expect, it } from 'vitest';
 
-import { CHAPTERS_JSON_SCHEMA } from './prompts/chapters';
 import { toOpenAiStrictSchema } from './strict-json-schema.util';
 
 type JsonObj = Record<string, unknown>;
+
+/**
+ * Реалистичная НЕ-strict схема (раньше тянулась из упразднённого
+ * `prompts/chapters` как CHAPTERS_JSON_SCHEMA). Инлайн-копия достаточна:
+ * тест проверяет нормализатор `toOpenAiStrictSchema`, а не сам промпт глав.
+ * Содержит вложенный объект без additionalProperties:false и required,
+ * который не перечисляет все properties (`summary` опционально) — то есть
+ * заведомо требует приведения к strict.
+ */
+const NON_STRICT_SAMPLE_SCHEMA = {
+  type: 'object',
+  properties: {
+    chapters: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          startMs: { type: 'integer' },
+          endMs: { type: 'integer' },
+          title: { type: 'string' },
+          summary: { type: ['string', 'null'] },
+          order: { type: 'integer' },
+        },
+        required: ['startMs', 'endMs', 'title', 'order'],
+      },
+    },
+  },
+  required: ['chapters'],
+} as const;
 
 /**
  * Рекурсивно проверяет, что КАЖДЫЙ объектный узел схемы strict-совместим:
@@ -118,9 +146,9 @@ describe('toOpenAiStrictSchema', () => {
     expect(raw).toEqual(snapshot);
   });
 
-  it('реальная CHAPTERS_JSON_SCHEMA становится полностью strict-совместимой', () => {
-    expect(findStrictViolations(CHAPTERS_JSON_SCHEMA).length).toBeGreaterThan(0);
-    const strict = toOpenAiStrictSchema(CHAPTERS_JSON_SCHEMA);
+  it('реалистичная не-strict схема становится полностью strict-совместимой', () => {
+    expect(findStrictViolations(NON_STRICT_SAMPLE_SCHEMA).length).toBeGreaterThan(0);
+    const strict = toOpenAiStrictSchema(NON_STRICT_SAMPLE_SCHEMA);
     expect(findStrictViolations(strict)).toEqual([]);
   });
 });

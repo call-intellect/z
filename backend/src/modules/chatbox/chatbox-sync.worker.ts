@@ -2,11 +2,13 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
+import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { RedisService } from '../../common/redis/redis.service';
 
 import { ChatboxSyncService } from './chatbox-sync.service';
@@ -33,6 +35,10 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(ChatboxSyncService)
     private readonly syncService: ChatboxSyncService,
+    // Метрики синка (Ф3). @Optional — тесты воркера без метрик-сервиса не падают.
+    @Optional()
+    @Inject(BusinessMetricsService)
+    private readonly metrics?: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -66,14 +72,26 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `ChatboxSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`,
     );
-    let result: Record<string, number> | void;
-    if (scope === 'incremental') {
-      result = await this.syncService.incrementalSync(tenantId);
-    } else {
-      result = await this.syncService.syncByScope(tenantId, scope);
+    try {
+      let result: Record<string, number> | void;
+      if (scope === 'incremental') {
+        result = await this.syncService.incrementalSync(tenantId);
+      } else {
+        result = await this.syncService.syncByScope(tenantId, scope);
+      }
+      // Успех — метрики синка (Ф3): счётчик + отметка времени последнего синка.
+      this.metrics?.incChatboxSync({ scope, status: 'success' });
+      this.metrics?.setChatboxLastSyncTs({
+        scope,
+        tsSeconds: Math.floor(Date.now() / 1000),
+      });
+      this.logger.log(
+        `ChatboxSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
+      );
+    } catch (err) {
+      // Провал — метрика failed и проброс дальше (BullMQ отметит job failed).
+      this.metrics?.incChatboxSync({ scope, status: 'failed' });
+      throw err;
     }
-    this.logger.log(
-      `ChatboxSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
-    );
   }
 }

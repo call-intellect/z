@@ -48,6 +48,22 @@ export const REGULATION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',
     '- голое упоминание документа без его содержания: если документ лишь упомянут (есть, но что в нём — не раскрыто), это existence-сигнал с НИЗКИМ confidence — тело не извлекай.',
     'Калибровка confidence: есть шаги / роли / сроки → 0.9; только голое упоминание документа → 0.5.',
+    '',
+    'isOrgNorm — повторяемая норма/инструкция/политика КОМПАНИИ («как делаем всегда») → true; чужая практика, гипотетика, разовое поручение или голое упоминание без содержания → false. На false остальные поля можно вернуть пустыми, confidence низкий.',
+    '',
+    'ПРИМЕРЫ.',
+    '',
+    'Положительный — regulation (взаимодействие ролей + срок):',
+    'Блок «Проверка договоров» (signalType=regulation). Цитаты: «Все договоры с подрядчиком сначала уходят юристу на проверку, юрист отвечает в течение 3 рабочих дней».',
+    'Вывод: {"kind":"regulation","name":"Юридическая проверка договоров с подрядчиками","statement":"Каждый договор с подрядчиком проходит юридическую проверку до подписания; юрист отвечает в течение 3 рабочих дней.","extractionStatus":"существует","roles":["юрист","менеджер"],"evidenceQuote":"договоры с подрядчиком сначала уходят юристу на проверку","scope":"org","ownerHint":"юрист","severity":null,"category":"regulation","processStepHint":null,"isOrgNorm":true,"confidence":0.9}.',
+    '',
+    'Положительный — instruction (одна роль, без передачи между ролями):',
+    'Блок «Возврат в 1С» (signalType=process_step). Цитаты: «Менеджер оформляет возврат в 1С: открыть заказ, создать возврат, провести документ».',
+    'Вывод: {"kind":"instruction","name":"Как менеджеру оформить возврат в 1С","statement":"Менеджер оформляет возврат в 1С: открыть заказ → создать возврат → провести документ.","extractionStatus":"существует","roles":["менеджер"],"evidenceQuote":"Менеджер оформляет возврат в 1С: открыть заказ, создать возврат, провести","scope":"role:менеджер","ownerHint":"менеджер","severity":null,"category":null,"processStepHint":null,"isOrgNorm":true,"confidence":0.88}.',
+    '',
+    'Что НЕ извлекать (edge case — чужая практика + гипотетика):',
+    'Блок «Онбординг как в Google» (signalType=regulation). Цитаты: «Хорошо бы когда-нибудь описать онбординг так, как это делают в Google».',
+    'Вывод: {"kind":"regulation","name":"Онбординг по образцу Google (не норма)","statement":"Недостаточно сигнала: упомянута чужая практика и гипотетика, это не действующая норма компании.","extractionStatus":null,"roles":[],"evidenceQuote":null,"scope":null,"ownerHint":null,"severity":null,"category":null,"processStepHint":null,"isOrgNorm":false,"confidence":0.15}. Пояснение: «как в Google» — чужая практика, «хорошо бы когда-нибудь» — гипотетика; не повторяемая норма компании → тело не извлекаем, confidence низкий.',
     ].join('\n'),
   ),
   ),
@@ -86,7 +102,7 @@ export const REGULATION_EXTRACT_USER_TEMPLATE = (args: {
 export const REGULATION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['kind', 'name', 'statement', 'confidence'],
+  required: ['kind', 'name', 'statement', 'isOrgNorm', 'confidence'],
   properties: {
     kind: {
       type: 'string',
@@ -143,6 +159,11 @@ export const REGULATION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
       required: ['processName', 'stepName'],
     },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
+    isOrgNorm: {
+      type: 'boolean',
+      description:
+        'true — фрагмент описывает повторяемую норму/инструкцию/политику КОМПАНИИ («как делаем всегда»); false — чужая практика, гипотетика, разовое поручение или голое упоминание без содержания. На false тело можно вернуть пустым, confidence низкий.',
+    },
   },
 };
 

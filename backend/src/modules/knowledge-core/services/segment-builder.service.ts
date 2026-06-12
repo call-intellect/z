@@ -105,7 +105,85 @@ export class SegmentBuilderService {
     if (freeNote) {
       return [{ startMs: 0, endMs: 0, speakers: [], text: freeNote }];
     }
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md
+    // §2.1): payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown,
+    // chapters }` (см. ReportIngestAdapter). Разворачиваем в ГРАНУЛЯРНЫЕ
+    // сегменты — по одному на каждый факт/главу + один на summary, — чтобы
+    // block-ingest извлёк отдельный блок на факт, а не один склеенный fullText.
+    const report = this.tryGetReportSegments(payload);
+    if (report) {
+      return report;
+    }
+    // TZ clone-method Э3.1 — ответ на probe-уведомление
+    // `{ kind:'notification_response', questionText, response }`
+    // (см. ConversationalIngestAdapter.ingestNotificationResponse). До фикса
+    // payload падал в buildFallback и ВЕСЬ JSON (userId, eventType,
+    // respondsToNotificationId, объект response) уходил LLM как
+    // stringify-шум. Чиним класс: ВСЕ probe-ответы (не только CDM) идут
+    // чистым текстом «Вопрос Коры: … Ответ …».
+    const notificationResponse = this.tryGetNotificationResponseText(payload);
+    if (notificationResponse) {
+      return [{ startMs: 0, endMs: 0, speakers: [], text: notificationResponse }];
+    }
     return this.buildFallback(payload);
+  }
+
+  // ─────────────────────────── meeting_report ─────────────────────────────
+
+  /**
+   * Разворачивает payload отчёта встречи в гранулярные сегменты. Возвращает
+   * null, если payload не является отчётом (`kind !== 'meeting_report'`) —
+   * тогда buildSegments идёт в fallback.
+   *
+   * Гранулярность критична: каждый факт — отдельный сегмент → отдельный
+   * IdeaBlock с нужным signalType. НЕ склеиваем в один сегмент.
+   * signalType определит LLM-extraction; новое поле Segment НЕ вводим.
+   */
+  private tryGetReportSegments(payload: unknown): Segment[] | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as {
+      kind?: unknown;
+      reportFacts?: unknown;
+      reportSummaryMarkdown?: unknown;
+      chapters?: unknown;
+    };
+    if (p.kind !== 'meeting_report') return null;
+
+    const segments: Segment[] = [];
+    const push = (text: string | null | undefined) => {
+      if (typeof text === 'string' && text.trim().length > 0) {
+        segments.push({ startMs: 0, endMs: 0, speakers: [], text: text.trim() });
+      }
+    };
+
+    // 1. По одному сегменту на каждый структурный факт.
+    if (Array.isArray(p.reportFacts)) {
+      for (const f of p.reportFacts) {
+        if (f && typeof f === 'object') {
+          push((f as { text?: unknown }).text as string | undefined);
+        }
+      }
+    }
+
+    // 2. Быстрое саммари — отдельным сегментом.
+    push(p.reportSummaryMarkdown as string | undefined);
+
+    // 3. По одному сегменту на каждую главу: «title: summary» (или только title).
+    if (Array.isArray(p.chapters)) {
+      for (const c of p.chapters) {
+        if (c && typeof c === 'object') {
+          const ch = c as { title?: unknown; summary?: unknown };
+          const title = typeof ch.title === 'string' ? ch.title.trim() : '';
+          const summary =
+            typeof ch.summary === 'string' ? ch.summary.trim() : '';
+          if (title && summary) push(`${title}: ${summary}`);
+          else if (title) push(title);
+          else if (summary) push(summary);
+        }
+      }
+    }
+
+    return segments;
   }
 
   private tryGetFullText(payload: unknown): string | null {
@@ -119,6 +197,48 @@ export class SegmentBuilderService {
     const p = payload as { kind?: unknown; text?: unknown };
     if (p.kind !== 'free_note') return null;
     return typeof p.text === 'string' && p.text.trim().length > 0 ? p.text : null;
+  }
+
+  /**
+   * TZ clone-method Э3.1 — чистый текст из payload ответа на probe
+   * (`kind:'notification_response'`):
+   *   - текст ответа достаём из `payload.response` по каскаду ключей
+   *     ['text','response','body','answer'] (как ProbeResponseHandler.
+   *     extractResponseText); если response — строка, берём её;
+   *   - если есть `questionText` — склейка «Вопрос Коры: …\n\nОтвет …»
+   *     (вопрос даёт LLM контекст, без него ответ «да, согласен» бесполезен);
+   *   - пустой текст ответа → null (fallback на старое поведение).
+   */
+  private tryGetNotificationResponseText(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) return null;
+    const p = payload as {
+      kind?: unknown;
+      questionText?: unknown;
+      response?: unknown;
+    };
+    if (p.kind !== 'notification_response') return null;
+
+    let responseText: string | null = null;
+    if (typeof p.response === 'string' && p.response.trim().length > 0) {
+      responseText = p.response.trim();
+    } else if (typeof p.response === 'object' && p.response !== null) {
+      for (const key of ['text', 'response', 'body', 'answer'] as const) {
+        const v = (p.response as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.trim().length > 0) {
+          responseText = v.trim();
+          break;
+        }
+      }
+    }
+    if (!responseText) return null;
+
+    const questionText =
+      typeof p.questionText === 'string' && p.questionText.trim().length > 0
+        ? p.questionText.trim()
+        : null;
+    return questionText
+      ? `Вопрос Коры: ${questionText}\n\nОтвет сотрудника: ${responseText}`
+      : responseText;
   }
 
   // ─────────────────────────── meeting ─────────────────────────────────────

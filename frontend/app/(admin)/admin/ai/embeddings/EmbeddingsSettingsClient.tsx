@@ -29,6 +29,7 @@ import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
 import { Button } from '@/ui/shadcn/button';
 
 import { AdminEmpty } from '../../AdminStateViews';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type SettingSpec<T> = {
   key: string;
@@ -100,7 +101,7 @@ export function EmbeddingsSettingsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Эмбеддинги' },
       ]}

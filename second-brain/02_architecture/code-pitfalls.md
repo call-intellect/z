@@ -616,3 +616,44 @@ knowledge-/skill-профиль). **Правило:** при per-message сег�
 ТЗ [`2026-06-08-clone-quality-improvements`](../../plans/tz/2026-06-08-clone-quality-improvements.md) Ф1; см. [[../01_projects/knowledge-clone]] §«Атрибуция по говорящему».
 
 [[../index|← index]]
+
+## Финиш «сейчас»: ASR-сегменты + дрейф ApiDto↔DTO как класс (2026-06-11)
+
+### Vox: сегментные тайминги в `extendedResult.segments` (не word-level), терялись в персист+мердж
+
+Модель Vox `v3_e2e_rnnt` отдаёт **СЕГМЕНТНЫЕ** тайминги (`start`/`end`/`text` по фразам)
+в `extendedResult.segments` — даже при `diar:false`. Это **не** пословные (word-level)
+тайминги: их у этой модели нет by design (см. предыдущую `vox.no_words`-историю). Прежняя
+потеря была **не** в submit и **не** в парсинге, а в **персисте+мердже**: сегменты
+не сохранялись (`TranscriptTrack` не имел поля под них) → `merger.ts` сводил дорожки
+«подряд» (весь говорящий A, затем B), а не по времени → транскрипт нечитаем, поведенческие
+метрики (длительность, чередование реплик) абсурдны.
+
+**Фикс (ТЗ asr-segment-timings-persist-and-merge):** добавлено `TranscriptTrack.segments Json?`
+(миграция `20260611100000_transcript_track_segments`); сегменты персистятся и `merger.ts`
+делает **interleave по `start`**. См. [[data-model]] §`TranscriptTrack.segments`.
+
+**Правило:** «нет таймингов» ≠ «модель их не отдала». Сначала проверь, что отдаёт ASR
+(форма ответа — `extendedResult.segments` для Vox), и есть ли куда их положить (колонка под
+сегменты) — потеря бывает на персисте, а не только на submit/parse.
+
+### Дрейф ApiDto↔серверный DTO — это КЛАСС (нужен обратный read-маппер в api-слое)
+
+Контракт фронта и сервера расходятся **молча**: TS не ловит, потому что ApiDto-тип
+объявлен на фронте отдельно и не сверяется с реальной формой ответа. Рантайм рендерит
+`undefined`/«—». Повторяющиеся вхождения (один класс):
+- **persons list/byId** — list-эндпоинт отдаёт person-card (`name`/`email`/`userId`), а
+  фронтовый `ListPersonsResultApi.items` типизирован как entity (`canonicalName`/`aliases`/
+  `mentionsCount`) → имена пустые. Нет обратного (read) маппера ответа в доменную модель.
+- **documents** — backend `toDocumentDto` не кладёт `uploaderName`/`attachedRoleName`/
+  `sizeBytes`/`parsedAt`, а `DocumentApi` фронта их ждёт → «—». Контракт фронта забегает
+  вперёд бэка.
+
+**Правило (класс):** на каждый list/byId-эндпоинт в api-слое фронта — **обязателен
+обратный read-маппер** `ApiDto → DomainModel`, симметричный write-мапперу (как уже сделано
+для `personsDomainApi.create/update`, см. §«Persons: имена полей UI ≠ контракт бэкенда»).
+Read-маппер — единственное место, где дрейф формы ответа становится виден (его правишь, а
+не молча получаешь `undefined` в JSX). Нашёл один такой дрейф — ищи остальные
+list/byId-эндпоинты (impact-graph / run_pipeline), это повторяемый конструкт.
+
+[[../index|← index]]

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { WebhooksIntegrationsClient } from './WebhooksIntegrationsClient';
 
 export const metadata: Metadata = {
-  title: 'Z-Admin — Webhook subscriptions',
+  title: 'Webhook subscriptions',
 };
 
 export default function AdminWebhooksIntegrationsPage() {

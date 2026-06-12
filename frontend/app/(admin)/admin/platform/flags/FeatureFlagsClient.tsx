@@ -43,6 +43,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { FlagEditDialog } from './FlagEditDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'list', label: 'Список', icon: List },
@@ -97,7 +98,7 @@ export function FeatureFlagsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Feature flags' },
       ]}

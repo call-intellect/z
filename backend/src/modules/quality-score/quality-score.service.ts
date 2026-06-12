@@ -5,7 +5,8 @@
  *
  * Методы:
  *   - getForMeeting — отдать MeetingQualityScore. Доступ: host или Org-Admin.
- *   - regenerate   — поставить job в `ai.quality-score`. Rate-limit 3/час
+ *   - regenerate   — перезапустить ЕДИНЫЙ воркер `meeting-report-fast`
+ *                     (он считает качество встречи). Rate-limit 3/час
  *                     per meeting (Redis counter).
  *   - getOrgSettings — текущие `qualityScoreDisabledForTypes` Org.
  *   - updateOrgSettings — patch + audit-friendly возврат.
@@ -27,7 +28,7 @@ import type { Meeting, MeetingType, Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
-import { AiQueueService } from '../ai/ai-queue.service';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 
 import type {
   OrgDashboardQualityScoreQuery,
@@ -48,7 +49,7 @@ export class QualityScoreService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RedisService) private readonly redis: RedisService,
-    @Inject(AiQueueService) private readonly queue: AiQueueService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -149,7 +150,12 @@ export class QualityScoreService {
       );
     }
 
-    await this.queue.enqueueQualityScore(meetingId);
+    // Качество встречи теперь считает ЕДИНЫЙ воркер meeting-report-fast.
+    // reason=`regen-<ts>` варьирует jobId, чтобы дедуп removeOnComplete не съел
+    // повторную постановку.
+    await this.coreQueue.enqueueMeetingReportFast(meetingId, {
+      reason: `regen-${Date.now()}`,
+    });
     this.metrics?.incQualityScoreRegenerate?.();
     this.logger.log({ meetingId, userId, current }, 'quality-score: enqueue regenerate');
     return { meetingId };

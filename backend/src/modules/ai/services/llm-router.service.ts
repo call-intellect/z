@@ -154,6 +154,18 @@ export type LlmTaskType =
   | 'debate-curation-verify-critic'
   | 'debate-curation-verify-supporter'
   | 'debate-curation-verify-neutral'
+  // Autonomy W1 (2026-06-12) — Conflict-Arbiter debate (LLM-арбитр конфликтов
+  // знаний). Ночной cron авто-резолвит ConflictItem(open) при уверенном
+  // консенсусе дебата (семейство `conflict-arbiter` в MultiAgentDebateService).
+  // Зонтичный taskType + 3 stance-specific:
+  //   - 'debate-conflict-arbiter-critic'    → deepseek-v4-flash (консервативен: сомнение → keep_old)
+  //   - 'debate-conflict-arbiter-supporter' → gpt-5.4-mini (diverse провайдер; за accept_new при обоснованности)
+  //   - 'debate-conflict-arbiter-neutral'   → deepseek-v4-flash (взвешенный арбитр)
+  // См. backend/src/modules/curation/workers/conflict-arbiter.cron.ts.
+  | 'debate-conflict-arbiter'
+  | 'debate-conflict-arbiter-critic'
+  | 'debate-conflict-arbiter-supporter'
+  | 'debate-conflict-arbiter-neutral'
   // SBA γ-1 — Specialist 3.7 (SkillProfile) + Clone API.
   // 'skill-trait-detect' — самая ответственная задача γ-1: 5+ reasoning-цитат
   //   сотрудника → один структурированный SkillTrait (эмерджентная категория +
@@ -175,6 +187,32 @@ export type LlmTaskType =
   //   короткое каноническое имя (3-6 слов). Вызывается ТОЛЬКО при слиянии 2+
   //   концептов; при создании одиночной черты — берётся category как есть.
   | 'skill-trait-concept-name'
+  // TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли.
+  // 'role-principle-synthesize' — ночной cron: из групп reasoning-цитат
+  //   носителей должности извлекает обобщённые принципы ПРОЦЕССА
+  //   (`RolePrinciple`, situation + statement + grounding sourceBlockIds).
+  | 'role-principle-synthesize'
+  // TZ clone-method Э1.3 (2026-06-12) — детектор ценностей/мотивации из
+  //   trade-off («решающих моментов») в reasoning-цитатах: второй проход
+  //   rebuild 3.7 пишет SkillTrait layer=value|motivation (clone-method Э1.3),
+  //   дешёвый частый — flash.
+  | 'value-motivation-detect'
+  // TZ clone-method Э2.1 (2026-06-12) — детектор маркеров процесса:
+  //   из reasoning-цитат извлекает повторяемый конструктивный ПРИЁМ
+  //   проработки решений («перечисляет критерии», «перепроверяет данными»);
+  //   третий проход rebuild 3.7 пишет SkillTrait layer=process_marker,
+  //   дешёвый — flash.
+  | 'process-marker-detect'
+  // TZ clone-method Э3.1 (2026-06-12) — CDM-интервью носителя роли: по
+  //   свежему реальному кейсу (reasoning-цитатам) формулирует ОДИН открытый
+  //   не наводящий вопрос ретроспективного разбора (Critical Decision
+  //   Method); вопрос уходит носителю через probe. Редкий — capable.
+  | 'cdm-case-interview'
+  // TZ clone-method ВАЛ.1 (2026-06-12) — LLM-judge поведенческой верности
+  //   клона: еженедельный cron на реальных кейсах роли сравнивает ответы
+  //   клона с persona v1 (baseline «только черты») vs v2 (все слои метода);
+  //   оценивает ТОЛЬКО поведенческий ход. Дешёвый — flash.
+  | 'persona-behavior-judge'
   // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
   // Classifier / MultiQuery / Summarizer). См.
   // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
@@ -253,6 +291,11 @@ export type LlmTaskType =
   //   выполнением (lightweight). Primary = ollama/qwen3.5:9b.
   | 'concierge-respond'
   | 'concierge-toolcall-validate'
+  // Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций в
+  // каналах (Telegram/MAX): классификация ответа пользователя на запрос
+  // подтверждения действия (confirm|reject|unclear). Дёшево и часто —
+  // primary deepseek-v4-flash (см. seed-llm-task-routes-concierge.ts).
+  | 'assistant-confirm-classify'
   // SBA β-8 — DailyCheckIn + OperationsDashboard.
   // 'checkin-parse' — из сырого ответа пользователя (морнинг/ивнинг) →
   //   структурированный { plans[], dones[], blockers[] } + confidence.
@@ -655,6 +698,11 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'debate-curation-verify-critic',
   'debate-curation-verify-supporter',
   'debate-curation-verify-neutral',
+  // Autonomy W1 (2026-06-12) — Conflict-Arbiter debate (LLM-арбитр конфликтов).
+  'debate-conflict-arbiter',
+  'debate-conflict-arbiter-critic',
+  'debate-conflict-arbiter-supporter',
+  'debate-conflict-arbiter-neutral',
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',
@@ -663,6 +711,16 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'clone-respond',
   // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2
   'skill-trait-concept-name',
+  // TZ clone-method Э1.2 — Reflection-слой принципов роли
+  'role-principle-synthesize',
+  // TZ clone-method Э1.3 — детектор ценностей/мотивации из trade-off, дешёвый частый — flash
+  'value-motivation-detect',
+  // TZ clone-method Э2.1 — детектор маркеров процесса (clone-method Э2.1), дешёвый — flash
+  'process-marker-detect',
+  // TZ clone-method Э3.1 — формулировка CDM-вопроса по кейсу (clone-method Э3.1), редкий — capable
+  'cdm-case-interview',
+  // TZ clone-method ВАЛ.1 — LLM-judge поведенческой верности клона (clone-method ВАЛ.1), дешёвый — flash
+  'persona-behavior-judge',
   // SBA α-5 dialog-layer
   'dialog-contextualize',
   'dialog-confidence',
@@ -692,6 +750,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA γ-2 — Concierge Agent
   'concierge-respond',
   'concierge-toolcall-validate',
+  // Ф6 assistant-channels — текст-подтверждение мутаций в каналах
+  'assistant-confirm-classify',
   // SBA β-8 — DailyCheckIn + Operations
   'checkin-parse',
   'operations-summary',
@@ -1013,6 +1073,8 @@ export interface LlmCallParams {
   tools?: LlmTool[];
   /** Опц. валидатор вывода. Если вернул false — router бросит LlmInvalidOutputError и попробует следующего провайдера. */
   validate?: (text: string) => boolean;
+  /** Per-call hard-timeout на dispatch (ms). Если не задан — глобальный dispatchTimeoutMs. */
+  timeoutMs?: number;
 }
 
 export interface LlmCallResult {
@@ -1481,6 +1543,10 @@ export class LlmRouterService implements OnModuleInit {
         // 30s — компромисс: дольше большинства LLM-ответов, но короче 60s
         // default'а Node fetch. Конфигурируется через ENV
         // LLM_ROUTER_DISPATCH_TIMEOUT_MS.
+        // Per-call override (params.timeoutMs): caller'ы с долгим синтезом
+        // (например chat-v2) могут поднять таймаут выше глобального, не трогая
+        // остальные вызовы. Если не задан — поведение байт-в-байт прежнее.
+        const effectiveTimeoutMs = params.timeoutMs ?? this.dispatchTimeoutMs;
         const out = await Promise.race([
           this.dispatch(entry, effectiveParams),
           new Promise<never>((_resolve, reject) =>
@@ -1488,10 +1554,10 @@ export class LlmRouterService implements OnModuleInit {
               () =>
                 reject(
                   new Error(
-                    `LLM dispatch timeout: ${entry.provider}/${entry.model} > ${this.dispatchTimeoutMs}ms`,
+                    `LLM dispatch timeout: ${entry.provider}/${entry.model} > ${effectiveTimeoutMs}ms`,
                   ),
                 ),
-              this.dispatchTimeoutMs,
+              effectiveTimeoutMs,
             ),
           ),
         ]);

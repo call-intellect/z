@@ -62,8 +62,10 @@ function makePending(
 
 /**
  * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
- * (9/21/3/5/3) → слоты [9,12,15,18,21]. Через `overrides` отдельный тест
- * меняет крутилки (например reminderStepHours=6).
+ * (9/9/12/5/3, как в проде после Autonomy W0 Ф0.1) → единственный слот [9]:
+ * одна сводка в день в 09:00. Через `overrides` отдельные тесты расширяют
+ * окно (например reminderWindowEndHour=21 + reminderStepHours=3 → старое
+ * поведение [9,12,15,18,21]).
  */
 function makeCfg(
   overrides: Partial<{
@@ -77,8 +79,8 @@ function makeCfg(
   return {
     pendingActions: {
       reminderWindowStartHour: 9,
-      reminderWindowEndHour: 21,
-      reminderStepHours: 3,
+      reminderWindowEndHour: 9,
+      reminderStepHours: 12,
       urgentAgeDays: 5,
       reminderLeadDays: 3,
       ...overrides,
@@ -150,7 +152,7 @@ describe('PendingActionsReminderCron', () => {
     vi.clearAllMocks();
   });
 
-  it('дефолтные крутилки (9/21/3): 09:00 MSK — слот-час → обрабатывается', async () => {
+  it('дефолтные крутилки (9/9/12): 09:00 MSK — слот-час → обрабатывается', async () => {
     const prisma = makePrisma();
     prisma.channelBinding.findMany.mockResolvedValueOnce([
       makeBindingRow('user-1', 'org-1'),
@@ -160,12 +162,40 @@ describe('PendingActionsReminderCron', () => {
     ]);
     const { cron, redis } = makeCron({ prisma });
     const stats = await cron.run(NOW_AT_MSK_9);
-    // 09:00 ∈ [9,12,15,18,21] → не skippedSlot; дошли до Redis dedup.
+    // 09:00 ∈ [9] → не skippedSlot; дошли до Redis dedup.
     expect(stats.skippedSlot).toBe(0);
     expect(redis.client.set).toHaveBeenCalled();
   });
 
-  it('крутилка reminderStepHours=6 → слоты [9,15,21]; 12:00 MSK → skippedSlot', async () => {
+  it('Ф0.1 (W0): дефолты {9,9,12} → слот ровно один (9:00); 12:00 MSK — skippedSlot, 09:00 MSK — отправка', async () => {
+    const prisma = makePrisma();
+    prisma.channelBinding.findMany.mockResolvedValue([
+      makeBindingRow('user-1', 'org-1'),
+    ]);
+    prisma.person.findMany.mockResolvedValue([
+      { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
+    ]);
+    const pending = makePending(
+      { total: 1, bySource: { curation: 1, conflict: 0, intake: 0, probe: 0 } },
+      [{ severity: 'normal', title: 'X' }],
+    );
+    const { cron, redis, conv } = makeCron({ prisma, pending });
+    // 2026-05-24T09:00:00Z = 12:00 Europe/Moscow — при старых дефолтах (9/21/3)
+    // был слотом, при новых (9/9/12) — НЕ слот (единственный слот — 9:00).
+    const nowAtMsk12 = new Date(Date.UTC(2026, 4, 24, 9, 0, 0));
+    const statsAt12 = await cron.run(nowAtMsk12);
+    expect(statsAt12.skippedSlot).toBe(1);
+    expect(statsAt12.sent).toBe(0);
+    expect(redis.client.set).not.toHaveBeenCalled();
+    expect(conv.sendNotification).not.toHaveBeenCalled();
+    // 09:00 MSK — единственный слот дня → сводка уходит.
+    const statsAt9 = await cron.run(NOW_AT_MSK_9);
+    expect(statsAt9.skippedSlot).toBe(0);
+    expect(statsAt9.sent).toBe(1);
+    expect(conv.sendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('крутилки end=21/step=6 → слоты [9,15,21]; 12:00 MSK → skippedSlot', async () => {
     const prisma = makePrisma();
     prisma.channelBinding.findMany.mockResolvedValueOnce([
       makeBindingRow('user-1', 'org-1'),
@@ -178,7 +208,7 @@ describe('PendingActionsReminderCron', () => {
     const nowAtMsk12 = new Date(Date.UTC(2026, 4, 24, 9, 0, 0));
     const { cron, redis, conv } = makeCron({
       prisma,
-      cfg: makeCfg({ reminderStepHours: 6 }),
+      cfg: makeCfg({ reminderWindowEndHour: 21, reminderStepHours: 6 }),
     });
     const stats = await cron.run(nowAtMsk12);
     expect(stats.skippedSlot).toBe(1);

@@ -23,7 +23,7 @@ type Props = {
  *
  * Использование:
  *   <AdminBreadcrumbs items={[
- *     { label: 'Z-Admin', href: '/admin' },
+ *     { label: 'Кора-Админ', href: '/admin' },
  *     { label: 'Платформа' },
  *     { label: 'Кроны' },
  *   ]} />

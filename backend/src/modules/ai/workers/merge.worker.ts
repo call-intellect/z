@@ -136,23 +136,46 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     // 1. Строим perTrack из DB-треков.
     const perTrack: PerTrackWords[] = meeting.transcript.tracks.map((track) => {
       const rawWords = (track.words ?? []) as Array<{ word: string; startMs: number; endMs: number }>;
-      // Если words пустой, но есть transcriptText — fallback: один псевдо-word.
-      const effectiveWords =
-        rawWords.length > 0
-          ? rawWords
-          : track.transcriptText.trim().length > 0
-            ? [
-                {
-                  word: track.transcriptText,
-                  startMs: 0,
-                  // Vox без пословных таймингов → даём псевдо-слову реальную
-                  // длительность дорожки (durationSeconds надёжно отдаётся Vox),
-                  // иначе turn=0мс и поведение/длительность обнуляются. Метрики
-                  // помечаются lowConfidence (см. behavior-metrics ниже).
-                  endMs: Math.max(0, Math.round((track.durationSeconds ?? 0) * 1000)),
-                },
-              ]
-            : [];
+      const rawSegments = (track.segments ?? []) as Array<{
+        startSec: number;
+        endSec: number;
+        text: string;
+      }>;
+      // Приоритет источника (Б4): пословные тайминги → посегментные → весь
+      // текст (последний резерв). `words` сверху — готовность к Tier 1 (когда
+      // Vox начнёт слать слова, парсер их уже примет).
+      let effectiveWords: Array<{ word: string; startMs: number; endMs: number }>;
+      if (rawWords.length > 0) {
+        effectiveWords = rawWords;
+      } else if (rawSegments.length > 0) {
+        // 1 псевдо-слово на КАЖДЫЙ сегмент → переплётка по предложениям/времени
+        // (Б3). mergeWordTimestamps склеит сегменты одного спикера с gap<1.5с в
+        // один turn. Вырожденные сегменты (пустой текст / endSec<=startSec)
+        // исключаем (R5).
+        effectiveWords = rawSegments
+          .filter(
+            (s) => typeof s.text === 'string' && s.text.trim().length > 0 && s.endSec > s.startSec,
+          )
+          .map((s) => ({
+            word: s.text,
+            startMs: Math.round(s.startSec * 1000),
+            endMs: Math.round(s.endSec * 1000),
+          }));
+      } else if (track.transcriptText.trim().length > 0) {
+        // Резерв (R4): ни words, ни segments — 1 псевдо-слово на всю дорожку
+        // (как было). Vox без таймингов → псевдо-слову реальную длительность
+        // дорожки (durationSeconds надёжно отдаётся Vox), иначе turn=0мс и
+        // поведение/длительность обнуляются. Метрики → lowConfidence.
+        effectiveWords = [
+          {
+            word: track.transcriptText,
+            startMs: 0,
+            endMs: Math.max(0, Math.round((track.durationSeconds ?? 0) * 1000)),
+          },
+        ];
+      } else {
+        effectiveWords = [];
+      }
       return {
         speakerName: track.speakerName,
         words: effectiveWords,

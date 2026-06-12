@@ -4,7 +4,7 @@
  * Источник: plans/tz/2026-05-21-phase-A-prompt-registry-admin.md §5.3.
  *
  * Превращает существующие `ai/services/prompts/*.ts` (system-summary, type-*,
- * tasks, follow-up, chapters) в унифицированный `ResolvedPrompt`. Это
+ * tasks, follow-up) в унифицированный `ResolvedPrompt`. Это
  * используется PromptResolverService, когда в БД ничего не найдено или
  * на любую ошибку резолва.
  *
@@ -21,15 +21,8 @@ import type {
   ResolvedPrompt,
   ResolvedPromptSection,
 } from './prompt-resolver.types';
-import { CHAPTERS_TASK_TYPE } from './prompts/chapters';
 import { FOLLOW_UP_SCHEMA, FOLLOW_UP_TOOL, FOLLOW_UP_TOOL_NAME } from './prompts/follow-up';
 import { getPromptForType } from './prompts/index';
-import {
-  MEETING_QUALITY_SCORE_INPUT_SCHEMA,
-  MEETING_QUALITY_SCORE_SYSTEM_PROMPT,
-  MEETING_QUALITY_SCORE_TOOL,
-  MEETING_QUALITY_SCORE_TOOL_NAME,
-} from './prompts/meeting-quality-score';
 import { SUMMARY_TOOL_NAME } from './prompts/system-summary';
 import { TASKS_TOOL, TASKS_TOOL_NAME } from './prompts/tasks';
 
@@ -166,53 +159,6 @@ function codeFallbackTasks(): ResolvedPrompt {
   };
 }
 
-/** code-fallback для chapters. */
-function codeFallbackChapters(): ResolvedPrompt {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { buildChaptersPrompt } = require('./prompts/chapters');
-  const dummy = (buildChaptersPrompt as (input: unknown) => { system: string; user: string })({
-    meeting: { id: '__cf__', title: '__cf__', type: 'team' },
-    dialog: [],
-  });
-  // chapters использует responseFormat='json' без tool_use — outputSchema плоская.
-  return {
-    source: 'code_fallback',
-    versionId: null,
-    systemPrompt: dummy.system,
-    toolName: null,
-    sections: [
-      {
-        key: 'chapters',
-        title: 'Главы',
-        instruction:
-          'Разбей встречу на 3-12 смысловых глав. Для каждой — startMs, endMs, title (3-8 слов), summary (1-2 предложения или null), order.',
-        outputType: 'json_object',
-        required: true,
-      },
-    ],
-    outputSchema: {
-      type: 'object',
-      properties: {
-        chapters: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              startMs: { type: 'integer' },
-              endMs: { type: 'integer' },
-              title: { type: 'string' },
-              summary: { type: ['string', 'null'] },
-              order: { type: 'integer' },
-            },
-            required: ['startMs', 'endMs', 'title', 'order'],
-          },
-        },
-      },
-      required: ['chapters'],
-    },
-  };
-}
-
 /** code-fallback для follow-up. */
 function codeFallbackFollowUp(): ResolvedPrompt {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -289,18 +235,19 @@ export function codeFallbackForMeeting(
       return codeFallbackSummary(meetingType);
     case 'tasks':
       return codeFallbackTasks();
-    case 'chapters':
-      return codeFallbackChapters();
     case 'follow-up':
       return codeFallbackFollowUp();
     case 'card-rollup':
       return codeFallbackCardRollup();
+    case 'chapters':
     case 'meeting-quality-score':
-      return codeFallbackMeetingQualityScore();
     case 'behavior-refine':
     case 'transcript-clean-refine':
     case 'custom-report':
-      // Эти taskType'ы используют собственный code-fallback (Фазы B/D/E):
+      // Эти taskType'ы НЕ имеют общего code-fallback:
+      // - chapters / meeting-quality-score → главы и качество встречи теперь
+      //   делает ЕДИНЫЙ воркер `meeting-report-fast` (один LLM-вызов по сырому
+      //   транскрипту); отдельный code-fallback больше не нужен.
       // - behavior-refine → backend/src/modules/ai/services/prompts/behavior-refine.ts
       // - transcript-clean-refine → backend/src/modules/ai/services/prompts/transcript-clean-refine.ts
       // - custom-report → Org-шаблоны в БД через A.2; код-фоллбека для них нет (только DB).
@@ -308,69 +255,9 @@ export function codeFallbackForMeeting(
       // со своим промптом. Если резолвер вызван по ошибке — это блокер, сигнализируем.
       throw new Error(
         `codeFallbackForMeeting: taskType '${taskType}' не имеет общего code-fallback. ` +
-          `Используйте свой адаптер из соответствующей фазы (B/D/E).`,
+          `Используйте свой адаптер из соответствующей фазы (meeting-report-fast / B / D / E).`,
       );
   }
-}
-
-/**
- * Фаза C — code-fallback для `meeting-quality-score` (sub-TZ C §5).
- * Системный промпт — `MEETING_QUALITY_SCORE_SYSTEM_PROMPT`, tool —
- * `MEETING_QUALITY_SCORE_TOOL`. UI-секции выводим простым списком,
- * соответствующим 5 категориям + блокам recommendations / strengths
- * (для будущего UI-редактора в /admin/prompts).
- */
-function codeFallbackMeetingQualityScore(): ResolvedPrompt {
-  const schema: ResolvedPrompt['outputSchema'] = {
-    type: 'object',
-    properties: MEETING_QUALITY_SCORE_INPUT_SCHEMA.properties,
-    ...(MEETING_QUALITY_SCORE_INPUT_SCHEMA.required
-      ? { required: MEETING_QUALITY_SCORE_INPUT_SCHEMA.required }
-      : {}),
-    ...(MEETING_QUALITY_SCORE_INPUT_SCHEMA.additionalProperties !== undefined
-      ? { additionalProperties: MEETING_QUALITY_SCORE_INPUT_SCHEMA.additionalProperties }
-      : {}),
-  };
-  return {
-    source: 'code_fallback',
-    versionId: null,
-    systemPrompt: MEETING_QUALITY_SCORE_SYSTEM_PROMPT,
-    toolName: MEETING_QUALITY_SCORE_TOOL_NAME,
-    toolDescription: MEETING_QUALITY_SCORE_TOOL.description,
-    sections: [
-      {
-        key: 'overallScore',
-        title: 'Общий балл',
-        instruction: 'Взвешенное среднее категорий, 0..100.',
-        outputType: 'text',
-        required: true,
-      },
-      {
-        key: 'categories',
-        title: '5 категорий (0..100)',
-        instruction:
-          'Оцени preparation / structure / clarity / outcomes / engagement, целые от 0 до 100.',
-        outputType: 'json_object',
-        required: true,
-      },
-      {
-        key: 'recommendations',
-        title: 'Рекомендации',
-        instruction:
-          '3–7 пунктов «как сделать встречу лучше»: { text, severity, category }. Тон конструктивный.',
-        outputType: 'bullet_list',
-        required: true,
-      },
-      {
-        key: 'strengths',
-        title: 'Что было хорошо',
-        instruction: '2–4 пункта того, что было хорошо.',
-        outputType: 'bullet_list',
-        required: true,
-      },
-    ],
-    outputSchema: schema,
-  };
 }
 
 /**
@@ -382,6 +269,3 @@ function codeFallbackMeetingQualityScore(): ResolvedPrompt {
 export function codeFallbackPlainSummaryPublic(): ResolvedPrompt {
   return codeFallbackPlainSummary();
 }
-
-// Подавляем неиспользуемые имена.
-void CHAPTERS_TASK_TYPE;

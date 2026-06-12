@@ -67,6 +67,193 @@ docker compose run --rm --no-deps backend \
 > Эти скрипты **НЕ зарегистрированы** в `apply-prod-deploy.ts` STEPS и **НЕ выполняются** на `docker compose ... apply-prod-deploy`. Запускать **только вручную, осознанно владельцем** (бюджетные / cost-решения). Все идемпотентны (повторный прогон = no-op).
 
 - **(опц., owner cost-decision)** `docker compose exec backend bun run scripts/patch-task-extractor-route-pro.ts` — перевести task-экстракторы (`tasks`, `meeting-extract-actions`) с дефолтной `deepseek-v4-flash` на capable `deepseek-v4-pro` (точнее, но дороже). Не входит в авто-выкат. Откат — вернуть `deepseek-v4-flash` через `/admin/ai-models/[taskType]` или обратным патчем. Не трогает маршруты с `editedByAdmin=true`.
+- **(прод-операция владельца, не код)** `docker compose exec backend bun run scripts/patch-enable-chatbox-analysis.ts --apply` — **ChatBox Ф0:** включить анализ переписки (`analysisEnabled=true`) для уже подключённых интеграций, в т.ч. «Ооо луа» (`svmazur@mail.ru`), где синк забрал ~215 чатов, но анализ ни разу не запускался (дефолт OFF до фикса). Без флага — dry-run (только counts). Уже зарегистрирован в `apply-prod-deploy STEPS` (`phase:'patch'`, `skipBootstrap:true`) — прогон агрегатора `--mode update` его выполнит; здесь продублирован как явная операция «включить анализ переписки» для существующих тенантов. Идемпотентен (повтор → 0). После прогона cron `analyze-sweep` сам подберёт их сессии в граф.
+
+---
+
+### 🤖 2026-06-12 — Единый помощник в каналах (Telegram/MAX) + автономизация подтверждений (W0–W4)
+
+> Контракт: ветка `feature/assistant-channels-and-autonomy`, коммиты `cb285350..90f02a6e` (10 коммитов + фиксы ревью). ТЗ: `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (Ф1–Ф6) + `plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4). second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`.
+>
+> **Зачем для прода:** (ТЗ-1) Telegram/MAX становятся окнами ЕДИНОГО мозга помощника: solicited-ответ AI-чата возвращается в канал-источник + ack на заметку (стоп-молчание); рендер 10+ проактивных eventType в обоих ботах; native function-calling (встроенный вызов инструментов) в concierge; service-auth путь ToolRouter (loopback); свободный текст/голос → ConciergeService (`assistant_turn`, память диалога per-binding в Redis 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций. (ТЗ-2) гасим спам ручных подтверждений: одна сводка напоминаний в день (09:00), ночной LLM-арбитр конфликтов знаний, гейт ценности probe + маршрутизация NUDGE в дайджест, OwnerResolver (лестница владельца поля), intake авто-приём задач из всех каналов (порог 0.75, дефолт-проект «Входящие»).
+>
+> **1 миграция (авто, enum).** **3 новых ENV (все с дефолтами — действий владельца НЕ требуют).** **2 seed-прогона (оба в STEPS).** **Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (2 kill-switch default ON + 1 опц. URL — действий владельца НЕ требуют):**
+  - `CONCIERGE_NATIVE_TOOLS_ENABLED` (zBool default `true`) — native function-calling помощника. Аварийный откат: `=false` в `.env` + рестарт → прежняя regex-эмуляция tool_call в тексте.
+  - `ASSISTANT_CHANNEL_ROUTING_ENABLED` (zBool default `true`) — свободный текст/голос Telegram/MAX → единый мозг (`assistant_turn`). Аварийный откат: `=false` + рестарт → прежний узкий классификатор бит-в-бит (чек-ин от флага не зависит).
+  - `CONCIERGE_LOOPBACK_BASE_URL` (default `http://127.0.0.1:3000`) — базовый URL для loopback tool-вызовов в service-режиме; **задавать ТОЛЬКО если backend внутри контейнера слушает не :3000**.
+  - Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (новые крутилки/дефолты, code-default есть — действий владельца НЕ требуют):** `probe.immediatePushMinPriority` (70), `probe.minValuePriority` (30), `knowledge.curationConflictArbiterEnabled` (true, kill-switch), `knowledge.curationConflictArbiterMinConfidence` (0.7), `knowledge.curationConflictArbiterBatchSize` (20), `pendingActions.reminderWindowEndHour` (9) / `pendingActions.reminderStepHours` (12) — одна сводка/день, `knowledge.curationAuditSampleRate` (0.05→0.01), `knowledge.curationAutotuneEnabled` (seed-дефолт → true). Доезжают перепрогоном `seed-admin-settings.ts` (Шаг 7; уважает admin-override).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260612090000_probe_status_w2_autonomy`): `ALTER TYPE "ProbeStatus" ADD VALUE IF NOT EXISTS 'dropped_low_value'` + `'routed_to_digest'`. Аддитивна, идемпотентна (`IF NOT EXISTS`); `ADD VALUE` не-транзакционна → отдельный файл. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (2 прогона, идемпотентные, оба в STEPS):**
+  - `docker compose exec backend bun run scripts/seed-llm-task-routes-conflict-arbiter.ts` — маршруты семейства `debate-conflict-arbiter` (`-critic`/`-supporter`/`-neutral`; cheap-цепочка как у curation-verify, supporter primary gpt-5.4-mini для diversity). В STEPS (`phase:'seed-llm-routes'`, alias `conflict-arbiter`).
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — перепрогон: новые крутилки + новые дефолты из Шага 1. Уже в STEPS.
+  - Либо одним прогоном агрегатора: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новые enum-значения в PrismaClient, новые `ConflictArbiterCron` / `AssistantChannelBridge` / `OwnerResolver`, новые taskType, метрики): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах воркера поднялся новый `ConflictArbiterCron` (`@Cron('0 2 * * *')`);
+  - (б) `docker compose logs backend | grep "AssistantChannelBridge: подписан"` — мост каналов подписан на inbound `assistant_turn`;
+  - (в) вопрос свободным текстом из Telegram → ответ помощника приходит в Telegram (одним сообщением);
+  - (г) уведомление `checkin.prompt` приходит текстом вопроса (не молчит);
+  - (д) Swagger без изменений (новых REST-разделов нет);
+  - (е) метрики тикают: `curl -s localhost:3000/metrics | grep -E "z_assistant_turn_total|z_conflict_arbiter_total|z_owner_resolution_total"`.
+
+---
+
+### 🧬 2026-06-12 — Слой метода клона (clone-persona-method-layer, Э0–ВАЛ)
+
+> Контракт: ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726` (8 фаз). ТЗ: `plans/tz/2026-06-11-clone-persona-method-layer.md`. second-brain: `01_projects/skill-and-clone.md` §«Доработки 2026-06-12», `02_architecture/data-model.md` §«Слой метода клона», `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md` §Clones.
+>
+> **Зачем для прода:** клон роли получает слой МЕТОДА работы. (Э0.1) grounding-гейт `clone-respond` — factual-ответ без опоры на наблюдения заменяется честным отказом (`'ungrounded'`), каждый вопрос клону пишется в журнал `CloneQueryLog` + новый `GET /api/v1/clones/query-log`. (Э1) ночной Reflection-синтез принципов роли (`RolePrinciple`, cron 05:30) + детектор ценностей/мотивации из trade-off. (Э2) активация PracticeSkill в ответах клона + детектор конструктивных маркеров процесса. (Э3) CDM-интервью носителя через probe (до 5 вопросов + cooldown 7 дн.). (ИНТ) persona-compile v2 — секционная сборка всех слоёв (пустые секции опускаются — деградация к v1). (ВАЛ) воскресная поведенческая A/B-оценка persona v1-vs-v2 (LLM-судья; только наблюдение, ничего не блокирует).
+>
+> **1 миграция (авто).** **1 новый HNSW-индекс (postgres-init).** **1 seed LLM-маршрутов (в STEPS).** **6 новых ENV-флагов — все default ON, в `.env` добавлять НИЧЕГО не нужно** (⚠ кроме проверки `PRACTICE_SKILLS_ENABLED`, см. Шаг 1). **Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (6 новых kill-switch, все default `true` — действий владельца НЕ требуют, строки информативные):**
+  - `CLONE_RESPOND_GROUNDING_ENABLED` (default true, действий не требует) — пост-LLM grounding-гейт clone-respond (отказ `'ungrounded'` без валидных цитат `[BLOCK:]`/`[DECISION:]`). Аварийный откат: `=false` + рестарт → поведение до Э0.1.
+  - `ROLE_PRINCIPLE_SYNTHESIS_ENABLED` (default true, действий не требует) — Reflection-cron синтеза принципов роли (05:30).
+  - `VALUE_MOTIVATION_DETECT_ENABLED` (default true, действий не требует) — детектор ценностей/мотивации в rebuild 3.7.
+  - `PROCESS_MARKER_DETECT_ENABLED` (default true, действий не требует) — детектор маркеров процесса в rebuild 3.7.
+  - `CDM_INTERVIEW_ENABLED` (default true, действий не требует) — CDM-интервью носителя через probe.
+  - `PERSONA_LAYER_VALIDATION_ENABLED` (default true, действий не требует) — воскресная поведенческая валидация persona v1-vs-v2 (только наблюдение).
+  - ⚠ **`PRACTICE_SKILLS_ENABLED` — СМЕНА ДЕФОЛТА false→true** (Э2.1: подмешивание процедур PracticeSkill в ответы клона). **Если в прод-`.env` стоит явная строка `PRACTICE_SKILLS_ENABLED=false` — УДАЛИТЬ её**, иначе фича останется выключенной (явный ENV перебивает новый code-default). Если строки в `.env` нет — действий не требуется.
+  - Реестр всех — `docs/operations/feature-flags.md` (тип A kill-switch, ON).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260612000000_clone_method_layer`, аддитивная, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): новая таблица `role_principles` (модель `RolePrinciple` + enum `RolePrincipleStatus`) + новая таблица `clone_query_logs` (модель `CloneQueryLog`) + enum `SkillTraitLayer` + колонка `skill_traits.layer` (default `'skill'` — существующие черты получают `skill`) + индекс `[profileId, layer, status]`. Проверка после выката: таблицы `role_principles` и `clone_query_logs` созданы, `skill_traits.layer` имеет default `'skill'`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Шаг 5 — postgres-init.sql — HNSW** — новый: `role_principles_embedding_hnsw_cosine_idx ON "role_principles" USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL` (KNN cosine — дедуп принципов 0.85 при ресинтезе). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`; на штатном `up -d` агрегатор гоняет его сам).
+- **Шаг 7 — Seed-маршруты — 1 новый, идемпотентный, в STEPS** (`phase:'seed-llm-routes'`, alias `'clone-method'`): `docker compose exec backend bun run scripts/seed-llm-task-routes-clone-method.ts` — 5 новых LLM-маршрутов: `role-principle-synthesize` + `cdm-case-interview` (capable: `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b`), `value-motivation-detect` + `process-marker-detect` + `persona-behavior-judge` (flash: `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b`). Защищает `editedByAdmin`. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новые модели/enum в PrismaClient, 2 новых cron'а `RolePrincipleSynthesisCron`/`PersonaLayerValidationCron`, новый эндпоинт query-log, изменённые промпты clone-respond/persona-compile v2): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах backend поднялись `RolePrincipleSynthesisCron` и `PersonaLayerValidationCron`;
+  - (б) после первого ночного cron (05:30) `RolePrinciple` непуст для активных ролей с накопленными reasoning-блоками: SQL `SELECT count(*) FROM role_principles;` > 0;
+  - (в) persona роли (после пересборки) содержит секции «Мои принципы в типовых ситуациях» / «Типовые ситуации → как я действую»;
+  - (г) клон без опоры отказывается: вопрос на тему вне наблюдений → программный отказ, в `clone_query_logs` запись с `refusalReason='ungrounded'`;
+  - (д) `GET /api/v1/clones/query-log` (под owner/admin) отдаёт записи; Swagger `/api/docs` — тег `clones` содержит `query-log`;
+  - (е) метрики тикают: `curl -s localhost:3000/metrics | grep -E "role_principles_|clone_persona_layer"`;
+  - (ж) первые цифры A/B `clone_persona_layer_score{variant}` появятся после первого воскресного cron (вс 07:00).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🧩 2026-06-11 — Консолидация отчёта встречи + отчёт→граф + апгрейд 3 промптов
+
+> Контракт: ветка `svdev`, коммиты `2501d72b` (Фаза 1 — консолидация), `13a6ac69` (Фаза 2 — отчёт→граф), `e4fded3c` (Фаза 3 — промпты). ТЗ: `plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md` (Ф1/Ф3) + суб-ТЗ `plans/tz/2026-06-11-report-to-graph-phase2.md` (Ф2). second-brain: `02_architecture/knowledge-core.md` §«Отчёт встречи → граф», `02_architecture/data-model.md`, `02_architecture/module-map.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.
+>
+> **Зачем для прода:** (Ф1) единое ядро отчёта = `meeting-report-fast` (один LLM-вызов); удалены дублирующие воркеры/очереди `chapters`/`tasks-extract`/`quality-score` (качество теперь пишет fast в каноничную `MeetingQualityScore`). (Ф2) после готовности fast-отчёта его чистая выжимка + структурные выводы идут в граф как **вторичный** источник (`meeting_report`) с защитой от галлюцинаций (транскрипт всегда побеждает report при дедупе). (Ф3) апгрейд 3 промптов отчётов (code-промпты, едут с кодом — отдельной seed-операции НЕ требуют).
+>
+> **2 миграции (авто).** **1 новый ENV kill-switch (default ON) + 1 AdminSetting-крутилка (code-fallback).** **Seed/patch/backfill — НЕТ.** **Docker rebuild backend обязателен** (новый enum в PrismaClient + новый listener/event).
+
+- **Шаг 1 — ENV (kill-switch, default ON — действий владельца НЕ требует):** `REPORT_INGEST_ENABLED` (Ship-On, default `true`). Мост отчёт→граф. Аварийный откат: `=false` в `.env` + рестарт → отчёт в граф не попадает (граф только из транскрипта; сам отчёт пользователю не затронут). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback есть — действий владельца НЕ требует):** `knowledge.reportBlockConfidenceCap` (потолок уверенности report-блока в графе, code-fallback `0.6`). super_admin может изменить из `/admin/settings`. Сид не обязателен для выката (code-fallback активен).
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `source_type_meeting_report`: `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'meeting_report'` — **отдельным файлом** (`ADD VALUE` не-транзакционна; `IF NOT EXISTS` → повторный прогон безопасен).
+  - `idea_block_primary_source`: `ALTER TABLE "IdeaBlock" ADD COLUMN "primarySource" VARCHAR(16)` — nullable, **backfill НЕ нужен** (`null` трактуется как `'transcript'` в коде). Порядок: enum-миграция → потом column-миграция. **В STEPS агрегатора регистрировать НЕ нужно** (это миграции схемы, не seed/patch/backfill).
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новое значение enum `SourceType` в PrismaClient + новый `ReportIngestListener`/событие `meeting.report-fast-ready` + новое поле `IdeaBlock.primarySource`): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `docker compose exec backend grep -r "meeting.report-fast-ready" src/` — событие эмитится в `meeting-report-fast.worker` и слушается в `ReportIngestListener`;
+  - (б) после готовности отчёта тестовой встречи в БД появляется `RawEvent(sourceType='meeting_report', sourceExternalId='report_<id>')` (один на встречу) и `IdeaBlock` с `primarySource='report'`, `confidence ≤ 0.6`;
+  - (в) клиентский протокол (`client_protocol_md`) в граф НЕ попал (D6);
+  - (г) главы/задачи/резюме/качество встречи видны (из `meeting-report-fast` + каноничной `MeetingQualityScore`), спиннер гаснет, дублей задач нет.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔔 2026-06-11 — Probe-система Фаза 1 (формулировка + дайджест + recheck + fatigue + видимое следствие)
+
+> Контракт: ветка `svdev`, коммиты `5ed78b54..fa950cd1` (6 под-фаз). ТЗ: `plans/tz/2026-06-11-probe-system-upgrade-phase1.md`. Анализ: `plans/analysis/2026-06-11-proactive-clarifying-questions-probe-research.md`.
+>
+> **Зачем для прода:** переработка проактивных уточняющих вопросов (probe). (Ф1) переписан промпт `probe-formulate` — человеческие формулировки без машинных кодов (schema `probe_formulate_v3`). (Ф2) политика по типу пробела (окно срочности + предикаты «пробел ещё открыт?»). (Ф3) deferrable-probe сверх бюджета не дропается, а копится в `queued_digest` → новый `ProbeDigestCron` шлёт ОДНО сводное уведомление «Вопросы от Коры» 1×/день. (Ф4) recheck повода перед dispatch — если пробел закрылся сам, probe не шлётся (`suppressed_stale`). (Ф5) adaptive fatigue — меньше беспокоить тех, кто не отвечает, + cooldown темы. (Ф6) подтверждение «ваш ответ записан» после ответа.
+>
+> **1 миграция (авто, enum).** **5 новых AdminSetting-крутилок (code-default, действий владельца НЕ требуют).** **Docker rebuild backend+frontend обязателен** (новый enum в PrismaClient, новый cron, новые eventType, метрика).
+
+- **Шаг 1 — AdminSetting (5 крутилок, code-default есть — действий владельца НЕ требуют):** `probe.digestTouchCap` (5), `probe.digestHourUtc` (9 UTC), `probe.digestEnabled` (true, kill-switch), `probe.topicCooldownHours` (48), `probe.adaptiveFatigueEnabled` (true, kill-switch). Сид — `seed-admin-settings.ts` секция `probe` (опц., code-default активен — сид не обязателен для выката). Реестр флагов — `docs/operations/feature-flags.md` (`probe.digestEnabled` / `probe.adaptiveFatigueEnabled` — два kill-switch тип A).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260611120000_probe_status_digest`): `ALTER TYPE "ProbeStatus" ADD VALUE 'queued_digest'` + `'suppressed_stale'`. Аддитивна, безопасна, идемпотентность через сам Prisma (`migrate deploy` пропускает применённую миграцию). ⚠ `ALTER TYPE ... ADD VALUE` **не-транзакционна** — вынесена в отдельную миграцию. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** — это миграция схемы, не seed/patch/backfill.
+- **Миграций / seed / patch / backfill (кроме enum выше) — НЕТ.**
+- **Шаг 11 — Docker rebuild** — обязателен (новый enum-значение в PrismaClient, новый `ProbeDigestCron`, новые eventType `probe.digest` / `probe.answer_acknowledged` в `event-payload.registry.ts` + рендер telegram/max-bot, метрика `probe_outcome_total`; frontend: новые notification-label «Вопросы от Коры» / «Ответ записан»): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах backend поднялся `ProbeDigestCron`;
+  - (б) метрика тикает: `curl -s localhost:3000/metrics | grep probe_outcome_total`;
+  - (в) probe-вопрос в Telegram приходит **без машинных кодов / латиницы** (человеческая формулировка);
+  - (г) после ответа на probe приходит подтверждение «ваш ответ записан в память компании».
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📱💬 2026-06-11 — Остаток пакета: Мобильная Кора Ф2–Ф7 (exec/manager + голос + утренний web-push) · ChatBox блок A (виджет/метрики/парсер)
+
+> Контракт: ветка `feature/remaining-handoff` (6 коммитов `9fcdc26c..daf72cbe` поверх фундамента `feature/finishable-now-2026-06-11`). ТЗ: `plans/tz/2026-06-11-mobile-cora-exec-manager.md`, `plans/tz/...chatbox-memory-finishing...` (блок A: Ф2/Ф3/Ф4). Handoff-ТЗ: `plans/tz/2026-06-11-remaining-handoff-finishable-now.md`.
+>
+> **Зачем для прода:** доводка остатка пакета «6 ТЗ» — два независимых направления. (1) **ChatBox блок A** — виджет «Чаты в памяти» на странице интеграции (новый эндпоинт `GET /api/v1/chatbox/integration/memory-summary` с counts: диалоги/сессии/проанализировано/в работе/ошибки + blocks/tasks из переписки) + prom-метрики синка/анализа + чистый парсер `extractChatboxOutboundId` ответа `sendMessage` (best-effort, форма ждёт боевой отправки). (2) **Мобильная Кора Ф2–Ф7** — exec «Обзор»/«Команда»/«Дела»/«Цели» через `MobileShell`-gate (десктоп не тронут), голосовой ввод в чек-ин (серверный ASR Vox), «Спросить»/«Память», и **первое подключение браузерного web-push** — новый `ExecMorningPushCron` (утреннее окно: «Требует тебя сегодня: N» → `/dashboard`).
+>
+> **Миграций / seed / patch / backfill — НЕТ.** **2 новых kill-switch + 1 крутилка (AdminSetting, code-default есть).** **VAPID-ENV нужны для нового exec-push** (без них — graceful no-op). **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (VAPID — без них браузерный web-push, ВКЛЮЧАЯ новый `ExecMorningPushCron`, graceful no-op):** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (backend) + `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (frontend build-ENV). Генерация: `npx web-push generate-vapid-keys` (публичный ключ продублировать в backend и frontend, `VAPID_SUBJECT` = `mailto:`-адрес). **Это первый крон, который реально вызывает `enqueuePushSend`** — без VAPID отправка молча no-op (ошибки нет). Реестр — `docs/operations/feature-flags.md` §VAPID. _(если VAPID уже заданы при выкате блока finishable-now — повторно не нужно.)_
+- **Шаг 1 — флаги (kill-switch / крутилка, code-fallback ON — сид не обязателен):**
+  - `operations.daily_digest.deliver_to_webpush` (AdminSetting, ENV-fallback `OPS_DIGEST_DELIVER_TO_WEBPUSH=true`, kill-switch, default ON). Доставка утреннего exec web-push «Требует тебя сегодня: N». Аварийный откат: `=false` → утренний exec-push не шлётся.
+  - `operations.daily_digest.webpush_morning_hour` (AdminSetting, ENV-fallback `OPS_DIGEST_WEBPUSH_MORNING_HOUR`, крутилка, default `9`). Час утреннего окна exec-push. super_admin может изменить из `/admin/settings`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Миграций / seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Прод-операция владельца (не код): ChatBox Ф0** — прогнать `patch-enable-chatbox-analysis.ts --apply` для уже подключённых интеграций, в т.ч. «Ооо луа» (~215 чатов, анализ переписки не запускался). См. «Опциональные ручные операции» выше; уже в STEPS (`phase:'patch'`), `--mode update` его выполнит. _(нужно для того, чтобы виджет «Чаты в памяти» показал ненулевые counts.)_
+- **Шаг 11 — Docker rebuild** — обязателен. Backend: новый эндпоинт `GET /api/v1/chatbox/integration/memory-summary`, prom-метрики `z_chatbox_*` + `z_exec_morning_push_delivered_total`, парсер `extractChatboxOutboundId`, новый `ExecMorningPushCron` (operations). Frontend: `ChatboxMemorySummaryCard` на `/chats/integrations/chatbox`, мобильные экраны exec/manager (`src/ui/mobile/*`), голосовой ввод в чек-ин, кнопка `EnableMorningRemindersButton` на exec «Обзоре». Команда: `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `GET /api/v1/chatbox/integration/memory-summary` отдаёт counts (`dialogs`/`sessions`/`analyzed`/`inProgress`/`failed` + `blocks`/`tasks` + `analysisEnabled`);
+  - (б) `/metrics` содержит `z_chatbox_syncs_total`, `z_chatbox_analyzes_total`, `z_chatbox_pending_sessions`, `z_chatbox_last_sync_ts_seconds`, `z_exec_morning_push_delivered_total`;
+  - (в) `ExecMorningPushCron` — дождаться утреннего окна или прогнать вручную (`/admin/crons` → run, или вызвать метод), проверить `enqueuePushSend` и доставку на подписанное устройство, тап по уведомлению → `/dashboard`.
+- **Алерты (документировать в Grafana/Alertmanager):**
+  - `z_chatbox_pending_sessions > 0 and increase(z_chatbox_analyzes_total[1h]) == 0` — копим сессии, но анализ не идёт (цепочка знаний встала).
+  - `time() - max(z_chatbox_last_sync_ts_seconds) > 7200` — синк отстал > 2 ч (вебхуки/крон не доезжают).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📱💬 2026-06-11 — Финиш «сейчас» (6 ТЗ): ASR-сегменты · промпты-MASTER · кабинет-honesty · ChatBox память+задачи · Мобильная Кора · probe-fix
+
+> Контракт: ветка `feature/finishable-now-2026-06-11` (13 коммитов). ТЗ: `plans/tz/2026-06-11-asr-segment-timings-persist-and-merge.md`, `2026-06-11-prompt-polish-fewshot-org-and-reports.md`, `2026-06-11-org-extractor-and-compiler-finalize.md`, `2026-06-11-cabinet-inbox-nav-ui-honesty.md`, `2026-06-11-chatbox-memory-finishing-and-tasks-from-chat.md`, `2026-06-11-cabinet-leftovers-ui-probe-chat.md` (probe-fix).
+>
+> **Зачем для прода:** шесть независимых доводок. (1) **ASR-сегменты** — Vox `v3_e2e_rnnt` отдаёт посегментные тайминги в `extendedResult.segments`; теперь они персистятся (`TranscriptTrack.segments`) и мержатся, чтобы транскрипт шёл по времени, а не «дорожками подряд». (2) **Промпты-MASTER** — орг-агенты (regulation/policy/instruction) + строгий гейт `isOrgNorm`, версии и sync шагов; 11 few-shot примеров. (3) **Кабинет Волны 1–2** — ребренд «Кора-Админ», автоген slug, документы-контракт, архив спринтов, primary-nav + `/feed` + сворачивание Sidebar + welcome-тур. (4) **ChatBox память+задачи** — матчинг участников по имени, извлечение задач из переписки (Ф5), межисточниковый дедуп (Ф6). (5) **Мобильная Кора Ф0+Ф1** — каркас + первый экран. (6) **probe context-leak fix** — `payload.message` больше не течёт сырым в `probe.question`.
+>
+> **2 миграции (авто).** **3 новых ENV (kill-switch, default ON) + VAPID (ENV-секреты push, действие владельца).** **1 backfill (в STEPS, safety no-op).** **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (3 kill-switch, default ON — действий владельца НЕ требуют):**
+  - `REGULATION_GATE_STRICT_ENABLED` (`aiFeatures.regulationGateStrict`, zBool default `true`). Строгий гейт `isOrgNorm` в regulation/policy/instruction-экстракторах. Аварийный откат: `=false` → recall-страховка (мягкий гейт). Можно не задавать — дефолт ON.
+  - `CHATBOX_TASK_EXTRACTION_ENABLED` (`aiFeatures.chatboxTaskExtractionEnabled`, zBool default `true`). Извлечение задач из переписки (Ф5). Аварийный откат: `=false` → переписка в граф мостится, задачи не создаются.
+  - `TASKS_CROSS_SOURCE_DEDUPE_ENABLED` (`aiFeatures.tasksCrossSourceDedupeEnabled`, zBool default `true`). Межисточниковый дедуп задач (Ф6). Аварийный откат: `=false` → возможны дубли «встреча + чат».
+  - Реестр всех трёх — `docs/operations/feature-flags.md`.
+- **Шаг 1 — ENV (VAPID — действие владельца, без них push = no-op):** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (backend) + `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (frontend build-ENV) — нужны для web-push Мобильной Коры. **Не задашь — push молча не шлётся** (фича работает без push, ошибки нет). Генерация: `npx web-push generate-vapid-keys` (публичный ключ продублировать в backend и frontend, `VAPID_SUBJECT` = `mailto:`-адрес). Реестр — `docs/operations/feature-flags.md` §VAPID.
+- **Шаг 1 — AdminSetting (опц., code-default есть — действий НЕ требует):** `tasks.cross_source_dedupe_threshold` (порог cosine дедупа, code-default `0.85`); `chatbox.match.name_fuzzy_enabled` (нечёткий матчинг по имени, code-default `true`). super_admin может изменить из `/admin/settings`.
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `20260611100000_transcript_track_segments` — `TranscriptTrack +segments Json?` (посегментные тайминги Vox для персиста+мерджа).
+  - `20260611110000_chatbox_tasks_and_customer_link` — `Task.meetingId → nullable` (задача может быть из переписки/трекера, не только из встречи) + `Task +sourceType` / `+sourceChatSessionId` / `+sourceChatId`; новый enum/модель `TaskSource`; `ChatboxCustomer`/`ChannelClient +linkedPersonId` / `+linkMode` (связка клиента переписки с `Person` графа).
+  - **В STEPS агрегатора регистрировать НЕ нужно** — это миграции схемы, не seed/patch/backfill.
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `scripts/backfill-task-source-type.ts` — проставляет `Task.sourceType='meeting'` где пусто. **Safety no-op:** колонка `Task.sourceType` имеет `@default("meeting")`, поэтому новые/мигрированные строки уже корректны; скрипт — страховка на случай, если insert/миграция обошли дефолт. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Прод-операция владельца (не код): ChatBox Ф0** — прогнать `patch-enable-chatbox-analysis.ts --apply` (см. «Опциональные ручные операции» выше), чтобы включить анализ переписки у уже подключённых интеграций («Ооо луа» — ~215 чатов, анализ не запускался). Уже в STEPS (`phase:'patch'`), `--mode update` его выполнит.
+- **Шаг 11 — Docker rebuild** — обязателен. Backend: `TranscriptTrack.segments` (персист+мердж сегментных таймингов Vox), орг-экстракторы regulation/policy/instruction + гейт `isOrgNorm` + версии/steps-sync + 11 few-shot, ChatBox task-extraction (Ф5) + cross-source dedupe (Ф6) + матчинг участников по имени, probe context-leak fix, web-push отправка (если заданы VAPID). Frontend: Кабинет Волны 1–2 (ребренд «Кора-Админ», пикер+ControlsBar, primary-nav + `/feed` + сворачивание Sidebar + welcome-тур), Мобильная Кора Ф0+Ф1, push-подписка (если задан `NEXT_PUBLIC_VAPID_PUBLIC_KEY`). Команда: `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): транскрипт встречи идёт по времени (не «дорожками подряд»); `Task` из закрытой ChatBox-сессии создаётся с `sourceType='chatbox'`; дубль «встреча+чат» не плодится; уведомление-вопрос (`probe.question`) без сырого `payload.message`; на телефоне открывается Мобильная Кора (первый экран). Если заданы VAPID — push доходит; не заданы — отправка no-op без ошибок.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🧹 2026-06-11 — ТЗ cabinet-leftovers (UI-протечки §1 Ф2–Ф5 · probe §3 · чат-стрим §4)
+
+> Контракт: `plans/tz/2026-06-11-cabinet-leftovers-ui-probe-chat.md`. Ветка `feature/meeting-cabinet-fixes-2026-06-10` (10 коммитов `d8902c49..afc7e1d2`).
+>
+> **Зачем для прода:** доводка кабинета — три независимых улучшения. (1) §1: технические протечки в UI убраны (enum→русский, cuid→имя, raw-json→текст, role-gate `/orchestrator`, маркеры `[BLOCK:]` не светятся в ответе чата). (2) §3: уведомление-вопрос (probe) про сотрудника теперь приходит самому сотруднику / его руководителю, а не владельцу; тексты модерации и probe — человеческие, без кодов/ID. (3) §4: AI-чат компании показывает стадии работы («Понимаю→Ищу→Пишу») через лёгкий SSE и больше не «зависает» молча; таймаут синтеза разведён от общего. **Миграций/seed/patch/backfill — НЕТ.** **2 новых ENV (kill-switch, default ON).** **1 новая AdminSetting (code-default есть).** **Docker rebuild backend+frontend обязателен** (код).
+
+- **Шаг 1 — ENV (2 kill-switch, default ON — действий владельца НЕ требуют):**
+  - `PROBE_SUBJECT_ADDRESSING_ENABLED` (`cfg.probe.subjectAddressingEnabled`, zBool default `true`, §3 Ф1). При ON probe про сотрудника адресуется `[субъект, глава отдела, owner]` (субъект первым). Аварийный откат: `=false` в `.env` + рестарт → probe адресуется как раньше (глава отдела / админы, не субъект).
+  - `CHAT_V2_STREAMING_ENABLED` (`cfg.chatV2.streamingEnabled`, zBool default `true`, §4 Ф1). При ON работает SSE-эндпоинт стадий чата. Аварийный откат: `=false` → `POST /api/v1/chat-v2/messages/stream` отдаёт `503`, фронт прозрачно откатывается на синхронный `POST /api/v1/chat-v2/messages`.
+  - Реестр обоих — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-default есть — действий НЕ требует):** `knowledge.chatV2SynthesisTimeoutMs` (таймаут синтеза AI-чата, POSITIVE_INT, code-default `90000` мс; не ENV, §4 Ф3). super_admin может изменить из админки `/admin/settings`.
+- **Миграций / seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен. Backend: новый SSE-эндпоинт `POST /api/v1/chat-v2/messages/stream`, `onStage` в `chat-v2`/`synthesis`/`knowledge-core`, per-call `timeoutMs` override в `llm-router`, адресация probe (`resolveProbeRecipients`), человеческие тексты модерации (`resource-type-ru`), `stripBlockMarkers` в синтезе чата. Frontend: стадии чата («Понимаю→Ищу→Пишу» + «Долго думаю» >45с + fallback), мапперы (`toolNameLabel`/`meetingStatusLabel`/`teamTemplateCategoryLabel`/`signalTypeLabel`), `ReadablePayload` в `src/ui`, role-gate `/orchestrator`. Команда: `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката): в `/me/notifications` нет латиницы-кодов / сырого JSON; probe про сотрудника приходит ему/руководителю, **не владельцу**; AI-чат показывает стадии «Понимаю→Ищу→Пишу»; ответ чата без маркеров `[BLOCK:…]`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
 
 ---
 

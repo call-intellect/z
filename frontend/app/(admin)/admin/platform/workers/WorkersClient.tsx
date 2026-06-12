@@ -33,6 +33,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { WorkerQueueDetailDialog } from './WorkerQueueDetailDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 export function WorkersClient() {
   const [detailName, setDetailName] = useState<string | null>(null);
@@ -81,7 +82,7 @@ export function WorkersClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Платформа' },
         { label: 'Воркеры BullMQ' },
       ]}

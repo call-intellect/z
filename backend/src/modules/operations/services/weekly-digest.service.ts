@@ -37,8 +37,8 @@ export function mapWeeklyDigestRowsToTrend(
 ): WeeklyDigestTrendPointDto[] {
   return rowsDesc
     .map((r) => {
-      const m = (r.metricsJson ?? {}) as Record<string, any>;
-      const goals = (m.goals ?? {}) as Record<string, any>;
+      const m = (r.metricsJson ?? {}) as Record<string, unknown>;
+      const goals = (m.goals ?? {}) as Record<string, unknown>;
       const topBlockers = Array.isArray(m.topBlockers) ? m.topBlockers : [];
       return {
         weekStart: r.weekStart,
@@ -48,7 +48,7 @@ export function mapWeeklyDigestRowsToTrend(
         goalsCompleted: Number(goals.completed ?? 0),
         goalsFailed: Number(goals.failed ?? 0),
         blockers: topBlockers.reduce(
-          (s: number, b: any) => s + (Number(b?.count) || 0),
+          (s: number, b: unknown) => s + (Number((b as { count?: unknown })?.count) || 0),
           0,
         ),
         hangingDecisions: Array.isArray(m.hangingDecisions)

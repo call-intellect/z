@@ -599,3 +599,485 @@ describe('Specialist37Service.mergeOrCreate — Ф5(F) арбитраж 0.78–0
     expect(passedCandidates[0].bucket).toBe('hard');
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// TZ clone-method Э1.3 — детектор ценностей/мотивации (revealed preferences):
+// второй проход rebuildProfile пишет SkillTrait layer=value|motivation,
+// kill-switch cfg.skill.valueMotivationDetectEnabled, KNN-merge в своём слое.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Один кластер из 3 reasoning-блоков (cluster-floor 3 проходит). */
+const VM_BLOCKS = [
+  {
+    blockId: 'b1',
+    quote: 'Лучше неделя задержки, чем падение у клиентов.',
+    embedding: [1, 0, 0],
+    createdAt: new Date(),
+  },
+  {
+    blockId: 'b2',
+    quote: 'Отказался выкатывать в пятницу — зато выходные без инцидентов.',
+    embedding: [0.99, 0.01, 0],
+    createdAt: new Date(),
+  },
+  {
+    blockId: 'b3',
+    quote: 'Не повезу клиентам сырое — пусть выйдет позже, но с мониторингом.',
+    embedding: [0.98, 0.02, 0],
+    createdAt: new Date(),
+  },
+];
+
+function vmDraftJson(layer: string, sourceBlockIds: string[]): string {
+  return JSON.stringify({
+    layer,
+    category: 'надёжность выше скорости поставки',
+    statement:
+      'Похоже, при конфликте сроков и надёжности обычно ставит надёжность выше.',
+    confidence: 'medium',
+    sourceBlockIds,
+    firstObservedAt: new Date().toISOString(),
+    lastConfirmedAt: new Date().toISOString(),
+  });
+}
+
+function skillDraftJson(): string {
+  return JSON.stringify({
+    category: 'осторожен с оценками сроков',
+    statement: 'Похоже, склонен откладывать коммит по срокам до сбора данных.',
+    confidence: 'medium',
+    sourceBlockIds: ['b1'],
+    firstObservedAt: new Date().toISOString(),
+    lastConfirmedAt: new Date().toISOString(),
+  });
+}
+
+interface VmMocks {
+  llmCall: ReturnType<typeof vi.fn>;
+  skillTraitCreate: ReturnType<typeof vi.fn>;
+  embedQuery: ReturnType<typeof vi.fn>;
+}
+
+function buildVmRebuildService(opts: {
+  flagEnabled: boolean;
+  m: VmMocks;
+  /** Подменить основной detectTrait (null → главный проход молчит). */
+  detectTrait?: ReturnType<typeof vi.fn>;
+  /** Подменить mergeOrCreate целиком (для теста счётчика LLM-вызовов). */
+  mergeOrCreate?: ReturnType<typeof vi.fn>;
+}): { svc: Specialist37Service } {
+  const prisma = {
+    skillProfile: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: PROFILE_ID,
+        tenantId: TENANT,
+        status: 'active',
+        buildVersion: 0,
+        person: {
+          id: 'person-1',
+          tenantId: TENANT,
+          name: 'Иван',
+          entityId: 'ent-1',
+          relationship: 'employee',
+          deletedAt: null,
+        },
+      }),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    skillTrait: { create: opts.m.skillTraitCreate },
+  };
+  const cfg = {
+    skill: {
+      minObservations: 3,
+      lookbackMonths: 6,
+      traitSimilarityThreshold: 0.85,
+      valueMotivationDetectEnabled: opts.flagEnabled,
+    },
+    getDynamic: vi
+      .fn()
+      .mockImplementation(async (key: string, _env: unknown, fallback: unknown) => {
+        if (key === 'knowledge.skillProfileMinObservations') return 3;
+        if (key === 'knowledge.skillClusterMinObservations') return 3;
+        return fallback;
+      }),
+  };
+  const metrics = {
+    incCoreSpecialistCards: vi.fn(),
+    incCoreSpecialistExtractionFailure: vi.fn(),
+    incCoreSpecialistLlmTokens: vi.fn(),
+    observeCoreSpecialistPipelineDuration: vi.fn(),
+  };
+  const probes = { checkAndEmitProbes: vi.fn().mockResolvedValue(undefined) };
+  const concepts = { findOrCreateConcept: vi.fn().mockResolvedValue(null) };
+  const embedder = { embedQuery: opts.m.embedQuery };
+  const svc = new Specialist37Service(
+    prisma as never,
+    cfg as never,
+    { call: opts.m.llmCall } as never,
+    embedder as never,
+    metrics as never,
+    probes as never,
+    concepts as never,
+  );
+  const internal = svc as unknown as Record<string, unknown>;
+  internal.loadSubjectReasoningBlocks = vi.fn().mockResolvedValue(VM_BLOCKS);
+  internal.runDecay = vi.fn().mockResolvedValue(undefined);
+  if (opts.detectTrait) internal.detectTrait = opts.detectTrait;
+  if (opts.mergeOrCreate) internal.mergeOrCreate = opts.mergeOrCreate;
+  return { svc };
+}
+
+describe('Specialist37Service — Э1.3 детектор ценностей/мотивации (второй проход rebuild)', () => {
+  it('флаг ON + LLM отдаёт layer=value → создан trait с layer=value', async () => {
+    const m: VmMocks = {
+      llmCall: vi
+        .fn()
+        .mockResolvedValue({ text: vmDraftJson('value', ['b1', 'b2', 'b3']) }),
+      skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-vm-1' }),
+      // embedQuery падает → mergeOrCreate идёт по пути createNewTrait без KNN.
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    // Главный skill-проход молчит — изолируем второй проход.
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildVmRebuildService({ flagEnabled: true, m, detectTrait });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.llmCall.mock.calls[0]![0].taskType).toBe('value-motivation-detect');
+    expect(m.skillTraitCreate).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.layer).toBe('value');
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual([
+      'b1',
+      'b2',
+      'b3',
+    ]);
+  });
+
+  it('LLM отдаёт layer=motivation → trait пишется с layer=motivation', async () => {
+    const m: VmMocks = {
+      llmCall: vi
+        .fn()
+        .mockResolvedValue({ text: vmDraftJson('motivation', ['b1', 'b2']) }),
+      skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-vm-2' }),
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildVmRebuildService({ flagEnabled: true, m, detectTrait });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.skillTraitCreate).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.layer).toBe('motivation');
+  });
+
+  it('LLM отдаёт sourceBlockIds=[] (нет trade-off) → trait НЕ создаётся', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({ text: vmDraftJson('value', []) }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildVmRebuildService({ flagEnabled: true, m, detectTrait });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate).not.toHaveBeenCalled();
+  });
+
+  it('флаг OFF → второй проход не зовётся: LLM ровно 1 раз (основной detect)', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({ text: skillDraftJson() }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn(),
+    };
+    const mergeOrCreate = vi.fn().mockResolvedValue('created');
+    const { svc } = buildVmRebuildService({ flagEnabled: false, m, mergeOrCreate });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.llmCall.mock.calls[0]![0].taskType).toBe('skill-trait-detect');
+  });
+
+  it('флаг ON → LLM 2 раза: skill-trait-detect затем value-motivation-detect; mergeOrCreate второго прохода получает layer', async () => {
+    const m: VmMocks = {
+      llmCall: vi
+        .fn()
+        .mockImplementation(async (p: { taskType: string }) =>
+          p.taskType === 'value-motivation-detect'
+            ? { text: vmDraftJson('value', ['b1']) }
+            : { text: skillDraftJson() },
+        ),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn(),
+    };
+    const mergeOrCreate = vi.fn().mockResolvedValue('created');
+    const { svc } = buildVmRebuildService({ flagEnabled: true, m, mergeOrCreate });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    const taskTypes = m.llmCall.mock.calls.map((c) => c[0].taskType);
+    expect(taskTypes).toEqual(['skill-trait-detect', 'value-motivation-detect']);
+    expect(mergeOrCreate).toHaveBeenCalledTimes(2);
+    // Основной проход — без layer (default skill), второй — layer='value'.
+    expect(mergeOrCreate.mock.calls[0]![0].layer).toBeUndefined();
+    expect(mergeOrCreate.mock.calls[1]![0].layer).toBe('value');
+  });
+});
+
+describe('Specialist37Service.mergeOrCreate — Э1.3 KNN-фильтр по layer', () => {
+  function buildLayerKnnService(): {
+    queryRawUnsafe: ReturnType<typeof vi.fn>;
+    createNewTraitSpy: ReturnType<typeof vi.fn>;
+    mergeOrCreate: (a: unknown) => Promise<string>;
+  } {
+    const queryRawUnsafe = vi.fn().mockResolvedValue([]);
+    const prisma = { $queryRawUnsafe: queryRawUnsafe };
+    const cfg = { skill: { traitSimilarityThreshold: 0.85 } };
+    const embedder = { embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+    const svc = new Specialist37Service(
+      prisma as never,
+      cfg as never,
+      {} as never, // llm
+      embedder as never,
+      {} as never, // metrics
+      {} as never, // probes
+      {} as never, // concepts
+    );
+    const internal = svc as unknown as Record<string, unknown>;
+    const createNewTraitSpy = vi.fn().mockResolvedValue('created');
+    internal.createNewTrait = createNewTraitSpy;
+    const mergeOrCreate = (
+      internal.mergeOrCreate as (a: unknown) => Promise<string>
+    ).bind(svc);
+    return { queryRawUnsafe, createNewTraitSpy, mergeOrCreate };
+  }
+
+  it('layer=value → SQL кандидатов содержит фильтр "layer" = $3, параметр = value', async () => {
+    const t = buildLayerKnnService();
+    await t.mergeOrCreate({
+      profile: ARBITER_PROFILE,
+      draft: ARBITER_DRAFT,
+      layer: 'value',
+    });
+
+    expect(t.queryRawUnsafe).toHaveBeenCalledTimes(1);
+    const call = t.queryRawUnsafe.mock.calls[0]!;
+    expect(call[0]).toContain('"layer" = $3');
+    expect(call[1]).toBe(PROFILE_ID);
+    expect(call[3]).toBe('value');
+  });
+
+  it('без layer → default skill (value-черта не мёрджится со skill-чертой)', async () => {
+    const t = buildLayerKnnService();
+    await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    expect(t.queryRawUnsafe.mock.calls[0]![3]).toBe('skill');
+  });
+
+  it('layer прокидывается в createNewTrait (нет кандидатов → создание в своём слое)', async () => {
+    const t = buildLayerKnnService();
+    await t.mergeOrCreate({
+      profile: ARBITER_PROFILE,
+      draft: ARBITER_DRAFT,
+      layer: 'motivation',
+    });
+
+    expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
+    expect(t.createNewTraitSpy.mock.calls[0]![0].layer).toBe('motivation');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// TZ clone-method Э2.1 — детектор конструктивных маркеров процесса:
+// третий проход rebuildProfile пишет SkillTrait layer=process_marker,
+// kill-switch cfg.skill.processMarkerDetectEnabled, код-гард стоп-маркеров
+// оценочных осей («избегает», «не решает сам», …) → null + warn.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Ответ LLM для process-marker-detect (схема БЕЗ layer — слой ставит сервис). */
+function pmDraftJson(statement: string, sourceBlockIds: string[]): string {
+  return JSON.stringify({
+    category: 'перепроверяет оценки данными',
+    statement,
+    confidence: 'medium',
+    sourceBlockIds,
+    firstObservedAt: new Date().toISOString(),
+    lastConfirmedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Как buildVmRebuildService, но второй проход (value/motivation) ВЫКЛЮЧЕН —
+ * изолируем третий (process_marker); его флаг задаётся параметром.
+ */
+function buildPmRebuildService(opts: {
+  pmFlagEnabled: boolean;
+  m: VmMocks;
+  /** Подменить основной detectTrait (null → главный проход молчит). */
+  detectTrait?: ReturnType<typeof vi.fn>;
+  /** Подменить mergeOrCreate целиком (для теста счётчика LLM-вызовов). */
+  mergeOrCreate?: ReturnType<typeof vi.fn>;
+}): { svc: Specialist37Service } {
+  const prisma = {
+    skillProfile: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: PROFILE_ID,
+        tenantId: TENANT,
+        status: 'active',
+        buildVersion: 0,
+        person: {
+          id: 'person-1',
+          tenantId: TENANT,
+          name: 'Иван',
+          entityId: 'ent-1',
+          relationship: 'employee',
+          deletedAt: null,
+        },
+      }),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    skillTrait: { create: opts.m.skillTraitCreate },
+  };
+  const cfg = {
+    skill: {
+      minObservations: 3,
+      lookbackMonths: 6,
+      traitSimilarityThreshold: 0.85,
+      valueMotivationDetectEnabled: false,
+      processMarkerDetectEnabled: opts.pmFlagEnabled,
+    },
+    getDynamic: vi
+      .fn()
+      .mockImplementation(async (key: string, _env: unknown, fallback: unknown) => {
+        if (key === 'knowledge.skillProfileMinObservations') return 3;
+        if (key === 'knowledge.skillClusterMinObservations') return 3;
+        return fallback;
+      }),
+  };
+  const metrics = {
+    incCoreSpecialistCards: vi.fn(),
+    incCoreSpecialistExtractionFailure: vi.fn(),
+    incCoreSpecialistLlmTokens: vi.fn(),
+    observeCoreSpecialistPipelineDuration: vi.fn(),
+  };
+  const probes = { checkAndEmitProbes: vi.fn().mockResolvedValue(undefined) };
+  const concepts = { findOrCreateConcept: vi.fn().mockResolvedValue(null) };
+  const embedder = { embedQuery: opts.m.embedQuery };
+  const svc = new Specialist37Service(
+    prisma as never,
+    cfg as never,
+    { call: opts.m.llmCall } as never,
+    embedder as never,
+    metrics as never,
+    probes as never,
+    concepts as never,
+  );
+  const internal = svc as unknown as Record<string, unknown>;
+  internal.loadSubjectReasoningBlocks = vi.fn().mockResolvedValue(VM_BLOCKS);
+  internal.runDecay = vi.fn().mockResolvedValue(undefined);
+  if (opts.detectTrait) internal.detectTrait = opts.detectTrait;
+  if (opts.mergeOrCreate) internal.mergeOrCreate = opts.mergeOrCreate;
+  return { svc };
+}
+
+describe('Specialist37Service — Э2.1 детектор маркеров процесса (третий проход rebuild)', () => {
+  it('флаг ON + валидный ответ LLM → создан trait с layer=process_marker', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({
+        text: pmDraftJson(
+          'Похоже, перед оценкой обычно просит фактические данные (замеры, метрики).',
+          ['b1', 'b2', 'b3'],
+        ),
+      }),
+      skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-pm-1' }),
+      // embedQuery падает → mergeOrCreate идёт по пути createNewTrait без KNN.
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    // Главный skill-проход молчит — изолируем третий проход.
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildPmRebuildService({ pmFlagEnabled: true, m, detectTrait });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.llmCall.mock.calls[0]![0].taskType).toBe('process-marker-detect');
+    expect(m.skillTraitCreate).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.layer).toBe('process_marker');
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual([
+      'b1',
+      'b2',
+      'b3',
+    ]);
+  });
+
+  it('statement с «избегает решений» → код-гард: trait НЕ создан + logger.warn', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({
+        text: pmDraftJson('Похоже, избегает решений и ждёт указаний сверху.', [
+          'b1',
+          'b2',
+        ]),
+      }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildPmRebuildService({ pmFlagEnabled: true, m, detectTrait });
+    const warnSpy = vi.spyOn(
+      (svc as unknown as { logger: { warn: (...a: unknown[]) => unknown } })
+        .logger,
+      'warn',
+    );
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+    const warnMessages = warnSpy.mock.calls.map((c) => String(c[1] ?? c[0]));
+    expect(
+      warnMessages.some((msg) => msg.includes('rejected_guard')),
+    ).toBe(true);
+  });
+
+  it('флаг OFF → третий LLM-вызов не происходит (process-marker-detect не зовётся)', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({ text: skillDraftJson() }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn(),
+    };
+    const mergeOrCreate = vi.fn().mockResolvedValue('created');
+    const { svc } = buildPmRebuildService({ pmFlagEnabled: false, m, mergeOrCreate });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    // Только основной detect (1 группа); ни одного process-marker-detect.
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    const taskTypes = m.llmCall.mock.calls.map((c) => c[0].taskType);
+    expect(taskTypes).toEqual(['skill-trait-detect']);
+    expect(taskTypes).not.toContain('process-marker-detect');
+  });
+
+  it('LLM отдаёт sourceBlockIds=[] (нет повторяемого приёма) → trait НЕ создаётся', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({
+        text: pmDraftJson(
+          'В цитатах нет повторяемого приёма проработки решений.',
+          [],
+        ),
+      }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
+    };
+    const detectTrait = vi.fn().mockResolvedValue(null);
+    const { svc } = buildPmRebuildService({ pmFlagEnabled: true, m, detectTrait });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.skillTraitCreate).not.toHaveBeenCalled();
+  });
+});

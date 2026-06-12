@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { DataClassPolicyClient } from './DataClassPolicyClient';
 
 export const metadata: Metadata = {
-  title: 'Политика DataClass — Z-Admin',
+  title: 'Политика DataClass',
 };
 
 /**

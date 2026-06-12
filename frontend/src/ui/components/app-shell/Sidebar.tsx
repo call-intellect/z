@@ -254,6 +254,10 @@ const DAILY_GROUP: NavGroup = {
     { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
     { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
     { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
+    // ТЗ Ф6 (D4) 2026-06-11 — «Лента» добавлена в десктоп, чтобы мобильный
+    // нижний навбар (PRIMARY_NAV_ITEMS) был подмножеством десктопа. Доступна
+    // всем авторизованным (как /projects — без gateFeature).
+    { href: '/feed', label: 'Лента', icon: Newspaper, matchPrefix: '/feed' },
     // ТЗ A3 (2026-06-06): «Дамп» и «Таблицы» переехали в «Память компании»
     // (MEMORY_SUBGROUP_ITEMS); «Проекты», «Спринты», «Архив спринтов» —
     // в новую группу «Задачи» (TASKS_GROUP). Здесь остаётся только daily-ядро.
@@ -308,19 +312,31 @@ const ME_GROUP: NavGroup = {
  * Чаты (ТЗ 2026-06-05 chatbox-integration, Фаза 7) — раздел внешних чат-
  * источников. Пункт «Чаты» + collapsible-подгруппа «Интеграции» с настройкой
  * интеграции «Чат бокс». Гейтится на `feature.chatbox`.
+ *
+ * ТЗ Ф7 (D3) 2026-06-11 — вся группа свёрнута по умолчанию (как «Справочник»):
+ * `items: []` + `hideGroupLabel`, а сам пункт «Чаты» живёт в collapsible-
+ * подгруппе «Чаты» (storageKey `sidebar.chats.open`). Подгруппа «Интеграции»
+ * сохранена вложенной. Активный пункт авто-раскрывает свою подгруппу.
  */
 const CHATS_GROUP: NavGroup = {
   label: 'Чаты',
-  items: [
-    {
-      href: '/chats',
-      label: 'Чаты',
-      icon: MessagesSquare,
-      matchPrefix: '/chats',
-      gateFeature: 'feature.chatbox',
-    },
-  ],
+  items: [],
+  hideGroupLabel: true,
   collapsibleSubgroups: [
+    {
+      label: 'Чаты',
+      defaultCollapsed: true,
+      storageKey: 'sidebar.chats.open',
+      items: [
+        {
+          href: '/chats',
+          label: 'Чаты',
+          icon: MessagesSquare,
+          matchPrefix: '/chats',
+          gateFeature: 'feature.chatbox',
+        },
+      ],
+    },
     {
       label: 'Интеграции',
       defaultCollapsed: true,
@@ -353,20 +369,34 @@ const MEMORY_GROUP: NavGroup = {
  * Управление — ролевые дашборды для owner/admin/coo. Группа целиком
  * условная: рендерится только при `canSeeOperationsCoo === true`.
  * `/goals` остаётся гейтнутым по тарифу (feature.goals_strategy).
+ *
+ * ТЗ Ф7 (D3) 2026-06-11 — свёрнута по умолчанию (как «Справочник»):
+ * `items: []` + `hideGroupLabel`, все пункты в collapsible-подгруппе
+ * «Управление» (storageKey `sidebar.management.open`). Активный пункт
+ * авто-раскрывает подгруппу.
  */
 const MANAGEMENT_GROUP: NavGroup = {
   label: 'Управление',
-  items: [
-    // SBA β-8 / β-8.1 / β-8.3 — COO-панели.
-    { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations', overviewTarget: 'overview.operations' },
-    { href: '/dashboard/operations/daily', label: 'Ежедневный отчёт', icon: Newspaper, matchPrefix: '/dashboard/operations/daily' },
-    { href: '/dashboard/operations/weekly', label: 'Недельная сводка', icon: BarChart3, matchPrefix: '/dashboard/operations/weekly' },
+  items: [],
+  hideGroupLabel: true,
+  collapsibleSubgroups: [
     {
-      href: '/goals',
-      label: 'Цели и стратегия',
-      icon: Target,
-      matchPrefix: '/goals',
-      gateFeature: 'feature.goals_strategy',
+      label: 'Управление',
+      defaultCollapsed: true,
+      storageKey: 'sidebar.management.open',
+      items: [
+        // SBA β-8 / β-8.1 / β-8.3 — COO-панели.
+        { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations', overviewTarget: 'overview.operations' },
+        { href: '/dashboard/operations/daily', label: 'Ежедневный отчёт', icon: Newspaper, matchPrefix: '/dashboard/operations/daily' },
+        { href: '/dashboard/operations/weekly', label: 'Недельная сводка', icon: BarChart3, matchPrefix: '/dashboard/operations/weekly' },
+        {
+          href: '/goals',
+          label: 'Цели и стратегия',
+          icon: Target,
+          matchPrefix: '/goals',
+          gateFeature: 'feature.goals_strategy',
+        },
+      ],
     },
   ],
 };
@@ -466,6 +496,73 @@ const SETTINGS_BASE_ITEMS: NavItem[] = [
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
   { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
 ];
+
+/**
+ * ТЗ Ф6 (D4) 2026-06-11 — статический, РОЛЬ-АГНОСТИЧНЫЙ союз всех возможных
+ * десктоп-пунктов сайдбара (href + matchPrefix). Часть пунктов в runtime
+ * рендерится по роли/доступу/тарифу, но для гард-теста «mobile ⊆ desktop»
+ * (`nav-subset.spec.ts`) важно лишь, что десктоп СПОСОБЕН открыть href —
+ * поэтому собираем полный союз без учёта гейтинга. Источник — те же
+ * статические group-константы, что использует сайдбар.
+ *
+ * Не включаем динамически инжектируемые элементы, у которых href и так
+ * присутствует через matchPrefix их секции; namespace-пункты
+ * (`INTAKE_NAV_ITEM` и т.п.) добавлены явно, чтобы союз был полным.
+ */
+export interface DesktopNavRef {
+  href: string;
+  matchPrefix: string;
+}
+
+function flattenGroupRefs(group: NavGroup): DesktopNavRef[] {
+  const all: NavItem[] = [
+    ...group.items,
+    ...(group.collapsibleSubgroups?.flatMap((s) => s.items) ?? []),
+  ];
+  return all.map((it) => ({ href: it.href, matchPrefix: it.matchPrefix ?? it.href }));
+}
+
+/**
+ * Полный союз десктоп-навигации (без дублей по href). Используется гард-тестом.
+ */
+export function getDesktopNavRefs(): DesktopNavRef[] {
+  const refs: DesktopNavRef[] = [
+    ...flattenGroupRefs(DAILY_GROUP),
+    ...flattenGroupRefs(TASKS_GROUP),
+    ...flattenGroupRefs(ME_GROUP),
+    ...flattenGroupRefs(CHATS_GROUP),
+    ...flattenGroupRefs(MEMORY_GROUP),
+    ...flattenGroupRefs(MANAGEMENT_GROUP),
+    ...flattenGroupRefs(REFERENCE_GROUP),
+    // Динамически инжектируемые пункты (по роли/настройке деска):
+    { href: INTAKE_NAV_ITEM.href, matchPrefix: INTAKE_NAV_ITEM.matchPrefix ?? INTAKE_NAV_ITEM.href },
+    { href: SUPPORT_DESK_NAV_ITEM.href, matchPrefix: SUPPORT_DESK_NAV_ITEM.matchPrefix ?? SUPPORT_DESK_NAV_ITEM.href },
+    { href: MY_TICKETS_NAV_ITEM.href, matchPrefix: MY_TICKETS_NAV_ITEM.matchPrefix ?? MY_TICKETS_NAV_ITEM.href },
+    ...SETTINGS_BASE_ITEMS.map((it) => ({ href: it.href, matchPrefix: it.matchPrefix ?? it.href })),
+  ];
+  const seen = new Set<string>();
+  return refs.filter((r) => {
+    if (seen.has(r.href)) return false;
+    seen.add(r.href);
+    return true;
+  });
+}
+
+/**
+ * Все href десктоп-навигации (роль-агностично). Удобный плоский список.
+ */
+export const DESKTOP_NAV_HREFS: string[] = getDesktopNavRefs().map((r) => r.href);
+
+/**
+ * Достижим ли `href` через десктоп-навигацию: точное совпадение href ИЛИ
+ * покрытие каким-либо matchPrefix десктопа (`/me` покрывает `/me/inbox`,
+ * `/me/check-ins`). Та же семантика, что у активного пункта в сайдбаре.
+ */
+export function isDesktopNavReachable(href: string): boolean {
+  return getDesktopNavRefs().some(
+    (r) => href === r.href || href === r.matchPrefix || href.startsWith(`${r.matchPrefix}/`),
+  );
+}
 
 export function Sidebar({
   className,
@@ -574,13 +671,29 @@ export function Sidebar({
   // того, что пользователю разрешено видеть (роль + entitlement-флаги).
   const memoryAccess = useMemoryAccess();
 
+  // ТЗ Ф7 (D3) 2026-06-11 — «Память компании» свёрнута по умолчанию (как
+  // «Справочник»): группа без собственных items + hideGroupLabel, все
+  // (отфильтрованные по доступу) пункты в collapsible-подгруппе «Память
+  // компании» (storageKey `sidebar.memory.open`). Активный пункт авто-
+  // раскрывает подгруппу; allItems по-прежнему собирает их через
+  // collapsibleSubgroups.items (winnerHref не ломается).
+  const memoryItems: NavItem[] = MEMORY_GROUP.items.filter((it) => {
+    if (it.href === '/regulations') return memoryAccess.canReadRegulations;
+    if (it.href === '/entities') return memoryAccess.canReadEntities;
+    return true;
+  });
   const memoryGroup: NavGroup = {
-    ...MEMORY_GROUP,
-    items: MEMORY_GROUP.items.filter((it) => {
-      if (it.href === '/regulations') return memoryAccess.canReadRegulations;
-      if (it.href === '/entities') return memoryAccess.canReadEntities;
-      return true;
-    }),
+    label: MEMORY_GROUP.label,
+    items: [],
+    hideGroupLabel: true,
+    collapsibleSubgroups: [
+      {
+        label: MEMORY_GROUP.label,
+        defaultCollapsed: true,
+        storageKey: 'sidebar.memory.open',
+        items: memoryItems,
+      },
+    ],
   };
 
   // ТЗ 2026-05-26 §5.5 — точка возле «Клоны» (новый CloneAccessGrant).

@@ -58,6 +58,9 @@ function makeAdapter(opts: {
   voiceEnabled?: boolean;
   documentEnabled?: boolean;
   intentClassifierEnabled?: boolean;
+  // Ф5 assistant-channels (2026-06-11): kill-switch ASSISTANT_CHANNEL_ROUTING_ENABLED.
+  // В моке default false — существующие тесты проверяют прежний узкий роутер.
+  assistantChannelRoutingEnabled?: boolean;
   classifyIntent?:
     | 'factual'
     | 'exploratory'
@@ -122,6 +125,9 @@ function makeAdapter(opts: {
     incBotInbound: vi.fn(),
     observeBotVoiceAsrDuration: vi.fn(),
     incBotIntentClassified: vi.fn(),
+    // ТЗ 2026-05-29 checkins / Ф5: distinct-метрика plan/report — нужна,
+    // когда classifyIntent возвращает daily_plan_morning/daily_report_evening.
+    incBotCheckinIntentClassifier: vi.fn(),
     // β-9: метрики «незнакомый отправитель».
     incTelegramBotUnknownSender: vi.fn(),
     // β-9 / Phase 6: метрика команды `/login` в боте.
@@ -157,6 +163,8 @@ function makeAdapter(opts: {
       voiceEnabled: opts.voiceEnabled ?? true,
       documentEnabled: opts.documentEnabled ?? true,
       intentClassifierEnabled: opts.intentClassifierEnabled ?? true,
+      assistantChannelRoutingEnabled:
+        opts.assistantChannelRoutingEnabled ?? false,
     },
   } as unknown as TypedConfigService;
 
@@ -771,6 +779,223 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
   });
 });
 
+// ──────────────── Ф5 assistant-channels: единый помощник ────────────────
+
+describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () => {
+  const textUpdate = (text: string, updateId = 300): TelegramUpdate => ({
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1700000000,
+      chat: { id: 100 },
+      from: { id: 100 },
+      text,
+    },
+  });
+
+  it('ON: intent task (conf>=0.7) → ПО-ПРЕЖНЕМУ handleCreateTask (у помощника нет инструмента постановки задачи), InboundMessage null', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'task',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Поставь задачу: подготовить КП к пятнице'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    // Как при OFF: бот сам отвечает через task-handler, наружу ничего не идёт.
+    expect(result).toBeNull();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org-1',
+        text: 'Поставь задачу: подготовить КП к пятнице',
+      }),
+    );
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+  });
+
+  it('ON: intent show_tasks (conf>=0.7) → assistant_turn (помощник покрывает через list_tasks), handleShowTasks НЕ вызван', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'show_tasks',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какие у меня задачи?', 306),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Какие у меня задачи?',
+      originChannelBindingId: 'binding-1',
+    });
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
+  });
+
+  it('ON: intent factual (бывший chat_query) → assistant_turn', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 301),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Какой бюджет на Q4?',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: «План на день…» (daily_plan_morning conf>=0.7) → ПО-ПРЕЖНЕМУ daily_checkin_self (чек-ин не сломан)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'daily_plan_morning',
+      classifyConfidence: 0.85,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('План на день: А, Б, В', 302),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'daily_checkin_self',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      kind: 'morning',
+      rawText: 'План на день: А, Б, В',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('OFF (флаг false): factual → chat_query как раньше (бит-в-бит)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: false,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 303),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'chat_query',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      question: 'Какой бюджет на Q4?',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: voice → Vox-транскрипт → assistant_turn (kind=voice в metadata)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 304,
+      message: {
+        message_id: 304,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-assistant-1' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(mocks.vox.submit).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Какой бюджет на четвёртый квартал?',
+      metadata: expect.objectContaining({
+        source: 'telegram_bot',
+        kind: 'voice',
+      }),
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: voice «план/отчёт» (daily_report_evening conf>=0.7) → daily_checkin_self, не помощник', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'daily_report_evening',
+      classifyConfidence: 0.8,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 305,
+      message: {
+        message_id: 305,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-assistant-2' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'daily_checkin_self',
+      kind: 'evening',
+      rawText: 'Какой бюджет на четвёртый квартал?',
+    });
+  });
+});
+
 // ───────────────────────────── β-9: глобальный канал ─────────────────────
 
 describe('TelegramBotChannelAdapter.ingestUpdate (β-9 глобальный канал)', () => {
@@ -1075,5 +1300,186 @@ describe('TelegramBotChannelAdapter.renderText — meeting.invite (Фаза 3.3)
     ).renderText({ eventType: 'meeting.invite', payload: {} });
     expect(typeof text).toBe('string');
     expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+describe('TelegramBotChannelAdapter.renderText — видимые брифы (Ф2 assistant-channels)', () => {
+  const render = (
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): string => {
+    const { adapter } = makeAdapter();
+    return (
+      adapter as unknown as {
+        renderText: (n: {
+          eventType: string;
+          payload: Record<string, unknown>;
+        }) => string;
+      }
+    ).renderText({ eventType, payload });
+  };
+
+  const cases: Array<[string, Record<string, unknown>, string[]]> = [
+    [
+      'checkin.prompt',
+      {
+        kind: 'checkin',
+        checkInKind: 'morning',
+        personId: 'p-1',
+        dateLocal: '2026-06-12',
+        question: 'Какие 1-3 задачи у вас в фокусе сегодня?',
+      },
+      [
+        'Какие 1-3 задачи у вас в фокусе сегодня?',
+        'Ответьте текстом или голосом — Кора запишет.',
+      ],
+    ],
+    [
+      'operations.weekly_digest',
+      {
+        digestId: 'd-1',
+        weekStart: '2026-06-08',
+        weekEnd: '2026-06-14',
+        title: 'Итоги недели',
+        body: 'Закрыто 12 задач, 3 риска требуют внимания.',
+        actionUrl: 'https://app.kora.test/digest/d-1',
+      },
+      [
+        'Итоги недели',
+        'Закрыто 12 задач',
+        'https://app.kora.test/digest/d-1',
+      ],
+    ],
+    [
+      'goals.pulse',
+      {
+        digestId: 'd-2',
+        isoWeek: '2026-W24',
+        title: 'Пульс целей',
+        body: 'Цель «Выручка» — 80% к плану.',
+        actionUrl: 'https://app.kora.test/goals',
+      },
+      ['Пульс целей', 'Выручка', 'https://app.kora.test/goals'],
+    ],
+    [
+      'operations.monthly_recap',
+      {
+        snapshotId: 's-1',
+        periodYm: '2026-05',
+        title: 'Итоги мая',
+        body: 'Главное за месяц: запуск брифов.',
+        actionUrl: 'https://app.kora.test/recap',
+      },
+      ['Итоги мая', 'запуск брифов'],
+    ],
+    [
+      'proactive.notification',
+      {
+        proactiveNotificationId: 'pn-1',
+        ruleType: 'stale_goal',
+        severity: 'warning',
+        title: 'Цель без движения',
+        body: 'Цель «Найм» не обновлялась 14 дней.',
+      },
+      ['Цель без движения', 'Найм'],
+    ],
+    [
+      'event.reminder',
+      {
+        eventId: 'e-1',
+        eventTitle: 'Планёрка отдела',
+        startAtIso: '2026-06-12T09:30:00.000Z',
+        offsetMin: 15,
+        location: 'Переговорка 2',
+        actionUrl: 'https://app.kora.test/calendar',
+      },
+      ['Планёрка отдела', '09:30 12.06', '(UTC)', 'Переговорка 2'],
+    ],
+    [
+      'issue.mention',
+      {
+        issueId: 'i-1',
+        commentId: 'c-1',
+        byUserId: 'u-1',
+        snippet: 'Посмотри, пожалуйста, оценку по этой задаче',
+        issueIdentifier: 'KOR-42',
+      },
+      ['Вас упомянули в задаче', 'KOR-42', 'Посмотри, пожалуйста, оценку'],
+    ],
+    [
+      'idea.status_changed',
+      {
+        ideaId: 'id-1',
+        statement: 'Перейти на единый стек',
+        oldStatus: 'captured',
+        newStatus: 'shipped',
+        reason: 'внедрено в спринте',
+      },
+      [
+        'Идея сменила статус',
+        'Перейти на единый стек',
+        'captured',
+        'shipped',
+        'внедрено в спринте',
+      ],
+    ],
+    [
+      'support.ticket_created',
+      {
+        ticketId: 't-1',
+        ticketNumber: '124',
+        subject: 'Не открывается отчёт',
+        actionUrl: 'https://app.kora.test/support/124',
+      },
+      ['Обращение №124', 'Не открывается отчёт'],
+    ],
+    [
+      'support.ticket_reply',
+      {
+        ticketId: 't-1',
+        ticketNumber: '124',
+        subject: 'Не открывается отчёт',
+        snippet: 'Мы починили, проверьте ещё раз',
+        actionUrl: 'https://app.kora.test/support/124',
+      },
+      ['Ответ по обращению №124', 'Мы починили, проверьте ещё раз'],
+    ],
+  ];
+
+  it.each(cases)(
+    '%s — человекочитаемый бриф, не «Уведомление: …»',
+    (eventType, payload, expectedParts) => {
+      const text = render(eventType, payload);
+      for (const part of expectedParts) {
+        expect(text).toContain(part);
+      }
+      expect(text.startsWith('Уведомление:')).toBe(false);
+    },
+  );
+
+  it('note.ack — возвращает payload.text как есть', () => {
+    const text = render('note.ack', { text: 'Записал: договорённость с подрядчиком.' });
+    expect(text).toBe('Записал: договорённость с подрядчиком.');
+    expect(text.startsWith('Уведомление:')).toBe(false);
+  });
+
+  it('note.ack — fallback при пустом text', () => {
+    const text = render('note.ack', { text: '' });
+    expect(text).toBe('Записал в память Коры 🧠');
+  });
+
+  it('неизвестный eventType без title/body — прежний default-fallback', () => {
+    const text = render('foo.bar', {});
+    expect(text.startsWith('Уведомление:')).toBe(true);
+    expect(text).toContain('foo.bar');
+  });
+
+  it('HTML-экранирование: <script> в title рендерится как &lt;script&gt;', () => {
+    const text = render('operations.weekly_digest', {
+      title: '<script>alert(1)</script>',
+      body: 'тело дайджеста',
+    });
+    expect(text).toContain('&lt;script&gt;');
+    expect(text).not.toContain('<script>');
   });
 });

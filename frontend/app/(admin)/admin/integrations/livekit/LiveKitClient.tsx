@@ -35,6 +35,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'sfu', label: 'SFU', icon: Video },
@@ -63,7 +64,7 @@ export function LiveKitClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Каналы и интеграции' },
         { label: 'LiveKit' },
       ]}

@@ -190,6 +190,68 @@ export class ChatboxIntegrationController {
     };
   }
 
+  @Get('memory-summary')
+  @ApiOperation({
+    summary:
+      'Сводка «Чаты в памяти»: забрано/проанализировано/в работе/блоки/задачи',
+  })
+  async memorySummary(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<Record<string, unknown>> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+
+    const integration = await this.prisma.chatboxIntegration.findUnique({
+      where: { tenantId: t },
+      select: { analysisEnabled: true },
+    });
+    if (!integration) {
+      return { configured: false };
+    }
+
+    const where = { tenantId: t };
+    const [dialogs, sessions, analyzed, inProgress, failed, blocks, tasks] =
+      await Promise.all([
+        // забрано диалогов (зеркало чатов)
+        this.prisma.chatboxChat.count({ where }),
+        // всего сессий
+        this.prisma.chatboxChatSession.count({ where }),
+        // проанализировано (мост в граф выполнен)
+        this.prisma.chatboxChatSession.count({
+          where: { tenantId: t, analysisStatus: 'done' },
+        }),
+        // в работе (ждут / анализируются)
+        this.prisma.chatboxChatSession.count({
+          where: { tenantId: t, analysisStatus: { in: ['pending', 'analyzing'] } },
+        }),
+        // упавшие
+        this.prisma.chatboxChatSession.count({
+          where: { tenantId: t, analysisStatus: 'failed' },
+        }),
+        // блоки знаний из переписки (RawEvent из chatbox → дальше граф)
+        this.prisma.rawEvent.count({
+          where: { tenantId: t, sourceType: 'chatbox' },
+        }),
+        // задачи, порождённые из переписки
+        this.prisma.task.count({
+          where: { tenantId: t, sourceType: 'chatbox' },
+        }),
+      ]);
+
+    return {
+      configured: true,
+      analysisEnabled: integration.analysisEnabled,
+      dialogs,
+      sessions,
+      analyzed,
+      inProgress,
+      failed,
+      blocks,
+      tasks,
+    };
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {

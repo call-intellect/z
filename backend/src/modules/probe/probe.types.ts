@@ -61,11 +61,16 @@ export interface ProbeSuggestInput {
 /**
  * Результат `ProbeService.suggest`.
  *  - На успех — created ProbeEvent.
- *  - На дедуп / rate-limit / cold-start — { dropped, ... }.
+ *  - На дедуп / rate-limit / cold-start / гейт ценности — { dropped, ... }.
+ *
+ * W2 autonomy (2026-06-12): `low_value` — priority ниже крутилки
+ * `probe.minValuePriority` (audit-запись status='dropped_low_value').
+ * NUDGE-reason (`routed_to_digest`) возвращает `{ ok: true }` — probe создан
+ * и будет доставлен дайджестом.
  */
 export type ProbeSuggestResult =
   | { ok: true; probeEventId: string }
-  | { dropped: 'dedup' | 'rate_limit' | 'cold_start' };
+  | { dropped: 'dedup' | 'rate_limit' | 'cold_start' | 'low_value' };
 
 export interface NotificationRespondedPayload {
   tenantId: string;

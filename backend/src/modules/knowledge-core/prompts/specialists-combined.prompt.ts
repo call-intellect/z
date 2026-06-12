@@ -142,6 +142,10 @@ export const RegulationDraftSchema = z
       .optional(),
     roles: z.array(z.string()).optional(),
     evidenceQuote: z.string().nullable().optional(),
+    // A2.2 — повторяемая норма компании (true) vs чужая практика/гипотетика/
+    // разовое (false). Опционально для обратной совместимости со старыми
+    // моделями; используется как сигнал гейта, в БД не персистится.
+    isOrgNorm: z.boolean().optional(),
     confidence: Confidence01,
   })
   .strict();
@@ -392,6 +396,7 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
             },
             roles: { type: 'array', items: { type: 'string' } },
             evidenceQuote: { type: ['string', 'null'] },
+            isOrgNorm: { type: 'boolean' },
             confidence: { type: 'number' },
           },
         },
@@ -509,6 +514,12 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',
     '- голое упоминание документа без его содержания: если документ лишь упомянут (есть, но что в нём — не раскрыто), это existence-сигнал с НИЗКИМ confidence — тело не извлекай.',
     'Калибровка confidence для regulations: есть шаги / роли / сроки → 0.9; только голое упоминание документа → 0.5.',
+    'isOrgNorm — повторяемая норма/инструкция/политика КОМПАНИИ («как делаем всегда») → true; чужая практика, гипотетика, разовое поручение или голое упоминание → false (такое в regulations можно не добавлять).',
+    '',
+    'ПРИМЕР (regulations):',
+    '[BLOCK:blk_12] (signalType=regulation) «Проверка договоров» О: договоры с подрядчиком сначала к юристу, ответ за 3 дня.',
+    '→ regulations: [{"sourceBlockId":"blk_12","kind":"regulation","name":"Юр-проверка договоров с подрядчиками","statement":"Каждый договор с подрядчиком проходит юр-проверку до подписания; срок ответа юриста — 3 рабочих дня.","severity":"mandatory","extractionStatus":"существует","roles":["юрист"],"isOrgNorm":true,"confidence":0.9}].',
+    'НЕ извлекать: «хорошо бы как в Google» (чужая практика+гипотетика) → в regulations НЕ добавлять (или isOrgNorm=false).',
     '',
     `ВАЖНО: верни результат строго через вызов инструмента \`${SPECIALISTS_COMBINED_TOOL_NAME}\`. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');

@@ -28,6 +28,7 @@ import { HealthLivekitTab } from './HealthLivekitTab';
 import { HealthQueuesTab } from './HealthQueuesTab';
 import { HealthS3Tab } from './HealthS3Tab';
 import { HealthWorkersTab } from './HealthWorkersTab';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'queues', label: 'Очереди', icon: ListTree },
@@ -42,7 +43,7 @@ export function HealthClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Пульс', href: '/admin' },
         { label: 'Здоровье системы' },
       ]}

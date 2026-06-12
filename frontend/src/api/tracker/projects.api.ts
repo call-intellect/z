@@ -22,8 +22,9 @@ export interface ListProjectsRequest {
 }
 
 export interface CreateProjectRequest {
-  slug: string;
-  identifier: string;
+  // D2 (ТЗ 2026-06-11): slug/identifier опциональны — сервер генерит их из name.
+  slug?: string;
+  identifier?: string;
   name: string;
   description?: string | null;
   defaultAssigneeId?: string | null;

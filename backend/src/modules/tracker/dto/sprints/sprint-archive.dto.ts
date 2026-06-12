@@ -37,7 +37,9 @@ export interface SprintArchiveItemDto {
 
 export interface SprintArchiveSummaryDto {
   total: number;
+  /** D10/R10 — число ЗАВЕРШЁННЫХ циклов (status='completed'). Имя `confirmed` легаси. */
   confirmed: number;
+  /** D10/R10 — число ОТМЕНЁННЫХ циклов (status='cancelled'). Имя `rejected` легаси. */
   rejected: number;
   inProgress: number;
 }

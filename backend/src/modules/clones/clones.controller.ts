@@ -17,6 +17,7 @@ import {
   type CurrentUserPayload,
 } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
+import { OrgAdminGuard } from '../auth/guards/org-admin.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -29,11 +30,14 @@ import {
 } from './dto/clone-conversations.dto';
 import {
   AskCloneBodySchema,
+  CloneQueryLogQuerySchema,
   ClonesListQuerySchema,
   MarkTraitMisleadingBodySchema,
   type AskCloneBody,
   type AskCloneResponseDto,
   type CloneHistoryResponseDto,
+  type CloneQueryLogListResponseDto,
+  type CloneQueryLogQuery,
   type ClonesListQuery,
   type ClonesListResponseDto,
   type CreateCloneConversationResponseDto,
@@ -104,6 +108,26 @@ export class ClonesController {
       cloneRefId: query.cloneRefId,
       limit: query.limit,
       cursor: query.cursor,
+    });
+  }
+
+  @Get('query-log')
+  @UseGuards(OrgAdminGuard)
+  @ApiOperation({
+    summary:
+      'TZ clone-method Э0.1: журнал запросов к клонам Org (owner/admin) — кто и что спрашивал, был ли ответ опёрт на наблюдения (grounded) или отказ',
+  })
+  async getCloneQueryLog(
+    @Query(new ZodValidationPipe(CloneQueryLogQuerySchema))
+    query: CloneQueryLogQuery,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CloneQueryLogListResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.listQueryLog({
+      tenantId: t,
+      cloneTargetId: query.cloneTargetId,
+      limit: query.limit,
+      offset: query.offset,
     });
   }
 

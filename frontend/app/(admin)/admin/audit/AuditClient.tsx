@@ -44,6 +44,8 @@ import {
   SelectValue,
 } from '@/ui/shadcn/select';
 
+import { adminRootCrumb } from '@/ui/components/admin/brand';
+
 import {
   AdminEmpty,
   AdminError,
@@ -185,7 +187,7 @@ export function AuditClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Пульс', href: '/admin' },
         { label: 'Журнал super_admin' },
       ]}

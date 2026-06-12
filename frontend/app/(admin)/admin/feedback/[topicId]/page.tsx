@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { FeedbackTopicDetailClient } from './FeedbackTopicDetailClient';
 
 export const metadata: Metadata = {
-  title: 'Блок обратной связи — Z-Admin',
+  title: 'Блок обратной связи',
 };
 
 /**

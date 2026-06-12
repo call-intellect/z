@@ -39,7 +39,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | specialist 3.6 (Ideas) | `idea-extract`, `idea-cluster-merge`, `idea-status-summarize` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.7 (Skill) | `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond` | **GPT-5.4 capable primary** (КРИТИЧНО) → OpenAI-mini → Ollama |
 | specialist 3.8 (Helpfulness) | `helpfulness-detect`, `helpfulness-trait-merge`, `helpfulness-spotlight-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
-| probe + dialog | `probe-formulate`, `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
+| probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
 | meeting analyze | `analyze-default`, `type-sales`, `type-interview`, `type-1on1`, ..., `review`, `retrospective`, `task_discussion` | по типу — см. `seed-llm-task-routes*.ts` |
@@ -448,5 +448,75 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - Прочее A6: telegram create/forward → один builder (`today` из SYSTEM в user); `issue-infer-fields` — убрана goal-ветка (`suggestedGoalId=null`); мёртвый `chat-v2-synthesize` MODE_PROMPTS удалён (полезное перенесено в боевой `synthetic.prompt`).
 
 [[../index|← index]]
+
+## Probe-система Фаза 1 — формулировка + дайджест (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Ветка `svdev`, коммиты `5ed78b54..fa950cd1`. Полная карта изменений — [[probe-agent]] §«Фаза 1»; cron — [[workers-queues]].
+
+- **`probe-formulate` переписан** — SYSTEM получил персону + правила + few-shot + self-check (стабильный, cache-friendly); USER больше не подаёт машинные коды (`emittedByService`/сырой `reason`), вместо них человеческий `reasonLabel` из словаря `probe-reason-labels.ts`. Schema контракта `probe_formulate_v2` → `probe_formulate_v3`. Fallback при провале LLM: `suggestedQuestion → PROBE_REASON_FALLBACK[reason] → generic`.
+- **`ProbeDigestCron` (`@Cron('0 * * * *')`) — БЕЗ LLM.** Билдер `buildProbeDigestSummary` (`probe/prompts/probe-digest.prompt.ts`) собирает текст батч-дайджеста отложенных probe **детерминированно**, не вызывая модель (новый taskType не вводится). Подробности cron'а — [[workers-queues]].
+- **`ProbeDispatcherWorker` (Ф4)** перед `formulate()` перепроверяет повод (`PROBE_REASON_RECHECK`) — если пробел закрылся сам, probe помечается `suppressed_stale` и **LLM не зовётся** (экономия вызовов).
+- **Новая метрика `probe_outcome_total{outcome,reason}`** (`answered`/`ignored`) — калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса; отложена до накопления данных).
+
+[[../index|← index]]
+
+## Консолидация отчёта встречи + отчёт→граф (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Ф1/Ф3) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Ф2). Коммиты `2501d72b` (Ф1), `13a6ac69` (Ф2), `e4fded3c` (Ф3). Граф/гарды — [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф»; очереди — [[workers-queues]].
+
+### Фаза 1 — единое ядро отчёта = `meeting-report-fast`
+
+Три отдельных LLM-job'а **удалены** (`meeting-report-fast` уже делал то же ядро одним вызовом):
+- **`chapters`** (бывший воркер `ai/workers/chapters.worker.ts` + очередь `ai.chapters`) — главы теперь только из fast (`MeetingChapter` версии `fast`).
+- **`tasks-extract`** (воркер `ai/workers/tasks-extract.worker.ts` + очередь `ai.tasks`) — задачи только из fast. ⚠ `task-extraction.service` + `prompts/tasks-structured` **НЕ** удалены (использует `chatbox-analyze.worker`); удалён сам воркер.
+- **`quality-score`** (воркер `ai/workers/quality-score.worker.ts` + очередь `ai.quality-score`) — качество теперь пишет `meeting-report-fast.worker.writeQualityScore` в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`); читатели `QualityScoreService` без изменений.
+
+`LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Регенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`.
+
+### Фаза 2 — событие `meeting.report-fast-ready` + `ReportIngestListener` (отчёт→граф)
+
+После готовности быстрого отчёта (`reportFastStatus ∈ {ready, partial}`) `meeting-report-fast.worker` эмитит EventEmitter2-событие **`meeting.report-fast-ready`** `{meetingId, tenantId, status}` (try/catch best-effort — сбой эмита не откатывает статус). Слушатель **`ReportIngestListener`** (`@OnEvent`) → `ReportIngestAdapter.ingestReport` → отдельный `RawEvent(sourceType='meeting_report')` → штатный block-ingest. **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие; LLM-извлечение делает обычный `block-ingest.worker`. Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON). На `'failed'` событие не эмитится. Защита от галлюцинаций (report — вторичный источник, транскрипт побеждает при дедупе) — гарды A/B, см. [[../02_architecture/knowledge-core]].
+
+### Фаза 3 — апгрейд 3 промптов отчётов (коммит `e4fded3c`)
+
+Промпты edited code-side (prompt registry с code-fallback, едут с деплоем кода, отдельной seed-операции не требуют; cache-friendly — стабильный SYSTEM):
+- **`meeting-report-fast`** (`ai/services/prompts/meeting-report-fast.prompt.ts`) — роль «Кора+память», блок-дискриминатор 6 сущностей (задача/идея/решение/договорённость/открытый вопрос/риск-проблема), лестница деградации, self-check, запрет англицизмов в `summary_markdown`, 5 секций. Схема: `recommendations.maxItems` 10→7, `strengths.maxItems` 8→4.
+- **`type-sales` / `extract_sales`** (`ai/services/prompts/type-sales.ts`) — роль «аналитик продаж», дискриминатор близких сущностей (боль/возражение/вопрос/критерий/блокер), few-shot дополнены всеми required-полями (`competitors`, `decision_criteria`, `what_hooked`, `main_blocker`, `data_quality`), tool description.
+- **`client-meeting-split`** (`ai/services/prompts/client-meeting-split.prompt.ts`) — принцип нейтральной фиксации недовольства без сокрытия, 3-й few-shot, чистка англ. жаргона.
+- **Новое:** общий словарь ярлыков типов встреч `MEETING_TYPE_LABEL_RU` / `meetingTypeLabelRu` в `ai/services/prompts/common.ts`.
+
+[[../index|← index]]
+
+## Единый помощник в каналах + автономизация — 5 новых taskType (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-assistant-channels-telegram-max.md`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) + [`plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
+
+### Семейство `debate-conflict-arbiter` (autonomy W1, 4 taskType)
+
+Ночной LLM-арбитр конфликтов знаний (`ConflictArbiterCron`, 02:00) через `MultiAgentDebateService`: вердикт `keep_old|accept_new|merge|evolving|escalate` по payload'ам двух конфликтующих карточек.
+- `debate-conflict-arbiter` — зонтичный route (агрегатная аналитика стоимости debate-сессии; реальные вызовы — 3 stance ниже).
+- `debate-conflict-arbiter-critic` / `-neutral` — cheap-цепочка `deepseek-v4-flash` → `gpt-5.4-mini` → `ollama/qwen3.5:9b` (как у curation-verify).
+- `debate-conflict-arbiter-supporter` — primary **`gpt-5.4-mini`** (diversity голосов), затем flash → ollama.
+
+Сид — `seed-llm-task-routes-conflict-arbiter.ts` (в `apply-prod-deploy.ts` STEPS, alias `conflict-arbiter`). Авто-резолв только `keep_old`/`accept_new`/`merge` при консенсусе + средней confidence ≥ 0.7; `evolving`/`escalate` остаются человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON). Метрика `z_conflict_arbiter_total{verdict,outcome}`.
+
+### `assistant-confirm-classify` (Ф6 assistant-channels)
+
+LLM-judge текстового подтверждения мутаций в каналах (Telegram/MAX без кнопок, принцип zero-button): свободный ответ пользователя на `confirm_required` → вердикт да/нет/неясно. Зовётся только когда эвристика «да/нет» не дала однозначного ответа. Code-промпт `concierge/prompts/assistant-confirm-classify.prompt.ts`; отдельного seed-маршрута нет — едет по DEFAULT-цепочке (cheap).
+
+## Слой метода клона — 5 новых taskType (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
+
+| taskType | Цепочка | Что делает |
+|---|---|---|
+| `role-principle-synthesize` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | Reflection-синтез принципов роли: по сгруппированным (cosine 0.78) subject-reasoning блокам должности формулирует обобщённые ПРИНЦИПЫ ПРОЦЕССА (`RolePrinciple`: situation + statement + sourceBlockIds ≥2). Запрет диагностической лексики о носителе (промпт + код-гард). Вызывается из `RolePrincipleSynthesisCron` (05:30). Флаг `ROLE_PRINCIPLE_SYNTHESIS_ENABLED`. |
+| `value-motivation-detect` (cheap) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | Детектор ценностей/мотивации (второй проход в `Specialist37Service.rebuildProfile`): извлекает `SkillTrait layer=value\|motivation` ТОЛЬКО из явных trade-off — роль выбрала одно в ущерб другому (revealed preference); KNN-merge с фильтром по layer. Флаг `VALUE_MOTIVATION_DETECT_ENABLED`. |
+| `process-marker-detect` (cheap) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | Детектор конструктивных маркеров процесса (третий проход в rebuild): «перечисляет критерии», «перепроверяет данными» → `SkillTrait layer=process_marker`; оценочные оси («избегает / не решает сам / нерешителен») запрещены промптом и код-гардом стоп-маркеров. Флаг `PROCESS_MARKER_DETECT_ENABLED`. |
+| `cdm-case-interview` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | CDM-интервью носителя роли (Critical Decision Method): по свежему reasoning-кейсу формулирует не наводящие вопросы ретроспективного разбора («почему выбрали / что насторожило / альтернативы»). Вызывается из `Specialist37ProbeService.checkCdmInterview` (probe reason `skill.cdm_interview`, лимит 5 + cooldown 7 дн.); probe-dispatcher вопрос НЕ переформулирует. Флаг `CDM_INTERVIEW_ENABLED`. |
+| `persona-behavior-judge` (cheap judge) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | LLM-судья еженедельной валидации клона ПО ПОВЕДЕНИЮ: сравнивает ответы клона с persona v1 (baseline) vs v2 на реальных кейсах роли (кейс исключён из subgraph); оценивает только поведенческий ход, character-суждения запрещены, отказ клона = 0.3. Вызывается из `PersonaLayerValidationCron` (вс 07:00). Метрика `clone_persona_layer_score{variant}`. Флаг `PERSONA_LAYER_VALIDATION_ENABLED`. |
+
+- Все 5 в union `LlmTaskType` + `ALL_LLM_TASK_TYPES`. Сид — `backend/scripts/seed-llm-task-routes-clone-method.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'clone-method'`, phase `seed-llm-routes`, идемпотентен, защищает `editedByAdmin`).
+- Также в этом пакете (НЕ новые taskType): `clone-respond` получил пост-LLM **grounding-гейт** (factual без валидных цитат `[BLOCK:]`/`[DECISION:]` → программный отказ `'ungrounded'`, флаг `CLONE_RESPOND_GROUNDING_ENABLED`) + журнал `CloneQueryLog`; `executable-persona-compile` переписан на **v2** (секционная сборка 5 слоёв, пустые секции опускаются — деградация к v1; v1-промпт deprecated для rollback).
 
 [[../index|← index]]

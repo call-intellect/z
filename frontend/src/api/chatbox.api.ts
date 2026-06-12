@@ -56,6 +56,29 @@ export type ChatboxSyncStatusApi =
 
 export type ChatboxSyncScope = 'all' | 'customers' | 'managers' | 'chats';
 
+// --- Сводка «Чаты в памяти» (ТЗ 2026-06-11 remaining-handoff, блок A, Ф2) ---
+
+export type ChatboxMemorySummaryApi = {
+  /** Настроена ли интеграция (иначе сводки нет). */
+  configured: boolean;
+  /** Включён ли AI-анализ переписок. */
+  analysisEnabled: boolean;
+  /** Забрано диалогов (ChatboxChat). */
+  dialogs: number;
+  /** Сессий всего. */
+  sessions: number;
+  /** Проанализировано сессий (analysisStatus='done'). */
+  analyzed: number;
+  /** В работе (pending + analyzing). */
+  inProgress: number;
+  /** Ошибки анализа. */
+  failed: number;
+  /** Карточки памяти из переписки (RawEvent sourceType='chatbox'). */
+  blocks: number;
+  /** Задачи из переписки (Task sourceType='chatbox'). */
+  tasks: number;
+};
+
 export type SaveChatboxIntegrationRequest = {
   token?: string;
   workspaceId: string;
@@ -155,6 +178,18 @@ export type ChatboxMemberApi = {
   linkedPerson: { id: string; name: string | null } | null;
 };
 
+// --- Клиенты → сотрудники (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1) ---
+
+export type ChatboxCustomerApi = {
+  id: string;
+  externalId: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  linkMode: ChatboxLinkMode;
+  linkedPerson: { id: string; name: string | null } | null;
+};
+
 export type ListChatsQuery = {
   status?: ChatboxChatStatusApi;
   channelType?: string;
@@ -206,6 +241,12 @@ export const chatboxApi = {
   syncStatus: () =>
     apiClient.get<ChatboxSyncStatusApi>('/api/v1/chatbox/integration/sync/status'),
 
+  // Сводка «Чаты в памяти» — счётчики по диалогам/анализу/графу (Ф2).
+  memorySummary: () =>
+    apiClient.get<ChatboxMemorySummaryApi>(
+      '/api/v1/chatbox/integration/memory-summary',
+    ),
+
   // --- Просмотр чатов (Фаза 8) ---
 
   listChats: (q?: ListChatsQuery) =>
@@ -251,6 +292,24 @@ export const chatboxApi = {
   createMemberPerson: (id: string) =>
     apiClient.post<{ ok: true; member: ChatboxMemberApi }>(
       '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/create-person',
+      {},
+    ),
+
+  // --- Клиенты → сотрудники (Ф1) ---
+
+  listCustomers: () =>
+    apiClient.get<ChatboxCustomerApi[]>('/api/v1/chatbox/customers'),
+
+  linkCustomer: (id: string, personId: string | null) =>
+    apiClient.put<{ ok: true; customer: ChatboxCustomerApi }>(
+      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/link',
+      { personId },
+    ),
+
+  // Создать сотрудника Коры из клиента ChatBox и сразу привязать.
+  createCustomerPerson: (id: string) =>
+    apiClient.post<{ ok: true; customer: ChatboxCustomerApi }>(
+      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/create-person',
       {},
     ),
 };

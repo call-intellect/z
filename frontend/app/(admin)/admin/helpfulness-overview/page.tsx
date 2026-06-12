@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { HelpfulnessOverviewClient } from './HelpfulnessOverviewClient';
 
 export const metadata: Metadata = {
-  title: 'Помощь в команде — Z-Admin',
+  title: 'Помощь в команде',
 };
 
 /**

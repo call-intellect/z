@@ -10,10 +10,15 @@ import {
   Param,
   Post,
   Query,
+  Req,
+  Res,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 
+import { TypedConfigService } from '../../common/config/index';
 import { PublicDemo } from '../../common/guards/public-demo.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -72,6 +77,7 @@ export class ChatV2Controller {
     private readonly cacheInvalidation: CacheInvalidationService,
     @Inject(ChatV2FeedbackService)
     private readonly feedback: ChatV2FeedbackService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   // ──────────────────────────── messages ──────────────────────────────
@@ -109,6 +115,99 @@ export class ChatV2Controller {
       asOf: body.asOf,
       channelKindOrigin: 'web',
     });
+  }
+
+  /**
+   * §4 Ф1 (2026-06-11) — SSE-вариант ask: тот же ответ, но со стадиями
+   * прогресса «Понимаю вопрос → Ищу в памяти → Пишу ответ», чтобы UI не
+   * выглядел «зависшим». НЕ посимвольный стрим токенов (отдельный follow-up).
+   * За kill-switch `CHAT_V2_STREAMING_ENABLED` (дефолт ON, Ship-On): при OFF —
+   * 503 ДО SSE-заголовков, фронт откатывается на синхронный `/messages`.
+   *
+   * Формат событий:
+   *   event: stage  data: { type:'stage', stage:'understanding'|'searching'|'writing' }
+   *   event: done   data: { type:'done', conversationId, messageId, text, citations, uncertaintyNote, mode, cacheHit }
+   *   event: error  data: { type:'error', code:'stream_failure', message }
+   */
+  @Post('messages/stream')
+  @RequireSubscription()
+  @PublicDemo()
+  @ApiOperation({
+    summary: 'Задать вопрос AI-чату со стадиями прогресса (SSE)',
+  })
+  async askStream(
+    @Body(new ZodValidationPipe(PostChatV2MessageBodySchema))
+    body: PostChatV2MessageBodyDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() _req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWriteOwn(user.id, t);
+
+    // Kill-switch: при OFF возвращаем 503 ДО установки SSE-заголовков, чтобы
+    // фронт сделал fallback на синхронный POST /messages.
+    if (!this.cfg.chatV2.streamingEnabled) {
+      throw new ServiceUnavailableException({
+        ok: false,
+        error: {
+          code: 'streaming_disabled',
+          message: 'Стриминг временно отключён',
+        },
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(`: heartbeat\n\n`);
+      } catch {
+        /* socket dead */
+      }
+    }, this.cfg.concierge.sseHeartbeatSeconds * 1000);
+
+    try {
+      const answer = await this.orchestration.ask({
+        tenantId: t,
+        userId: user.id,
+        question: body.question,
+        conversationId: body.conversationId,
+        mode: body.mode,
+        scope: body.scope ?? 'org',
+        scopeRefId: body.scopeRefId ?? null,
+        asOf: body.asOf,
+        channelKindOrigin: 'web',
+        onStage: (stage) => {
+          if (!res.writableEnded) {
+            res.write(`event: stage\n`);
+            res.write(`data: ${JSON.stringify({ type: 'stage', stage })}\n\n`);
+          }
+        },
+      });
+      if (!res.writableEnded) {
+        res.write(`event: done\n`);
+        res.write(`data: ${JSON.stringify({ type: 'done', ...answer })}\n\n`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!res.writableEnded) {
+        res.write(`event: error\n`);
+        res.write(
+          `data: ${JSON.stringify({ type: 'error', code: 'stream_failure', message })}\n\n`,
+        );
+      }
+    } finally {
+      clearInterval(heartbeat);
+      if (!res.writableEnded) {
+        res.end();
+      }
+    }
   }
 
   /**

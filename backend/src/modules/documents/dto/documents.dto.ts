@@ -226,13 +226,23 @@ export type CreateTextDumpDto = z.infer<typeof CreateTextDumpSchema>;
 export interface DocumentDto {
   id: string;
   tenantId: string;
+  /** D10 (ТЗ 2026-06-11) — алиас tenantId под контракт фронта DocumentApi. */
+  orgId: string;
   uploaderId: string;
+  /** D10 — имя загрузчика (из связи uploader→Person). null, если связь не подгружена. */
+  uploaderName: string | null;
   kind: DocumentKind;
   name: string;
   mimeType: string;
   originalSize: number;
+  /** D10 — алиас originalSize под контракт фронта (sizeBytes). */
+  sizeBytes: number;
   status: DocumentStatus;
   attachedRoleId: string | null;
+  /** D10 — имя привязанной роли (из связи attachedRole→Role). null, если нет/не подгружена. */
+  attachedRoleName: string | null;
+  /** D10 — дата разбора. Источника пока нет (см. 04_не-сделано) → всегда null, это не баг маппера. */
+  parsedAt: string | null;
   /** ТЗ-4 Ф5 — смысловой тип документа (отдельно от формата `kind`). */
   docType: DocumentType | null;
   /** ТЗ-4 — привязка к теме графа (Theme). */
@@ -249,17 +259,27 @@ export interface DocumentDto {
   updatedAt: string;
 }
 
-export function toDocumentDto(doc: Document): DocumentDto {
+export function toDocumentDto(
+  doc: Document & {
+    uploader?: { name: string } | null;
+    attachedRole?: { name: string } | null;
+  },
+): DocumentDto {
   return {
     id: doc.id,
     tenantId: doc.tenantId,
+    orgId: doc.tenantId,
     uploaderId: doc.uploaderId,
+    uploaderName: doc.uploader?.name ?? null,
     kind: doc.kind,
     name: doc.name,
     mimeType: doc.mimeType,
     originalSize: doc.originalSize,
+    sizeBytes: doc.originalSize,
     status: doc.status,
     attachedRoleId: doc.attachedRoleId,
+    attachedRoleName: doc.attachedRole?.name ?? null,
+    parsedAt: null,
     docType: doc.docType,
     attachedThemeId: doc.attachedThemeId,
     attachedProjectId: doc.attachedProjectId,

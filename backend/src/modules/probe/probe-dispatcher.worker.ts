@@ -25,10 +25,28 @@ import {
 } from '../knowledge-core/prompts/probe-formulate.prompt';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
+import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
+import {
+  PROBE_REASON_FALLBACK,
+  PROBE_REASON_FALLBACK_DEFAULT,
+  PROBE_REASON_LABEL,
+  PROBE_REASON_LABEL_DEFAULT,
+} from './probe-reason-labels';
+import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
 
 interface FormulatedProbe {
   question: string;
+}
+
+/** Человеческий fallback-вопрос: вырезает cuid-подобные токены и обрезает. */
+export function humanizeProbeFallback(message: string): string {
+  const cleaned = message
+    .replace(/\b[a-z0-9]{20,}\b/gi, '') // cuid-подобные длинные токены
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:!?»])/g, '$1')
+    .trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 200) : 'Можете уточнить, пожалуйста?';
 }
 
 /**
@@ -125,6 +143,20 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       probe.recipientCandidates,
     );
     if (candidates.length === 0) {
+      // Probe Фаза 3 R5: deferrable-probe, исчерпавший бюджет к моменту
+      // dispatch, откладываем в дайджест (а не дропаем). immediate — прежний drop.
+      if (probeWindow(probe.reason) === 'deferrable') {
+        await this.prisma.probeEvent.update({
+          where: { id: probe.id },
+          data: { status: 'queued_digest' },
+        });
+        this.metrics.incProbeEvent({
+          emittedByService: probe.emittedByService,
+          reason: probe.reason,
+          status: 'queued_digest',
+        });
+        return;
+      }
       await this.prisma.probeEvent.update({
         where: { id: probe.id },
         data: { status: 'dropped_rate_limit' },
@@ -133,9 +165,84 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // 1b. Autonomy W0 Ф0.2 (2026-06-12) — гейт немедленного пуша по priority.
+    // Немедленное уведомление probe.question получают только вопросы с
+    // priority ≥ admin-крутилки `probe.immediatePushMinPriority` (дефолт 70).
+    // Ниже порога — не дёргаем человека сразу, а откладываем в ежедневный
+    // батч-дайджест (ProbeDigestCron заберёт status='queued_digest').
+    // L-1 (2026-06-12): getDynamic может упасть (БД/Redis) — default 70,
+    // не роняя dispatch (паттерн probe.service).
+    let minPriority: number;
+    try {
+      minPriority = await this.cfg.getDynamic<number>(
+        'probe.immediatePushMinPriority',
+        undefined,
+        70,
+      );
+    } catch {
+      minPriority = 70;
+    }
+    if (probe.priority < minPriority) {
+      await this.prisma.probeEvent.update({
+        where: { id: probe.id },
+        data: { status: 'queued_digest' },
+      });
+      this.metrics.incProbeEvent({
+        emittedByService: probe.emittedByService,
+        reason: probe.reason,
+        status: 'queued_digest',
+      });
+      this.logger.log(
+        `probe отложен в дайджест: priority < immediatePushMinPriority (id=${probe.id} priority=${probe.priority} порог=${minPriority})`,
+      );
+      return;
+    }
+
     // 2. Select recipient (round-robin — берём первого; engagement weight γ+).
     const selectedUserId = candidates[0];
     if (!selectedUserId) return;
+
+    // 2b. Probe Фаза 4 (R8) — recheck повода перед dispatch (answer-first lite).
+    // Если у reason есть предикат и он показывает, что пробел уже закрылся сам
+    // между suggest и dispatch (напр. решающего назначили, владельца указали) —
+    // не слать probe, пометить suppressed_stale. Best-effort: ошибка предиката
+    // → продолжаем отправку (не блокируем из-за сбоя re-read).
+    const recheck = PROBE_REASON_RECHECK[probe.reason];
+    if (recheck) {
+      const probePayload = (probe.payload ?? {}) as Record<string, unknown>;
+      try {
+        const stillRelevant = await recheck({
+          prisma: this.prisma,
+          tenantId: probe.tenantId,
+          contextCardId: this.toStringOrUndef(probePayload.contextCardId) ?? null,
+          contextCardKind:
+            this.toStringOrUndef(probePayload.contextCardKind) ?? null,
+        });
+        if (!stillRelevant) {
+          await this.prisma.probeEvent.update({
+            where: { id: probe.id },
+            data: { status: 'suppressed_stale' },
+          });
+          this.metrics.incProbeEvent({
+            emittedByService: probe.emittedByService,
+            reason: probe.reason,
+            status: 'suppressed_stale',
+          });
+          this.logger.log(
+            `probe suppressed_stale: id=${probe.id} reason=${probe.reason} (повод закрылся между suggest и dispatch)`,
+          );
+          return;
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            probeEventId: probe.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'probe-dispatcher: recheck повода упал — отправляю probe (best-effort)',
+        );
+      }
+    }
 
     // 3. LLM probe-formulate.
     const formulated = await this.formulate(probe);
@@ -182,6 +289,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         status: 'dispatched',
       });
       this.metrics.incProbeDispatched({ kind: 'in_app' });
+      // Probe Фаза 5 (R9) — topic cooldown: тема поднята → не доставать тем же
+      // вопросом сразу повторно. Best-effort, не валит dispatch.
+      await this.setTopicCooldown(probe.tenantId, probe.contentHash);
       this.logger.log(
         `probe dispatched: id=${probe.id} userId=${selectedUserId} reason=${probe.reason}`,
       );
@@ -210,8 +320,23 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     const suggestedQuestion = this.toStringOrUndef(payload.suggestedQuestion);
     const suggestedActions = this.toStringArray(payload.suggestedActions);
 
+    // TZ clone-method Э3.1 — CDM-вопрос НЕ переформулировать: он уже построен
+    // LLM `cdm-case-interview` строго по методике критических решений
+    // (открытый, не наводящий). Прогон через probe-formulate может сделать
+    // его наводящим (подсказать «правильный» ответ) — отдаём КАК ЕСТЬ.
+    if (probe.reason === 'skill.cdm_interview' && suggestedQuestion) {
+      return { question: suggestedQuestion };
+    }
+
+    // Probe Фаза 1 R3: fallback-вопрос больше НЕ берётся из сырого
+    // humanizeProbeFallback(message) (показывал шаблон). Приоритет:
+    //   1. suggestedQuestion — готовый человеческий вопрос от специалиста;
+    //   2. PROBE_REASON_FALLBACK[reason] — заготовка под тип ситуации;
+    //   3. generic «Можете уточнить, пожалуйста?».
     const fallbackQuestion =
-      suggestedQuestion ?? (message.length > 0 ? message.slice(0, 200) : 'Можете уточнить?');
+      suggestedQuestion ??
+      PROBE_REASON_FALLBACK[probe.reason] ??
+      PROBE_REASON_FALLBACK_DEFAULT;
     const fallback: FormulatedProbe = {
       question: fallbackQuestion,
     };
@@ -224,11 +349,12 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       // asr не нужен (это не транскрипт). Kill-switch — общий флаг.
       const guardOn =
         this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const reasonLabel =
+        PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
       const guarded = applyInputGuards(
         PROBE_FORMULATE_SYSTEM_PROMPT,
         PROBE_FORMULATE_USER_TEMPLATE({
-          emittedByService: probe.emittedByService,
-          reason: probe.reason,
+          reasonLabel,
           message,
           suggestedActions,
           contextCard:
@@ -272,6 +398,33 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'probe-dispatcher: probe-formulate fallback',
       );
       return fallback;
+    }
+  }
+
+  /**
+   * Probe Фаза 5 — поставить тему (`contentHash`) на cooldown в Redis на
+   * `probe.topicCooldownHours`. Best-effort: ошибки настройки/Redis не валят
+   * dispatch (cooldown просто не применится).
+   */
+  private async setTopicCooldown(
+    tenantId: string,
+    contentHash: string,
+  ): Promise<void> {
+    try {
+      const cooldownHours = await this.cfg.getDynamic<number>(
+        'probe.topicCooldownHours',
+        undefined,
+        48,
+      );
+      const ttlSec = Math.max(1, Math.round(cooldownHours * 3600));
+      await this.redis.client.set(
+        probeTopicCooldownRedisKey(tenantId, contentHash),
+        '1',
+        'EX',
+        ttlSec,
+      );
+    } catch {
+      // graceful — cooldown не применится.
     }
   }
 

@@ -229,6 +229,48 @@ export interface CloneHistoryResponseDto {
   versions: CloneVersionDto[];
 }
 
+// ─────────────── TZ clone-method Э0.1 — журнал запросов к клонам ───────────────
+
+/**
+ * TZ clone-method Э0.1 — query-params `GET /api/v1/clones/query-log`
+ * (owner/admin Org, guard OrgAdminGuard). Журнал «кто и что спрашивал у
+ * клонов» с признаком grounded/отказ.
+ *
+ *   - `cloneTargetId` — фильтр по конкретному клону (personId/roleId);
+ *   - `limit` — default 50, max 200;
+ *   - `offset` — default 0.
+ */
+export const CloneQueryLogQuerySchema = z.object({
+  cloneTargetId: z.string().min(1).max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+export type CloneQueryLogQuery = z.infer<typeof CloneQueryLogQuerySchema>;
+
+/** TZ clone-method Э0.1 — одна запись журнала запросов к клону. */
+export interface CloneQueryLogItemDto {
+  id: string;
+  /** person | role — какой клон спрашивали. */
+  cloneScope: 'person' | 'role';
+  /** personId (scope=person) или roleId (scope=role). */
+  cloneTargetId: string;
+  /** User.id спросившего. */
+  userId: string;
+  /** Первые 200 символов вопроса. */
+  questionPreview: string;
+  /** true — ответ опёрся на наблюдения; false — отказ или ответ без опоры. */
+  answeredGrounded: boolean;
+  /** 'topic_starved' | 'ungrounded' | null. */
+  refusalReason: string | null;
+  /** ISO-дата запроса. */
+  createdAt: string;
+}
+
+export interface CloneQueryLogListResponseDto {
+  items: CloneQueryLogItemDto[];
+  total: number;
+}
+
 // ─────────────── ТЗ 2026-05-25 §9.4.7 (Фаза 7) — «Новый диалог» ───────────────
 
 /**

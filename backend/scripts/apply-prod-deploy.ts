@@ -138,6 +138,13 @@ const STEPS: Step[] = [
     // contentMd орг-документа; capable + tool-use). Без маршрута поедет по
     // DEFAULT_FALLBACK_CHAIN; явный seed фиксирует deepseek-v4-pro primary.
     'compile-org-document',
+    // Autonomy W1 (2026-06-12) — conflict-arbiter (ночной LLM-арбитр конфликтов
+    // знаний: debate-conflict-arbiter[-critic|-supporter|-neutral]; cheap-цепочка
+    // как у curation-verify, supporter primary gpt-5.4-mini для diversity).
+    'conflict-arbiter',
+    // TZ clone-method Э1.2 (2026-06-12) — role-principle-synthesize (Reflection-
+    // слой принципов роли, ночной cron 05:30; deepseek-v4-pro primary).
+    'clone-method',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,
@@ -510,6 +517,16 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-chatbox-subject-cleanup.ts',
     args: ['--apply'],
     hint: 'очистка ложных subject=менеджер от chatbox (cross-attribution)',
+    skipBootstrap: true,
+  },
+  // 2026-06-11 chatbox-tasks Ф5/Ф7 — проставить Task.sourceType='meeting' где
+  // пусто (safety no-op: колонка имеет @default("meeting"), миграция уже накатала
+  // всем существующим). Идемпотентен (WHERE sourceType=''). На чистом старте
+  // задач нет → skipBootstrap.
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-task-source-type.ts',
+    hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
     skipBootstrap: true,
   },
 

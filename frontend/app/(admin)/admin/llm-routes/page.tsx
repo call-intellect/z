@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { LlmRoutesClient } from './LlmRoutesClient';
 
 export const metadata: Metadata = {
-  title: 'Управление роутами LLM — Z-Admin',
+  title: 'Управление роутами LLM',
 };
 
 /**

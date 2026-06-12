@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { SecurityClient } from './SecurityClient';
 
 export const metadata: Metadata = {
-  title: 'Безопасность — Z-Admin',
+  title: 'Безопасность',
 };
 
 /**

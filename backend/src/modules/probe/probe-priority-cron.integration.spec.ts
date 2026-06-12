@@ -23,8 +23,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TypedConfigService } from '../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
+import type { RedisService } from '../../common/redis/redis.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import type { ConversationalService } from '../conversational/conversational.service';
 import type { IngestService } from '../ingest/ingest.service';
 
 import { ProbePriorityCron } from './probe-priority.cron';
@@ -172,10 +174,20 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       setProbeRecipientEngagementRate: vi.fn(),
       incProbeResponseClassified: vi.fn(),
       incProbeResponseUnclear: vi.fn(),
+      incProbeOutcome: vi.fn(),
     } as unknown as BusinessMetricsService;
 
     ingestAdapter = new ConversationalIngestAdapter(prisma, ingestSvc);
   });
+
+  // Probe Фаза 5 — ProbePriorityCron теперь пишет engagement-снимок и cooldown
+  // темы в Redis + читает probe.topicCooldownHours; мокаем оба зависимостями.
+  const redisMock = {
+    client: { set: vi.fn().mockResolvedValue('OK') },
+  } as unknown as RedisService;
+  const cfgMock = {
+    getDynamic: vi.fn().mockResolvedValue(48),
+  } as unknown as TypedConfigService;
 
   // Agents v2 Фаза 0.1: handler теперь требует LlmRouter + TypedConfig.
   // Здесь classify по умолчанию выключаем (responseClassifyEnabled=false),
@@ -199,7 +211,17 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
         responseClassifyMinConfidence: args?.minConfidence ?? 0.5,
       },
     } as unknown as TypedConfigService;
-    return new ProbeResponseHandler(prisma, metrics, ingestAdapter, llm, cfg);
+    const conversational = {
+      sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
+    } as unknown as ConversationalService;
+    return new ProbeResponseHandler(
+      prisma,
+      metrics,
+      ingestAdapter,
+      llm,
+      cfg,
+      conversational,
+    );
   }
 
   it('handler: notification.responded для probe.* → создаёт RawEvent и инкрементит probe_closed_total', async () => {
@@ -258,7 +280,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
 
   it('cron: respondedAt IS NOT NULL → probe НЕ помечается expired', async () => {
     // Notification.respondedAt уже задан в scenario (закрыт пользователем).
-    const cron = new ProbePriorityCron(prisma, metrics);
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
 
     await cron.sweep();
 
@@ -272,11 +294,30 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
     // Снимаем «ответ» — имитируем случай, когда пользователь так и не ответил.
     state.notification.respondedAt = null;
 
-    const cron = new ProbePriorityCron(prisma, metrics);
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
     await cron.sweep();
 
     expect(prisma.probeEvent.updateMany).toHaveBeenCalledTimes(1);
     expect(metrics.incProbeExpired).toHaveBeenCalledTimes(1);
     expect(state.probe.status).toBe('expired');
+  });
+
+  it('L-2: expire-выборка и updateMany включают digest-статусы (queued_digest / routed_to_digest)', async () => {
+    state.notification.respondedAt = null;
+
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
+    await cron.sweep();
+
+    const findArg = vi.mocked(prisma.probeEvent.findMany).mock
+      .calls[0]![0] as { where: { status: { in: string[] } } };
+    expect(findArg.where.status).toEqual({
+      in: ['pending', 'queued_digest', 'routed_to_digest'],
+    });
+
+    const updArg = vi.mocked(prisma.probeEvent.updateMany).mock
+      .calls[0]![0] as { where: { status: { in: string[] } } };
+    expect(updArg.where.status).toEqual({
+      in: ['pending', 'queued_digest', 'routed_to_digest'],
+    });
   });
 });

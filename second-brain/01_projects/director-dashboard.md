@@ -26,7 +26,7 @@ Owner Org логинится → попадает на `/dashboard` → види
 - Контроллер: `DirectorDashboardController` ([backend/src/modules/dashboard/director-dashboard.controller.ts](backend/src/modules/dashboard/director-dashboard.controller.ts)).
 - Endpoint: `GET /api/v1/dashboard/director?period=week|month`.
 - Auth: `CookieAuthGuard + TenantGuard` + `RbacService.canViewDirectorDashboard(userId, tenantId)` (`role IN ('owner','admin')` или `isSuperAdmin`).
-- Сервис: `DirectorDashboardService.getDirectorView({tenantId, period})` — 7 параллельных Prisma-запросов через `Promise.all` + `narrativeSummary` (опционально).
+- Сервис: `DirectorDashboardService.getDirectorView({tenantId, period})` — 14 параллельных запросов через `Promise.all` + `narrativeSummary` (опционально). **Б-1 устойчивость (2026-06-12):** каждый из 14 обёрнут в `safe(label, fn, fallback)` — ошибка отдельного виджета деградирует только его до нейтрального fallback'а и пишет `logger.error` с ИМЕНЕМ виджета, а дашборд отдаёт 200 с `degraded=true` (раньше reject любой ветки ронял весь метод в 500 `db_error`, маскируя источник). `isEmpty`-guard (`failures.length===0 && …`) не подменяет частичные данные синтетическим «образцом» при сбое. Тот же best-effort давно у `narrativeSummary` и `requiresAction`. Источник: [plans/tz/2026-06-12-urgent-dashboard-500-and-decisions-404-fix.md](../../plans/tz/2026-06-12-urgent-dashboard-500-and-decisions-404-fix.md) (Фаза 1).
 - Кэш: `AdminCacheService` (Phase 7), TTL 60s. Ключ `dashboard:director:${tenantId}:${period}`.
 
 ## `narrativeSummary` (опциональный)

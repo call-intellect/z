@@ -1333,10 +1333,129 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           'Спасибо! Ваш ответ записан.';
         return escapeHtml(text).slice(0, 4000);
       }
-      default: {
-        return `Уведомление: ${escapeHtml(notification.eventType)}`;
+      case 'checkin.prompt': {
+        // Ф2 (assistant-channels 2026-06-11) — утренний/вечерний чек-ин:
+        // готовый текст вопроса уже лежит в payload.question.
+        const q = (payload['question'] as string | undefined) ?? '';
+        if (q.trim()) {
+          return `${escapeHtml(q)}\n\nОтветьте текстом или голосом — Кора запишет.`.slice(
+            0,
+            4000,
+          );
+        }
+        // Пустой вопрос — деградация в универсальную ветку / default ниже.
+        break;
       }
+      case 'note.ack': {
+        // Ф2 — подтверждение записи свободной заметки (тип в registry добавляет Ф1).
+        const text = (payload['text'] as string | undefined) ?? '';
+        return (
+          text.trim() ? escapeHtml(text) : 'Записал в память Коры 🧠'
+        ).slice(0, 4000);
+      }
+      case 'event.reminder': {
+        // Ф2 — напоминание о событии календаря: в payload НЕТ title/body.
+        const eventTitle = (payload['eventTitle'] as string | undefined) ?? '';
+        const startAtIso = (payload['startAtIso'] as string | undefined) ?? '';
+        const location = (payload['location'] as string | undefined) ?? '';
+        const d = new Date(startAtIso);
+        const pad = (n: number): string => String(n).padStart(2, '0');
+        // Сервер в UTC, локаль пользователя не угадываем — выводим явно (UTC).
+        const when =
+          startAtIso && !Number.isNaN(d.getTime())
+            ? `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}`
+            : '';
+        const head = `⏰ Напоминание: ${escapeHtml(eventTitle)}`;
+        const whenLine = when ? `\nНачало: в ${when} (UTC)` : '';
+        const locLine = location ? `\nМесто: ${escapeHtml(location)}` : '';
+        return `${head}${whenLine}${locLine}`.slice(0, 4000);
+      }
+      case 'issue.mention': {
+        // Ф2 — @-упоминание в комментарии задачи: в payload НЕТ title/body.
+        const ref =
+          (payload['issueIdentifier'] as string | undefined) ??
+          (payload['issueTitle'] as string | undefined) ??
+          '';
+        const snippet = (payload['snippet'] as string | undefined) ?? '';
+        const head = ref
+          ? `<b>Вас упомянули в задаче ${escapeHtml(ref)}</b>`
+          : '<b>Вас упомянули в задаче</b>';
+        const tail = snippet ? `\n\n${escapeHtml(snippet)}` : '';
+        return `${head}${tail}`.slice(0, 4000);
+      }
+      case 'support.ticket_created': {
+        // Ф2 — подтверждение создания обращения в поддержку.
+        const num = String(payload['ticketNumber'] ?? '');
+        const subject = (payload['subject'] as string | undefined) ?? '';
+        return `<b>Обращение №${escapeHtml(num)} создано:</b> ${escapeHtml(subject)}`.slice(
+          0,
+          4000,
+        );
+      }
+      case 'support.ticket_reply': {
+        // Ф2 — ответ поддержки по обращению.
+        const num = String(payload['ticketNumber'] ?? '');
+        const subject = (payload['subject'] as string | undefined) ?? '';
+        const snippet = (payload['snippet'] as string | undefined) ?? '';
+        const head = `<b>Ответ по обращению №${escapeHtml(num)}:</b> ${escapeHtml(subject)}`;
+        const tail = snippet ? `\n\n${escapeHtml(snippet)}` : '';
+        return `${head}${tail}`.slice(0, 4000);
+      }
+      case 'idea.status_changed': {
+        // Ф2 — смена статуса идеи. Если LLM уже собрал title+body —
+        // рендерим их универсальной веткой ниже (break).
+        const title = (payload['title'] as string | undefined) ?? '';
+        const body = (payload['body'] as string | undefined) ?? '';
+        if (title.trim() && body.trim()) break;
+        const statement = (payload['statement'] as string | undefined) ?? '';
+        const oldStatus = (payload['oldStatus'] as string | undefined) ?? '';
+        const newStatus = (payload['newStatus'] as string | undefined) ?? '';
+        const reason = (payload['reason'] as string | undefined) ?? '';
+        const head = `<b>Идея сменила статус:</b> ${escapeHtml(statement)}`;
+        const transition =
+          oldStatus || newStatus
+            ? `\n${escapeHtml(oldStatus)} → ${escapeHtml(newStatus)}`
+            : '';
+        const why = reason ? `\nПричина: ${escapeHtml(reason)}` : '';
+        return `${head}${transition}${why}`.slice(0, 4000);
+      }
+      case 'actions.reminder': {
+        // Ф2 — сводка pending-подтверждений. Фактическая доставка идёт как
+        // system.message (PendingActionsReminderCron), но policy допускает
+        // прямой вызов с этим eventType — рендерим, а не падаем в default.
+        const total = Number(payload['total'] ?? 0);
+        const urgent = Number(payload['urgentCount'] ?? 0);
+        const rawLines = Array.isArray(payload['lines'])
+          ? (payload['lines'] as unknown[]).map((l) => String(l))
+          : [];
+        const actionUrl = (payload['actionUrl'] as string | undefined) ?? '';
+        const head = `<b>Ждут вашего решения: ${total}</b>${urgent > 0 ? ` (срочных: ${urgent})` : ''}`;
+        const list =
+          rawLines.length > 0
+            ? `\n\n${rawLines.map((l) => escapeHtml(l)).join('\n')}`
+            : '';
+        const link = actionUrl ? `\n\nОткрыть:\n${escapeHtml(actionUrl)}` : '';
+        return `${head}${list}${link}`.slice(0, 4000);
+      }
+      default:
+        break;
     }
+    // Ф2 — универсальная ветка ПЕРЕД default: любой payload с готовыми
+    // непустыми title+body (operations.weekly_digest, goals.pulse,
+    // operations.monthly_recap, proactive.notification и будущие типы).
+    // Ссылка оформлена как у meeting.invite — метка, затем URL строкой ниже.
+    const genericTitle = (payload['title'] as string | undefined) ?? '';
+    const genericBody = (payload['body'] as string | undefined) ?? '';
+    if (genericTitle.trim() && genericBody.trim()) {
+      const actionUrl = (payload['actionUrl'] as string | undefined) ?? '';
+      const link = actionUrl ? `\n\nОткрыть:\n${escapeHtml(actionUrl)}` : '';
+      return `<b>${escapeHtml(genericTitle)}</b>\n\n${escapeHtml(genericBody)}${link}`.slice(
+        0,
+        4000,
+      );
+    }
+    // Неизвестный тип без title/body — прежний generic-fallback.
+    return `Уведомление: ${escapeHtml(notification.eventType)}`;
   }
 
    

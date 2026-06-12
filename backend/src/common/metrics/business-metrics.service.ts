@@ -971,8 +971,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //   worker заполнил suggested* (но не auto-accepted). accepted_or_pending — для
   //   совместимости с метрикой auto_accepted (легче считать ratio).
   private aiMeetingActionsExtractedTotal!: Counter<'tenant_top' | 'status'>;
-  private aiIntakeAutoAcceptedTotal!: Counter<'tenant_top'>;
-  private aiIntakeSuggestedTotal!: Counter<'tenant_top' | 'status'>;
+  private aiIntakeAutoAcceptedTotal!: Counter<
+    'tenant_top' | 'source' | 'via_default_project'
+  >;
+  private aiIntakeSuggestedTotal!: Counter<'tenant_top' | 'status' | 'source'>;
   // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker метрики.
   // Cardinality-safe: tenant_top — top-100 bucket (паттерн как у остальных
   // tracker tenant_top-метрик); source — фиксированный enum (trello |
@@ -3580,13 +3582,13 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.aiIntakeAutoAcceptedTotal = this.getOrCreateCounter({
       name: 'ai_intake_auto_accepted_total',
-      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ 0.92 + source=meeting + suggestedAssigneeId).',
-      labelNames: ['tenant_top'] as const,
+      help: 'Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ порога, любой source; via_default_project=true — Issue создан в дефолт-проект «Входящие»).',
+      labelNames: ['tenant_top', 'source', 'via_default_project'] as const,
     });
     this.aiIntakeSuggestedTotal = this.getOrCreateCounter({
       name: 'ai_intake_suggested_total',
-      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker заполнил suggested* (status ∈ auto_accepted|pending|llm_error|skipped_already_triaged).',
-      labelNames: ['tenant_top', 'status'] as const,
+      help: 'Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriageWorker заполнил suggested* (status ∈ auto_accepted|pending|llm_error|skipped_already_triaged; source — канал intake).',
+      labelNames: ['tenant_top', 'status', 'source'] as const,
     });
     // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker.
     this.importStartedTotal = this.getOrCreateCounter({
@@ -7757,12 +7759,28 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
-  /** Tracker Phase 3 part B — IntakeAutoTriage авто-принял IntakeIssue. */
-  incAiIntakeAutoAccepted(args: { tenantTop: string }): void {
-    this.aiIntakeAutoAcceptedTotal.inc({ tenant_top: args.tenantTop });
+  /**
+   * Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriage
+   * авто-принял IntakeIssue. Разрезы: source — канал intake (meeting/telegram/
+   * in_app/…); viaDefaultProject='true' — Issue создан в дефолт-проект
+   * «Входящие» (атрибуция проекта не выводилась).
+   */
+  incAiIntakeAutoAccepted(args: {
+    tenantTop: string;
+    source: string;
+    viaDefaultProject: 'true' | 'false';
+  }): void {
+    this.aiIntakeAutoAcceptedTotal.inc({
+      tenant_top: args.tenantTop,
+      source: args.source,
+      via_default_project: args.viaDefaultProject,
+    });
   }
 
-  /** Tracker Phase 3 part B — IntakeAutoTriage заполнил suggested* (или ошибка). */
+  /**
+   * Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriage
+   * заполнил suggested* (или ошибка). source — канал intake.
+   */
   incAiIntakeSuggested(args: {
     tenantTop: string;
     status:
@@ -7770,10 +7788,12 @@ export class BusinessMetricsService implements OnModuleInit {
       | 'pending'
       | 'llm_error'
       | 'skipped_already_triaged';
+    source: string;
   }): void {
     this.aiIntakeSuggestedTotal.inc({
       tenant_top: args.tenantTop,
       status: args.status,
+      source: args.source,
     });
   }
 

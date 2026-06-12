@@ -15,7 +15,7 @@ import {
   probeEngagementRedisKey,
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
-import { probeWindow } from './probe-reason-policy';
+import { NUDGE_REASONS, probeWindow } from './probe-reason-policy';
 import type {
   ProbeSuggestInput,
   ProbeSuggestPayload,
@@ -215,12 +215,71 @@ export class ProbeService {
       const severityWeight = this.clamp01(input.priorityHint ?? 0.4);
       // freshness=1.0 для свежего probe (formula см. §6).
       const priority = Math.round(severityWeight * 100);
+      const dataClass: DataClass = input.dataClass ?? 'internal';
+
+      // 4a. W2 autonomy (2026-06-12) — гейт ценности. Вопрос с priority ниже
+      // admin-крутилки `probe.minValuePriority` (дефолт 30) не задаётся вовсе:
+      // audit-запись со status='dropped_low_value', без enqueue и без дайджеста.
+      let minValuePriority: number;
+      try {
+        minValuePriority = await this.cfg.getDynamic<number>(
+          'probe.minValuePriority',
+          undefined,
+          30,
+        );
+      } catch {
+        minValuePriority = 30;
+      }
+      if (priority < minValuePriority) {
+        this.metrics.incProbeEvent({
+          emittedByService: input.emittedByService,
+          reason: input.reason,
+          status: 'dropped_low_value',
+        });
+        await this.prisma.probeEvent.create({
+          data: {
+            tenantId: input.tenantId,
+            emittedByService: input.emittedByService,
+            reason: input.reason,
+            payload: this.payloadToJson({ ...input.payload, dataClass }),
+            recipientCandidates: [...availableRecipients],
+            contentHash,
+            priority,
+            status: 'dropped_low_value',
+          },
+        });
+        return { dropped: 'low_value' };
+      }
+
+      // 4b. W2 autonomy (2026-06-12) — NUDGE-реклассификация (§9.2). Напоминание
+      // (Кора знает, что нужно сделать) не пингует сразу, а уходит ежедневным
+      // дайджестом: status='routed_to_digest', БЕЗ enqueue — ProbeDigestCron
+      // подберёт. NUDGE имеет приоритет над окном immediate/deferrable.
+      if (NUDGE_REASONS.has(input.reason)) {
+        const nudge = await this.prisma.probeEvent.create({
+          data: {
+            tenantId: input.tenantId,
+            emittedByService: input.emittedByService,
+            reason: input.reason,
+            payload: this.payloadToJson({ ...input.payload, dataClass }),
+            recipientCandidates: [...availableRecipients],
+            contentHash,
+            priority,
+            status: 'routed_to_digest',
+          },
+        });
+        this.metrics.incProbeEvent({
+          emittedByService: input.emittedByService,
+          reason: input.reason,
+          status: 'routed_to_digest',
+        });
+        return { ok: true, probeEventId: nudge.id };
+      }
 
       // 5. Insert ProbeEvent.
       const expiresAt = new Date(
         Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000,
       );
-      const dataClass: DataClass = input.dataClass ?? 'internal';
       const event = await this.prisma.probeEvent.create({
         data: {
           tenantId: input.tenantId,
@@ -362,11 +421,12 @@ export class ProbeService {
     });
     if (!earliest) return false;
     const elapsedMs = Date.now() - earliest.createdAt.getTime();
-    return elapsedMs < windowHours * 3600 * 1000 ? false : false;
-    // NB: «cold-start mode после deploy» формально требует deploy-маркера; в β-5
-    // упрощаем — cold-start выключен сам по себе после первого probe (probe-storm
-    // после deploy всё равно ловится дедупом и rate-limit'ом). Поле сохраняем
-    // в схеме для будущей доработки.
+    // W2 autonomy (2026-06-12): включено реальное подавление (был β-5
+    // плейсхолдер `? false : false`). Первые N часов после первого probe в Org
+    // все probe копятся дропом (status='dropped_cold_start') — защита от
+    // probe-шторма на свежем графе. N = PROBE_COLD_START_MODE_HOURS (дефолт 24);
+    // 0 — поведение выключено (ранний return выше).
+    return elapsedMs < windowHours * 3600 * 1000;
   }
 
   /** sha256(reason + sorted JSON of contextIds + payload-summary). */

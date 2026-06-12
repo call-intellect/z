@@ -30,6 +30,7 @@ import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
+import { OwnerResolverService } from './services/owner-resolver.service';
 import { PreferenceDatasetService } from './services/preference-dataset.service';
 import { ProjectionRebuilderService } from './services/projection-rebuilder.service';
 import { ReasoningChainService } from './services/reasoning-chain.service';
@@ -145,6 +146,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // детерминированный вывод групп доступа блока (IdeaBlockAccess) при ingest.
     // Воркер (BlockIngestWorker, WorkersModule) и backfill инжектят этот сервис.
     BlockAccessDeriverService,
+    // W2 autonomy (2026-06-12): OwnerResolverService — «лестница владельца»
+    // для missing_owner-триггеров (3-1 / 3-4 / 3-9 / process-template probe).
+    OwnerResolverService,
     // SBA α-6: Specialist34ProbeService — probe-events специалиста 3.4.
     Specialist34ProbeService,
     // SBA α-7: Specialist31Service — extraction/dedupe/triage для регламентов
@@ -303,6 +307,9 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Ф3 (knowledge-access): экспортируем — BlockIngestWorker (WorkersModule) и
     // backfill-block-access.ts инжектят BlockAccessDeriverService.
     BlockAccessDeriverService,
+    // W2 autonomy: экспортируем — ProcessTemplateProbeService (ProcessesModule)
+    // и тесты инжектят (модуль @Global, экспорт делает токен видимым везде).
+    OwnerResolverService,
     // SBA α-6: экспортируем для CardSpecialistRegistry-регистрации и тестов.
     Specialist34ProbeService,
     // SBA α-7: экспортируем для Worker'а и тестов.

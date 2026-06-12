@@ -631,6 +631,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
   // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
+  private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
   private promptFeedbackTotal!: Counter<'prompt_key' | 'has_edit'>;
   private autoruleExtractedTotal!: Counter<'prompt_key' | 'rule_type'>;
@@ -2637,6 +2639,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_outcome_total',
       help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
       labelNames: ['outcome', 'reason'] as const,
+    });
+    // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
+    this.ownerResolutionTotal = this.getOrCreateCounter({
+      name: 'z_owner_resolution_total',
+      help: 'W2 autonomy — исход «лестницы владельца» для missing_owner: auto (Кора назначила сама) | ambiguous (вопрос-выбор) | none (некому, probe как раньше).',
+      labelNames: ['outcome'] as const,
     });
 
     // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
@@ -6046,6 +6054,14 @@ export class BusinessMetricsService implements OnModuleInit {
   /** Probe отложен по cold-start mode. */
   incProbeColdStartDropped(): void {
     this.probeColdStartDroppedTotal.inc();
+  }
+
+  /**
+   * W2 autonomy (2026-06-12) — исход «лестницы владельца» (OwnerResolver)
+   * для missing_owner-триггеров: auto | ambiguous | none.
+   */
+  incOwnerResolution(args: { outcome: 'auto' | 'ambiguous' | 'none' }): void {
+    this.ownerResolutionTotal.inc({ outcome: args.outcome });
   }
 
   /** Probe истёк без ответа. */

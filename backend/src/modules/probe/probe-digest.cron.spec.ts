@@ -114,15 +114,52 @@ describe('ProbeDigestCron.collectAndSend', () => {
     expect(arg.payload.total).toBe(3);
     expect(typeof arg.payload.summary).toBe('string');
 
-    // Вошедшие probe помечаются dispatched атомарно с фильтром queued_digest.
+    // Вошедшие probe помечаются dispatched атомарно с фильтром по обоим
+    // digest-статусам (W2: queued_digest + routed_to_digest).
     expect(env.updateMany).toHaveBeenCalledTimes(1);
     const upd = env.updateMany.mock.calls[0]![0] as {
-      where: { id: { in: string[] }; status: string };
+      where: { id: { in: string[] }; status: { in: string[] } };
       data: { status: string };
     };
-    expect(upd.where.status).toBe('queued_digest');
+    expect(upd.where.status).toEqual({
+      in: ['queued_digest', 'routed_to_digest'],
+    });
     expect(upd.where.id.in.sort()).toEqual(['p1', 'p2', 'p3']);
     expect(upd.data.status).toBe('dispatched');
+  });
+
+  it('W2: выборка дайджеста включает routed_to_digest (NUDGE) вместе с queued_digest', async () => {
+    const e = makeCron({
+      rowsByCall: [
+        [
+          makeRow({ id: 'q1', reason: 'idea.status_unclear' }),
+          makeRow({ id: 'n1', reason: 'commitment.followup', priority: 60 }),
+        ],
+      ],
+    });
+    await e.cron.collectAndSend();
+
+    // findMany вызван с status IN (queued_digest, routed_to_digest).
+    const findManyMock = (
+      e.cron as unknown as {
+        prisma: { probeEvent: { findMany: ReturnType<typeof vi.fn> } };
+      }
+    ).prisma.probeEvent.findMany;
+    const findArg = findManyMock.mock.calls[0]![0] as {
+      where: { status: { in: string[] } };
+    };
+    expect(findArg.where.status).toEqual({
+      in: ['queued_digest', 'routed_to_digest'],
+    });
+
+    // Оба пункта (включая NUDGE-routed) вошли в один дайджест получателя.
+    const arg = e.sendNotification.mock.calls[0]![0] as {
+      payload: { items: Array<{ probeEventId: string }> };
+    };
+    expect(arg.payload.items.map((it) => it.probeEventId).sort()).toEqual([
+      'n1',
+      'q1',
+    ]);
   });
 
   it('повторный прогон по уже отправленным = no-op (нет уведомлений)', async () => {

@@ -3,8 +3,11 @@ import type { Policy, Process, Regulation } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
+
+import { OwnerResolverService } from './owner-resolver.service';
 
 /**
  * SBA α-7 — Specialist31ProbeService.
@@ -45,6 +48,13 @@ export class Specialist31ProbeService {
     private readonly metrics: BusinessMetricsService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
+    // W2 autonomy (2026-06-12) — «лестница владельца» + лента «что сделала
+    // Кора». Optional: в тестах/усечённых bootstrap'ах без них работает
+    // прежнее поведение (probe).
+    @Optional() @Inject(OwnerResolverService)
+    private readonly ownerResolver?: OwnerResolverService,
+    @Optional() @Inject(ActivityFeedService)
+    private readonly activityFeed?: ActivityFeedService,
   ) {}
 
   // ─────────────────────── публичные методы ───────────────────────
@@ -58,6 +68,8 @@ export class Specialist31ProbeService {
         resourceName: reg.name,
         ownerPersonId: reg.ownerPersonId,
         status: reg.status,
+        ownerRoleId: null,
+        scope: reg.scope,
       });
     } catch (err) {
       this.logErr('regulation.missing_owner', reg.id, err);
@@ -99,6 +111,8 @@ export class Specialist31ProbeService {
         resourceName: proc.name,
         ownerPersonId: proc.ownerPersonId,
         status: proc.status,
+        ownerRoleId: proc.ownerRoleId,
+        scope: proc.scope,
       });
     } catch (err) {
       this.logErr('regulation.missing_owner', proc.id, err);
@@ -132,6 +146,8 @@ export class Specialist31ProbeService {
         resourceName: policy.name,
         ownerPersonId: policy.ownerPersonId,
         status: policy.status,
+        ownerRoleId: null,
+        scope: policy.scope,
       });
     } catch (err) {
       this.logErr('regulation.missing_owner', policy.id, err);
@@ -173,6 +189,10 @@ export class Specialist31ProbeService {
     resourceName: string;
     ownerPersonId: string | null;
     status: string;
+    /** Process.ownerRoleId (у Regulation/Policy роли-поля нет). */
+    ownerRoleId?: string | null;
+    /** scope вида 'role:<id>' даёт роль-ступень лестницы. */
+    scope?: string | null;
   }): Promise<void> {
     if (args.ownerPersonId) return;
     if (args.status !== 'active') return; // только активные (canonical) карточки
@@ -181,6 +201,67 @@ export class Specialist31ProbeService {
     if (admins.length === 0) return;
 
     const label = this.kindLabel(args.resourceType);
+
+    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe: если владельца
+    // можно вывести детерминированно (единственный держатель роли-владельца /
+    // роли из scope) — Кора назначает сама и человека не дёргает.
+    if (this.ownerResolver) {
+      try {
+        const roleId = args.ownerRoleId ?? this.roleIdFromScope(args.scope);
+        const resolution = await this.ownerResolver.resolve({
+          tenantId: args.tenantId,
+          parentOwnerUserId: null,
+          roleId,
+          authorUserId: null, // у Regulation/Process/Policy нет поля автора
+        });
+        if (resolution.kind === 'resolved') {
+          const assigned = await this.autoAssignOwner({
+            tenantId: args.tenantId,
+            resourceType: args.resourceType,
+            resourceId: args.resourceId,
+            resourceName: args.resourceName,
+            userId: resolution.userId,
+          });
+          if (assigned) {
+            this.metrics.incOwnerResolution({ outcome: 'auto' });
+            return; // probe НЕ шлём — владелец назначен автоматически
+          }
+          // Person по userId не нашёлся — падаем в обычный probe ниже.
+        } else if (resolution.kind === 'ambiguous') {
+          this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
+          const names = await this.personNamesByUserIds(
+            args.tenantId,
+            resolution.candidates,
+          );
+          if (names.length >= 2) {
+            // Р2.2 — вопрос-выбор с именами (текст/голос, без кнопок).
+            const message = `У ${label} «${args.resourceName}» нет ответственного. Кого назначить владельцем: ${names.join(' или ')}?`;
+            await this.emit({
+              tenantId: args.tenantId,
+              resourceType: args.resourceType,
+              resourceId: args.resourceId,
+              reason: 'regulation.missing_owner',
+              message,
+              recipients: admins,
+              suggestedActions: ['Назначить ответственного', 'Архивировать'],
+            });
+            return;
+          }
+          // имена не восстановились — обычный probe ниже.
+        } else {
+          this.metrics.incOwnerResolution({ outcome: 'none' });
+        }
+      } catch (err) {
+        this.logger.warn(
+          {
+            resourceId: args.resourceId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-1 probe: owner-resolver упал — fallback на probe',
+        );
+      }
+    }
+
     const message = `У ${label} «${args.resourceName}» нет ответственного — назначить владельца?`;
     await this.emit({
       tenantId: args.tenantId,
@@ -432,6 +513,92 @@ export class Specialist31ProbeService {
       select: { userId: true },
     });
     return person?.userId ?? null;
+  }
+
+  /**
+   * W2 autonomy — АВТО-назначение владельца (прямое поле ownerPersonId есть у
+   * всех трёх моделей). Возвращает `true`, если запись обновлена; `false`,
+   * если Person по userId не нашёлся (вызывающий падает в обычный probe).
+   * Запись в ленту «что сделала Кора» — best-effort.
+   */
+  private async autoAssignOwner(args: {
+    tenantId: string;
+    resourceType: 'regulation' | 'process' | 'policy';
+    resourceId: string;
+    resourceName: string;
+    userId: string;
+  }): Promise<boolean> {
+    const person = await this.prisma.person.findFirst({
+      where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!person) return false;
+
+    const where = { id: args.resourceId, tenantId: args.tenantId };
+    const data = { ownerPersonId: person.id };
+    let updated: number;
+    if (args.resourceType === 'process') {
+      updated = (await this.prisma.process.updateMany({ where, data })).count;
+    } else if (args.resourceType === 'policy') {
+      updated = (await this.prisma.policy.updateMany({ where, data })).count;
+    } else {
+      updated = (await this.prisma.regulation.updateMany({ where, data }))
+        .count;
+    }
+    if (updated === 0) return false;
+
+    const label = this.kindLabel(args.resourceType);
+    this.logger.log(
+      `owner-resolver: Кора назначила владельца ${label} «${args.resourceName}» — ${person.name} (resourceId=${args.resourceId})`,
+    );
+    if (this.activityFeed) {
+      try {
+        await this.activityFeed.publish({
+          tenantId: args.tenantId,
+          feedType: 'knowledge_change',
+          sourceType: 'system',
+          sourceAgentName: Specialist31ProbeService.SPECIALIST_NAME,
+          relatedEntityType: args.resourceType,
+          relatedEntityId: args.resourceId,
+          title: `Кора назначила владельца ${label} «${args.resourceName}»: ${person.name}`,
+          summary:
+            'Владелец выведен автоматически по «лестнице владельца» (единственный действующий держатель роли).',
+          severity: 'normal',
+          visibility: 'public_org',
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            resourceId: args.resourceId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'specialist-3-1 probe: publish в ленту не удался — назначение уже применено',
+        );
+      }
+    }
+    return true;
+  }
+
+  /** scope вида 'role:<id>' → roleId; иначе null. */
+  private roleIdFromScope(scope: string | null | undefined): string | null {
+    if (!scope) return null;
+    if (!scope.startsWith('role:')) return null;
+    const roleId = scope.slice('role:'.length).trim();
+    return roleId.length > 0 ? roleId : null;
+  }
+
+  /** Имена Person'ов по userId (для текста вопроса-выбора). */
+  private async personNamesByUserIds(
+    tenantId: string,
+    userIds: readonly string[],
+  ): Promise<string[]> {
+    if (userIds.length === 0) return [];
+    const persons = await this.prisma.person.findMany({
+      where: { tenantId, userId: { in: [...userIds] }, deletedAt: null },
+      select: { name: true },
+      take: 10,
+    });
+    return persons.map((p) => p.name).filter((n) => n.length > 0);
   }
 
   private kindLabel(kind: 'regulation' | 'process' | 'policy'): string {

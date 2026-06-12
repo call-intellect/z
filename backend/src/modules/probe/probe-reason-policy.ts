@@ -46,6 +46,27 @@ export function probeWindow(reason: string): ProbeWindow {
   return PROBE_REASON_WINDOW[reason] ?? 'deferrable';
 }
 
+/**
+ * W2 autonomy (2026-06-12) — политика §9.2 ТЗ autonomy-remove-manual-confirmations:
+ * напоминание-NUDGE, не вопрос — Кора и так знает, что нужно сделать; человека
+ * не пингуем сразу, а собираем в ежедневный батч-дайджест
+ * (`status='routed_to_digest'`, ProbeDigestCron подберёт). NUDGE-маршрут имеет
+ * приоритет над окном PROBE_REASON_WINDOW (даже immediate-reason уходит дайджестом).
+ *
+ * `card.missing_deadline` — тоже NUDGE: сигнала для вывода дедлайна нет,
+ * но это напоминание, а не пробел знания (decision.no_deadline_critical
+ * остаётся immediate — критичный срок).
+ */
+export const NUDGE_REASONS: ReadonlySet<string> = new Set([
+  'decision.overdue',
+  'decision.outcome_unknown',
+  'goal.kr_checkpoint_suggested',
+  'commitment.followup',
+  'commitment.silence_escalation',
+  'goal_alignment_low',
+  'card.missing_deadline',
+]);
+
 /** Контекст для recheck-предиката (передаётся диспетчером в Ф4). */
 export interface ProbeRecheckCtx {
   prisma: PrismaService;

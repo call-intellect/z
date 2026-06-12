@@ -90,8 +90,11 @@ export class ProbeDigestCron {
       5,
     );
 
+    // W2 autonomy (2026-06-12): дайджест подбирает И queued_digest (rate-limit /
+    // priority-гейт диспетчера), И routed_to_digest (NUDGE-политика §9.2) —
+    // различие статусов сохраняется только для аудита источника отложки.
     const queued = await this.prisma.probeEvent.findMany({
-      where: { status: 'queued_digest' },
+      where: { status: { in: ['queued_digest', 'routed_to_digest'] } },
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
       take: ProbeDigestCron.MAX_SCAN,
       select: {
@@ -159,9 +162,13 @@ export class ProbeDigestCron {
         });
 
         // Атомарно помечаем вошедшие dispatched — только те, что ещё
-        // queued_digest (идемпотентность: повторный прогон = no-op).
+        // queued_digest / routed_to_digest (идемпотентность: повторный
+        // прогон = no-op).
         await this.prisma.probeEvent.updateMany({
-          where: { id: { in: chosen.map((r) => r.id) }, status: 'queued_digest' },
+          where: {
+            id: { in: chosen.map((r) => r.id) },
+            status: { in: ['queued_digest', 'routed_to_digest'] },
+          },
           data: {
             status: 'dispatched',
             dispatchedAt: new Date(),

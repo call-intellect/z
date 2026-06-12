@@ -6370,6 +6370,13 @@ enum ProbeStatus {
   /// Probe Фаза 4 — повод закрылся сам между suggest и dispatch (recheck
   /// предикатом PROBE_REASON_RECHECK показал, что пробел уже не актуален).
   suppressed_stale
+  /// W2 autonomy (2026-06-12) — гейт ценности: priority ниже крутилки
+  /// `probe.minValuePriority` → вопрос не задаётся (audit-запись).
+  dropped_low_value
+  /// W2 autonomy (2026-06-12) — NUDGE-политика (§9.2): напоминание-NUDGE
+  /// не пингует сразу, а уходит ежедневным батч-дайджестом (ProbeDigestCron).
+  /// Отличие от queued_digest (rate-limit) — для аудита источника отложки.
+  routed_to_digest
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.

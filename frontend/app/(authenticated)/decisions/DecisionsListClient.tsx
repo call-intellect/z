@@ -45,7 +45,9 @@ import {
  * Действия supersede / changeStatus / setOutcomes выполняются с проверкой
  * RBAC на бэке — если у пользователя нет прав, появится сообщение об ошибке.
  */
-export function DecisionsListClient() {
+export function DecisionsListClient({
+  initialSelectedId,
+}: { initialSelectedId?: string } = {}) {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
   if (!currentOrgId) {
@@ -56,7 +58,7 @@ export function DecisionsListClient() {
       />
     );
   }
-  return <DecisionsListContent />;
+  return <DecisionsListContent initialSelectedId={initialSelectedId} />;
 }
 
 const STATUS_FILTERS: ReadonlyArray<{
@@ -81,7 +83,9 @@ const DEADLINE_FILTERS: ReadonlyArray<{
   { value: 'upcoming', label: 'Предстоящие' },
 ];
 
-function DecisionsListContent() {
+function DecisionsListContent({
+  initialSelectedId,
+}: { initialSelectedId?: string }) {
   const { currentOrgRole } = useAuth();
   const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
   const [data, setData] = useState<DecisionsListResponseApi | null>(null);
@@ -95,7 +99,9 @@ function DecisionsListContent() {
   const [deadlineFilter, setDeadlineFilter] = useState<'all' | DeadlineFilterApi>(
     'all',
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSelectedId ?? null,
+  );
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [chain, setChain] = useState<DecisionSupersedeChain | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);

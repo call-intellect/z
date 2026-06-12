@@ -633,6 +633,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
+  // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
+  private assistantTurnTotal!: Counter<'outcome'>;
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
   private promptFeedbackTotal!: Counter<'prompt_key' | 'has_edit'>;
   private autoruleExtractedTotal!: Counter<'prompt_key' | 'rule_type'>;
@@ -2646,6 +2648,12 @@ export class BusinessMetricsService implements OnModuleInit {
     this.ownerResolutionTotal = this.getOrCreateCounter({
       name: 'z_owner_resolution_total',
       help: 'W2 autonomy — исход «лестницы владельца» для missing_owner: auto (Кора назначила сама) | ambiguous (вопрос-выбор) | none (некому, probe как раньше).',
+      labelNames: ['outcome'] as const,
+    });
+    // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
+    this.assistantTurnTotal = this.getOrCreateCounter({
+      name: 'z_assistant_turn_total',
+      help: 'Ф5/Ф6 assistant-channels — исход одного хода помощника в канале (AssistantChannelBridge): ok | error | quota | confirm_hold (мутация отложена до текстового «да») | handler_error (внешний catch, ответ потерян).',
       labelNames: ['outcome'] as const,
     });
 
@@ -6064,6 +6072,17 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incOwnerResolution(args: { outcome: 'auto' | 'ambiguous' | 'none' }): void {
     this.ownerResolutionTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
+   * Ф5/Ф6 assistant-channels (2026-06-12) — исход одного хода помощника в
+   * канале (AssistantChannelBridge): ok | error | quota | confirm_hold |
+   * handler_error.
+   */
+  incAssistantTurn(args: {
+    outcome: 'ok' | 'error' | 'quota' | 'confirm_hold' | 'handler_error';
+  }): void {
+    this.assistantTurnTotal.inc({ outcome: args.outcome });
   }
 
   /** Probe истёк без ответа. */

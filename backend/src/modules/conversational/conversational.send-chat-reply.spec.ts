@@ -113,6 +113,83 @@ describe('ConversationalService.sendChatReply — Ф1 solicited (Стоп-мол
     );
   });
 
+  it('H-1: глобальный канал (Channel.tenantId=null, прод-Telegram) + solicited → preferredKinds определён и critical=true', async () => {
+    m.prisma.channelBinding.findUnique.mockResolvedValue(
+      makeBinding({ channelTenantId: null }),
+    );
+
+    await m.svc.sendChatReply({
+      ...baseArgs(),
+      originChannelBindingId: 'binding-1',
+      dataClass: 'internal',
+      solicited: true,
+    });
+
+    expect(m.sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preferredChannelKinds: ['telegram_bot'],
+        critical: true,
+      }),
+    );
+  });
+
+  it('H-1: канал ЧУЖОГО Org (tenantId=org-2) → fallback на policy, critical=false', async () => {
+    m.prisma.channelBinding.findUnique.mockResolvedValue(
+      makeBinding({ channelTenantId: 'org-2' }),
+    );
+
+    await m.svc.sendChatReply({
+      ...baseArgs(),
+      originChannelBindingId: 'binding-1',
+      solicited: true,
+    });
+
+    expect(m.sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preferredChannelKinds: undefined,
+        critical: false,
+      }),
+    );
+  });
+
+  it('H-1: binding чужого пользователя → fallback на policy (userId-проверка сохранена)', async () => {
+    m.prisma.channelBinding.findUnique.mockResolvedValue(
+      makeBinding({ userId: 'other-user' }),
+    );
+
+    await m.svc.sendChatReply({
+      ...baseArgs(),
+      originChannelBindingId: 'binding-1',
+      solicited: true,
+    });
+
+    expect(m.sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preferredChannelKinds: undefined,
+        critical: false,
+      }),
+    );
+  });
+
+  it('H-1: неактивный канал → fallback на policy (status-проверка сохранена)', async () => {
+    m.prisma.channelBinding.findUnique.mockResolvedValue(
+      makeBinding({ channelStatus: 'disabled' }),
+    );
+
+    await m.svc.sendChatReply({
+      ...baseArgs(),
+      originChannelBindingId: 'binding-1',
+      solicited: true,
+    });
+
+    expect(m.sendNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preferredChannelKinds: undefined,
+        critical: false,
+      }),
+    );
+  });
+
   it('без solicited (дефолт) → critical=false даже с валидным binding', async () => {
     m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding());
 

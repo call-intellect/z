@@ -291,4 +291,41 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
+
+  it('L-1: getDynamic упал → default 70, dispatch НЕ падает (priority=80 → dispatched)', async () => {
+    const mocks = makeGateMocks(80);
+    vi.mocked(mocks.cfg.getDynamic).mockImplementation(
+      async (key: string, _env: unknown, fallback: unknown) => {
+        if (key === 'probe.immediatePushMinPriority') {
+          throw new Error('settings db down');
+        }
+        return fallback as never;
+      },
+    );
+    const worker = makeWorker(mocks);
+
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
+  });
+
+  it('L-1: getDynamic упал, priority=40 < default 70 → queued_digest (гейт работает на дефолте)', async () => {
+    const mocks = makeGateMocks(40);
+    vi.mocked(mocks.cfg.getDynamic).mockRejectedValue(
+      new Error('settings db down'),
+    );
+    const worker = makeWorker(mocks);
+
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
+  });
 });

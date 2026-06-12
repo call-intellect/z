@@ -134,6 +134,15 @@ export interface ChatV2Output {
   usedBlockIds: string[];
   inputTokens: number;
   outputTokens: number;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа: effectiveDataClass из
+   * retrieval pool (maxDataClass legacy / DataClassPolicy на enforce — тот
+   * же, что уходит в llm.call). Каналы-мосты используют его, чтобы НЕ лить
+   * sensitive/private текст во внешний канал (Telegram/MAX), а слать
+   * указатель «откройте в кабинете». Для пустого контекста — 'internal'
+   * (ответ-заглушка без данных).
+   */
+  dataClass: DataClass;
 }
 
 /**
@@ -495,6 +504,8 @@ export class ChatV2Service {
         usedBlockIds: [],
         inputTokens: 0,
         outputTokens: 0,
+        // M-1 — пустой контекст: ответ-заглушка без данных.
+        dataClass: 'internal',
       };
     }
 
@@ -631,6 +642,8 @@ export class ChatV2Service {
       usedBlockIds,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
+      // M-1 — derived класс ответа (тот же, что ушёл в llm.call).
+      dataClass: effectiveDataClass,
     };
   }
 

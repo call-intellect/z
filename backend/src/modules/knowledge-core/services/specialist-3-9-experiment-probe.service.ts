@@ -128,7 +128,10 @@ export class Specialist39ExperimentProbeService {
         // кандидат → Кора назначает сама (Experiment.ownerEntityId), probe
         // не шлём; несколько → вопрос-выбор с именами; никого → как раньше.
         const ladder = await this.tryResolveOwner(exp);
-        if (ladder.outcome === 'auto') continue;
+        // M-3: already_assigned — владельца назначили параллельно, probe
+        // не нужен (тихий skip).
+        if (ladder.outcome === 'auto' || ladder.outcome === 'already_assigned')
+          continue;
         const message =
           ladder.outcome === 'ambiguous'
             ? `Эксперимент «${name}» уже больше суток без ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`
@@ -164,6 +167,7 @@ export class Specialist39ExperimentProbeService {
     exp: Experiment,
   ): Promise<
     | { outcome: 'auto' }
+    | { outcome: 'already_assigned' }
     | { outcome: 'ambiguous'; candidateNames: string[] }
     | { outcome: 'none' }
   > {
@@ -193,8 +197,11 @@ export class Specialist39ExperimentProbeService {
       if (resolution.kind === 'resolved') {
         const person = subjects.find((p) => p.userId === resolution.userId);
         if (person?.entityId) {
+          // M-3 (2026-06-12) — optimistic-условие «поле всё ещё пусто»:
+          // ownerEntityId: null в where защищает от гонки с параллельным
+          // назначением (человек/другой воркер успел раньше).
           const updated = await this.prisma.experiment.updateMany({
-            where: { id: exp.id, tenantId: exp.tenantId },
+            where: { id: exp.id, tenantId: exp.tenantId, ownerEntityId: null },
             data: { ownerEntityId: person.entityId },
           });
           if (updated.count > 0) {
@@ -205,9 +212,15 @@ export class Specialist39ExperimentProbeService {
             await this.publishAutoAssignFeed(exp, person.name);
             return { outcome: 'auto' };
           }
+          // count=0 при optimistic-условии: владельца уже назначили
+          // параллельно — тихий skip (ни ленты, ни probe).
+          this.logger.log(
+            `owner-resolver: владелец эксперимента уже назначен параллельно — пропускаю (experimentId=${exp.id})`,
+          );
+          return { outcome: 'already_assigned' };
         }
-        // entityId у Person нет / запись не обновилась — поле владельца не
-        // мапится однозначно → НЕ автоназначаем, обычный probe.
+        // entityId у Person нет — поле владельца не мапится однозначно →
+        // НЕ автоназначаем, обычный probe.
         this.metrics.incOwnerResolution({ outcome: 'none' });
         return { outcome: 'none' };
       }

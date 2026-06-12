@@ -222,11 +222,15 @@ export class Specialist31ProbeService {
             resourceName: args.resourceName,
             userId: resolution.userId,
           });
-          if (assigned) {
+          if (assigned === 'assigned') {
             this.metrics.incOwnerResolution({ outcome: 'auto' });
             return; // probe НЕ шлём — владелец назначен автоматически
           }
-          // Person по userId не нашёлся — падаем в обычный probe ниже.
+          if (assigned === 'already_assigned') {
+            // M-3 — владельца назначили параллельно: probe не нужен.
+            return;
+          }
+          // 'no_person' — Person по userId не нашёлся — обычный probe ниже.
         } else if (resolution.kind === 'ambiguous') {
           this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
           const names = await this.personNamesByUserIds(
@@ -517,8 +521,13 @@ export class Specialist31ProbeService {
 
   /**
    * W2 autonomy — АВТО-назначение владельца (прямое поле ownerPersonId есть у
-   * всех трёх моделей). Возвращает `true`, если запись обновлена; `false`,
-   * если Person по userId не нашёлся (вызывающий падает в обычный probe).
+   * всех трёх моделей). Исходы:
+   *   - 'assigned' — запись обновлена (лента публикуется);
+   *   - 'no_person' — Person по userId не нашёлся (вызывающий падает в
+   *     обычный probe);
+   *   - 'already_assigned' — M-3 (2026-06-12): optimistic-условие
+   *     `ownerPersonId: null` в where дало count=0 — владельца назначили
+   *     параллельно; вызывающий тихо пропускает (ни ленты, ни probe).
    * Запись в ленту «что сделала Кора» — best-effort.
    */
   private async autoAssignOwner(args: {
@@ -527,14 +536,20 @@ export class Specialist31ProbeService {
     resourceId: string;
     resourceName: string;
     userId: string;
-  }): Promise<boolean> {
+  }): Promise<'assigned' | 'no_person' | 'already_assigned'> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
       select: { id: true, name: true },
     });
-    if (!person) return false;
+    if (!person) return 'no_person';
 
-    const where = { id: args.resourceId, tenantId: args.tenantId };
+    // M-3 — optimistic-условие «поле всё ещё пусто»: защита от гонки с
+    // параллельным назначением владельца.
+    const where = {
+      id: args.resourceId,
+      tenantId: args.tenantId,
+      ownerPersonId: null,
+    };
     const data = { ownerPersonId: person.id };
     let updated: number;
     if (args.resourceType === 'process') {
@@ -545,7 +560,12 @@ export class Specialist31ProbeService {
       updated = (await this.prisma.regulation.updateMany({ where, data }))
         .count;
     }
-    if (updated === 0) return false;
+    if (updated === 0) {
+      this.logger.log(
+        `owner-resolver: владелец ${this.kindLabel(args.resourceType)} уже назначен параллельно — пропускаю (resourceId=${args.resourceId})`,
+      );
+      return 'already_assigned';
+    }
 
     const label = this.kindLabel(args.resourceType);
     this.logger.log(
@@ -576,7 +596,7 @@ export class Specialist31ProbeService {
         );
       }
     }
-    return true;
+    return 'assigned';
   }
 
   /** scope вида 'role:<id>' → roleId; иначе null. */

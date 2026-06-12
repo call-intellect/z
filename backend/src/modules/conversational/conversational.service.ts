@@ -412,19 +412,20 @@ export class ConversationalService {
   }): Promise<Notification> {
     // Если задан originChannelBindingId — определим preferredChannelKinds
     // как [kind того binding'а], чтобы routing выбрал именно его.
+    // H-1 (2026-06-12): реюз resolveOriginChannelKinds — глобальный канал
+    // (Channel.tenantId=null, прод-Telegram/MAX) валиден; строгая проверка
+    // `channel.tenantId === args.tenantId` отвергала его, и solicited/critical
+    // умирал на проде. Проверки binding.userId === args.userId и
+    // status='active' живут внутри резолвера (одна логика в одном месте).
     let preferredKinds: ChannelKind[] | undefined;
     if (args.originChannelBindingId) {
-      const binding = await this.prisma.channelBinding.findUnique({
-        where: { id: args.originChannelBindingId },
-        include: { channel: true },
+      const kinds = await this.resolveOriginChannelKinds({
+        originChannelBindingId: args.originChannelBindingId,
+        userId: args.userId,
+        tenantId: args.tenantId,
       });
-      if (
-        binding &&
-        binding.userId === args.userId &&
-        binding.channel.tenantId === args.tenantId &&
-        binding.channel.status === 'active'
-      ) {
-        preferredKinds = [binding.channel.kind];
+      if (kinds.length > 0) {
+        preferredKinds = kinds;
       } else {
         this.logger.warn(
           { originChannelBindingId: args.originChannelBindingId },

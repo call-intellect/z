@@ -39,8 +39,9 @@ import type {
  *   1. computeContentHash(reason + sorted contextIds).
  *   2. Redis dedup check (TTL = cfg.probe.dedupTtlHours).
  *   3. Rate-limit check: если ВСЕ кандидаты под лимитом — drop.
- *   4. Cold-start: первые N часов после первого probe в Org → status='dropped_cold_start'
- *      + кладём заметку admin'у (без отправки).
+ *   4. Cold-start: первые N часов после первого probe в Org →
+ *      status='routed_to_digest' (L-3: вопросы не теряются — придут
+ *      дайджестом после прогрева).
  *   5. priority = compute (severity_weight * freshness=1.0 * (1 + engagement_rate)).
  *   6. Insert ProbeEvent (status='pending'); SET dedup key с TTL.
  *   7. enqueueProbeEvent для dispatcher'а.
@@ -155,6 +156,9 @@ export class ProbeService {
               contentHash,
               priority,
               status: 'queued_digest',
+              // L-2 (2026-06-12): digest-статусы тоже стареют — без expiresAt
+              // протухшие вопросы жили бы в дайджесте вечно.
+              expiresAt: this.computeExpiresAt(),
             },
           });
           this.metrics.incProbeEvent({
@@ -187,28 +191,36 @@ export class ProbeService {
         return { dropped: 'rate_limit' };
       }
 
-      // 3. Cold-start check (per Org).
+      // 3. Cold-start check (per Org). L-3 (2026-06-12): вопросы нового Org
+      // НЕ теряем терминальным dropped_cold_start — откладываем в дайджест
+      // (routed_to_digest): после прогрева ProbeDigestCron доставит их
+      // батчем. Статус dropped_cold_start остаётся в enum (история).
       const coldStart = await this.isColdStart(input.tenantId);
       if (coldStart) {
         this.metrics.incProbeColdStartDropped();
-        this.metrics.incProbeEvent({
-          emittedByService: input.emittedByService,
-          reason: input.reason,
-          status: 'dropped_cold_start',
-        });
-        await this.prisma.probeEvent.create({
+        const deferred = await this.prisma.probeEvent.create({
           data: {
             tenantId: input.tenantId,
             emittedByService: input.emittedByService,
             reason: input.reason,
             payload: this.payloadToJson(input.payload),
-            recipientCandidates: [...input.recipientCandidates],
+            recipientCandidates: [...availableRecipients],
             contentHash,
-            priority: 0,
-            status: 'dropped_cold_start',
+            priority: Math.round(this.clamp01(input.priorityHint ?? 0.4) * 100),
+            status: 'routed_to_digest',
+            // L-2 — digest-статусы стареют.
+            expiresAt: this.computeExpiresAt(),
           },
         });
-        return { dropped: 'cold_start' };
+        this.metrics.incProbeEvent({
+          emittedByService: input.emittedByService,
+          reason: input.reason,
+          status: 'routed_to_digest',
+        });
+        this.logger.log(
+          `cold-start: probe отложен в дайджест (id=${deferred.id} tenant=${input.tenantId} reason=${input.reason})`,
+        );
+        return { ok: true, probeEventId: deferred.id };
       }
 
       // 4. Compute priority.
@@ -266,6 +278,8 @@ export class ProbeService {
             contentHash,
             priority,
             status: 'routed_to_digest',
+            // L-2 (2026-06-12): digest-статусы стареют наравне с pending.
+            expiresAt: this.computeExpiresAt(),
           },
         });
         this.metrics.incProbeEvent({
@@ -277,9 +291,7 @@ export class ProbeService {
       }
 
       // 5. Insert ProbeEvent.
-      const expiresAt = new Date(
-        Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000,
-      );
+      const expiresAt = this.computeExpiresAt();
       const event = await this.prisma.probeEvent.create({
         data: {
           tenantId: input.tenantId,
@@ -458,6 +470,16 @@ export class ProbeService {
   private clamp01(v: number): number {
     if (!Number.isFinite(v)) return 0;
     return Math.max(0, Math.min(1, v));
+  }
+
+  /**
+   * L-2 (2026-06-12) — единый расчёт срока жизни probe (как у pending):
+   * now + probe.expiryDays. Используется и для digest-статусов
+   * (queued_digest / routed_to_digest), чтобы протухшие вопросы не жили
+   * в дайджесте вечно (expire делает ProbePriorityCron).
+   */
+  private computeExpiresAt(): Date {
+    return new Date(Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000);
   }
 
   private payloadToJson(payload: ProbeSuggestPayload): Prisma.InputJsonValue {

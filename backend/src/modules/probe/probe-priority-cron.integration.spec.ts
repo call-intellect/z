@@ -301,4 +301,23 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
     expect(metrics.incProbeExpired).toHaveBeenCalledTimes(1);
     expect(state.probe.status).toBe('expired');
   });
+
+  it('L-2: expire-выборка и updateMany включают digest-статусы (queued_digest / routed_to_digest)', async () => {
+    state.notification.respondedAt = null;
+
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
+    await cron.sweep();
+
+    const findArg = vi.mocked(prisma.probeEvent.findMany).mock
+      .calls[0]![0] as { where: { status: { in: string[] } } };
+    expect(findArg.where.status).toEqual({
+      in: ['pending', 'queued_digest', 'routed_to_digest'],
+    });
+
+    const updArg = vi.mocked(prisma.probeEvent.updateMany).mock
+      .calls[0]![0] as { where: { status: { in: string[] } } };
+    expect(updArg.where.status).toEqual({
+      in: ['pending', 'queued_digest', 'routed_to_digest'],
+    });
+  });
 });

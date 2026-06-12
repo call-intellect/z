@@ -126,9 +126,12 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
 
     expect('ok' in res && res.ok).toBe(true);
     const created = env.create.mock.calls[0]![0] as {
-      data: { status: string };
+      data: { status: string; expiresAt?: Date };
     };
     expect(created.data.status).toBe('routed_to_digest');
+    // L-2 — digest-статус получает expiresAt (тот же расчёт, что у pending).
+    expect(created.data.expiresAt).toBeInstanceOf(Date);
+    expect(created.data.expiresAt!.getTime()).toBeGreaterThan(Date.now());
     // Дайджест-cron подберёт — dispatcher НЕ ставится в очередь.
     expect(env.enqueue).not.toHaveBeenCalled();
   });
@@ -167,7 +170,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
     expect(created.data.status).toBe('pending');
   });
 
-  it('cold-start: первый probe В ОКНЕ (1ч < 24ч) → dropped_cold_start (W2 включил подавление)', async () => {
+  it('cold-start: первый probe В ОКНЕ (1ч < 24ч) → routed_to_digest (L-3: вопросы нового Org не теряются)', async () => {
     const e = makeService({ coldStartModeHours: 24, earliestProbeAgeHours: 1 });
     const res = await e.service.suggest({
       tenantId: 'org-1',
@@ -178,9 +181,19 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       priorityHint: 0.5,
     });
 
-    expect('dropped' in res && res.dropped).toBe('cold_start');
-    const created = e.create.mock.calls[0]![0] as { data: { status: string } };
-    expect(created.data.status).toBe('dropped_cold_start');
+    // L-3 — не терминальный drop, а отложка: придёт дайджестом после прогрева.
+    expect('ok' in res && res.ok).toBe(true);
+    const created = e.create.mock.calls[0]![0] as {
+      data: { status: string; priority: number; expiresAt?: Date };
+    };
+    expect(created.data.status).toBe('routed_to_digest');
+    expect(created.data.priority).toBe(50);
+    // L-2 — digest-статус стареет (expiresAt задан).
+    expect(created.data.expiresAt).toBeInstanceOf(Date);
+    // Метрика идёт со status='routed_to_digest', не dropped_cold_start.
+    expect(e.incProbeEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'routed_to_digest' }),
+    );
     expect(e.enqueue).not.toHaveBeenCalled();
   });
 });

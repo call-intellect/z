@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { ChatV2Mode, ChatV2Scope } from '@prisma/client';
+import type { ChatV2Mode, ChatV2Scope, DataClass } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { BrandVoiceService } from '../../brand-voice/services/brand-voice.service';
@@ -80,6 +80,13 @@ export interface SynthesisResult {
   llmMeta: Record<string, unknown>;
   /** Если есть подсказка про противоречия — короткий текст для UI. */
   uncertaintyNote: string | null;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа (из knowledge-core
+   * ChatV2Output.dataClass). Для clone-пути (ClonesService.askPerson)
+   * derived класс недоступен — консервативно 'sensitive' (личный корпус
+   * сотрудника).
+   */
+  dataClass: DataClass;
 }
 
 @Injectable()
@@ -139,6 +146,9 @@ export class SynthesisService {
           retrievalMeta: { mode: 'clone_style', usedBlockIds: [] },
           llmMeta: { mode: 'clone_style' },
           uncertaintyNote: null,
+          // M-1 — askPerson не возвращает derived класс; ответ построен на
+          // личном корпусе сотрудника → консервативно 'sensitive'.
+          dataClass: 'sensitive',
         };
       } catch (err) {
         this.logger.warn(
@@ -259,6 +269,7 @@ export class SynthesisService {
         retrievalMeta,
         llmMeta,
         uncertaintyNote,
+        dataClass: result.dataClass,
       };
     }
 
@@ -268,6 +279,7 @@ export class SynthesisService {
       retrievalMeta,
       llmMeta,
       uncertaintyNote,
+      dataClass: result.dataClass,
     };
   }
 

@@ -35,6 +35,12 @@ export interface AnswerCacheEntry {
   mode: string;
   usedBlockIds: string[];
   cachedAt: string;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа (см. ChatAnswer.dataClass).
+   * Опционален: старые записи кэша его не имеют — читатель консервативно
+   * трактует отсутствие как 'sensitive'.
+   */
+  dataClass?: string;
 }
 
 const KEY_PREFIX = 'dlg:ans';

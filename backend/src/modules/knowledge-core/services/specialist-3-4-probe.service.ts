@@ -3,7 +3,6 @@ import type { Card } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { ActivityFeedService } from '../../activity-feed/services/activity-feed.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
 
@@ -62,12 +61,11 @@ export class Specialist34ProbeService {
     private readonly metrics: BusinessMetricsService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    // W2 autonomy (2026-06-12) — «лестница владельца» + лента «что сделала
-    // Кора». Optional: без них работает прежнее поведение (probe).
+    // W2 autonomy (2026-06-12) — «лестница владельца». Optional: без неё
+    // работает прежнее поведение (probe). M-2: авто-записи владельца для
+    // card нет — лестница даёт только кандидатов для текста вопроса.
     @Optional() @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
-    @Optional() @Inject(ActivityFeedService)
-    private readonly activityFeed?: ActivityFeedService,
   ) {}
 
   /**
@@ -127,17 +125,21 @@ export class Specialist34ProbeService {
     const admins = await this.findOrgAdminsAndOwner(card.tenantId);
     if (admins.length === 0) return;
 
-    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe. Прямое поле
-    // владельца — Card.ownerId (userId). Автор = ownerId-creator — это и есть
-    // уволившийся, в лестницу его НЕ кладём. Кандидаты — subject-Person'ы
-    // карточки с активным Membership: единственный → Кора переназначает сама;
-    // несколько → вопрос-выбор с именами; никого → probe как раньше.
+    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe. M-2
+    // (2026-06-12): Card.ownerId — namespace/creator-ключ
+    // (@@unique([ownerId,name]) + cascade), его авто-перезапись опасна —
+    // АВТО-ветки для card НЕТ. Единственный кандидат → probe-вопрос
+    // «Назначить владельцем X?» (ambiguous с одним кандидатом); несколько →
+    // вопрос-выбор с именами; никого → probe как раньше.
     const ladder = await this.tryResolveOwner(card);
-    if (ladder.outcome === 'auto') return;
-    const message =
-      ladder.outcome === 'ambiguous'
-        ? `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`
-        : `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного — кто-то из команды возьмёт?`;
+    let message: string;
+    if (ladder.outcome === 'ambiguous' && ladder.candidateNames.length === 1) {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного. Назначить владельцем ${ladder.candidateNames[0]}? Ответьте, кого назначить.`;
+    } else if (ladder.outcome === 'ambiguous') {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`;
+    } else {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного — кто-то из команды возьмёт?`;
+    }
     await this.emit({
       tenantId: card.tenantId,
       cardId: card.id,
@@ -154,11 +156,16 @@ export class Specialist34ProbeService {
    * User И активным Membership в Org (проблема как раз в неактивном владельце).
    * admin'ов в пул не кладём — в Org с одним admin'ом все бесхозные карточки
    * молча падали бы на него.
+   *
+   * M-2 (2026-06-12): АВТО-записи владельца для card НЕТ — Card.ownerId это
+   * namespace/creator-ключ (@@unique([ownerId,name]), cascade-связи), его
+   * перезапись меняет идентичность карточки. resolved-исход трактуем как
+   * ambiguous с единственным кандидатом (probe-вопрос, без кнопок). Метрика
+   * incOwnerResolution для card — только ambiguous | none.
    */
   private async tryResolveOwner(
     card: Card,
   ): Promise<
-    | { outcome: 'auto' }
     | { outcome: 'ambiguous'; candidateNames: string[] }
     | { outcome: 'none' }
   > {
@@ -199,20 +206,14 @@ export class Specialist34ProbeService {
       });
 
       if (resolution.kind === 'resolved') {
-        const updated = await this.prisma.card.updateMany({
-          where: { id: card.id, tenantId: card.tenantId },
-          data: { ownerId: resolution.userId },
-        });
-        if (updated.count > 0) {
-          this.metrics.incOwnerResolution({ outcome: 'auto' });
-          const personName =
-            subjects.find((p) => p.userId === resolution.userId)?.name ??
-            'участник команды';
-          this.logger.log(
-            `owner-resolver: Кора назначила ответственного за карточку «${card.name}» — ${personName} (cardId=${card.id})`,
-          );
-          await this.publishAutoAssignFeed(card, personName);
-          return { outcome: 'auto' };
+        // M-2 — без авто-записи: единственный кандидат превращается в
+        // probe-вопрос с одним именем (см. checkMissingOwner).
+        const personName = subjects.find(
+          (p) => p.userId === resolution.userId,
+        )?.name;
+        if (personName && personName.length > 0) {
+          this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
+          return { outcome: 'ambiguous', candidateNames: [personName] };
         }
         this.metrics.incOwnerResolution({ outcome: 'none' });
         return { outcome: 'none' };
@@ -233,37 +234,6 @@ export class Specialist34ProbeService {
     } catch (err) {
       this.logProbeError('card.missing_owner.owner_resolver', card.id, err);
       return { outcome: 'none' };
-    }
-  }
-
-  /** Запись в ленту «что сделала Кора» — best-effort. */
-  private async publishAutoAssignFeed(
-    card: Card,
-    personName: string,
-  ): Promise<void> {
-    if (!this.activityFeed || !card.tenantId) return;
-    try {
-      await this.activityFeed.publish({
-        tenantId: card.tenantId,
-        feedType: 'knowledge_change',
-        sourceType: 'system',
-        sourceAgentName: Specialist34ProbeService.SPECIALIST_NAME,
-        relatedEntityType: 'card',
-        relatedEntityId: card.id,
-        title: `Кора назначила ответственного за карточку «${card.name}»: ${personName}`,
-        summary:
-          'Прежний ответственный больше не в команде; новый выведен автоматически по «лестнице владельца» (единственный активный участник-кандидат).',
-        severity: 'normal',
-        visibility: 'public_org',
-      });
-    } catch (err) {
-      this.logger.warn(
-        {
-          cardId: card.id,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'specialist-3-4 probe: publish в ленту не удался — назначение уже применено',
-      );
     }
   }
 

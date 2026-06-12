@@ -3,6 +3,7 @@ import {
   type ChatV2Conversation,
   type ChatV2Mode,
   type ChatV2Scope,
+  type DataClass,
   Prisma,
 } from '@prisma/client';
 
@@ -68,6 +69,13 @@ export interface ChatAnswer {
    * вызова retrieval+LLM). UI может показать subtle badge «кэш».
    */
   cacheHit: boolean;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа (от SynthesisService /
+   * knowledge-core). Каналы-мосты не льют sensitive/private текстом во
+   * внешний канал. Для cache-hit без сохранённого класса (старые записи) —
+   * консервативно 'sensitive'.
+   */
+  dataClass: DataClass;
 }
 
 @Injectable()
@@ -210,6 +218,8 @@ export class ChatV2OrchestrationService {
         uncertaintyNote: cached.uncertaintyNote,
         mode,
         cacheHit: true,
+        // M-1 — класс из кэша; старые записи без него → 'sensitive'.
+        dataClass: coerceDataClass(cached.dataClass),
       };
     }
 
@@ -304,6 +314,8 @@ export class ChatV2OrchestrationService {
             mode,
             usedBlockIds,
             cachedAt: new Date().toISOString(),
+            // M-1 — сохраняем derived класс, чтобы cache-hit не терял его.
+            dataClass: result.dataClass,
           },
         )
         .catch((err) => {
@@ -338,6 +350,8 @@ export class ChatV2OrchestrationService {
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
+      // M-1 — derived класс от SynthesisService (knowledge-core).
+      dataClass: result.dataClass,
     };
   }
 
@@ -374,4 +388,16 @@ export class ChatV2OrchestrationService {
       .reverse()
       .map((m) => ({ role: m.role, content: m.text }));
   }
+}
+
+/**
+ * M-1 (2026-06-12) — безопасное сужение значения из AnswerCache (Redis JSON,
+ * без схемы) до DataClass. Старые записи кэша не содержат dataClass —
+ * консервативно считаем 'sensitive' (текст не уйдёт во внешний канал).
+ */
+function coerceDataClass(v: unknown): DataClass {
+  if (v === 'public' || v === 'internal' || v === 'sensitive' || v === 'private') {
+    return v;
+  }
+  return 'sensitive';
 }

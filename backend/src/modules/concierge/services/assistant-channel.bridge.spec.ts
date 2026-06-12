@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { ConversationalService } from '../../conversational/conversational.service';
 import type { InboundMessage } from '../../conversational/types/channel.types';
+import { validateEventPayload } from '../../conversational/types/event-payload.registry';
 import type { RbacService } from '../../rbac/rbac.service';
 
 import {
@@ -110,6 +112,10 @@ function makeBridge(opts: {
   });
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
+  // L-4 — счётчик исходов z_assistant_turn_total.
+  const incAssistantTurn = vi.fn();
+  const metrics = { incAssistantTurn } as unknown as BusinessMetricsService;
+
   const bridge = new AssistantChannelBridge(
     concierge,
     conversational,
@@ -117,6 +123,7 @@ function makeBridge(opts: {
     rbac,
     toolRouter,
     llm,
+    metrics,
   );
   bridge.onModuleInit();
 
@@ -136,7 +143,29 @@ function makeBridge(opts: {
     getMembershipRole,
     toolRouterExecute,
     llmCall,
+    incAssistantTurn,
   };
+}
+
+/**
+ * C-1 — прогон фактических аргументов sendChatReply через РЕАЛЬНУЮ
+ * Zod-валидацию payload'а chat.answer (как делает sendNotification).
+ * Раньше пустые conversationId/messageId роняли схему → тишина в канале.
+ */
+function expectChatAnswerPayloadValid(sendChatReply: ReturnType<typeof vi.fn>): void {
+  const args = (sendChatReply.mock.calls[0]?.[0] ?? {}) as {
+    conversationId?: string;
+    messageId?: string;
+    text?: string;
+  };
+  expect(() =>
+    validateEventPayload('chat.answer', {
+      conversationId: args.conversationId,
+      messageId: args.messageId,
+      text: args.text,
+      citationsCount: 0,
+    }),
+  ).not.toThrow();
 }
 
 const turn = (overrides: Partial<Extract<InboundMessage, { type: 'assistant_turn' }>> = {}): InboundMessage => ({
@@ -599,5 +628,140 @@ describe('AssistantChannelBridge — Ф6 текст-подтверждение (
     const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
     expect(sent.text).toContain('Не получилось');
     expect(sent.text).toContain('RBAC');
+  });
+
+  it('H-2: del вернул 0 (конкурентный «да» успел раньше) → execute НЕ вызван, ответ не дублируется', async () => {
+    const { handler, redisDel, toolRouterExecute, sendChatReply } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+    });
+    // Конкурентный обработчик уже удалил ключ между GET и DEL.
+    redisDel.mockResolvedValueOnce(0);
+
+    await handler(turn({ text: 'да' }));
+
+    expect(redisDel).toHaveBeenCalledWith(CONFIRM_KEY);
+    expect(toolRouterExecute).not.toHaveBeenCalled();
+    expect(sendChatReply).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────── C-1 — payload chat.answer проходит реальную Zod-схему ─────────────────
+
+describe('AssistantChannelBridge — C-1 совместимость payload с registry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const CONFIRM_KEY = 'concierge:confirm:binding-1';
+  const pendingState = JSON.stringify({
+    toolName: 'cancel_meeting',
+    params: { id: 'm-1' },
+    conversationId: '',
+    preview: 'отменить встречу (id: m-1)',
+  });
+
+  it('confirm-вопрос (sendConfirmFlowReply, нет ConciergeMessage) → payload валиден, id синтетические непустые', async () => {
+    const { handler, sendChatReply } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+    });
+
+    await handler(turn({ text: 'да' }));
+
+    expect(sendChatReply).toHaveBeenCalledTimes(1);
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as {
+      conversationId?: string;
+      messageId?: string;
+    };
+    expect(sent.messageId).toBe('assistant-channel');
+    expect(sent.conversationId).toBe('binding-1'); // pendingState.conversationId='' → originChannelBindingId
+    expectChatAnswerPayloadValid(sendChatReply);
+  });
+
+  it('quota-путь (quota_exceeded ДО started → conversationId пуст) → payload валиден', async () => {
+    const { handler, sendChatReply } = makeBridge({
+      events: [{ type: 'quota_exceeded', scope: 'user_daily' }],
+    });
+
+    await handler(turn());
+
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as {
+      conversationId?: string;
+      messageId?: string;
+    };
+    expect(sent.conversationId).toBe('binding-1');
+    expect(sent.messageId).toBe('assistant-channel');
+    expectChatAnswerPayloadValid(sendChatReply);
+  });
+});
+
+// ───────────────── L-4 — метрика z_assistant_turn_total{outcome} ─────────────────
+
+describe('AssistantChannelBridge — L-4 метрика исходов ходов', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('успешный ход → outcome=ok', async () => {
+    const { handler, incAssistantTurn } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-1' },
+        { type: 'message', text: 'Ответ.' },
+        { type: 'done', messageId: 'msg-1' },
+      ],
+    });
+    await handler(turn());
+    expect(incAssistantTurn).toHaveBeenCalledWith({ outcome: 'ok' });
+  });
+
+  it('quota_exceeded → outcome=quota', async () => {
+    const { handler, incAssistantTurn } = makeBridge({
+      events: [{ type: 'quota_exceeded', scope: 'user_daily' }],
+    });
+    await handler(turn());
+    expect(incAssistantTurn).toHaveBeenCalledWith({ outcome: 'quota' });
+  });
+
+  it('error → outcome=error', async () => {
+    const { handler, incAssistantTurn } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-e' },
+        { type: 'error', code: 'llm_error', message: 'LLM недоступен' },
+      ],
+    });
+    await handler(turn());
+    expect(incAssistantTurn).toHaveBeenCalledWith({ outcome: 'error' });
+  });
+
+  it('confirm_required → outcome=confirm_hold', async () => {
+    const { handler, incAssistantTurn } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-7' },
+        {
+          type: 'confirm_required',
+          toolName: 'cancel_meeting',
+          params: { id: 'm-1' },
+          preview: 'отменить встречу (id: m-1)',
+        },
+        { type: 'done', messageId: 'msg-hold' },
+      ],
+    });
+    await handler(turn());
+    expect(incAssistantTurn).toHaveBeenCalledWith({ outcome: 'confirm_hold' });
+  });
+
+  it('process бросил → outcome=handler_error (внешний catch)', async () => {
+    const { handler, processMock, incAssistantTurn } = makeBridge({
+      events: [],
+    });
+    processMock.mockImplementation(() => {
+      // eslint-disable-next-line require-yield
+      return (async function* (): AsyncIterable<ConciergeStreamEvent> {
+        throw new Error('boom');
+      })();
+    });
+    await handler(turn());
+    expect(incAssistantTurn).toHaveBeenCalledWith({ outcome: 'handler_error' });
   });
 });

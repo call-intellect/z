@@ -93,8 +93,13 @@ export class ProbeDigestCron {
     // W2 autonomy (2026-06-12): дайджест подбирает И queued_digest (rate-limit /
     // priority-гейт диспетчера), И routed_to_digest (NUDGE-политика §9.2) —
     // различие статусов сохраняется только для аудита источника отложки.
+    // L-2 (2026-06-12): протухшие (expiresAt < now) НЕ берём — их пометит
+    // expired ProbePriorityCron (консистентно: фильтр здесь, expire там).
     const queued = await this.prisma.probeEvent.findMany({
-      where: { status: { in: ['queued_digest', 'routed_to_digest'] } },
+      where: {
+        status: { in: ['queued_digest', 'routed_to_digest'] },
+        OR: [{ expiresAt: null }, { expiresAt: { gte: new Date() } }],
+      },
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
       take: ProbeDigestCron.MAX_SCAN,
       select: {

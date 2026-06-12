@@ -113,8 +113,12 @@ const SpecialistProbePayloadSchema = z
  */
 const ChatAnswerPayloadSchema = z
   .object({
-    conversationId: z.string().min(1),
-    messageId: z.string().min(1),
+    // C-1 (2026-06-12): допускаем '' — confirm/quota/error-ответы моста
+    // помощника не имеют ConciergeMessage/conversation (раньше Zod молча
+    // ронял отправку → тишина в канале). Мост подставляет синтетические
+    // значения, но защита в глубину — схема тоже не должна бросать.
+    conversationId: z.string(),
+    messageId: z.string(),
     text: z.string().min(1).max(16_000),
     citationsCount: z.number().int().min(0).default(0),
     /** Опц. mode ответа (factual/synthetic/clone_style) — для UI-индикатора. */

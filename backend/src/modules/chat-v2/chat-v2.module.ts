@@ -40,7 +40,7 @@ import { ChatV2CleanupCron } from './workers/chat-v2-cleanup.cron';
  */
 
 @Injectable()
-class ChatV2OmnichannelBridge implements OnModuleInit {
+export class ChatV2OmnichannelBridge implements OnModuleInit {
   private readonly logger = new Logger(ChatV2OmnichannelBridge.name);
 
   constructor(
@@ -71,12 +71,20 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
         channelKindOrigin: msg.originChannelBindingId ? 'external' : 'in_app',
       });
 
+      // M-1 (2026-06-12): derived класс ответа sensitive/private → текст НЕ
+      // льём в канал, шлём указатель на кабинет (сам факт ответа internal).
+      const restricted =
+        answer.dataClass === 'sensitive' || answer.dataClass === 'private';
+      const text = restricted
+        ? `Ответ содержит данные ограниченного доступа — откройте в кабинете: /chat?conversation=${answer.conversationId}`
+        : answer.text;
+
       await this.conversational.sendChatReply({
         tenantId: msg.tenantId,
         userId: msg.userId,
         conversationId: answer.conversationId,
         messageId: answer.messageId,
-        text: answer.text,
+        text,
         citationsCount: answer.citations.length,
         mode: answer.mode,
         uncertaintyNote: answer.uncertaintyNote ?? undefined,
@@ -84,8 +92,8 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
         // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): solicited
         // reply на заданный вопрос — должен дойти в канал-источник даже в
         // тихие часы. dataClass 'internal' вместо дефолтного 'sensitive',
-        // чтобы ответ прошёл maxDataClass внешних каналов (Telegram/MAX),
-        // а не молча уходил только в кабинет.
+        // чтобы ответ (или указатель на кабинет — M-1) прошёл maxDataClass
+        // внешних каналов (Telegram/MAX), а не молча уходил только в кабинет.
         dataClass: 'internal',
         solicited: true,
       });

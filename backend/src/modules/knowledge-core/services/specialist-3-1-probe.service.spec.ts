@@ -110,10 +110,15 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
 
     expect(env.regulationUpdateMany).toHaveBeenCalledTimes(1);
     const upd = env.regulationUpdateMany.mock.calls[0]![0] as {
-      where: { id: string; tenantId: string };
+      where: { id: string; tenantId: string; ownerPersonId: null };
       data: { ownerPersonId: string };
     };
-    expect(upd.where).toEqual({ id: 'reg-1', tenantId: 'org-1' });
+    // M-3 — optimistic-условие «поле всё ещё пусто» (защита от гонки).
+    expect(upd.where).toEqual({
+      id: 'reg-1',
+      tenantId: 'org-1',
+      ownerPersonId: null,
+    });
     expect(upd.data.ownerPersonId).toBe('person-1');
 
     expect(env.feedPublish).toHaveBeenCalledTimes(1);
@@ -163,5 +168,20 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
       'нет ответственного — назначить владельца?',
     );
     expect(env.incOwnerResolution).toHaveBeenCalledWith({ outcome: 'none' });
+  });
+
+  it('M-3: resolved, но updateMany вернул count=0 (владелец назначен параллельно) → лента НЕ публикуется, probe НЕ шлётся', async () => {
+    const env = makeEnv({ kind: 'resolved', userId: 'user-holder' });
+    env.regulationUpdateMany.mockResolvedValue({ count: 0 });
+
+    await env.service.checkAndEmitProbesRegulation(makeRegulation());
+
+    expect(env.regulationUpdateMany).toHaveBeenCalledTimes(1);
+    expect(env.feedPublish).not.toHaveBeenCalled();
+    expect(env.suggest).not.toHaveBeenCalled();
+    // Метрика auto НЕ инкрементится — назначения не было.
+    expect(env.incOwnerResolution).not.toHaveBeenCalledWith({
+      outcome: 'auto',
+    });
   });
 });

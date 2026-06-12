@@ -146,11 +146,19 @@ describe('ProbeDigestCron.collectAndSend', () => {
       }
     ).prisma.probeEvent.findMany;
     const findArg = findManyMock.mock.calls[0]![0] as {
-      where: { status: { in: string[] } };
+      where: {
+        status: { in: string[] };
+        OR: Array<Record<string, unknown>>;
+      };
     };
     expect(findArg.where.status).toEqual({
       in: ['queued_digest', 'routed_to_digest'],
     });
+    // L-2 — протухшие (expiresAt < now) в дайджест не попадают.
+    expect(findArg.where.OR).toEqual([
+      { expiresAt: null },
+      { expiresAt: { gte: expect.any(Date) } },
+    ]);
 
     // Оба пункта (включая NUDGE-routed) вошли в один дайджест получателя.
     const arg = e.sendNotification.mock.calls[0]![0] as {

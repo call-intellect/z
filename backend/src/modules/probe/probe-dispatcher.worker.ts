@@ -170,11 +170,18 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     // priority ≥ admin-крутилки `probe.immediatePushMinPriority` (дефолт 70).
     // Ниже порога — не дёргаем человека сразу, а откладываем в ежедневный
     // батч-дайджест (ProbeDigestCron заберёт status='queued_digest').
-    const minPriority = await this.cfg.getDynamic<number>(
-      'probe.immediatePushMinPriority',
-      undefined,
-      70,
-    );
+    // L-1 (2026-06-12): getDynamic может упасть (БД/Redis) — default 70,
+    // не роняя dispatch (паттерн probe.service).
+    let minPriority: number;
+    try {
+      minPriority = await this.cfg.getDynamic<number>(
+        'probe.immediatePushMinPriority',
+        undefined,
+        70,
+      );
+    } catch {
+      minPriority = 70;
+    }
     if (probe.priority < minPriority) {
       await this.prisma.probeEvent.update({
         where: { id: probe.id },

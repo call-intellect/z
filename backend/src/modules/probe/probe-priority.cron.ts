@@ -18,8 +18,9 @@ import {
  * Каждые 15 минут:
  *   1. Пересчитывает engagement_rate per-user (отвечено за 30д / отправлено
  *      за 30д) и выставляет gauge `probe_recipient_engagement_rate{user_id}`.
- *   2. Помечает истёкшие ProbeEvent (`expiresAt < now` AND status='pending')
- *      статусом 'expired' (+ метрика probe_expired_total).
+ *   2. Помечает истёкшие ProbeEvent (`expiresAt < now` AND status ∈
+ *      pending | queued_digest | routed_to_digest — L-2) статусом 'expired'
+ *      (+ метрика probe_expired_total).
  *
  * Cron-выражение в декораторе литералом (NestJS @Cron не читает ENV). Если
  * `PROBE_PRIORITY_REFRESH_CRON` отличается — заменить декоратор.
@@ -52,9 +53,11 @@ export class ProbePriorityCron {
       // (`Notification.respondedAt IS NOT NULL`). Так мы избегаем гонки
       // «истёк по таймеру, хотя ответ только что пришёл» — закрытый probe
       // не должен пере-помечаться `expired`.
+      // L-2 (2026-06-12): digest-статусы (queued_digest / routed_to_digest)
+      // тоже стареют — иначе протухший вопрос вечно ждал бы дайджеста.
       const expiredCandidates = await this.prisma.probeEvent.findMany({
         where: {
-          status: 'pending',
+          status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
           expiresAt: { lt: now },
         },
         select: {
@@ -90,7 +93,11 @@ export class ProbePriorityCron {
       let expiredCount = 0;
       if (expirable.length > 0) {
         const expired = await this.prisma.probeEvent.updateMany({
-          where: { id: { in: expirable.map((e) => e.id) }, status: 'pending' },
+          where: {
+            id: { in: expirable.map((e) => e.id) },
+            // L-2 — те же статусы, что в выборке (идемпотентность гонок).
+            status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
+          },
           data: { status: 'expired' },
         });
         expiredCount = expired.count;

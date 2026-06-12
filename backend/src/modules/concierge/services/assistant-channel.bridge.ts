@@ -5,6 +5,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 
+import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ConversationalService } from '../../conversational/conversational.service';
@@ -159,6 +160,9 @@ export class AssistantChannelBridge implements OnModuleInit {
     @Inject(ToolRouterService) private readonly toolRouter: ToolRouterService,
     /** Ф6 — LLM-judge `assistant-confirm-classify` (AiModule @Global). */
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
+    /** L-4 (2026-06-12) — счётчик исходов ходов: z_assistant_turn_total. */
+    @Inject(BusinessMetricsService)
+    private readonly metrics: BusinessMetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -196,6 +200,8 @@ export class AssistantChannelBridge implements OnModuleInit {
         }
         if (pendingRaw) {
           await this.handleConfirmReply(msg, confirmKey, pendingRaw);
+          // L-4 — ход подтверждения обработан без исключения.
+          this.metrics.incAssistantTurn({ outcome: 'ok' });
           return;
         }
       }
@@ -325,11 +331,15 @@ export class AssistantChannelBridge implements OnModuleInit {
 
       // (г) Один финальный ответ в канал-источник. solicited:true + dataClass
       // 'internal' (Ф1) — critical-доставка в Telegram/MAX, не в кабинет.
+      // C-1 (2026-06-12): quota/error-пути не имеют started/done →
+      // подставляем синтетические непустые id, чтобы payload-схема
+      // chat.answer не уронила отправку (тишина вместо ответа).
       await this.conversational.sendChatReply({
         tenantId: msg.tenantId,
         userId: msg.userId,
-        conversationId: startedConversationId,
-        messageId,
+        conversationId:
+          startedConversationId || (msg.originChannelBindingId ?? 'channel'),
+        messageId: messageId || 'assistant-channel',
         text,
         citationsCount: 0,
         ...(msg.originChannelBindingId
@@ -337,6 +347,12 @@ export class AssistantChannelBridge implements OnModuleInit {
           : {}),
         dataClass: 'internal',
         solicited: true,
+      });
+
+      // L-4 — исход хода: ok | error | quota | confirm_hold.
+      this.metrics.incAssistantTurn({
+        outcome:
+          outcome === 'ok' && confirmRequired ? 'confirm_hold' : outcome,
       });
 
       this.logger.log(
@@ -356,6 +372,12 @@ export class AssistantChannelBridge implements OnModuleInit {
         { userId: msg.userId, err: message },
         'assistant_turn handler упал — пользователь не получит ответ',
       );
+      // L-4 — внешний catch: ход потерян.
+      try {
+        this.metrics.incAssistantTurn({ outcome: 'handler_error' });
+      } catch {
+        /* метрика не должна ронять handler */
+      }
     }
   }
 
@@ -466,17 +488,27 @@ export class AssistantChannelBridge implements OnModuleInit {
       return;
     }
 
-    // Одноразовость: consume ключа ДО исполнения. Если DEL упал — НЕ
-    // исполняем (риск двойного исполнения при повторном «да») и честно
-    // говорим про временную недоступность.
+    // Одноразовость: атомарный consume ключа ДО исполнения. del возвращает
+    // число удалённых ключей: 0 — конкурентный «да» уже забрал ключ (между
+    // GET и DEL прошла LLM-классификация, секунды) → исполнять НЕЛЬЗЯ
+    // (H-2: двойное исполнение мутации). Если DEL упал — тоже НЕ исполняем
+    // (риск дубля при повторном «да») и честно говорим про недоступность.
+    let deleted: number;
     try {
-      await this.redis.client.del(confirmKey);
+      deleted = await this.redis.client.del(confirmKey);
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err), confirmKey },
         'confirm: Redis del упал — исполнение отменено (риск дубля)',
       );
       await this.sendConfirmFlowReply(msg, state.conversationId, TEXT_ERROR);
+      return;
+    }
+    if (deleted !== 1) {
+      this.logger.warn(
+        { confirmKey, toolName: state.toolName },
+        'confirm: ключ уже обработан конкурентно — исполнение пропущено',
+      );
       return;
     }
 
@@ -571,7 +603,9 @@ export class AssistantChannelBridge implements OnModuleInit {
   /**
    * Отправка сообщений confirm-flow тем же путём, что и финальный ответ моста
    * (sendChatReply: solicited:true + dataClass='internal' → доставка в
-   * канал-источник). messageId пуст — у confirm-flow нет ConciergeMessage.
+   * канал-источник). У confirm-flow нет ConciergeMessage — C-1 (2026-06-12):
+   * вместо пустых id подставляем синтетические непустые, чтобы payload-схема
+   * chat.answer не уронила отправку (тишина вместо confirm/error-ответа).
    */
   private async sendConfirmFlowReply(
     msg: Extract<InboundMessage, { type: 'assistant_turn' }>,
@@ -581,8 +615,9 @@ export class AssistantChannelBridge implements OnModuleInit {
     await this.conversational.sendChatReply({
       tenantId: msg.tenantId,
       userId: msg.userId,
-      conversationId,
-      messageId: '',
+      conversationId:
+        conversationId || (msg.originChannelBindingId ?? 'channel'),
+      messageId: 'assistant-channel',
       text,
       citationsCount: 0,
       ...(msg.originChannelBindingId

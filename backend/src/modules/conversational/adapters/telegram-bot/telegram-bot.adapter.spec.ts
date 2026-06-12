@@ -793,7 +793,7 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
     },
   });
 
-  it('ON: intent task (conf>=0.7) → assistant_turn, handleCreateTask НЕ вызван', async () => {
+  it('ON: intent task (conf>=0.7) → ПО-ПРЕЖНЕМУ handleCreateTask (у помощника нет инструмента постановки задачи), InboundMessage null', async () => {
     const mocks = makeAdapter({
       assistantChannelRoutingEnabled: true,
       classifyIntent: 'task',
@@ -810,15 +810,43 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       channel: makeChannel(),
     });
 
+    // Как при OFF: бот сам отвечает через task-handler, наружу ничего не идёт.
+    expect(result).toBeNull();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'org-1',
+        text: 'Поставь задачу: подготовить КП к пятнице',
+      }),
+    );
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+  });
+
+  it('ON: intent show_tasks (conf>=0.7) → assistant_turn (помощник покрывает через list_tasks), handleShowTasks НЕ вызван', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'show_tasks',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какие у меня задачи?', 306),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
     expect(result).toMatchObject({
       type: 'assistant_turn',
       userId: 'user-42',
       tenantId: 'org-1',
-      text: 'Поставь задачу: подготовить КП к пятнице',
+      text: 'Какие у меня задачи?',
       originChannelBindingId: 'binding-1',
     });
-    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
   });
 
   it('ON: intent factual (бывший chat_query) → assistant_turn', async () => {

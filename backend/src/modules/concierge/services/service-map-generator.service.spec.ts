@@ -86,6 +86,17 @@ describe('ServiceMapGeneratorService', () => {
     ]);
   });
 
+  // Семантически безопасные POST: readOnly=true → confirm не нужен,
+  // undo-log не пишется (find_free_slot — чистый расчёт; ask_chat_v2 —
+  // «задать вопрос», отмена бессмысленна). Мутирующие — без маркера.
+  it('readOnly: find_free_slot и ask_chat_v2 помечены, мутирующие — нет', () => {
+    expect(svc.findTool('find_free_slot')?.readOnly).toBe(true);
+    expect(svc.findTool('ask_chat_v2')?.readOnly).toBe(true);
+    // Настоящие мутации маркера не имеют.
+    expect(svc.findTool('create_event')?.readOnly).toBeUndefined();
+    expect(svc.findTool('infer_table_schema')?.readOnly).toBeUndefined();
+  });
+
   it('delete_event uses DELETE method and event_card.delete RBAC', () => {
     const t = svc.findTool('delete_event');
     expect(t?.method).toBe('DELETE');
@@ -133,14 +144,23 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.parameters.required).toEqual(['personId']);
   });
 
-  it('list_overdue_promises — GET /dashboard/commitment-reliability, dashboard_operations.read', () => {
+  // Ф6 assistant-channels (2026-06-11) — фикс бага: старый путь дашборда
+  // не существовал (404); реальный роут —
+  // GET /dashboard/operations/open-commitments, query строго по
+  // OpenCommitmentsQuerySchema (.strict(): только days/limit, оба опц.).
+  it('list_overdue_promises — GET /dashboard/operations/open-commitments, dashboard_operations.read', () => {
     const t = svc.findTool('list_overdue_promises');
     expect(t?.method).toBe('GET');
-    expect(t?.path).toBe('/api/v1/dashboard/commitment-reliability');
+    expect(t?.path).toBe('/api/v1/dashboard/operations/open-commitments');
     expect(t?.rbacResource).toBe('dashboard_operations');
     expect(t?.rbacAction).toBe('read');
-    // scope/scopeId опц. — required не должен быть выставлен.
+    // days/limit опц. — required не должен быть выставлен.
     expect(t?.parameters.required ?? []).toEqual([]);
+    // Параметры соответствуют OpenCommitmentsQuerySchema (strict).
+    expect(Object.keys(t?.parameters.properties ?? {}).sort()).toEqual([
+      'days',
+      'limit',
+    ]);
   });
 
   it('get_sprint_status — GET /cycles/:cycleId/dashboard, cycle.read, cycleId required', () => {
@@ -166,5 +186,31 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.path).toBe('/api/v1/feed/probe_question');
     expect(t?.rbacResource).toBe('activity_feed_item');
     expect(t?.rbacAction).toBe('read');
+  });
+
+  // ───────────────── Ф6 — канальное сужение (whitelist per-call) ─────────────────
+
+  it('Ф6: toLlmTools(names) сужает список до whitelist, без аргумента — все tools', () => {
+    const all = svc.toLlmTools();
+    expect(all).toHaveLength(svc.getTools().length);
+
+    const narrowed = svc.toLlmTools(['list_tasks', 'search_knowledge']);
+    expect(narrowed.map((t) => t.name).sort()).toEqual([
+      'list_tasks',
+      'search_knowledge',
+    ]);
+  });
+
+  it('Ф6: buildToolUsePromptFragment(names) сужает legacy-фрагмент; неизвестные имена игнорируются', () => {
+    const fragment = svc.buildToolUsePromptFragment([
+      'list_meetings',
+      'tool_kotorogo_net',
+    ]);
+    const parsed = JSON.parse(fragment) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name)).toEqual(['list_meetings']);
+
+    // Без аргумента — прежнее поведение (все tools).
+    const full = JSON.parse(svc.buildToolUsePromptFragment()) as unknown[];
+    expect(full.length).toBe(svc.getTools().length);
   });
 });

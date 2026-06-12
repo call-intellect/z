@@ -543,15 +543,18 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     });
 
     // Ф5 assistant-channels (2026-06-11) — за kill-switch'ем
-    // ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (chat_query / task /
+    // ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (chat_query /
     // show_tasks / free_note) уходит единому AI-помощнику (assistant_turn →
     // AssistantChannelBridge → ConciergeService): у помощника есть свои
-    // инструменты (list_tasks и др.), поэтому handleCreateTask/handleShowTasks
-    // здесь НЕ вызываются. Чек-ин (план/отчёт, гейт conf>=0.7 внутри
-    // classifyIntent) НЕ трогаем — идёт прежней веткой daily_checkin_self
-    // ниже. OFF — прежний узкий роутер бит-в-бит.
+    // инструменты (list_tasks и др.), поэтому handleShowTasks здесь НЕ
+    // вызывается. task — прежней веткой handleCreateTask: у помощника пока
+    // нет инструмента постановки задачи (intake RBAC), см. vNext-ТЗ
+    // create_task. Чек-ин (план/отчёт, гейт conf>=0.7 внутри classifyIntent)
+    // НЕ трогаем — идёт прежней веткой daily_checkin_self ниже. OFF —
+    // прежний узкий роутер бит-в-бит.
     if (
       this.isAssistantRoutingEnabled() &&
+      intent !== 'task' &&
       intent !== 'daily_plan_morning' &&
       intent !== 'daily_report_evening'
     ) {
@@ -888,10 +891,13 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
 
     // Ф5 assistant-channels (2026-06-11) — голос идёт тем же путём, что и
     // текст: Vox-транскрипт → classifyIntent → при включённом kill-switch
-    // всё свободное (chat_query/task/show_tasks/free_note) → assistant_turn
-    // (единый помощник). Чек-ин (план/отчёт) — прежней веткой ниже.
+    // всё свободное (chat_query/show_tasks/free_note) → assistant_turn
+    // (единый помощник). task — прежней веткой handleCreateTask: у помощника
+    // пока нет инструмента постановки задачи (intake RBAC), см. vNext-ТЗ
+    // create_task. Чек-ин (план/отчёт) — прежней веткой ниже.
     if (
       this.isAssistantRoutingEnabled() &&
+      intent !== 'task' &&
       intent !== 'daily_plan_morning' &&
       intent !== 'daily_report_evening'
     ) {

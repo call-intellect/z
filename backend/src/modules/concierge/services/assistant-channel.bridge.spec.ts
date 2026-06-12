@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RedisService } from '../../../common/redis/redis.service';
+import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import type { ConversationalService } from '../../conversational/conversational.service';
 import type { InboundMessage } from '../../conversational/types/channel.types';
+import type { RbacService } from '../../rbac/rbac.service';
 
-import { AssistantChannelBridge } from './assistant-channel.bridge';
+import {
+  AssistantChannelBridge,
+  CHANNEL_TOOL_WHITELIST_MANAGER,
+  CHANNEL_TOOL_WHITELIST_SELF,
+} from './assistant-channel.bridge';
 import type {
   ConciergeService,
   ConciergeStreamEvent,
 } from './concierge.service';
+import type { ToolRouterService } from './tool-router.service';
 
 /**
  * Unit-тесты Ф5 assistant-channels (2026-06-11) — AssistantChannelBridge.
@@ -21,6 +28,13 @@ import type {
  *     второй ход читает его и передаёт conversationId в process;
  *   - деградации: quota_exceeded / error / пустой ответ LLM (с tool_result
  *     и без) → русские тексты-заглушки.
+ *
+ * Ф6 (канальный whitelist + текст-подтверждение):
+ *   - роль Membership → SELF / MANAGER whitelist в process(toolWhitelist);
+ *   - confirm_required → Redis `concierge:confirm:<bindingId>` (TTL 300) +
+ *     вопрос «Подтвердите действие…» в канал;
+ *   - следующий ход «да»/«нет»/unclear → исполнение / отмена / переспрос,
+ *     одноразовость (del ДО execute).
  *
  * Все зависимости мокаются через `vi.fn()` + cast to type — паттерн проекта.
  */
@@ -37,6 +51,12 @@ async function* eventStream(
 function makeBridge(opts: {
   events: ConciergeStreamEvent[];
   redisGetReturns?: string | null;
+  /** Ф6 — точечные значения Redis.get по ключу (перебивают redisGetReturns). */
+  redisState?: Record<string, string | null>;
+  /** Ф6 — роль Membership (rbac.getMembershipRole). Default null (рядовой). */
+  membershipRole?: string | null;
+  /** Ф6 — ответ LLM-judge assistant-confirm-classify. */
+  judgeText?: string;
 } = { events: [] }) {
   const processMock = vi.fn().mockReturnValue(eventStream(opts.events));
   const concierge = {
@@ -50,13 +70,54 @@ function makeBridge(opts: {
     sendChatReply,
   } as unknown as ConversationalService;
 
-  const redisGet = vi.fn().mockResolvedValue(opts.redisGetReturns ?? null);
+  const redisGet = vi.fn(async (key: string) => {
+    if (opts.redisState && key in opts.redisState) {
+      return opts.redisState[key] ?? null;
+    }
+    // Ф6: confirm-ключи по умолчанию пусты (нет ожидания подтверждения);
+    // legacy-фолбэк redisGetReturns действует только для conv-памяти.
+    if (key.startsWith('concierge:confirm:')) return null;
+    return opts.redisGetReturns ?? null;
+  });
   const redisSet = vi.fn().mockResolvedValue('OK');
+  const redisDel = vi.fn().mockResolvedValue(1);
   const redis = {
-    client: { get: redisGet, set: redisSet },
+    client: { get: redisGet, set: redisSet, del: redisDel },
   } as unknown as RedisService;
 
-  const bridge = new AssistantChannelBridge(concierge, conversational, redis);
+  const getMembershipRole = vi
+    .fn()
+    .mockResolvedValue(opts.membershipRole ?? null);
+  const rbac = { getMembershipRole } as unknown as RbacService;
+
+  const toolRouterExecute = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    result: { id: 'res-1' },
+    tool: { name: 'cancel_meeting', method: 'POST' },
+  });
+  const toolRouter = {
+    execute: toolRouterExecute,
+  } as unknown as ToolRouterService;
+
+  const llmCall = vi.fn().mockResolvedValue({
+    text: opts.judgeText ?? '{"decision":"unclear","confidence":0.3}',
+    modelUsed: 'mock',
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    durationMs: 0,
+  });
+  const llm = { call: llmCall } as unknown as LlmRouterService;
+
+  const bridge = new AssistantChannelBridge(
+    concierge,
+    conversational,
+    redis,
+    rbac,
+    toolRouter,
+    llm,
+  );
   bridge.onModuleInit();
 
   // Достаём зарегистрированный handler — мост подписан на 'assistant_turn'.
@@ -71,6 +132,10 @@ function makeBridge(opts: {
     sendChatReply,
     redisGet,
     redisSet,
+    redisDel,
+    getMembershipRole,
+    toolRouterExecute,
+    llmCall,
   };
 }
 
@@ -298,5 +363,241 @@ describe('AssistantChannelBridge — Ф5 assistant_turn', () => {
     });
 
     expect(processMock).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────── Ф6 — канальный whitelist по роли Membership ─────────────────
+
+describe('AssistantChannelBridge — Ф6 канальный whitelist', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const okEvents: ConciergeStreamEvent[] = [
+    { type: 'started', conversationId: 'conv-1' },
+    { type: 'message', text: 'Ответ.' },
+    { type: 'done', messageId: 'msg-1' },
+  ];
+
+  it('рядовой (membership роль НЕ manager+) → process получил SELF-список + confirmHold', async () => {
+    const { handler, processMock, getMembershipRole } = makeBridge({
+      events: okEvents,
+      membershipRole: null,
+    });
+
+    await handler(turn());
+
+    expect(getMembershipRole).toHaveBeenCalledWith('org-1', 'user-42');
+    const args = (processMock.mock.calls[0]?.[0] ?? {}) as {
+      toolWhitelist?: string[];
+      confirmHold?: boolean;
+    };
+    expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_SELF]);
+    expect(args.toolWhitelist).not.toContain('get_person_pulse');
+    expect(args.toolWhitelist).not.toContain('get_team_health');
+    expect(args.confirmHold).toBe(true);
+  });
+
+  it('owner → process получил расширенный MANAGER-список', async () => {
+    const { handler, processMock } = makeBridge({
+      events: okEvents,
+      membershipRole: 'owner',
+    });
+
+    await handler(turn());
+
+    const args = (processMock.mock.calls[0]?.[0] ?? {}) as {
+      toolWhitelist?: string[];
+    };
+    expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_MANAGER]);
+    expect(args.toolWhitelist).toContain('get_person_pulse');
+    expect(args.toolWhitelist).toContain('list_overdue_promises');
+  });
+
+  it('провал getMembershipRole → безопасный SELF-список (fail-open в узкий набор)', async () => {
+    const { handler, processMock, getMembershipRole } = makeBridge({
+      events: okEvents,
+    });
+    getMembershipRole.mockRejectedValueOnce(new Error('db down'));
+
+    await handler(turn());
+
+    const args = (processMock.mock.calls[0]?.[0] ?? {}) as {
+      toolWhitelist?: string[];
+    };
+    expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_SELF]);
+  });
+});
+
+// ───────────────── Ф6 — текстовое подтверждение мутаций ─────────────────
+
+describe('AssistantChannelBridge — Ф6 текст-подтверждение (zero-button)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const CONFIRM_KEY = 'concierge:confirm:binding-1';
+  const pendingState = JSON.stringify({
+    toolName: 'cancel_meeting',
+    params: { id: 'm-1' },
+    conversationId: 'conv-7',
+    preview: 'отменить встречу (id: m-1)',
+  });
+
+  it('confirm_required → Redis set (TTL 300) + вопрос «Подтвердите действие…» в канал', async () => {
+    const { handler, redisSet, sendChatReply } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-7' },
+        {
+          type: 'confirm_required',
+          toolName: 'cancel_meeting',
+          params: { id: 'm-1' },
+          preview: 'отменить встречу (id: m-1)',
+        },
+        { type: 'done', messageId: 'msg-hold' },
+      ],
+    });
+
+    await handler(turn());
+
+    expect(redisSet).toHaveBeenCalledWith(
+      CONFIRM_KEY,
+      expect.stringContaining('"toolName":"cancel_meeting"'),
+      'EX',
+      300,
+    );
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
+    expect(sent.text).toContain('Подтвердите действие: отменить встречу');
+    expect(sent.text).toContain('«да»');
+    expect(sent.text).toContain('«нет»');
+  });
+
+  it('«да» при висящем confirm-ключе → del ДО execute, исполнение отложенного tool, «Готово…»; process НЕ вызван', async () => {
+    const {
+      handler,
+      processMock,
+      redisDel,
+      toolRouterExecute,
+      sendChatReply,
+      llmCall,
+    } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+    });
+
+    await handler(turn({ text: 'да' }));
+
+    // Это ответ на подтверждение, не новый ход диалога.
+    expect(processMock).not.toHaveBeenCalled();
+    // Эвристика сработала — LLM-judge не дёргался.
+    expect(llmCall).not.toHaveBeenCalled();
+
+    expect(toolRouterExecute).toHaveBeenCalledWith({
+      toolName: 'cancel_meeting',
+      args: { id: 'm-1' },
+      userId: 'user-42',
+      tenantId: 'org-1',
+      authMode: 'service',
+    });
+
+    // Идемпотентность: del ключа СТРОГО ДО execute.
+    expect(redisDel).toHaveBeenCalledWith(CONFIRM_KEY);
+    const delOrder = redisDel.mock.invocationCallOrder[0]!;
+    const execOrder = toolRouterExecute.mock.invocationCallOrder[0]!;
+    expect(delOrder).toBeLessThan(execOrder);
+
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as {
+      text?: string;
+      conversationId?: string;
+    };
+    expect(sent.text).toContain('Готово');
+    expect(sent.conversationId).toBe('conv-7');
+  });
+
+  it('«нет» → отмена: ключ удалён, execute НЕ вызван, «Отменил.»', async () => {
+    const { handler, redisDel, toolRouterExecute, sendChatReply } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+    });
+
+    await handler(turn({ text: 'нет' }));
+
+    expect(toolRouterExecute).not.toHaveBeenCalled();
+    expect(redisDel).toHaveBeenCalledWith(CONFIRM_KEY);
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
+    expect(sent.text).toBe('Отменил.');
+  });
+
+  it('«может быть» → LLM-judge unclear: переспрос, ключ ЖИВ, execute НЕ вызван', async () => {
+    const { handler, redisDel, toolRouterExecute, sendChatReply, llmCall } =
+      makeBridge({
+        events: [],
+        redisState: { [CONFIRM_KEY]: pendingState },
+        judgeText: '{"decision":"unclear","confidence":0.4}',
+      });
+
+    await handler(turn({ text: 'может быть' }));
+
+    expect(llmCall).toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'assistant-confirm-classify' }),
+    );
+    expect(toolRouterExecute).not.toHaveBeenCalled();
+    expect(redisDel).not.toHaveBeenCalled();
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
+    expect(sent.text).toBe('Не понял. Ответьте «да» или «нет».');
+  });
+
+  it('LLM-judge confirm (confidence ≥ 0.6) → исполнение', async () => {
+    const { handler, toolRouterExecute, sendChatReply } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+      judgeText: '{"decision":"confirm","confidence":0.9}',
+    });
+
+    await handler(turn({ text: 'ну валяй, делай' }));
+
+    expect(toolRouterExecute).toHaveBeenCalledTimes(1);
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
+    expect(sent.text).toContain('Готово');
+  });
+
+  it('повторный «да» после исполнения (ключа нет) → обычный ход в process', async () => {
+    const { handler, processMock, toolRouterExecute } = makeBridge({
+      events: [
+        { type: 'started', conversationId: 'conv-8' },
+        { type: 'message', text: 'Чем ещё помочь?' },
+        { type: 'done', messageId: 'msg-2' },
+      ],
+      redisState: { [CONFIRM_KEY]: null },
+    });
+
+    await handler(turn({ text: 'да' }));
+
+    expect(toolRouterExecute).not.toHaveBeenCalled();
+    expect(processMock).toHaveBeenCalledTimes(1);
+    const args = (processMock.mock.calls[0]?.[0] ?? {}) as {
+      userMessage?: string;
+    };
+    expect(args.userMessage).toBe('да');
+  });
+
+  it('execute вернул ok=false → «Не получилось: …» с ошибкой', async () => {
+    const { handler, toolRouterExecute, sendChatReply } = makeBridge({
+      events: [],
+      redisState: { [CONFIRM_KEY]: pendingState },
+    });
+    toolRouterExecute.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      result: null,
+      errorMessage: 'RBAC: у вас нет прав на meeting/delete',
+      tool: { name: 'cancel_meeting', method: 'POST' },
+    });
+
+    await handler(turn({ text: 'да' }));
+
+    const sent = (sendChatReply.mock.calls[0]?.[0] ?? {}) as { text?: string };
+    expect(sent.text).toContain('Не получилось');
+    expect(sent.text).toContain('RBAC');
   });
 });

@@ -81,6 +81,23 @@ export interface ProcessInput {
    * Telegram/MAX: ToolRouter минтит короткоживущую session-JWT по userId.
    */
   authMode?: 'cookie' | 'service';
+  /**
+   * Ф6 assistant-channels (2026-06-11) — канальный whitelist инструментов.
+   * Если задан — помощник ВИДИТ (native tools / legacy toolFragment) и может
+   * ИСПОЛНЯТЬ только перечисленные инструменты; выбор вне списка не
+   * исполняется (в toolMessages кладётся отказ, модель переформулирует).
+   * `undefined` — все инструменты (web-чат, поведение не меняется).
+   * RBAC-гейт ToolRouter'а остаётся в силе — это двойная защита.
+   */
+  toolWhitelist?: string[];
+  /**
+   * Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций
+   * (zero-button, В6). `true` (каналы Telegram/MAX): мутирующий инструмент
+   * без `undoableVia` НЕ исполняется — генератор отдаёт событие
+   * `confirm_required` (+`done`) и завершается; подтверждение разруливает
+   * мост (AssistantChannelBridge). Default `false` — web-SSE путь прежний.
+   */
+  confirmHold?: boolean;
 }
 
 /**
@@ -250,6 +267,20 @@ export type ConciergeStreamEvent =
        */
       data?: unknown;
     }
+  | {
+      /**
+       * Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций.
+       * Эмитится ТОЛЬКО при `ProcessInput.confirmHold=true`: выбранный
+       * инструмент мутирующий и без `undoableVia` — исполнение отложено до
+       * явного «да» пользователя (разруливает мост канала). После этого
+       * события генератор отдаёт `done` и завершается.
+       */
+      type: 'confirm_required';
+      toolName: string;
+      params: Record<string, unknown>;
+      /** Человекочитаемое превью: русское название действия + ключевые параметры. */
+      preview: string;
+    }
   | { type: 'message'; text: string }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
@@ -266,6 +297,23 @@ export type ConciergeStreamEvent =
  * Нужно фронту для интерактивных карточек (например, превью схемы таблицы).
  */
 const RICH_PREVIEW_TOOLS = new Set<string>(['infer_table_schema']);
+
+/**
+ * Ф6 assistant-channels (2026-06-11) — русские названия инструментов для
+ * человекочитаемого превью в текстовом подтверждении («Подтвердите действие:
+ * …»). Покрывает мутирующие инструменты реестра; неизвестное имя — fallback
+ * на сам toolName. Только русский текст в превью (UI-правило проекта).
+ */
+const CONFIRM_TOOL_RU_NAMES: Record<string, string> = {
+  create_meeting: 'создать встречу',
+  cancel_meeting: 'отменить встречу',
+  create_event: 'создать событие в календаре',
+  delete_event: 'отменить событие в календаре',
+  ask_chat_v2: 'задать вопрос AI-чату компании',
+  ask_role_clone: 'спросить клон должности',
+  find_free_slot: 'найти общий свободный слот',
+  infer_table_schema: 'предложить схему новой таблицы',
+};
 
 @Injectable()
 export class ConciergeService {
@@ -515,10 +563,18 @@ export class ConciergeService {
     // (`LlmCallParams.tools`), SYSTEM без JSON-инструкции; OFF — прежняя
     // regex-эмуляция через tryParseToolCall (поведение без изменений).
     const nativeTools = this.isNativeToolsEnabled();
-    const llmTools = nativeTools ? this.serviceMap.toLlmTools() : [];
+    // Ф6 — канальный whitelist: если задан, провайдер видит только сужённый
+    // набор (native) / сужённый toolFragment (legacy). undefined → все tools.
+    const llmTools = nativeTools
+      ? this.serviceMap.toLlmTools(input.toolWhitelist)
+      : [];
 
     // F1 cache-friendly — SYSTEM стабилен (без preHits); preHits едут в user.
-    const rawSystemPrompt = this.buildSystemPrompt(contextBlock, nativeTools);
+    const rawSystemPrompt = this.buildSystemPrompt(
+      contextBlock,
+      nativeTools,
+      input.toolWhitelist,
+    );
 
     // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
     // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
@@ -599,11 +655,65 @@ export class ConciergeService {
       // tool_call path
       const toolName = parsed.toolName;
       const params = parsed.params;
+
+      // Ф6 — защита исполнения по канальному whitelist'у: даже если модель
+      // выбрала инструмент вне сужённого списка (галлюцинация / инъекция),
+      // НЕ исполняем. Кладём отказ в toolMessages и идём на следующую
+      // итерацию — модель переформулирует. RBAC-гейт ToolRouter ниже
+      // остаётся как был (двойная защита).
+      if (input.toolWhitelist && !input.toolWhitelist.includes(toolName)) {
+        this.logger.warn(
+          { toolName, conversationId: conversation.id },
+          'concierge: tool вне канального whitelist — исполнение отклонено',
+        );
+        toolMessages = [
+          ...toolMessages,
+          {
+            role: 'tool',
+            content: `Результат tool ${toolName}: ok=false status=403. Инструмент недоступен в этом канале — выбери другой инструмент из списка или ответь текстом.`,
+          },
+        ];
+        continue;
+      }
+
       const tool = this.serviceMap.findTool(toolName);
+      // readOnly — семантически безопасный POST (чистый расчёт / «задать
+      // вопрос»): confirm не нужен, см. ToolSchema.readOnly.
       const requiresConfirm =
         !!tool &&
         tool.method !== 'GET' &&
+        !tool.readOnly &&
         !tool.undoableVia;
+
+      // Ф6 — текстовое подтверждение мутаций (zero-button, В6): в канальном
+      // режиме (confirmHold=true) мутирующий инструмент без undoableVia НЕ
+      // исполняется. Отдаём confirm_required (мост сохранит состояние в Redis
+      // и спросит «да»/«нет»), пишем assistant-сообщение с вопросом (история
+      // диалога остаётся связной) и корректно завершаем поток через done.
+      if (input.confirmHold === true && requiresConfirm) {
+        const confirmPreview = this.buildConfirmPreview(toolName, params);
+        yield {
+          type: 'confirm_required',
+          toolName,
+          params,
+          preview: confirmPreview,
+        };
+        const holdMsg = await this.appendMessage({
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: `Подтвердите действие: ${confirmPreview}`,
+          toolCalls: [
+            { id: `confirm_${i}`, name: toolName, arguments: params, held: true },
+          ],
+        });
+        yield { type: 'done', messageId: holdMsg.id };
+        // Bump lastMessageAt — как в основном финале (С24: updateMany+tenantId).
+        await this.prisma.conciergeConversation.updateMany({
+          where: { id: conversation.id, tenantId: input.tenantId },
+          data: { lastMessageAt: new Date() },
+        });
+        return;
+      }
 
       yield {
         type: 'tool_call',
@@ -640,7 +750,8 @@ export class ConciergeService {
       });
 
       let undoLogId: string | undefined;
-      if (execResult.ok && tool && tool.method !== 'GET') {
+      // readOnly-инструменты в undo-log не пишутся — откатывать нечего.
+      if (execResult.ok && tool && tool.method !== 'GET' && !tool.readOnly) {
         try {
           const log = await this.undoLog.record({
             tenantId: input.tenantId,
@@ -854,15 +965,56 @@ export class ConciergeService {
    * Ф3 assistant-channels (2026-06-11): при `nativeTools=true` SYSTEM
    * собирается без JSON-инструкции и без toolFragment (tools уходят
    * провайдеру нативно через `LlmCallParams.tools`).
+   *
+   * Ф6 assistant-channels (2026-06-11): опц. `toolWhitelist` сужает legacy
+   * toolFragment до канального списка (native-путь сужается отдельно через
+   * `toLlmTools(names)`). Для web-чата whitelist не задан — SYSTEM прежний
+   * и стабильный (cache-friendly).
    */
-  private buildSystemPrompt(contextBlock: string, nativeTools: boolean): string {
+  private buildSystemPrompt(
+    contextBlock: string,
+    nativeTools: boolean,
+    toolWhitelist?: string[],
+  ): string {
     return buildSystemPrompt({
       contextBlock,
       toolFragment: nativeTools
         ? ''
-        : this.serviceMap.buildToolUsePromptFragment(),
+        : this.serviceMap.buildToolUsePromptFragment(toolWhitelist),
       nativeTools,
     });
+  }
+
+  /**
+   * Ф6 — человекочитаемое превью отложенного действия для текстового
+   * подтверждения: русское название инструмента + до 3 ключевых параметров.
+   * Используется в событии `confirm_required` и в assistant-сообщении
+   * «Подтвердите действие: …».
+   */
+  private buildConfirmPreview(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): string {
+    const ruName = CONFIRM_TOOL_RU_NAMES[toolName] ?? toolName;
+    const keyParams = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .slice(0, 3)
+      .map(([k, v]) => {
+        let s: string;
+        if (typeof v === 'string') {
+          s = v;
+        } else {
+          try {
+            s = JSON.stringify(v);
+          } catch {
+            s = String(v);
+          }
+        }
+        return `${k}: ${s.slice(0, 80)}`;
+      });
+    return keyParams.length > 0
+      ? `${ruName} (${keyParams.join(', ')})`
+      : ruName;
   }
 
   /**

@@ -1495,6 +1495,12 @@ export class TypedConfigService {
    *   - `autotuneStep` — A2: шаг автоподстройки порога.
    *   - `minDecisionsForAutotune` — A2: минимум решений до автоподстройки.
    *   - `maxProvisionalOverride` — A2: порог override-rate для kill-switch.
+   *   - `conflictArbiterEnabled` — Autonomy W1: kill-switch ночного
+   *     LLM-арбитра конфликтов (Ship-On, дефолт TRUE).
+   *   - `conflictArbiterMinConfidence` — Autonomy W1: минимальная средняя
+   *     confidence голосов-победителей для авто-резолва.
+   *   - `conflictArbiterBatchSize` — Autonomy W1: лимит open-конфликтов
+   *     на Org за один ночной проход.
    *   - `staleDetectorCron` — расписание CardStaleDetectorCron.
    *   - `staleMonthsThreshold` — порог `lastConfirmedAt > N мес.`.
    *   - `staleDynamicScoreThreshold` — порог упавшего `dynamicScore`.
@@ -1560,6 +1566,23 @@ export class TypedConfigService {
         'knowledge.curationMaxProvisionalOverride',
         undefined,
         0.2,
+      ),
+      // Autonomy W1 (2026-06-12) — LLM-арбитр конфликтов (ConflictArbiterCron).
+      // kill-switch, Ship-On: дефолт TRUE (фича выкатывается включённой).
+      conflictArbiterEnabled: this.resolveSync<boolean>(
+        'knowledge.curationConflictArbiterEnabled',
+        undefined,
+        true,
+      ),
+      conflictArbiterMinConfidence: this.resolveSync<number>(
+        'knowledge.curationConflictArbiterMinConfidence',
+        undefined,
+        0.7,
+      ),
+      conflictArbiterBatchSize: this.resolveSync<number>(
+        'knowledge.curationConflictArbiterBatchSize',
+        undefined,
+        20,
       ),
       staleDetectorCron: this.get('CARD_STALE_DETECTOR_CRON'),
       staleMonthsThreshold: this.get('CARD_STALE_MONTHS_THRESHOLD'),

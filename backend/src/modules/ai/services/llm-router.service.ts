@@ -154,6 +154,18 @@ export type LlmTaskType =
   | 'debate-curation-verify-critic'
   | 'debate-curation-verify-supporter'
   | 'debate-curation-verify-neutral'
+  // Autonomy W1 (2026-06-12) — Conflict-Arbiter debate (LLM-арбитр конфликтов
+  // знаний). Ночной cron авто-резолвит ConflictItem(open) при уверенном
+  // консенсусе дебата (семейство `conflict-arbiter` в MultiAgentDebateService).
+  // Зонтичный taskType + 3 stance-specific:
+  //   - 'debate-conflict-arbiter-critic'    → deepseek-v4-flash (консервативен: сомнение → keep_old)
+  //   - 'debate-conflict-arbiter-supporter' → gpt-5.4-mini (diverse провайдер; за accept_new при обоснованности)
+  //   - 'debate-conflict-arbiter-neutral'   → deepseek-v4-flash (взвешенный арбитр)
+  // См. backend/src/modules/curation/workers/conflict-arbiter.cron.ts.
+  | 'debate-conflict-arbiter'
+  | 'debate-conflict-arbiter-critic'
+  | 'debate-conflict-arbiter-supporter'
+  | 'debate-conflict-arbiter-neutral'
   // SBA γ-1 — Specialist 3.7 (SkillProfile) + Clone API.
   // 'skill-trait-detect' — самая ответственная задача γ-1: 5+ reasoning-цитат
   //   сотрудника → один структурированный SkillTrait (эмерджентная категория +
@@ -253,6 +265,11 @@ export type LlmTaskType =
   //   выполнением (lightweight). Primary = ollama/qwen3.5:9b.
   | 'concierge-respond'
   | 'concierge-toolcall-validate'
+  // Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций в
+  // каналах (Telegram/MAX): классификация ответа пользователя на запрос
+  // подтверждения действия (confirm|reject|unclear). Дёшево и часто —
+  // primary deepseek-v4-flash (см. seed-llm-task-routes-concierge.ts).
+  | 'assistant-confirm-classify'
   // SBA β-8 — DailyCheckIn + OperationsDashboard.
   // 'checkin-parse' — из сырого ответа пользователя (морнинг/ивнинг) →
   //   структурированный { plans[], dones[], blockers[] } + confidence.
@@ -655,6 +672,11 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'debate-curation-verify-critic',
   'debate-curation-verify-supporter',
   'debate-curation-verify-neutral',
+  // Autonomy W1 (2026-06-12) — Conflict-Arbiter debate (LLM-арбитр конфликтов).
+  'debate-conflict-arbiter',
+  'debate-conflict-arbiter-critic',
+  'debate-conflict-arbiter-supporter',
+  'debate-conflict-arbiter-neutral',
   // SBA γ-1
   'skill-trait-detect',
   'skill-trait-merge',
@@ -692,6 +714,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   // SBA γ-2 — Concierge Agent
   'concierge-respond',
   'concierge-toolcall-validate',
+  // Ф6 assistant-channels — текст-подтверждение мутаций в каналах
+  'assistant-confirm-classify',
   // SBA β-8 — DailyCheckIn + Operations
   'checkin-parse',
   'operations-summary',

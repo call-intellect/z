@@ -138,6 +138,10 @@ const STEPS: Step[] = [
     // contentMd орг-документа; capable + tool-use). Без маршрута поедет по
     // DEFAULT_FALLBACK_CHAIN; явный seed фиксирует deepseek-v4-pro primary.
     'compile-org-document',
+    // Autonomy W1 (2026-06-12) — conflict-arbiter (ночной LLM-арбитр конфликтов
+    // знаний: debate-conflict-arbiter[-critic|-supporter|-neutral]; cheap-цепочка
+    // как у curation-verify, supporter primary gpt-5.4-mini для diversity).
+    'conflict-arbiter',
   ].map<Step>((sub) => ({
     phase: 'seed-llm-routes',
     script: `scripts/seed-llm-task-routes-${sub}.ts`,

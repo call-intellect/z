@@ -282,6 +282,11 @@ function buildSettings(): SettingSeed[] {
     ['knowledge.curationAutotuneStep', envFloat('CURATION_AUTOTUNE_STEP', 0.02), 'low', 'Курация: шаг автоподстройки порога'],
     ['knowledge.curationMinDecisionsForAutotune', envInt('CURATION_MIN_DECISIONS_FOR_AUTOTUNE', 20), 'low', 'Курация: минимум решений до автоподстройки'],
     ['knowledge.curationMaxProvisionalOverride', envFloat('CURATION_MAX_PROVISIONAL_OVERRIDE', 0.2), 'medium', 'Курация: порог override-rate для kill-switch провизорного уровня'],
+    // Autonomy W1 (2026-06-12) — LLM-арбитр авто-разрешения конфликтов знаний
+    // (ConflictArbiterCron). Ship-On: kill-switch с дефолтом TRUE.
+    ['knowledge.curationConflictArbiterEnabled', envBool('CURATION_CONFLICT_ARBITER_ENABLED', true), 'medium', 'Курация: LLM-арбитр авто-разрешения конфликтов (kill-switch, ON)'],
+    ['knowledge.curationConflictArbiterMinConfidence', envFloat('CURATION_CONFLICT_ARBITER_MIN_CONFIDENCE', 0.7), 'medium', 'Курация: минимальная средняя confidence голосов-победителей дебата для авто-резолва конфликта'],
+    ['knowledge.curationConflictArbiterBatchSize', envInt('CURATION_CONFLICT_ARBITER_BATCH_SIZE', 20), 'low', 'Курация: лимит open-конфликтов на Org за один ночной проход арбитра'],
     ['knowledge.executablePersonaThresholdTraitsCount', envInt('EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT', 10), 'medium', 'ExecutablePersona: порог traits для rebuild'],
     // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
     // Дефолт TRUE — атрибуция критична для skill/persona/clone-проекций.

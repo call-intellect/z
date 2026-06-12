@@ -1,5 +1,7 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
+import type { LlmTool } from '../../ai/services/llm.types';
+
 /**
  * SBA γ-2 — ServiceMapGeneratorService.
  *
@@ -78,6 +80,28 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       null,
       2,
     );
+  }
+
+  /**
+   * Ф3 assistant-channels (2026-06-11) — native function-calling.
+   *
+   * Маппинг whitelist `ToolSchema` → `LlmTool` для `LlmCallParams.tools`:
+   * провайдер получает tools нативно (tool_choice='auto' ставится адаптером),
+   * а SYSTEM собирается без JSON-инструкции и списка инструментов
+   * (см. `buildSystemPrompt` в concierge.service.ts). `parameters` уже в
+   * формате JSON Schema `{type:'object', properties, required?}` — переносим
+   * как есть в `input_schema`.
+   */
+  toLlmTools(): LlmTool[] {
+    return this.toolsCache.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: {
+        type: 'object',
+        properties: t.parameters.properties,
+        ...(t.parameters.required ? { required: t.parameters.required } : {}),
+      },
+    }));
   }
 
   // ──────────────────────────── private ────────────────────────────────

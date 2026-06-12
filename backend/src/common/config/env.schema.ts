@@ -1498,6 +1498,19 @@ const PersonaSchema = z.object({
   //   CONCIERGE_PRM_ENABLED (default false — для Фазы C/D)
   //   CONCIERGE_PRM_SHADOW_SAMPLE_RATE (default 1.0)
   // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
+  //
+  // Ф3 assistant-channels (2026-06-11) — native function-calling в Concierge.
+  // Тем же путём (process.env, см. TypedConfigService.concierge):
+  //   CONCIERGE_NATIVE_TOOLS_ENABLED (default true — kill-switch; ON = tools
+  //   уходят провайдеру нативно через LlmCallParams.tools, SYSTEM без
+  //   JSON-инструкции; OFF = прежняя regex-эмуляция tool_call в тексте)
+  // См. plans/tz/2026-06-11-assistant-channels-telegram-max.md Ф3.
+  //
+  // Ф4 assistant-channels (2026-06-11) — service-режим ToolRouter (каналы
+  // Telegram/MAX без HTTP-cookie). Тем же путём (process.env):
+  //   CONCIERGE_LOOPBACK_BASE_URL (default http://127.0.0.1:3000 — базовый
+  //   URL backend'а для loopback tool-вызовов, когда нет req с baseUrl)
+  // См. plans/tz/2026-06-11-assistant-channels-telegram-max.md Ф4.
 
 });
 

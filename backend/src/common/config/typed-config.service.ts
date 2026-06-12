@@ -1567,6 +1567,8 @@ export class TypedConfigService {
    *
    *   - `reminderWindowStartHour` / `reminderWindowEndHour` / `reminderStepHours`
    *     — окно и шаг слот-часов Telegram-напоминаний (PendingActionsReminderCron).
+   *     Дефолты 9/9/12 → единственный слот 09:00: одна сводка в день;
+   *     срочное приходит сразу отдельными уведомлениями (W0 Ф0.1, 2026-06-12).
    *   - `urgentAgeDays` — возраст pending-item (дни), с которого он помечается
    *     срочным (CurationPendingProvider).
    *   - `reminderLeadDays` — за сколько дней до истечения expiresAt помечать
@@ -1582,12 +1584,12 @@ export class TypedConfigService {
       reminderWindowEndHour: this.resolveSync<number>(
         'pendingActions.reminderWindowEndHour',
         undefined,
-        21,
+        9,
       ),
       reminderStepHours: this.resolveSync<number>(
         'pendingActions.reminderStepHours',
         undefined,
-        3,
+        12,
       ),
       urgentAgeDays: this.resolveSync<number>(
         'pendingActions.urgentAgeDays',
@@ -2213,6 +2215,17 @@ export class TypedConfigService {
    *     для которых запускается PRM shadow (0..1). Default 1.0 (все).
    *     Cost-защита: при дорогих доп. вызовах можно понизить до 0.1.
    *     ENV `CONCIERGE_PRM_SHADOW_SAMPLE_RATE`.
+   *   - `nativeToolsEnabled` — Ф3 assistant-channels (2026-06-11): native
+   *     function-calling в Concierge. При `true` (default — kill-switch,
+   *     Ship-On) tools уходят провайдеру через `LlmCallParams.tools`, а
+   *     SYSTEM собирается без JSON-инструкции `{"tool_call"}` и списка
+   *     инструментов. При `false` — прежняя regex-эмуляция tool_call в
+   *     тексте (без изменений). ENV `CONCIERGE_NATIVE_TOOLS_ENABLED`.
+   *   - `loopbackBaseUrl` — Ф4 assistant-channels (2026-06-11): базовый URL
+   *     backend'а для loopback tool-вызовов ToolRouter в service-режиме
+   *     (каналы Telegram/MAX — у них нет HTTP-запроса с baseUrl). Default
+   *     `http://127.0.0.1:3000`. ENV `CONCIERGE_LOOPBACK_BASE_URL`
+   *     (невалидный URL → fallback на default; trailing slash срезается).
    */
   get concierge() {
     // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
@@ -2258,6 +2271,25 @@ export class TypedConfigService {
       1.0,
     );
     const prmShadowSampleRate = Math.min(Math.max(prmShadowSampleRateRaw, 0), 1);
+    // Ф3 assistant-channels (2026-06-11) — native function-calling
+    // (kill-switch, default true: фича выкатывается включённой, Ship-On).
+    const nativeToolsRaw = process.env.CONCIERGE_NATIVE_TOOLS_ENABLED;
+    const nativeToolsEnabled =
+      nativeToolsRaw === undefined ||
+      nativeToolsRaw === '' ||
+      ['true', '1', 'yes', 'on'].includes(nativeToolsRaw.trim().toLowerCase());
+    // Ф4 assistant-channels (2026-06-11) — loopback base URL для
+    // service-режима ToolRouter (каналы без HTTP-запроса).
+    const loopbackBaseUrlRaw = process.env.CONCIERGE_LOOPBACK_BASE_URL?.trim();
+    let loopbackBaseUrl = 'http://127.0.0.1:3000';
+    if (loopbackBaseUrlRaw) {
+      try {
+        void new URL(loopbackBaseUrlRaw);
+        loopbackBaseUrl = loopbackBaseUrlRaw.replace(/\/+$/, '');
+      } catch {
+        // невалидный URL — остаёмся на default
+      }
+    }
     return {
       enabled,
       dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
@@ -2279,6 +2311,8 @@ export class TypedConfigService {
       prmEnabled,
       prmTopK,
       prmShadowSampleRate,
+      nativeToolsEnabled,
+      loopbackBaseUrl,
     } as const;
   }
 

@@ -14,7 +14,10 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  type LlmCallResult,
+} from '../../ai/services/llm-router.service';
 import {
   DialogService,
   type DialogProcessResult,
@@ -104,12 +107,23 @@ export interface ProcessInput {
  * Структура output (в порядке появления):
  *   1. Преамбула (роль ассистента).
  *   2. `=== КОНТЕКСТ ===` + contextBlock (или fallback).
- *   3. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment.
+ *   3. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment
+ *      (только при `nativeTools !== true` — legacy regex-эмуляция); при
+ *      native function-calling (Ф3 assistant-channels, 2026-06-11) вместо
+ *      него — две стабильные строки про инструменты (tools уходят провайдеру
+ *      через `LlmCallParams.tools`, SYSTEM остаётся cache-friendly).
  *   4. Принципы.
  */
 export function buildSystemPrompt(args: {
   contextBlock: string;
   toolFragment: string;
+  /**
+   * Ф3 assistant-channels (2026-06-11) — native function-calling. При `true`
+   * SYSTEM собирается БЕЗ JSON-инструкции `{"tool_call"}` и БЕЗ списка
+   * инструментов (`toolFragment` игнорируется): tools передаются провайдеру
+   * нативно. Опционально — legacy-вызовы без поля работают как раньше.
+   */
+  nativeTools?: boolean;
 }): string {
   const parts: string[] = [
     'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
@@ -119,14 +133,24 @@ export function buildSystemPrompt(args: {
     args.contextBlock || '(контекст недоступен)',
     '',
   ];
+  if (args.nativeTools === true) {
+    parts.push(
+      'Тебе доступны инструменты через function-calling.',
+      'Вызывай инструмент, когда запрос требует действия или данных; иначе отвечай текстом.',
+      '',
+    );
+  } else {
+    parts.push(
+      '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
+      'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
+      '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
+      'Если действие не требуется — верни просто текст ответа без JSON.',
+      'Имя инструмента ДОЛЖНО быть из списка ниже:',
+      args.toolFragment,
+      '',
+    );
+  }
   parts.push(
-    '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
-    'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
-    '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
-    'Если действие не требуется — верни просто текст ответа без JSON.',
-    'Имя инструмента ДОЛЖНО быть из списка ниже:',
-    args.toolFragment,
-    '',
     'Принципы:',
     '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
     '- Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.',
@@ -472,8 +496,15 @@ export class ConciergeService {
       pageContext: input.pageContext ?? null,
     });
 
+    // Ф3 assistant-channels (2026-06-11) — kill-switch native function-calling.
+    // Читаем ОДИН раз на запрос: ON — tools уходят провайдеру нативно
+    // (`LlmCallParams.tools`), SYSTEM без JSON-инструкции; OFF — прежняя
+    // regex-эмуляция через tryParseToolCall (поведение без изменений).
+    const nativeTools = this.isNativeToolsEnabled();
+    const llmTools = nativeTools ? this.serviceMap.toLlmTools() : [];
+
     // F1 cache-friendly — SYSTEM стабилен (без preHits); preHits едут в user.
-    const rawSystemPrompt = this.buildSystemPrompt(contextBlock);
+    const rawSystemPrompt = this.buildSystemPrompt(contextBlock, nativeTools);
 
     // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
     // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
@@ -511,7 +542,14 @@ export class ConciergeService {
       // уже несёт INJECTION_GUARD_NOTE; см. systemPrompt выше).
       const userBlock = guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
 
-      let llmText: string;
+      // Ф3 — единая точка: `parsed` заполняется из двух источников —
+      // native function-calling (out.toolCalls) или legacy regex-эмуляции
+      // (tryParseToolCall по тексту). Дальше оба пути идут по ОДНОМУ
+      // существующему конвейеру (requiresConfirm → ToolRouter.execute →
+      // undo-log → SSE tool_call/tool_result → toolMessages).
+      let parsed:
+        | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
+        | { kind: 'final'; text: string };
       try {
         const out = await this.llm.call({
           taskType: 'concierge-respond',
@@ -520,8 +558,13 @@ export class ConciergeService {
           tenantId: input.tenantId,
           userId: input.userId,
           maxTokens: 1500,
+          // Ф3 — native: tools уходят провайдеру (tool_choice='auto'
+          // ставится адаптером автоматически, см. LlmCallParams.tools).
+          ...(nativeTools ? { tools: llmTools } : {}),
         });
-        llmText = out.text;
+        parsed = nativeTools
+          ? this.toolCallFromNativeOutput(out)
+          : this.tryParseToolCall(out.text);
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         this.logger.error({ err: m }, 'concierge LLM call failed');
@@ -533,7 +576,6 @@ export class ConciergeService {
         return;
       }
 
-      const parsed = this.tryParseToolCall(llmText);
       if (parsed.kind === 'final') {
         finalText = parsed.text;
         yield { type: 'thinking', text: 'Готовлю ответ…' };
@@ -792,12 +834,68 @@ export class ConciergeService {
    * предварительные результаты поиска подмешиваются в user-сообщение
    * (`composeUserMessageForIteration`), чтобы SYSTEM-префикс был стабилен
    * и кэшировался провайдером.
+   *
+   * Ф3 assistant-channels (2026-06-11): при `nativeTools=true` SYSTEM
+   * собирается без JSON-инструкции и без toolFragment (tools уходят
+   * провайдеру нативно через `LlmCallParams.tools`).
    */
-  private buildSystemPrompt(contextBlock: string): string {
+  private buildSystemPrompt(contextBlock: string, nativeTools: boolean): string {
     return buildSystemPrompt({
       contextBlock,
-      toolFragment: this.serviceMap.buildToolUsePromptFragment(),
+      toolFragment: nativeTools
+        ? ''
+        : this.serviceMap.buildToolUsePromptFragment(),
+      nativeTools,
     });
+  }
+
+  /**
+   * Ф3 assistant-channels (2026-06-11) — kill-switch native function-calling.
+   * Default true (Ship-On) живёт в `TypedConfigService.concierge` (ENV
+   * `CONCIERGE_NATIVE_TOOLS_ENABLED`, пустое значение → true). Здесь —
+   * строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
+   * остаются на legacy regex-пути; defensive try/catch — по образцу
+   * `isDialogLayerEnabled` (cfg может сломаться в проде).
+   */
+  private isNativeToolsEnabled(): boolean {
+    try {
+      return this.cfg.concierge.nativeToolsEnabled === true;
+    } catch (err) {
+      this.metrics.incConciergeConfigError?.({ reason: 'other' });
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge: не удалось прочитать cfg.concierge.nativeToolsEnabled — fallback=false (regex-эмуляция)',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Ф3 — приводит native tool_calls из ответа LLM к внутреннему формату
+   * tool-loop'а (та же форма, что у `tryParseToolCall`). Берём ПЕРВЫЙ
+   * tool_call — sequential: RU-провайдеры (DeepSeek/прокси/Ollama) не
+   * гарантируют корректный parallel tool-use; остальные вызовы модель
+   * перезапросит на следующей итерации по tool-результату. Если toolCalls
+   * пуст — `out.text` это финальный ответ (как в legacy-пути).
+   */
+  private toolCallFromNativeOutput(
+    out: Pick<LlmCallResult, 'text' | 'toolCalls'>,
+  ):
+    | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
+    | { kind: 'final'; text: string } {
+    const first = out.toolCalls?.[0];
+    if (!first) {
+      return { kind: 'final', text: out.text.trim() };
+    }
+    // `input` приходит уже распарсенным объектом (см. LlmToolCall), но
+    // defensively отбрасываем не-объекты (строка/массив/null) → {}.
+    const params =
+      typeof first.input === 'object' &&
+      first.input !== null &&
+      !Array.isArray(first.input)
+        ? (first.input as Record<string, unknown>)
+        : {};
+    return { kind: 'tool_call', toolName: first.name, params };
   }
 
   /**

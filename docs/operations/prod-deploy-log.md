@@ -71,6 +71,38 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🤖 2026-06-12 — Единый помощник в каналах (Telegram/MAX) + автономизация подтверждений (W0–W4)
+
+> Контракт: ветка `feature/assistant-channels-and-autonomy`, коммиты `cb285350..90f02a6e` (10 коммитов + фиксы ревью). ТЗ: `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (Ф1–Ф6) + `plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4). second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`.
+>
+> **Зачем для прода:** (ТЗ-1) Telegram/MAX становятся окнами ЕДИНОГО мозга помощника: solicited-ответ AI-чата возвращается в канал-источник + ack на заметку (стоп-молчание); рендер 10+ проактивных eventType в обоих ботах; native function-calling (встроенный вызов инструментов) в concierge; service-auth путь ToolRouter (loopback); свободный текст/голос → ConciergeService (`assistant_turn`, память диалога per-binding в Redis 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций. (ТЗ-2) гасим спам ручных подтверждений: одна сводка напоминаний в день (09:00), ночной LLM-арбитр конфликтов знаний, гейт ценности probe + маршрутизация NUDGE в дайджест, OwnerResolver (лестница владельца поля), intake авто-приём задач из всех каналов (порог 0.75, дефолт-проект «Входящие»).
+>
+> **1 миграция (авто, enum).** **3 новых ENV (все с дефолтами — действий владельца НЕ требуют).** **2 seed-прогона (оба в STEPS).** **Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (2 kill-switch default ON + 1 опц. URL — действий владельца НЕ требуют):**
+  - `CONCIERGE_NATIVE_TOOLS_ENABLED` (zBool default `true`) — native function-calling помощника. Аварийный откат: `=false` в `.env` + рестарт → прежняя regex-эмуляция tool_call в тексте.
+  - `ASSISTANT_CHANNEL_ROUTING_ENABLED` (zBool default `true`) — свободный текст/голос Telegram/MAX → единый мозг (`assistant_turn`). Аварийный откат: `=false` + рестарт → прежний узкий классификатор бит-в-бит (чек-ин от флага не зависит).
+  - `CONCIERGE_LOOPBACK_BASE_URL` (default `http://127.0.0.1:3000`) — базовый URL для loopback tool-вызовов в service-режиме; **задавать ТОЛЬКО если backend внутри контейнера слушает не :3000**.
+  - Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (новые крутилки/дефолты, code-default есть — действий владельца НЕ требуют):** `probe.immediatePushMinPriority` (70), `probe.minValuePriority` (30), `knowledge.curationConflictArbiterEnabled` (true, kill-switch), `knowledge.curationConflictArbiterMinConfidence` (0.7), `knowledge.curationConflictArbiterBatchSize` (20), `pendingActions.reminderWindowEndHour` (9) / `pendingActions.reminderStepHours` (12) — одна сводка/день, `knowledge.curationAuditSampleRate` (0.05→0.01), `knowledge.curationAutotuneEnabled` (seed-дефолт → true). Доезжают перепрогоном `seed-admin-settings.ts` (Шаг 7; уважает admin-override).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260612090000_probe_status_w2_autonomy`): `ALTER TYPE "ProbeStatus" ADD VALUE IF NOT EXISTS 'dropped_low_value'` + `'routed_to_digest'`. Аддитивна, идемпотентна (`IF NOT EXISTS`); `ADD VALUE` не-транзакционна → отдельный файл. Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`. **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 7 — Seed (2 прогона, идемпотентные, оба в STEPS):**
+  - `docker compose exec backend bun run scripts/seed-llm-task-routes-conflict-arbiter.ts` — маршруты семейства `debate-conflict-arbiter` (`-critic`/`-supporter`/`-neutral`; cheap-цепочка как у curation-verify, supporter primary gpt-5.4-mini для diversity). В STEPS (`phase:'seed-llm-routes'`, alias `conflict-arbiter`).
+  - `docker compose exec backend bun run scripts/seed-admin-settings.ts` — перепрогон: новые крутилки + новые дефолты из Шага 1. Уже в STEPS.
+  - Либо одним прогоном агрегатора: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (новые enum-значения в PrismaClient, новые `ConflictArbiterCron` / `AssistantChannelBridge` / `OwnerResolver`, новые taskType, метрики): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах воркера поднялся новый `ConflictArbiterCron` (`@Cron('0 2 * * *')`);
+  - (б) `docker compose logs backend | grep "AssistantChannelBridge: подписан"` — мост каналов подписан на inbound `assistant_turn`;
+  - (в) вопрос свободным текстом из Telegram → ответ помощника приходит в Telegram (одним сообщением);
+  - (г) уведомление `checkin.prompt` приходит текстом вопроса (не молчит);
+  - (д) Swagger без изменений (новых REST-разделов нет);
+  - (е) метрики тикают: `curl -s localhost:3000/metrics | grep -E "z_assistant_turn_total|z_conflict_arbiter_total|z_owner_resolution_total"`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧩 2026-06-11 — Консолидация отчёта встречи + отчёт→граф + апгрейд 3 промптов
 
 > Контракт: ветка `svdev`, коммиты `2501d72b` (Фаза 1 — консолидация), `13a6ac69` (Фаза 2 — отчёт→граф), `e4fded3c` (Фаза 3 — промпты). ТЗ: `plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md` (Ф1/Ф3) + суб-ТЗ `plans/tz/2026-06-11-report-to-graph-phase2.md` (Ф2). second-brain: `02_architecture/knowledge-core.md` §«Отчёт встречи → граф», `02_architecture/data-model.md`, `02_architecture/module-map.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.

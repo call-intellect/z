@@ -194,6 +194,11 @@ LiveKit чистит атрибуты автоматически при disconne
     (taskType `compile-org-document`); вызывается из `specialist-3-1-regulations`
     после `regulation-dedupe` на вердиктах merge/extension. Kill-switch
     `aiFeatures.docCompilerEnabled`. См. [[../01_projects/ai-jobs]] §«Мастер-ТЗ промптов».
+  - `services/owner-resolver.service.ts` (autonomy W2, 2026-06-12) —
+    `OwnerResolver`: «лестница владельца» поля карточки (родитель →
+    единственный держатель роли → автор → кандидаты → none). AUTO-заполнение
+    только прямых полей Regulation/Process/Policy/Experiment; Card и шаги
+    процессов — только probe-выбор. Метрика `z_owner_resolution_total`.
 
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
@@ -429,6 +434,7 @@ Frontend:
 - `services/conflict.service.ts` — `ConflictService.report(input)` (идемпотентный) + `resolve / dismiss / list / getById`. Resolution `evolving` требует `evolvingMeta.{existingValidUntil, newValidFrom}`.
 - `services/curator-routing.service.ts` — выбор кандидатов-кураторов по `CuratorAssignment` (точное → universal level=null → wildcard `*` → fallback owner/admin Org).
 - `workers/card-stale-detector.cron.ts` — ежедневный (4:00) проход по `CardVersion`: версии старше N мес. → CurationItem(level='light', triageReason.reason='stale') + probe владельцу через `ConversationalService.sendNotification` (eventType='system.message'). Решение №13.2 — отдельный cron (не в reframing).
+- `workers/conflict-arbiter.cron.ts` (autonomy W1, 2026-06-12) — `ConflictArbiterCron`, ночной (`@Cron('0 2 * * *')`) LLM-арбитр open-конфликтов: дебаты `debate-conflict-arbiter` → авто-резолв `keep_old`/`accept_new`/`merge` при консенсусе и confidence ≥ 0.7 (актор — владелец Org, post-hoc `system.message`); `evolving`/`escalate` — человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON). Метрика `z_conflict_arbiter_total`.
 - `curation.controller.ts` — REST API `/api/v1/curation/queue|items/:id|items/:id/decide|conflicts|conflicts/:id|conflicts/:id/resolve|conflicts/:id/dismiss` + `/api/v1/settings/curation` (GET/PATCH).
 
 **Probe через ConversationalService:**
@@ -1983,6 +1989,8 @@ mail-inbound/
   - сохраняет debug-блок `{ dialogLayer, preRetrieval }` в `ConciergeMessage.toolCallsJson`.
 
 Legacy путь при `CONCIERGE_DIALOG_LAYER_ENABLED=false` — без dialog-layer, без pre-retrieval, summary не читается.
+
+- `services/assistant-channel.bridge.ts` (Ф5 assistant-channels, 2026-06-12) — `AssistantChannelBridge`: мост каналов к единому мозгу. Подписан на inbound `assistant_turn` (свободный текст/голос из Telegram/MAX) → `ConciergeService`; память диалога per-binding в Redis (`concierge:channel-conv:<bindingId>`, TTL 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций (`confirm_required`, Redis TTL 300с, judge `assistant-confirm-classify`); ответ одним сообщением `chat.answer` в канал-источник. Kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON). Метрика `z_assistant_turn_total`. См. [[../01_projects/conversational-channels]] §«Единый мозг помощника».
 
 ### Зависимости (импорты)
 

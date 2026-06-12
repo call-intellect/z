@@ -1001,6 +1001,10 @@ Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` п�
 - **`queued_digest`** — deferrable-probe сверх бюджета получателя **отложен в батч-дайджест** (вместо `dropped_rate_limit`); `ProbeDigestCron` соберёт его в одно сводное уведомление `probe.digest` и пометит `dispatched`.
 - **`suppressed_stale`** — повод **закрылся сам между `suggest` и `dispatch`** (recheck-предикат `PROBE_REASON_RECHECK` показал, что пробел больше не актуален); probe не шлётся, LLM не зовётся.
 
+Autonomy W2 (2026-06-12) добавила **ещё два значения** (миграция `20260612090000_probe_status_w2_autonomy`, `ADD VALUE IF NOT EXISTS`, аддитивно):
+- **`dropped_low_value`** — probe **не прошёл гейт ценности**: priority ниже `probe.minValuePriority` (30) — вопрос не задаётся вовсе (человека не беспокоим ради малоценного уточнения).
+- **`routed_to_digest`** — probe с NUDGE-причиной (7 типов `NUDGE_REASONS`) или ниже `probe.immediatePushMinPriority` (70) **маршрутизирован в дайджест вместо немедленного пуша**; у digest-статусов задаётся `expiresAt`. Также сюда уходят дропы cold-start (включён, 24ч).
+
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
 **Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].

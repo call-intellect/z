@@ -53,7 +53,7 @@
 | `feature.tables_text_to_schema` | AdminSetting | seed-дефолт true + patch | человек подтверждает превью схемы (галлюцинация не создаётся молча); риск смягчён. AdminSetting → false |
 | `knowledge.meetingTasksToTrackerOnly` | AdminSetting | seed-дефолт true + patch | из встречи одна задача (Issue); `assigneeRaw`/`sourceQuote` станут null. AdminSetting → false |
 | `CONCIERGE_DIALOG_LAYER_ENABLED` | ENV (code-default) | code-default ON | kill-switch: `=false` в `.env` + рестарт |
-| `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch | базовый kill-switch порогов и так активен. AdminSetting → false |
+| `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch; с 2026-06-12 и seed-дефолт true (autonomy W3) | базовый kill-switch порогов и так активен. AdminSetting → false |
 
 ### ⏸️ Остаётся OFF — осознанное решение владельца
 
@@ -115,6 +115,9 @@ _(пусто — все доставки в Telegram авторизованы в
 | `probe.adaptiveFatigueEnabled` | 🟢 ВКЛ | Снижение частоты уточняющих вопросов (probe) тем, кто на них не отвечает (бюджет режется вдвое получателю с низким engagement). Выкл → все получают полный бюджет probe (без учёта вовлечённости). AdminSetting-ключ (code-default true). (probe Ф1) |
 | `probe.digestEnabled` | 🟢 ВКЛ | Батч-дайджест отложенных probe (`ProbeDigestCron` собирает накопленные `queued_digest`-вопросы в одно сводное уведомление «Вопросы от Коры»). Выкл → дайджест не шлётся, отложенные probe копятся (не доставляются). AdminSetting-ключ (code-default true). (probe Ф1) |
 | `REPORT_INGEST_ENABLED` | 🟢 ВКЛ | Мост отчёт встречи → граф знаний: по готовности быстрого AI-отчёта (`meeting.report-fast-ready`) его чистая выжимка + структурные выводы по типу кладутся в граф как **вторичный** источник (`RawEvent(sourceType='meeting_report')`). Выкл → отчёт в граф не попадает (граф питается только транскриптом, как раньше); сам отчёт пользователю не затрагивается. Рубильник на случай инцидента в block-ingest, действий владельца не требует. ENV-рубильник. (ТЗ report-to-graph-phase2 Ф3) |
+| `CONCIERGE_NATIVE_TOOLS_ENABLED` | 🟢 ВКЛ | Native function-calling (встроенный вызов инструментов LLM) в помощнике-консьерже: tools уходят провайдеру через `LlmCallParams.tools` вместо regex-эмуляции `{"tool_call"}` в тексте. Выкл → прежняя текстовая эмуляция (откат бит-в-бит). ENV-рубильник (zBool default true). (ТЗ assistant-channels Ф3) |
+| `ASSISTANT_CHANNEL_ROUTING_ENABLED` | 🟢 ВКЛ | Единый мозг помощника в каналах: свободный текст/голос из Telegram/MAX идёт как `assistant_turn` в ConciergeService (память диалога per-binding в Redis, 24ч). Выкл → прежний узкий классификатор free_note (аварийный откат); чек-ин и task-intent от флага не зависят. ENV-рубильник (zBool default true). (ТЗ assistant-channels Ф5) |
+| `knowledge.curationConflictArbiterEnabled` | 🟢 ВКЛ | Ночной LLM-арбитр конфликтов знаний (`ConflictArbiterCron` 02:00): авто-резолв `keep_old`/`accept_new`/`merge` при консенсусе дебатов и confidence ≥ 0.7 (актор — владелец Org, post-hoc system.message); `evolving`/`escalate` остаются человеку. Выкл → все конфликты ждут ручного разбора, как раньше. AdminSetting-ключ (code-default true). (ТЗ autonomy W1) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -157,6 +160,12 @@ _(пусто — все доставки в Telegram авторизованы в
 | `probe.digestHourUtc` | 9 | Час суток (UTC), в который `ProbeDigestCron` фактически отправляет дайджест отложенных probe (сам cron тикает ежечасно). AdminSetting (super_admin) | Батч-дайджест probe (probe Ф1) |
 | `probe.topicCooldownHours` | 48 | Окно «тишины» по теме probe (ч): после отправки/игнора probe по теме повтор по той же теме дропается на этот срок (`probe:cooldown:*`). AdminSetting (super_admin) | Adaptive fatigue probe (probe Ф1) |
 | `knowledge.reportBlockConfidenceCap` | 0.6 | Потолок уверенности блока графа, извлечённого из AI-отчёта встречи (вторичный источник `meeting_report`): `confidence` report-блока ограничивается сверху этим значением (ГАРД A) — отчёт виден в поиске, но ранжируется ниже дословного транскрипта. AdminSetting (super_admin), code-fallback `0.6` | Отчёт встречи → граф (ТЗ report-to-graph-phase2 Ф4) |
+| `probe.immediatePushMinPriority` | 70 | Минимальный priority (0–100) probe для немедленного пуша; ниже — вопрос уходит в ежедневный батч-дайджест, а не отдельным сообщением. AdminSetting (super_admin) | Доставка probe (ТЗ autonomy W0) |
+| `probe.minValuePriority` | 30 | Гейт ценности probe: вопрос с priority ниже порога не задаётся вовсе (статус `dropped_low_value`). AdminSetting (super_admin) | Гейт ценности probe (ТЗ autonomy W2) |
+| `knowledge.curationConflictArbiterMinConfidence` | 0.7 | Минимальная средняя confidence голосов-победителей дебата для авто-резолва конфликта арбитром; ниже → конфликт остаётся человеку. AdminSetting (super_admin) | LLM-арбитр конфликтов (ТЗ autonomy W1) |
+| `knowledge.curationConflictArbiterBatchSize` | 20 | Лимит open-конфликтов на Org за один ночной проход арбитра. AdminSetting (super_admin) | LLM-арбитр конфликтов (ТЗ autonomy W1) |
+| `pendingActions.reminderWindowEndHour` / `reminderStepHours` | 9 / 12 | Каденция напоминаний «Ждёт подтверждения»: дефолты 9/9/12 дают единственный слот 09:00 — одна сводка в день вместо пяти; срочное приходит сразу отдельно. AdminSetting (super_admin) | Напоминания pending actions (ТЗ autonomy W0) |
+| `knowledge.curationAuditSampleRate` | 0.01 | Доля авто/провизорных решений курации в аудит-выборку (было 0.05 — меньше аудит-шума при сохранении сигнала autotune). AdminSetting (super_admin) | Аудит курации (ТЗ autonomy W3) |
 
 ---
 

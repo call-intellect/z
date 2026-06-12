@@ -249,4 +249,19 @@ const CHANNEL_TOOL_WHITELIST_MANAGER = [
 - Рефлексия в `05_история/`.
 
 ## Итог
-_(заполнит tz-orchestrator после реализации: что сделано целиком/частично, что осталось.)_
+
+**Реализовано ЦЕЛИКОМ (Ф1–Ф6), 2026-06-12, ветка `feature/assistant-channels-and-autonomy`** (вперемешку с фазами autonomy-ТЗ):
+
+- **Ф1** — `cb285350` — стоп-молчание: solicited chat-ответ в канал-источник (`dataClass:'internal'` + `critical` при валидном binding, включая глобальный Telegram-канал) + ack на free_note (новый eventType `note.ack`).
+- **Ф2** — `8bdd5f12` — рендер 10+ проактивных eventType в Telegram И MAX: универсальная ветка `title`+`body` до `default` + спец-case'ы (`checkin.prompt` рендерит текст вопроса).
+- **Ф3 + Ф4** — `93bce9cc` — native function-calling concierge за kill-switch `CONCIERGE_NATIVE_TOOLS_ENABLED` (ON; SYSTEM без JSON-инструкции `{tool_call}` — кэш улучшен) + ToolRouter `authMode:'service'` (self-signed session JWT 60с без jti, loopback `CONCIERGE_LOOPBACK_BASE_URL` default `http://127.0.0.1:3000`).
+- **Ф5** — `1a7cdbea` — Telegram/MAX free-text/голос → `ConciergeService` за `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON): inbound-тип `assistant_turn`, мост `AssistantChannelBridge` (модуль concierge), память диалога Redis `concierge:channel-conv:<bindingId>` TTL 24ч, голос→Vox→помощник; чек-ин и task-intent остались прежними ветками.
+- **Ф6** — `973a8c0f` — канальный whitelist SELF/MANAGER по RBAC-роли + текстовое подтверждение мутаций (`confirm_required`, Redis TTL 300с, атомарный consume, эвристика «да/нет» + LLM-judge `assistant-confirm-classify`); фикс `list_overdue_promises` → `/api/v1/dashboard/operations/open-commitments`; маркер `ToolSchema.readOnly` (`find_free_slot`, `ask_chat_v2`).
+- **Фиксы production-ревью** (поверх фаз): схема `chat.answer` ослаблена (пустые id), derived dataClass из chat-v2 (`sensitive`/`private` → вместо текста указатель «откройте в кабинете», не молчание), метрика `z_assistant_turn_total`.
+
+**Вынесено в ТЗ-заглушки / vNext (зафиксировано в `second-brain/04_не-сделано/README.md`):**
+- `create_task` в канале — `plans/tz/2026-06-12-assistant-create-task-tool.md` (blocked-on-owner: policy `intake_issue`/write);
+- стрим в Telegram; новые руководительские инструменты сверх реестра; чек-ин через помощника — vNext (по ТЗ §«НЕ входит»);
+- риск M-4 принят: service-JWT обходит revoke сессий (offboarding обязан снимать Membership).
+
+Документация: `feature-flags.md` (2 рубильника), `prod-deploy-log.md` (блок 2026-06-12), `conversational-channels.md` §«Единый мозг помощника», `module-map.md`, `ai-jobs.md`.

@@ -486,3 +486,22 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - **Новое:** общий словарь ярлыков типов встреч `MEETING_TYPE_LABEL_RU` / `meetingTypeLabelRu` в `ai/services/prompts/common.ts`.
 
 [[../index|← index]]
+
+## Единый помощник в каналах + автономизация — 5 новых taskType (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-assistant-channels-telegram-max.md`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) + [`plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
+
+### Семейство `debate-conflict-arbiter` (autonomy W1, 4 taskType)
+
+Ночной LLM-арбитр конфликтов знаний (`ConflictArbiterCron`, 02:00) через `MultiAgentDebateService`: вердикт `keep_old|accept_new|merge|evolving|escalate` по payload'ам двух конфликтующих карточек.
+- `debate-conflict-arbiter` — зонтичный route (агрегатная аналитика стоимости debate-сессии; реальные вызовы — 3 stance ниже).
+- `debate-conflict-arbiter-critic` / `-neutral` — cheap-цепочка `deepseek-v4-flash` → `gpt-5.4-mini` → `ollama/qwen3.5:9b` (как у curation-verify).
+- `debate-conflict-arbiter-supporter` — primary **`gpt-5.4-mini`** (diversity голосов), затем flash → ollama.
+
+Сид — `seed-llm-task-routes-conflict-arbiter.ts` (в `apply-prod-deploy.ts` STEPS, alias `conflict-arbiter`). Авто-резолв только `keep_old`/`accept_new`/`merge` при консенсусе + средней confidence ≥ 0.7; `evolving`/`escalate` остаются человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON). Метрика `z_conflict_arbiter_total{verdict,outcome}`.
+
+### `assistant-confirm-classify` (Ф6 assistant-channels)
+
+LLM-judge текстового подтверждения мутаций в каналах (Telegram/MAX без кнопок, принцип zero-button): свободный ответ пользователя на `confirm_required` → вердикт да/нет/неясно. Зовётся только когда эвристика «да/нет» не дала однозначного ответа. Code-промпт `concierge/prompts/assistant-confirm-classify.prompt.ts`; отдельного seed-маршрута нет — едет по DEFAULT-цепочке (cheap).
+
+[[../index|← index]]

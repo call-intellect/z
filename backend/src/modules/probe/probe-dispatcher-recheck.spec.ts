@@ -33,7 +33,9 @@ function buildProbe() {
     status: 'pending',
     dispatchedNotificationId: null,
     contentHash: 'h',
-    priority: 50,
+    // 80 — выше порога immediatePushMinPriority (70, Autonomy W0 Ф0.2):
+    // тесты recheck-пути не должен задевать priority-гейт.
+    priority: 80,
     createdAt: new Date(Date.now() - 60_000),
     dispatchedAt: null,
     expiresAt: new Date(Date.now() + 24 * 3600_000),
@@ -84,6 +86,13 @@ function makeWorker(args: {
   const cfg = {
     aiFeatures: { promptInjectionGuardEnabled: false },
     probe: {},
+    // Динамические крутилки (probe.immediatePushMinPriority и т.п.) —
+    // мок отдаёт переданный fallback.
+    getDynamic: vi
+      .fn()
+      .mockImplementation(
+        async (_key: string, _env: unknown, fallback: unknown) => fallback,
+      ),
   } as unknown as TypedConfigService;
 
   const redis = { client: {} } as unknown as RedisService;

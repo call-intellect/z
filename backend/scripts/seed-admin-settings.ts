@@ -598,8 +598,8 @@ function buildSettings(): SettingSeed[] {
   // ── Pending-actions «требует действия» (pendingActions.*) — 5. Action Center C2.
   const pendingActions: Array<[string, unknown, Severity, string]> = [
     ['pendingActions.reminderWindowStartHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_START_HOUR', 9), 'low', 'Напоминания: начало окна слотов (локальный час)'],
-    ['pendingActions.reminderWindowEndHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_END_HOUR', 21), 'low', 'Напоминания: конец окна слотов (локальный час)'],
-    ['pendingActions.reminderStepHours', envInt('PENDING_ACTIONS_REMINDER_STEP_HOURS', 3), 'low', 'Напоминания: шаг между слотами (часы)'],
+    ['pendingActions.reminderWindowEndHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_END_HOUR', 9), 'low', 'Напоминания: конец окна слотов (локальный час). Дефолт: одна сводка в день в 09:00; срочное приходит сразу отдельными уведомлениями.'],
+    ['pendingActions.reminderStepHours', envInt('PENDING_ACTIONS_REMINDER_STEP_HOURS', 12), 'low', 'Напоминания: шаг между слотами (часы). Дефолт: одна сводка в день в 09:00; срочное приходит сразу отдельными уведомлениями.'],
     ['pendingActions.urgentAgeDays', envInt('PENDING_ACTIONS_URGENT_AGE_DAYS', 5), 'low', 'Pending Actions: возраст (дни), с которого item помечается срочным'],
     ['pendingActions.reminderLeadDays', envInt('PENDING_ACTIONS_REMINDER_LEAD_DAYS', 3), 'low', 'Pending Actions: за сколько дней до истечения помечать срочным'],
   ];
@@ -614,6 +614,7 @@ function buildSettings(): SettingSeed[] {
     ['probe.digestEnabled', envBool('PROBE_DIGEST_ENABLED', true), 'low', 'Рубильник батч-дайджеста probe (kill-switch, ON)'],
     ['probe.topicCooldownHours', envInt('PROBE_TOPIC_COOLDOWN_HOURS', 48), 'low', 'Cooldown повтора одной темы probe одному человеку (часы)'],
     ['probe.adaptiveFatigueEnabled', envBool('PROBE_ADAPTIVE_FATIGUE_ENABLED', true), 'low', 'Снижать частоту probe тем, кто не отвечает (kill-switch, ON)'],
+    ['probe.immediatePushMinPriority', envInt('PROBE_IMMEDIATE_PUSH_MIN_PRIORITY', 70), 'low', 'Минимальный priority (0-100) для немедленного пуша probe; ниже — вопрос уходит в ежедневный батч-дайджест'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

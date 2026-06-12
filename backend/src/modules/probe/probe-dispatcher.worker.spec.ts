@@ -35,7 +35,11 @@ interface Mocks {
   llmCall: ReturnType<typeof vi.fn>;
 }
 
-function buildProbe(payload: Record<string, unknown>) {
+/**
+ * Дефолтный priority=80 — выше порога immediatePushMinPriority (70, Autonomy
+ * W0 Ф0.2), чтобы тесты dispatch-пути не задевал priority-гейт.
+ */
+function buildProbe(payload: Record<string, unknown>, priority = 80) {
   return {
     id: 'probe-disp-1',
     tenantId: 'org-disp',
@@ -47,7 +51,7 @@ function buildProbe(payload: Record<string, unknown>) {
     status: 'pending',
     dispatchedNotificationId: null,
     contentHash: 'h',
-    priority: 50,
+    priority,
     createdAt: new Date(Date.now() - 60_000),
     dispatchedAt: null,
     expiresAt: new Date(Date.now() + 24 * 3600_000),
@@ -58,8 +62,9 @@ function makeMocks(args: {
   probePayload: Record<string, unknown>;
   llmResponse?: { text: string };
   llmThrow?: Error;
+  probePriority?: number;
 }): Mocks {
-  const probe = buildProbe(args.probePayload);
+  const probe = buildProbe(args.probePayload, args.probePriority);
   const updateCalls: Array<{
     where: unknown;
     data: Record<string, unknown>;
@@ -114,6 +119,13 @@ function makeMocks(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
+    // Динамические крутилки (probe.immediatePushMinPriority=70,
+    // probe.topicCooldownHours=48) — мок отдаёт переданный fallback.
+    getDynamic: vi
+      .fn()
+      .mockImplementation(
+        async (_key: string, _env: unknown, fallback: unknown) => fallback,
+      ),
   } as unknown as TypedConfigService;
 
   const redis = {
@@ -223,5 +235,60 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали с финдиректором?',
     );
+  });
+});
+
+describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт немедленного пуша', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeGateMocks(probePriority: number): Mocks {
+    return makeMocks({
+      probePayload: {
+        message: 'Решение по миграции на DeepSeek просрочено на 2 дня.',
+      },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Подтвердите статус решения?' }),
+      },
+      probePriority,
+    });
+  }
+
+  it('priority=40 < порога 70 → status=queued_digest, без sendNotification и без LLM formulate', async () => {
+    const mocks = makeGateMocks(40);
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
+    expect(mocks.llmCall).not.toHaveBeenCalled();
+  });
+
+  it('priority=80 ≥ порога 70 → обычный dispatch (sendNotification вызван)', async () => {
+    const mocks = makeGateMocks(80);
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
+  });
+
+  it('ровно на пороге priority=70 → dispatch (правило ≥ порога)', async () => {
+    const mocks = makeGateMocks(70);
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
+    expect(mocks.updateCalls).toHaveLength(1);
+    expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
 });

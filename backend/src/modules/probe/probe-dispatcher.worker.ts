@@ -165,6 +165,32 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // 1b. Autonomy W0 Ф0.2 (2026-06-12) — гейт немедленного пуша по priority.
+    // Немедленное уведомление probe.question получают только вопросы с
+    // priority ≥ admin-крутилки `probe.immediatePushMinPriority` (дефолт 70).
+    // Ниже порога — не дёргаем человека сразу, а откладываем в ежедневный
+    // батч-дайджест (ProbeDigestCron заберёт status='queued_digest').
+    const minPriority = await this.cfg.getDynamic<number>(
+      'probe.immediatePushMinPriority',
+      undefined,
+      70,
+    );
+    if (probe.priority < minPriority) {
+      await this.prisma.probeEvent.update({
+        where: { id: probe.id },
+        data: { status: 'queued_digest' },
+      });
+      this.metrics.incProbeEvent({
+        emittedByService: probe.emittedByService,
+        reason: probe.reason,
+        status: 'queued_digest',
+      });
+      this.logger.log(
+        `probe отложен в дайджест: priority < immediatePushMinPriority (id=${probe.id} priority=${probe.priority} порог=${minPriority})`,
+      );
+      return;
+    }
+
     // 2. Select recipient (round-robin — берём первого; engagement weight γ+).
     const selectedUserId = candidates[0];
     if (!selectedUserId) return;

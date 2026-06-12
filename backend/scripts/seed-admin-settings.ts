@@ -275,8 +275,8 @@ function buildSettings(): SettingSeed[] {
     // Action Center «лестница доверия» A1/A2 — admin-editable дефолты курации.
     ['knowledge.curationProvisionalThresholdDefault', envFloat('CURATION_PROVISIONAL_THRESHOLD_DEFAULT', 0.8), 'medium', 'Курация: порог провизорной AI-канонизации'],
     ['knowledge.curationAiVerifierEnabled', envBool('CURATION_AI_VERIFIER_ENABLED', true), 'medium', 'Курация: включён ли AI-судья для критических типов'],
-    ['knowledge.curationAuditSampleRate', envFloat('CURATION_AUDIT_SAMPLE_RATE', 0.05), 'low', 'Курация: доля авто/провизорных решений в аудит-выборку'],
-    ['knowledge.curationAutotuneEnabled', envBool('CURATION_AUTOTUNE_ENABLED', false), 'medium', 'Курация: автоподстройка порогов по override-rate'],
+    ['knowledge.curationAuditSampleRate', envFloat('CURATION_AUDIT_SAMPLE_RATE', 0.01), 'low', 'Курация: доля авто/провизорных решений в аудит-выборку (W3: 0.05→0.01 — меньше аудит-шума при сохранении сигнала autotune)'],
+    ['knowledge.curationAutotuneEnabled', envBool('CURATION_AUTOTUNE_ENABLED', true), 'medium', 'Курация: автоподстройка порогов по override-rate (kill-switch, ON)'],
     ['knowledge.curationThresholdMin', envFloat('CURATION_THRESHOLD_MIN', 0.6), 'medium', 'Курация: нижняя граница автоподстройки порога'],
     ['knowledge.curationThresholdMax', envFloat('CURATION_THRESHOLD_MAX', 0.97), 'medium', 'Курация: верхняя граница автоподстройки порога'],
     ['knowledge.curationAutotuneStep', envFloat('CURATION_AUTOTUNE_STEP', 0.02), 'low', 'Курация: шаг автоподстройки порога'],
@@ -620,6 +620,8 @@ function buildSettings(): SettingSeed[] {
     ['probe.topicCooldownHours', envInt('PROBE_TOPIC_COOLDOWN_HOURS', 48), 'low', 'Cooldown повтора одной темы probe одному человеку (часы)'],
     ['probe.adaptiveFatigueEnabled', envBool('PROBE_ADAPTIVE_FATIGUE_ENABLED', true), 'low', 'Снижать частоту probe тем, кто не отвечает (kill-switch, ON)'],
     ['probe.immediatePushMinPriority', envInt('PROBE_IMMEDIATE_PUSH_MIN_PRIORITY', 70), 'low', 'Минимальный priority (0-100) для немедленного пуша probe; ниже — вопрос уходит в ежедневный батч-дайджест'],
+    // W2 autonomy (2026-06-12) — гейт ценности probe.
+    ['probe.minValuePriority', envInt('PROBE_MIN_VALUE_PRIORITY', 30), 'low', 'Минимальный priority (0-100) ценности probe; ниже — вопрос не задаётся (dropped_low_value)'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

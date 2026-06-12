@@ -1535,7 +1535,7 @@ export class TypedConfigService {
       auditSampleRate: this.resolveSync<number>(
         'knowledge.curationAuditSampleRate',
         undefined,
-        0.05,
+        0.01,
       ),
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',

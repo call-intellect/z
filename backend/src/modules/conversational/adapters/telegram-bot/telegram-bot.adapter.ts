@@ -542,6 +542,29 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       userId: binding.userId,
     });
 
+    // Ф5 assistant-channels (2026-06-11) — за kill-switch'ем
+    // ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (chat_query / task /
+    // show_tasks / free_note) уходит единому AI-помощнику (assistant_turn →
+    // AssistantChannelBridge → ConciergeService): у помощника есть свои
+    // инструменты (list_tasks и др.), поэтому handleCreateTask/handleShowTasks
+    // здесь НЕ вызываются. Чек-ин (план/отчёт, гейт conf>=0.7 внутри
+    // classifyIntent) НЕ трогаем — идёт прежней веткой daily_checkin_self
+    // ниже. OFF — прежний узкий роутер бит-в-бит.
+    if (
+      this.isAssistantRoutingEnabled() &&
+      intent !== 'daily_plan_morning' &&
+      intent !== 'daily_report_evening'
+    ) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text: rawText,
+        metadata: { source: 'telegram_bot', chatId: msg.chat.id, intent },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     // ТЗ 2026-06-10 §2 Ф2 — task / show_tasks обрабатывает task-handler напрямую
     // (создание задачи / читалка «мои задачи»): бот сам отвечает пользователю →
     // InboundMessage не нужен. Если handler недоступен — упадёт в free_note ниже.
@@ -863,6 +886,30 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       userId: args.binding.userId,
     });
 
+    // Ф5 assistant-channels (2026-06-11) — голос идёт тем же путём, что и
+    // текст: Vox-транскрипт → classifyIntent → при включённом kill-switch
+    // всё свободное (chat_query/task/show_tasks/free_note) → assistant_turn
+    // (единый помощник). Чек-ин (план/отчёт) — прежней веткой ниже.
+    if (
+      this.isAssistantRoutingEnabled() &&
+      intent !== 'daily_plan_morning' &&
+      intent !== 'daily_report_evening'
+    ) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: {
+          source: 'telegram_bot',
+          kind: 'voice',
+          chatId: args.msg.chat.id,
+          intent,
+        },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     // ТЗ 2026-06-10 §2 — голосовая задача / «покажи задачи» → task-handler
     // напрямую (бот сам отвечает), как и в текстовом пути.
     if (intent === 'task' && this.taskHandler) {
@@ -1039,6 +1086,16 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
   }
 
   // ─────────────────────────────── helpers ──────────────────────────
+
+  /**
+   * Ф5 assistant-channels (2026-06-11) — kill-switch единого помощника в
+   * каналах (ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`, default true).
+   * Строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
+   * остаются на прежнем узком роутере (OFF, бит-в-бит).
+   */
+  private isAssistantRoutingEnabled(): boolean {
+    return this.cfg.bot.assistantChannelRoutingEnabled === true;
+  }
 
   /**
    * Anti-spam: max VOICE_PER_HOUR_PER_USER через Redis-bucket. Окно — час

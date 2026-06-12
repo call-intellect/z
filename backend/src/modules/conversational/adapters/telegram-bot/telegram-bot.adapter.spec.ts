@@ -58,6 +58,9 @@ function makeAdapter(opts: {
   voiceEnabled?: boolean;
   documentEnabled?: boolean;
   intentClassifierEnabled?: boolean;
+  // Ф5 assistant-channels (2026-06-11): kill-switch ASSISTANT_CHANNEL_ROUTING_ENABLED.
+  // В моке default false — существующие тесты проверяют прежний узкий роутер.
+  assistantChannelRoutingEnabled?: boolean;
   classifyIntent?:
     | 'factual'
     | 'exploratory'
@@ -122,6 +125,9 @@ function makeAdapter(opts: {
     incBotInbound: vi.fn(),
     observeBotVoiceAsrDuration: vi.fn(),
     incBotIntentClassified: vi.fn(),
+    // ТЗ 2026-05-29 checkins / Ф5: distinct-метрика plan/report — нужна,
+    // когда classifyIntent возвращает daily_plan_morning/daily_report_evening.
+    incBotCheckinIntentClassifier: vi.fn(),
     // β-9: метрики «незнакомый отправитель».
     incTelegramBotUnknownSender: vi.fn(),
     // β-9 / Phase 6: метрика команды `/login` в боте.
@@ -157,6 +163,8 @@ function makeAdapter(opts: {
       voiceEnabled: opts.voiceEnabled ?? true,
       documentEnabled: opts.documentEnabled ?? true,
       intentClassifierEnabled: opts.intentClassifierEnabled ?? true,
+      assistantChannelRoutingEnabled:
+        opts.assistantChannelRoutingEnabled ?? false,
     },
   } as unknown as TypedConfigService;
 
@@ -768,6 +776,195 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(
       vi.mocked(mocks.metrics.incTelegramBotUnknownSender),
     ).toHaveBeenCalledWith({ reason: 'no_binding' });
+  });
+});
+
+// ──────────────── Ф5 assistant-channels: единый помощник ────────────────
+
+describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () => {
+  const textUpdate = (text: string, updateId = 300): TelegramUpdate => ({
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1700000000,
+      chat: { id: 100 },
+      from: { id: 100 },
+      text,
+    },
+  });
+
+  it('ON: intent task (conf>=0.7) → assistant_turn, handleCreateTask НЕ вызван', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'task',
+      classifyConfidence: 0.9,
+      withTaskHandler: true,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Поставь задачу: подготовить КП к пятнице'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Поставь задачу: подготовить КП к пятнице',
+      originChannelBindingId: 'binding-1',
+    });
+    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
+  });
+
+  it('ON: intent factual (бывший chat_query) → assistant_turn', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 301),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Какой бюджет на Q4?',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: «План на день…» (daily_plan_morning conf>=0.7) → ПО-ПРЕЖНЕМУ daily_checkin_self (чек-ин не сломан)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'daily_plan_morning',
+      classifyConfidence: 0.85,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('План на день: А, Б, В', 302),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'daily_checkin_self',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      kind: 'morning',
+      rawText: 'План на день: А, Б, В',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('OFF (флаг false): factual → chat_query как раньше (бит-в-бит)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: false,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 303),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'chat_query',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      question: 'Какой бюджет на Q4?',
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: voice → Vox-транскрипт → assistant_turn (kind=voice в metadata)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'factual',
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 304,
+      message: {
+        message_id: 304,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-assistant-1' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(mocks.vox.submit).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Какой бюджет на четвёртый квартал?',
+      metadata: expect.objectContaining({
+        source: 'telegram_bot',
+        kind: 'voice',
+      }),
+      originChannelBindingId: 'binding-1',
+    });
+  });
+
+  it('ON: voice «план/отчёт» (daily_report_evening conf>=0.7) → daily_checkin_self, не помощник', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'daily_report_evening',
+      classifyConfidence: 0.8,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+
+    const update: TelegramUpdate = {
+      update_id: 305,
+      message: {
+        message_id: 305,
+        date: 1700000000,
+        chat: { id: 100 },
+        from: { id: 100 },
+        voice: { file_id: 'voice-assistant-2' },
+      },
+    };
+    const result = await mocks.adapter.ingestUpdate({
+      update,
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toMatchObject({
+      type: 'daily_checkin_self',
+      kind: 'evening',
+      rawText: 'Какой бюджет на четвёртый квартал?',
+    });
   });
 });
 

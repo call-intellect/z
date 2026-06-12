@@ -1074,6 +1074,12 @@ const MaxBotChannelSchema = z.object({
   BOT_VOICE_ENABLED: zBool(true),
   BOT_DOCUMENT_ENABLED: zBool(true),
   BOT_INTENT_CLASSIFIER_ENABLED: zBool(true),
+  // Ф5 assistant-channels (2026-06-11) — kill-switch единого помощника в
+  // каналах: ON (default, Ship-On) — свободный текст/голос из Telegram/MAX
+  // (chat_query/task/show_tasks/free_note) идёт AI-помощнику (ConciergeService,
+  // inbound-тип assistant_turn); чек-ин (план/отчёт) не трогается. OFF —
+  // прежний узкий роутер бит-в-бит (аварийный откат).
+  ASSISTANT_CHANNEL_ROUTING_ENABLED: zBool(true),
   // ChatBox integration (ТЗ 2026-06-05) — базовый URL Public API ChatBox
   // (app.agent-lia.ru / «Call Intellect: Чаты»). Per-tenant токен лежит в
   // ChatboxIntegration.tokenEnc (encrypted), не в ENV. Логически независим

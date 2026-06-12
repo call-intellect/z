@@ -316,6 +316,24 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
 
+    // Ф5 assistant-channels (2026-06-11) — за kill-switch'ем
+    // ASSISTANT_CHANNEL_ROUTING_ENABLED весь свободный текст уходит единому
+    // AI-помощнику (assistant_turn → AssistantChannelBridge →
+    // ConciergeService). В отличие от Telegram, у MAX нет чек-ин ветки —
+    // оба исхода classifyIntent (chat_query/free_note) попали бы в
+    // assistant_turn, поэтому классификатор здесь не вызываем (экономим
+    // LLM-вызов). OFF — прежний узкий роутер бит-в-бит.
+    if (this.isAssistantRoutingEnabled()) {
+      return {
+        type: 'assistant_turn',
+        userId: binding.userId,
+        tenantId,
+        text,
+        metadata: { source: 'max_bot', chatId },
+        originChannelBindingId: binding.id,
+      };
+    }
+
     // 6. Intent classification.
     const intent = await this.classifyIntent({
       text,
@@ -504,6 +522,21 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
+    // Ф5 assistant-channels (2026-06-11) — голос идёт тем же путём, что и
+    // текст: Vox-транскрипт → при включённом kill-switch сразу assistant_turn
+    // (классификатор не нужен — у MAX нет чек-ин ветки, оба исхода ушли бы
+    // помощнику). OFF — прежний путь бит-в-бит.
+    if (this.isAssistantRoutingEnabled()) {
+      return {
+        type: 'assistant_turn',
+        userId: args.binding.userId,
+        tenantId: args.tenantId,
+        text: transcript,
+        metadata: { source: 'max_bot', kind: 'voice', chatId: args.chatId },
+        originChannelBindingId: args.binding.id,
+      };
+    }
+
     const intent = await this.classifyIntent({
       text: transcript,
       tenantId: args.tenantId,
@@ -638,6 +671,16 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   }
 
   // ─────────────────────────────── helpers ──────────────────────────
+
+  /**
+   * Ф5 assistant-channels (2026-06-11) — kill-switch единого помощника в
+   * каналах (ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`, default true).
+   * Строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
+   * остаются на прежнем узком роутере (OFF, бит-в-бит).
+   */
+  private isAssistantRoutingEnabled(): boolean {
+    return this.cfg.bot.assistantChannelRoutingEnabled === true;
+  }
 
   private async checkVoiceRateLimit(args: {
     userId: string;

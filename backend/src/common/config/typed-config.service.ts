@@ -1404,12 +1404,20 @@ export class TypedConfigService {
    *   - documentEnabled — приём документов (PDF/DOCX/MD/TXT) → DocumentsService.
    *   - intentClassifierEnabled — LLM-классификатор intent. False → fallback
    *     на эвристики (тот же fallback срабатывает на throw LLM).
+   *   - assistantChannelRoutingEnabled — Ф5 assistant-channels (2026-06-11):
+   *     kill-switch единого помощника в каналах. ON (default, Ship-On) —
+   *     свободный текст/голос Telegram/MAX → assistant_turn → ConciergeService;
+   *     OFF — прежний узкий роутер бит-в-бит (аварийный откат). Чек-ин
+   *     (план/отчёт) не зависит от флага. ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`.
    */
   get bot() {
     return {
       voiceEnabled: this.get('BOT_VOICE_ENABLED'),
       documentEnabled: this.get('BOT_DOCUMENT_ENABLED'),
       intentClassifierEnabled: this.get('BOT_INTENT_CLASSIFIER_ENABLED'),
+      assistantChannelRoutingEnabled: this.get(
+        'ASSISTANT_CHANNEL_ROUTING_ENABLED',
+      ),
     } as const;
   }
 

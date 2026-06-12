@@ -66,8 +66,21 @@ export interface ProcessInput {
   pageContext?: PageContextDto | null;
   userId: string;
   tenantId: string;
-  baseUrl: string;
+  /**
+   * Базовый URL backend'а для loopback tool-вызовов. Обязателен в
+   * cookie-режиме (web-чат, берётся из HTTP-запроса); в service-режиме
+   * (Ф5 assistant-channels: Telegram/MAX без HTTP-запроса) опционален —
+   * ToolRouter сам резолвит `cfg.concierge.loopbackBaseUrl`.
+   */
+  baseUrl?: string;
   authCookie?: string;
+  /**
+   * Ф5 assistant-channels (2026-06-11) — режим аутентификации loopback
+   * tool-вызовов (см. ToolRouterService Ф4). Default `'cookie'` — прежнее
+   * поведение web-чата (passthrough authCookie). `'service'` — каналы
+   * Telegram/MAX: ToolRouter минтит короткоживущую session-JWT по userId.
+   */
+  authMode?: 'cookie' | 'service';
 }
 
 /**
@@ -446,7 +459,8 @@ export class ConciergeService {
           intent: dialogResult!.intent,
           userId: input.userId,
           tenantId: input.tenantId,
-          baseUrl: input.baseUrl,
+          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+          ...(input.authMode ? { authMode: input.authMode } : {}),
           ...(input.authCookie ? { authCookie: input.authCookie } : {}),
         })
       : [];
@@ -613,13 +627,15 @@ export class ConciergeService {
         preHits,
       });
 
-      // Execute через ToolRouter.
+      // Execute через ToolRouter. Ф5: authMode/baseUrl опциональны —
+      // service-режим (каналы) резолвит baseUrl внутри ToolRouter.
       const execResult = await this.toolRouter.execute({
         toolName,
         args: params,
         userId: input.userId,
         tenantId: input.tenantId,
-        baseUrl: input.baseUrl,
+        ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+        ...(input.authMode ? { authMode: input.authMode } : {}),
         ...(input.authCookie ? { authCookie: input.authCookie } : {}),
       });
 
@@ -956,7 +972,9 @@ export class ConciergeService {
     intent: DialogIntent;
     userId: string;
     tenantId: string;
-    baseUrl: string;
+    /** Ф5: опционален — в service-режиме ToolRouter резолвит loopbackBaseUrl. */
+    baseUrl?: string;
+    authMode?: 'cookie' | 'service';
     authCookie?: string;
   }): Promise<Array<{ query: string; result: unknown }>> {
     if (!['factual', 'exploratory', 'analytical'].includes(args.intent)) {
@@ -975,7 +993,8 @@ export class ConciergeService {
           args: { q },
           userId: args.userId,
           tenantId: args.tenantId,
-          baseUrl: args.baseUrl,
+          ...(args.baseUrl ? { baseUrl: args.baseUrl } : {}),
+          ...(args.authMode ? { authMode: args.authMode } : {}),
           ...(args.authCookie ? { authCookie: args.authCookie } : {}),
         });
         const timeout = new Promise<null>((resolve) =>

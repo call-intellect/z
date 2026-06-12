@@ -81,6 +81,13 @@ class ChatV2OmnichannelBridge implements OnModuleInit {
         mode: answer.mode,
         uncertaintyNote: answer.uncertaintyNote ?? undefined,
         originChannelBindingId: msg.originChannelBindingId,
+        // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): solicited
+        // reply на заданный вопрос — должен дойти в канал-источник даже в
+        // тихие часы. dataClass 'internal' вместо дефолтного 'sensitive',
+        // чтобы ответ прошёл maxDataClass внешних каналов (Telegram/MAX),
+        // а не молча уходил только в кабинет.
+        dataClass: 'internal',
+        solicited: true,
       });
       this.logger.log(
         {

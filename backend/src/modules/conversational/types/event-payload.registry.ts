@@ -318,6 +318,19 @@ const CheckinAckPayloadSchema = z
   .strict();
 
 /**
+ * Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — подтверждение
+ * приёма свободной заметки (free_note). Отправляется
+ * `ConversationalFreeNoteBridge` после успешного `ingestFreeNote`, чтобы
+ * человек в канале (Telegram/MAX/кабинет) видел: заметка не потерялась.
+ * `text` — готовая строка для рендера («Записал в память Коры 🧠»).
+ */
+const NoteAckPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(500),
+  })
+  .strict();
+
+/**
  * Calendar MVP (2026-05-25) — payload `event.reminder` для напоминания
  * о событии календаря. Доставляется через ConversationalService.sendNotification
  * по каналу telegram_bot / push / email.
@@ -439,6 +452,9 @@ const registry = new Map<string, z.ZodTypeAny>([
   // ТЗ 2026-05-29 telegram-self-initiated-checkins — подтверждение сохранения
   // самоинициированного плана/отчёта в чек-ин.
   ['checkin.ack', CheckinAckPayloadSchema],
+  // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — подтверждение
+  // приёма свободной заметки (free_note).
+  ['note.ack', NoteAckPayloadSchema],
   // Action Center B3 — повторяющееся напоминание о pending-подтверждениях.
   ['actions.reminder', ActionsReminderPayloadSchema],
   // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.

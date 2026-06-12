@@ -134,6 +134,12 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // самоинициированного чек-ина. Caller обычно передаёт preferredChannelKinds=
   // [originChannelKind], но если не передал — fallback на бот-каналы + in_app.
   'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
+  // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): подтверждение
+  // «Записал в память Коры» после успешного ingest free_note. Caller
+  // (ConversationalFreeNoteBridge) обычно передаёт preferredChannelKinds=
+  // [kind канала-источника]; эта policy — fallback, когда
+  // originChannelBindingId не пришёл или невалиден.
+  'note.ack': ['in_app', 'telegram_bot', 'max_bot'],
   // Action Center B3: повторяющееся напоминание о pending-подтверждениях.
   // Бот-каналы (мгновенный пинг) + in_app fallback. Не critical — уважает
   // quiet hours / disabledUntil. Cron явно передаёт preferredChannelKinds=
@@ -370,6 +376,13 @@ export class ConversationalService {
    * binding'у (binding принадлежит userId — проверяется); иначе работает
    * стандартная policy.
    *
+   * Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): если
+   * `solicited=true` И канал-источник определился (валидный
+   * `originChannelBindingId`) — уведомление уходит с `critical=true`, чтобы
+   * байпаснуть тихие часы и дневной бюджет push: человек ЗАДАЛ вопрос и ждёт
+   * ответ прямо сейчас в том же канале. canEmit-гейтинг по dataClass при
+   * этом остаётся в силе.
+   *
    * Возвращает созданный `Notification` (id — для логов/корреляции с
    * ChatV2Message).
    */
@@ -389,6 +402,13 @@ export class ConversationalService {
      * `maxDataClass`.
      */
     dataClass?: DataClass;
+    /**
+     * Ф1 «Стоп-молчание»: true — ответ на ЯВНО заданный пользователем вопрос
+     * (solicited reply). В паре с валидным `originChannelBindingId` даёт
+     * `critical=true` (байпас quiet hours / push-бюджета). Без канала-
+     * источника не действует. По умолчанию false.
+     */
+    solicited?: boolean;
   }): Promise<Notification> {
     // Если задан originChannelBindingId — определим preferredChannelKinds
     // как [kind того binding'а], чтобы routing выбрал именно его.
@@ -422,6 +442,12 @@ export class ConversationalService {
     if (args.mode) payload.mode = args.mode;
     if (args.uncertaintyNote) payload.uncertaintyNote = args.uncertaintyNote;
 
+    // Ф1 «Стоп-молчание»: solicited-ответ на заданный вопрос должен дойти в
+    // канал-источник даже в тихие часы / при исчерпанном push-бюджете.
+    // critical только когда канал-источник реально определился — иначе
+    // поведение прежнее.
+    const critical = args.solicited === true && preferredKinds !== undefined;
+
     return this.sendNotification({
       tenantId: args.tenantId,
       recipientUserId: args.userId,
@@ -429,10 +455,41 @@ export class ConversationalService {
       payload,
       dataClass: args.dataClass ?? 'sensitive',
       preferredChannelKinds: preferredKinds,
-      // chat-ответ — не critical (нет смысла будить ночью), но и не
-      // подавляется quiet hours для in_app (in_app — fallback всегда).
-      critical: false,
+      // Не-solicited chat-ответ — не critical (нет смысла будить ночью), но
+      // и не подавляется quiet hours для in_app (in_app — fallback всегда).
+      critical,
     });
+  }
+
+  /**
+   * Ф1 «Стоп-молчание» — резолв kind'а канала-источника по
+   * `ChannelBinding.id`. Возвращает `[kind]`, если binding существует,
+   * принадлежит userId и его канал активен в Org (или глобальный,
+   * tenantId=null — telegram/max); иначе `[]`. Паттерн повторяет
+   * `CheckinResponseHandler.resolveOriginChannelKinds`. Используется
+   * мостами (например, ack на free_note) для адресной отправки
+   * подтверждения в канал-источник.
+   */
+  async resolveOriginChannelKinds(args: {
+    originChannelBindingId?: string;
+    userId: string;
+    tenantId: string;
+  }): Promise<ChannelKind[]> {
+    if (!args.originChannelBindingId) return [];
+    const binding = await this.prisma.channelBinding.findUnique({
+      where: { id: args.originChannelBindingId },
+      include: { channel: true },
+    });
+    if (!binding) return [];
+    if (binding.userId !== args.userId) return [];
+    if (
+      binding.channel.tenantId &&
+      binding.channel.tenantId !== args.tenantId
+    ) {
+      return [];
+    }
+    if (binding.channel.status !== 'active') return [];
+    return [binding.channel.kind];
   }
 
   // ──────────────────────────── respondToProbe ────────────────────────

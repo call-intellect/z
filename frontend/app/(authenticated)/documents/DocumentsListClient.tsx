@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   ACCEPTED_DOCUMENT_ACCEPT,
   documentKindLabel,
@@ -103,7 +103,7 @@ export function DocumentsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Этот раздел доступен только в рамках Org."
+        description="Этот раздел доступен только в рамках организации."
       />
     );
   }
@@ -359,7 +359,7 @@ export function SuggestionBanner({
       toast.success('Подсказка принята.');
       onChanged();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось применить.');
+      toast.error(humanizeApiError(e, 'Не удалось применить.'));
     } finally {
       setBusy(false);
     }
@@ -452,7 +452,7 @@ function EditAttributionDialog({
       toast.success('Атрибуция сохранена.');
       onSaved();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
       setBusy(false);
     }
   };
@@ -674,7 +674,7 @@ function UploadDocumentDialog({
         ),
       );
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить.',
+        humanizeApiError(e, 'Не удалось загрузить.'),
       );
     } finally {
       setBusy(false);
@@ -974,7 +974,7 @@ function ImportZipTab({
       const res = await documentsApi.importZip(orgId, { file, source });
       onStarted(res.importId);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось начать импорт.');
+      toast.error(humanizeApiError(e, 'Не удалось начать импорт.'));
       setBusy(false);
     }
   };
@@ -1027,7 +1027,7 @@ function ImportConfluenceTab({
       });
       onStarted(res.importId);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось начать импорт.');
+      toast.error(humanizeApiError(e, 'Не удалось начать импорт.'));
       setBusy(false);
     }
   };

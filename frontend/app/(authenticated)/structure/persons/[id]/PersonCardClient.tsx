@@ -6,7 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import useSWR from 'swr';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   departmentsApi,
   rolesDomainApi,
@@ -271,7 +271,7 @@ function AccessTab({
       onChanged();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось изменить роль.',
+        humanizeApiError(e, 'Не удалось изменить роль.'),
       );
     }
   };
@@ -351,7 +351,7 @@ function CloneGrants({
       refresh();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось выдать доступ.',
+        humanizeApiError(e, 'Не удалось выдать доступ.'),
       );
     }
   };
@@ -368,7 +368,7 @@ function CloneGrants({
       toast.success('Доступ отозван.');
       refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать.');
+      toast.error(humanizeApiError(e, 'Не удалось отозвать.'));
     }
   };
 
@@ -379,7 +379,7 @@ function CloneGrants({
       refresh();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось обновить срок.',
+        humanizeApiError(e, 'Не удалось обновить срок.'),
       );
     }
   };
@@ -512,7 +512,7 @@ function CapabilityControls({
       void capsSwr.mutate();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось обновить доступ.',
+        humanizeApiError(e, 'Не удалось обновить доступ.'),
       );
     }
   };

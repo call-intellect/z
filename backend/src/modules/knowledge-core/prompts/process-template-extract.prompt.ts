@@ -13,10 +13,12 @@
 import {
   withAsrNote,
   withConfidenceCalibration,
+  withDecisionDiscriminator,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
 export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+  withDecisionDiscriminator(
   withEdgeCasePolicy(
   withConfidenceCalibration(
     [
@@ -41,6 +43,7 @@ export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
     '',
     'Отвечай строго в JSON по схеме process_template_extract_v1.',
     ].join('\n'),
+  ),
   ),
   ),
 );

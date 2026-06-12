@@ -76,7 +76,6 @@ export class IssueInferFieldsService {
         title: issue.title,
         description: issue.descriptionStripped ?? issue.description ?? '',
         members: context.members,
-        goals: context.goals,
         recentIssues: context.recentIssues,
         labels: context.labels,
         contextHints: args.contextHints,
@@ -145,7 +144,7 @@ export class IssueInferFieldsService {
       select: { ownerId: true, defaultAssigneeId: true, name: true },
     });
     if (!project) {
-      return { members: [], goals: [], recentIssues: [], labels: [] };
+      return { members: [], recentIssues: [], labels: [] };
     }
     // Последние 200 assignee-записей проекта → топ-30 уникальных userId'ов.
     // Имена пользователей загружаем отдельным batch-запросом, потому что
@@ -183,13 +182,6 @@ export class IssueInferFieldsService {
     }
     const members = [...memberMap.values()];
 
-    const goals = await this.prisma.goal.findMany({
-      where: { tenantId, status: 'active' },
-      select: { id: true, name: true, description: true },
-      take: 25,
-      orderBy: { updatedAt: 'desc' },
-    });
-
     const recentIssues = await this.prisma.issue.findMany({
       where: { tenantId, projectId, deletedAt: null },
       select: {
@@ -208,23 +200,26 @@ export class IssueInferFieldsService {
       take: 50,
     });
 
-    return { members, goals, recentIssues, labels };
+    return { members, recentIssues, labels };
   }
 
   private buildSystemPrompt(): string {
+    // Волна 5 / кластер B — goal-привязка убрана из этого агента: её владелец
+    // отдельный агент `issue-goal-suggest` (IssueGoalSuggestService). Этот агент
+    // больше не извлекает и не описывает suggestedGoalId. Поле в результате
+    // остаётся (опционально-null) для совместимости контракта, но всегда null.
     return [
       'Ты — AI-помощник трекера задач Кора.',
-      'Тебе дана новая задача в проекте и контекст: участники проекта, активные цели компании, последние задачи и доступные метки.',
-      'Твоя работа — предложить структурированные значения полей задачи: исполнитель, приоритет, дедлайн, цель, метки.',
+      'Тебе дана новая задача в проекте и контекст: участники проекта, последние задачи и доступные метки.',
+      'Твоя работа — предложить структурированные значения полей задачи: исполнитель, приоритет, дедлайн, метки.',
       'Правила:',
       '— Подсказывай ТОЛЬКО когда уверен (confidence ≥ 0.7). При сомнениях — оставляй поле null.',
       '— assigneeId — выбирай только из членов проекта; не выдумывай.',
-      '— goalId — только из списка активных целей.',
       '— labels — короткие фразы (если нет в списке известных меток — допустим, но осторожно).',
       '— priority ∈ urgent|high|medium|low|none.',
       '— dueDate — ISO-8601 (YYYY-MM-DD) или null.',
       'Отвечай строго JSON без markdown/комментариев:',
-      '{"suggestedAssigneeId":null|"<userId>","suggestedDueDate":null|"YYYY-MM-DD","suggestedPriority":null|"urgent|high|medium|low|none","suggestedGoalId":null|"<goalId>","suggestedLabels":["..."],"confidence":0.0-1.0,"reasoning":"короткое объяснение"}',
+      '{"suggestedAssigneeId":null|"<userId>","suggestedDueDate":null|"YYYY-MM-DD","suggestedPriority":null|"urgent|high|medium|low|none","suggestedLabels":["..."],"confidence":0.0-1.0,"reasoning":"короткое объяснение"}',
     ].join('\n');
   }
 
@@ -232,7 +227,6 @@ export class IssueInferFieldsService {
     title: string;
     description: string;
     members: ReadonlyArray<{ id: string; name: string }>;
-    goals: ReadonlyArray<{ id: string; name: string; description: string }>;
     recentIssues: ReadonlyArray<{
       identifier: string;
       title: string;
@@ -254,12 +248,6 @@ export class IssueInferFieldsService {
     lines.push('');
     lines.push(`# Участники проекта (id → имя)`);
     for (const m of args.members) lines.push(`- ${m.id} → ${m.name}`);
-    lines.push('');
-    lines.push(`# Активные цели компании`);
-    for (const g of args.goals) {
-      const desc = (g.description ?? '').slice(0, 200);
-      lines.push(`- ${g.id} → ${g.name}${desc ? ` (${desc})` : ''}`);
-    }
     lines.push('');
     lines.push(`# Последние задачи в проекте`);
     for (const i of args.recentIssues) {
@@ -292,10 +280,10 @@ export class IssueInferFieldsService {
           typeof obj.suggestedPriority === 'string'
             ? obj.suggestedPriority
             : null,
-        suggestedGoalId:
-          typeof obj.suggestedGoalId === 'string'
-            ? obj.suggestedGoalId
-            : null,
+        // Волна 5 / кластер B — goal-привязка больше не извлекается этим
+        // агентом (владелец — issue-goal-suggest). Поле оставлено в типе для
+        // совместимости контракта, но всегда null.
+        suggestedGoalId: null,
         suggestedLabels: Array.isArray(obj.suggestedLabels)
           ? (obj.suggestedLabels as unknown[]).filter(
               (v): v is string => typeof v === 'string',
@@ -313,13 +301,12 @@ export class IssueInferFieldsService {
     }
   }
 
-  /** Фильтрация мусора: assignee и goal должны быть из контекста. */
+  /** Фильтрация мусора: assignee должен быть из контекста. */
   private validateRefs(
     raw: RawSuggestion,
     ctx: ProjectContext,
   ): IssueInferFieldsResult {
     const memberIds = new Set(ctx.members.map((m) => m.id));
-    const goalIds = new Set(ctx.goals.map((g) => g.id));
     const validPriorities = new Set([
       'urgent',
       'high',
@@ -329,9 +316,6 @@ export class IssueInferFieldsService {
     ]);
     const assignee = raw.suggestedAssigneeId && memberIds.has(raw.suggestedAssigneeId)
       ? raw.suggestedAssigneeId
-      : null;
-    const goal = raw.suggestedGoalId && goalIds.has(raw.suggestedGoalId)
-      ? raw.suggestedGoalId
       : null;
     const priority = raw.suggestedPriority && validPriorities.has(raw.suggestedPriority)
       ? raw.suggestedPriority
@@ -346,7 +330,9 @@ export class IssueInferFieldsService {
       suggestedAssigneeId: assignee,
       suggestedDueDate: due,
       suggestedPriority: priority,
-      suggestedGoalId: goal,
+      // Волна 5 / кластер B — goal-привязка убрана из этого агента (владелец —
+      // issue-goal-suggest). Поле сохранено в контракте, всегда null.
+      suggestedGoalId: null,
       suggestedLabels: raw.suggestedLabels.slice(0, 8),
       confidence: raw.confidence,
       meetsThreshold: raw.confidence >= IssueInferFieldsService.MIN_CONFIDENCE,
@@ -372,7 +358,6 @@ export class IssueInferFieldsService {
 
 interface ProjectContext {
   members: Array<{ id: string; name: string }>;
-  goals: Array<{ id: string; name: string; description: string }>;
   recentIssues: Array<{
     identifier: string;
     title: string;

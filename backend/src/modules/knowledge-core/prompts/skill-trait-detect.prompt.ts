@@ -32,10 +32,12 @@
 
 import {
   withAsrNote,
+  withDecisionDiscriminator,
   withEdgeCasePolicy,
 } from '../../ai/services/prompts/common';
 
 export const SKILL_TRAIT_DETECT_SYSTEM_PROMPT = withAsrNote(
+  withDecisionDiscriminator(
   withEdgeCasePolicy(
   [
   'Ты — knowledge-инженер. Тебе дают набор цитат из встреч одного сотрудника, где он объясняет ПОЧЕМУ принимает те или иные решения.',
@@ -73,6 +75,7 @@ export const SKILL_TRAIT_DETECT_SYSTEM_PROMPT = withAsrNote(
   'НЕ извлекать: {"category": "перфекционист", "statement": "Анна — выдающийся аналитик, стремящийся к идеалу."} — это приговор без qualifier и без поведенческой основы.',
   'Правильно: пустой результат (одна риторическая фраза, нет наблюдений за решениями).',
   ].join('\n'),
+  ),
   ),
 );
 

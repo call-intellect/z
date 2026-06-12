@@ -4,8 +4,11 @@ import type { JobsOptions } from 'bullmq';
  * Имена очередей AI-pipeline. Используются и dispatch'ером (HTTP-side), и
  * воркерами (worker-side). Префиксом `ai.` отделяем от не-AI очередей.
  *
- * После `ai.analyze` orchestrator (см. `analyze.worker`) запускает три
- * параллельные стадии: `ai.chapters`, `ai.tasks`, `ai.embeddings`.
+ * После `ai.analyze` orchestrator (см. `analyze.worker`) запускает стадию
+ * индексации эмбеддингов `ai.embeddings` + ingest в knowledge-core. Главы,
+ * задачи и качество встречи теперь делает ЕДИНЫЙ воркер `meeting-report-fast`
+ * (core-очередь), отдельные `ai.chapters` / `ai.tasks` / `ai.quality-score`
+ * упразднены.
  * `clip.render` — отдельная очередь для CPU-bound ffmpeg-задач (concurrency=1).
  */
 export const QUEUE_NAMES = {
@@ -13,8 +16,6 @@ export const QUEUE_NAMES = {
   MERGE: 'ai.merge',
   ANALYZE: 'ai.analyze',
   NOTIFY: 'ai.notify',
-  CHAPTERS: 'ai.chapters',
-  TASKS: 'ai.tasks',
   EMBEDDINGS: 'ai.embeddings',
   CLIP_RENDER: 'clip.render',
   /** Пересборка `Card.summaryCache` после новой обработанной встречи в карточке. */
@@ -31,13 +32,6 @@ export const QUEUE_NAMES = {
    * `Org.transcriptCleaningAuto`), либо по запросу `POST /meetings/:id/transcript/clean`.
    */
   TRANSCRIPT_CLEAN: 'ai.transcript-clean',
-  /**
-   * Фаза C — AI-оценка качества встречи (sub-TZ C §6).
-   * Enqueue из `analyze.worker` после успешного `ai_ready`, либо по
-   * запросу `POST /meetings/:id/quality-score/regenerate`. Результат —
-   * MeetingQualityScore.
-   */
-  QUALITY_SCORE: 'ai.quality-score',
   /**
    * Фаза E — дополнительные («custom») AI-отчёты встречи. Enqueue только
    * on-demand (по запросу `POST /meetings/:id/reports` или regenerate).
@@ -57,7 +51,7 @@ export const QUEUE_NAMES = {
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 /**
- * Дефолтные опции job'а для всех 4 стадий AI-pipeline.
+ * Дефолтные опции job'а для стадий AI-pipeline.
  *
  *   attempts: 5                           — итого до 5 попыток с экспоненциальным backoff'ом.
  *   backoff: exponential delay 8000       — 8s, 16s, 32s, 64s между попытками.

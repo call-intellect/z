@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 
 import { qualityScoreApi } from '@/api/quality-score.api';
+import { humanizeApiError } from '@/api/api-error';
 import { orgQualityScoreSettingsFromApi } from '@/domain/quality-score';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 
@@ -93,7 +94,7 @@ export function MeetingsAdminSettingsClient() {
       setSuccess('Настройки сохранены.');
       await swr.mutate();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось сохранить настройки.');
+      setError(humanizeApiError(e, 'Не удалось сохранить настройки.'));
     } finally {
       setSaving(false);
     }

@@ -24,6 +24,7 @@ import {
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
 import { ChannelEditDialog } from './ChannelEditDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 /**
  * `/admin/content/global-channels` — управление глобальными каналами
@@ -66,7 +67,7 @@ export function GlobalChannelsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Контент' },
         { label: 'Глобальные каналы' },
       ]}

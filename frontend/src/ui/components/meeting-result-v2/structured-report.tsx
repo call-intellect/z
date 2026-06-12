@@ -30,6 +30,20 @@ export const STRUCTURED_FIELD_LABELS: Record<string, string> = {
   participants: 'Участники',
   recommendations: 'Рекомендации',
   highlights: 'Важные моменты',
+  ideas: 'Идеи',
+  proposals: 'Предложения',
+  data_quality: 'Качество данных',
+  competitors: 'Конкуренты',
+  competitors_mentioned: 'Упомянутые конкуренты',
+  decision_criteria: 'Критерии выбора',
+  what_hooked: 'Что зацепило',
+  main_blocker: 'Главный блокер',
+  churn_risk_quote: 'Цитата риска оттока',
+  recurring_problems: 'Повторяющиеся проблемы',
+  unexplained_gaps: 'Без объяснённой причины',
+  competing_offers: 'Другие офферы',
+  responsibilities: 'Ответственности',
+  not_done: 'Не сделано',
 };
 
 /** Заголовок поля: словарь, иначе snake_case/kebab → «Snake case». */
@@ -49,9 +63,12 @@ export function isEmptyStructuredValue(v: unknown): boolean {
   return false;
 }
 
-/** Главный текст из объекта-задачи: title/text/name/description/первое строковое поле. */
+/**
+ * Главный текст из объекта-задачи: title/text/name/description/value/item/what
+ * (item → not_done{item}, what → responsibilities{what}), иначе первое строковое поле.
+ */
 function objectMainText(o: Record<string, unknown>): string {
-  for (const k of ['title', 'text', 'name', 'description', 'value']) {
+  for (const k of ['title', 'text', 'name', 'description', 'value', 'item', 'what']) {
     const val = o[k];
     if (typeof val === 'string' && val.trim()) return val;
   }
@@ -61,13 +78,43 @@ function objectMainText(o: Record<string, unknown>): string {
   return '—';
 }
 
-/** Доп. подпись задачи: исполнитель/срок, если есть (S6-04: скрывать null). */
+/** Непустая строка из первого подходящего ключа объекта, иначе null. */
+function firstString(o: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const val = o[k];
+    if (typeof val === 'string' && val.trim()) return val.trim();
+  }
+  return null;
+}
+
+/**
+ * Доп. подпись задачи/объекта одной строкой через « · » (S6-04: скрывать null).
+ * Кроме исполнителя/срока показывает поля новых объектов отчёта:
+ *   - decisions{speaker, changes_what}
+ *   - not_done{responsible, reason}
+ *   - agreements{speaker, supersedes}
+ *   - responsibilities{who, deadline}
+ */
 function objectMeta(o: Record<string, unknown>): string | null {
   const parts: string[] = [];
-  const assignee = o['assignee'] ?? o['owner'] ?? o['assigneeRaw'];
-  if (typeof assignee === 'string' && assignee.trim()) parts.push(assignee);
-  const due = o['dueDate'] ?? o['due'] ?? o['deadline'];
-  if (typeof due === 'string' && due.trim()) parts.push(`до ${due}`);
+  const assignee = firstString(o, ['assignee', 'owner', 'assigneeRaw']);
+  if (assignee) parts.push(assignee);
+  const due = firstString(o, ['dueDate', 'due']);
+  if (due) parts.push(`до ${due}`);
+  const deadline = firstString(o, ['deadline']);
+  if (deadline) parts.push(`срок: ${deadline}`);
+  const speaker = firstString(o, ['speaker']);
+  if (speaker) parts.push(`спикер: ${speaker}`);
+  const who = firstString(o, ['who']);
+  if (who) parts.push(`кто: ${who}`);
+  const responsible = firstString(o, ['responsible']);
+  if (responsible) parts.push(`ответственный: ${responsible}`);
+  const changesWhat = firstString(o, ['changes_what']);
+  if (changesWhat) parts.push(`меняет: ${changesWhat}`);
+  const supersedes = firstString(o, ['supersedes']);
+  if (supersedes) parts.push(`заменяет: ${supersedes}`);
+  const reason = firstString(o, ['reason']);
+  if (reason) parts.push(`причина: ${reason}`);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -161,6 +208,14 @@ export function structuredValueToMarkdown(value: unknown): string {
 }
 
 /**
+ * Ключи structuredData, которые UI рендерит ОТДЕЛЬНОЙ секцией (вне общего грида
+ * отчёта) и которые поэтому не должны попадать в «весь отчёт» при копировании —
+ * иначе задвоятся. Сейчас это клиентский протокол (Волна 4, B1.4): он показан
+ * секцией «Протокол для клиента» со своей кнопкой «Скопировать».
+ */
+const REPORT_MARKDOWN_EXCLUDED_KEYS = new Set(['client_protocol_md']);
+
+/**
  * structuredData/output → markdown (текстовое зеркало `ReportOutputRenderer`):
  * каждый непустой top-level ключ → '## Заголовок' + сериализованное значение.
  * Пустые секции (`isEmptyStructuredValue`) пропускаются. Примитивный output —
@@ -177,6 +232,7 @@ export function structuredReportToMarkdown(output: unknown, title?: string): str
     lines.push(`# ${title}`, '');
   }
   for (const [key, value] of Object.entries(output as Record<string, unknown>)) {
+    if (REPORT_MARKDOWN_EXCLUDED_KEYS.has(key)) continue;
     if (isEmptyStructuredValue(value)) continue;
     lines.push(`## ${structuredFieldLabel(key)}`);
     lines.push(structuredValueToMarkdown(value));

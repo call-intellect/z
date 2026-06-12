@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
 import { Button } from '@/ui/shadcn/button';
@@ -58,7 +58,7 @@ export function LoginForm() {
         if (err.code === 'login_invalid' || err.code === 'unauthorized') {
           toast.error('Неверный логин или пароль.');
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось войти. Попробуйте ещё раз.');

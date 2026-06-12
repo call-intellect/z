@@ -6,6 +6,8 @@ import { S3Service } from '../recordings/s3.service';
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
 import { MangoCallWebhookController } from './adapters/phone-call/mango.controller';
 import { MangoAdapterService } from './adapters/phone-call/mango.service';
+import { ReportIngestListener } from './adapters/report-ingest.listener';
+import { ReportIngestAdapter } from './adapters/report.adapter';
 import { TelegramWebhookController } from './adapters/telegram/telegram.controller';
 import { TelegramAdapterService } from './adapters/telegram/telegram.service';
 import { TrackerAdapter } from './adapters/tracker/tracker.adapter';
@@ -49,6 +51,11 @@ import { DocumentParserService } from './parsers/document-parser.service';
   providers: [
     IngestService,
     MeetingIngestAdapter,
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md):
+    // вторичный путь — готовый fast-отчёт → RawEvent(meeting_report) → граф.
+    // Listener ловит `meeting.report-fast-ready` (EventEmitter2 глобальный).
+    ReportIngestAdapter,
+    ReportIngestListener,
     TelegramAdapterService,
     MangoAdapterService,
     DumpService,
@@ -70,6 +77,7 @@ import { DocumentParserService } from './parsers/document-parser.service';
   exports: [
     IngestService,
     MeetingIngestAdapter,
+    ReportIngestAdapter,
     TelegramAdapterService,
     MangoAdapterService,
     DumpService,

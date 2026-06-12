@@ -132,6 +132,22 @@ export interface WeeklySectionDeltasDto {
   ideas: WeeklyDeltaDto;
 }
 
+/**
+ * Ф1b редизайна дашбордов — одна точка исторического тренда weekly-дайджеста.
+ * Считается из уже persisted-снимков `WeeklyOperationsDigest.metricsJson`
+ * (не выдумка). Кладётся в ответ дайджеста полем `trend` (один вызов фронта).
+ */
+export interface WeeklyDigestTrendPointDto {
+  weekStart: string;            // YYYY-MM-DD (понедельник)
+  totalCheckIns: number;
+  greenShare: number;
+  redShare: number;
+  goalsCompleted: number;
+  goalsFailed: number;
+  blockers: number;             // sum(topBlockers[].count)
+  hangingDecisions: number;     // metricsJson.hangingDecisions.length
+}
+
 export interface WeeklyOperationsDigestDto {
   id: string;
   tenantId: string;
@@ -153,6 +169,8 @@ export interface WeeklyOperationsDigestDto {
   forecast: WeeklyForecastItemDto[];
   /** ТЗ-2 Ф3 — посекционные дельты к предыдущей неделе (блокеры/инсайты/идеи). */
   sectionDeltas: WeeklySectionDeltasDto;
+  /** Ф1b — исторический тренд, old→new, до 12 точек, заканчивая weekStart текущего дайджеста. */
+  trend: WeeklyDigestTrendPointDto[];
 }
 
 /**

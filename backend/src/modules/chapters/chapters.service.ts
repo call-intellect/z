@@ -8,15 +8,17 @@ import {
 import type { MeetingChapter } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { AiQueueService } from '../ai/ai-queue.service';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 
 import { ChaptersRepository } from './chapters.repository';
 import type { CreateChapterDto } from './dto/create-chapter.dto';
 import type { UpdateChapterDto } from './dto/update-chapter.dto';
 
 /**
- * Сервис глав встречи. Генерация — через `AiQueueService.enqueueChapters`
- * (asynchronous, отдельный воркер). Ручные правки — синхронные.
+ * Сервис глав встречи. Генерация — через перезапуск ЕДИНОГО воркера
+ * `meeting-report-fast` (`CoreQueueService.enqueueMeetingReportFast`),
+ * который делает главы / задачи / качество одним LLM-вызовом. Ручные
+ * правки — синхронные.
  */
 @Injectable()
 export class ChaptersService {
@@ -25,7 +27,7 @@ export class ChaptersService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ChaptersRepository) private readonly repo: ChaptersRepository,
-    @Inject(AiQueueService) private readonly queue: AiQueueService,
+    @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
   ) {}
 
   async listByMeeting(meetingId: string, userId: string): Promise<MeetingChapter[]> {
@@ -78,17 +80,19 @@ export class ChaptersService {
   }
 
   /**
-   * Идемпотентность: если `chaptersStatus IN (queued, processing)` — 409.
-   * Иначе ставим `queued` и ставим job в очередь.
+   * Идемпотентность: если `reportFastStatus === 'processing'` — 409 (главы
+   * считает ЕДИНЫЙ воркер meeting-report-fast). Иначе перезапускаем его.
+   * reason=`regen-<ts>` варьирует jobId, чтобы дедуп removeOnComplete не съел
+   * повторную постановку.
    */
   async regenerate(meetingId: string, userId: string): Promise<{ status: 'queued' }> {
     await this.assertMeetingOwner(meetingId, userId);
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      select: { chaptersStatus: true },
+      select: { reportFastStatus: true },
     });
     if (!meeting) throw new NotFoundException('meeting_not_found');
-    if (meeting.chaptersStatus === 'queued' || meeting.chaptersStatus === 'processing') {
+    if (meeting.reportFastStatus === 'processing') {
       throw new ConflictException({
         ok: false,
         error: {
@@ -97,11 +101,9 @@ export class ChaptersService {
         },
       });
     }
-    await this.prisma.meeting.update({
-      where: { id: meetingId },
-      data: { chaptersStatus: 'queued' },
+    await this.coreQueue.enqueueMeetingReportFast(meetingId, {
+      reason: `regen-${Date.now()}`,
     });
-    await this.queue.enqueueChapters(meetingId);
     this.logger.log(`chapters.regenerate enqueued meeting=${meetingId}`);
     return { status: 'queued' };
   }

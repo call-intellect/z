@@ -10,7 +10,10 @@ export type AiAgentType =
   | 'report-by-type'
   | 'follow-up'
   | 'tasks'
-  | 'custom';
+  | 'custom'
+  // Волна 4 B0 — нейтральный протокол встречи наружу для клиента
+  // (client-meeting-split, free-text).
+  | 'client_protocol';
 
 export type AiProvider =
   | 'anthropic'

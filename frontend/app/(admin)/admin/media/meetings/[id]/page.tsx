@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AdminMeetingDetails } from '@/ui/components/admin/AdminMeetingDetails';
 
 export const metadata: Metadata = {
-  title: 'Детали встречи — Z-Admin',
+  title: 'Детали встречи',
 };
 
 type Props = { params: Promise<{ id: string }> };

@@ -15,6 +15,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactElement,
@@ -23,11 +24,16 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 
-import { chatV2Api } from '@/api/chat-v2.api';
+import {
+  chatV2Api,
+  streamChatV2Message,
+  type ChatV2AskBody,
+  type ChatV2AskResponseApi,
+} from '@/api/chat-v2.api';
+import { AssistantMarkdown } from '@/ui/components/chat-v2/AssistantMarkdown';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import {
   chatV2ConversationStatusLabel,
-  chatV2ModeLabel,
   chatV2ScopeLabel,
   formatTimestamp,
   toChatV2Conversation,
@@ -48,6 +54,27 @@ import {
  * Citations отрисовываются в виде bubble под сообщением assistant
  * (заголовок встречи + timestamp + snippet).
  */
+/**
+ * §4 Ф1 — человеко-понятный лейбл стадии «думанья» AI-чата для индикатора
+ * загрузки. Заменяет статичное «Кора печатает ответ...» на живой прогресс.
+ */
+function chatV2StageLabel(
+  stage: 'understanding' | 'searching' | 'writing' | 'slow' | null,
+): string {
+  switch (stage) {
+    case 'understanding':
+      return 'Понимаю вопрос…';
+    case 'searching':
+      return 'Ищу в памяти…';
+    case 'writing':
+      return 'Пишу ответ…';
+    case 'slow':
+      return 'Долго думаю — подождите…';
+    default:
+      return 'Кора думает…';
+  }
+}
+
 export function ChatV2Client(): ReactElement {
   const searchParams = useSearchParams();
   // Deep-link `/chat-v2?conversationId=...` (Wave 2 finishing) — позволяет
@@ -239,7 +266,23 @@ function ConversationDetail({
   const [showAdvanced, setShowAdvanced] = useState(false);
   // SBA α-5 dialog-layer — последний ответ был cache hit?
   const [lastCacheHit, setLastCacheHit] = useState<boolean>(false);
+  // §4 Ф1 — стадия «думанья» AI-чата (SSE-стрим): понимаю → ищу → пишу;
+  // 'slow' выставляется по таймеру (>45с) как состояние «долго думаю».
+  const [stage, setStage] = useState<
+    'understanding' | 'searching' | 'writing' | 'slow' | null
+  >(null);
+  // §4 Ф1 — текущий AbortController стрима, чтобы прервать его при
+  // размонтировании / смене диалога (не оставлять висящий fetch).
+  const streamControllerRef = useRef<AbortController | null>(null);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
+
+  // §4 Ф1 — при смене диалога / размонтировании прерываем активный стрим.
+  useEffect(() => {
+    return () => {
+      streamControllerRef.current?.abort();
+      streamControllerRef.current = null;
+    };
+  }, [conversationId]);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -248,30 +291,67 @@ function ConversationDetail({
     setSending(true);
     setError(null);
     setLastCacheHit(false);
-    try {
-      // Если задан validAt — конвертим из datetime-local в ISO.
-      const asOfIso = validAt
-        ? new Date(validAt).toISOString()
-        : undefined;
-      const response = await chatV2Api.ask({
-        question,
-        conversationId: conversationId ?? undefined,
-        ...(asOfIso ? { asOf: asOfIso } : {}),
-      });
+
+    // Если задан validAt — конвертим из datetime-local в ISO.
+    const asOfIso = validAt ? new Date(validAt).toISOString() : undefined;
+    const body: ChatV2AskBody = {
+      question,
+      conversationId: conversationId ?? undefined,
+      ...(asOfIso ? { asOf: asOfIso } : {}),
+    };
+
+    // Успешная пост-обработка — общая для стрима и синхронного fallback.
+    const applyAnswer = async (
+      response: ChatV2AskResponseApi,
+    ): Promise<void> => {
       setInput('');
       setLastCacheHit(response.cacheHit);
       if (!conversationId) {
         onConversationCreated(response.conversationId);
       } else {
-        // refresh
         await detail.mutate();
         onConversationChanged();
       }
+    };
+
+    // §4 Ф1 — таймер «долго думаю»: если стрим идёт дольше 45с, показываем
+    // отдельное состояние, чтобы пользователь не думал, что всё зависло.
+    const slowTimer = setTimeout(() => setStage('slow'), 45_000);
+    const controller = new AbortController();
+    streamControllerRef.current = controller;
+    try {
+      // Внешний путь — SSE-стрим со стадиями «думанья».
+      try {
+        setStage('understanding');
+        for await (const ev of streamChatV2Message(body, controller.signal)) {
+          if (ev.type === 'stage') {
+            setStage(ev.stage);
+          } else if (ev.type === 'done') {
+            await applyAnswer(ev);
+            break;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.message);
+          }
+        }
+      } catch {
+        // Прозрачный откат: стрим недоступен (kill-switch OFF → HTTP 503,
+        // сетевой сбой, серверная ошибка стрима) → синхронный путь. Здесь
+        // ошибку наружу НЕ показываем — пользователь не видит сбоя стрима.
+        const response = await chatV2Api.ask(body);
+        await applyAnswer(response);
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Не удалось получить ответ';
+      // Сюда попадаем, только если и синхронный путь упал.
+      const msg =
+        err instanceof Error ? err.message : 'Не удалось получить ответ';
       setError(msg);
     } finally {
+      clearTimeout(slowTimer);
+      if (streamControllerRef.current === controller) {
+        streamControllerRef.current = null;
+      }
       setSending(false);
+      setStage(null);
     }
   }
 
@@ -349,7 +429,10 @@ function ConversationDetail({
           messages.map((m) => <MessageView key={m.id} message={m} />)
         )}
         {sending ? (
-          <div className="text-sm italic text-fg-tertiary">Кора печатает ответ...</div>
+          <div className="flex items-center gap-2 text-sm italic text-fg-tertiary">
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+            <span>{chatV2StageLabel(stage)}</span>
+          </div>
         ) : null}
         {lastCacheHit ? (
           <div className="inline-flex items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg self-start">
@@ -444,36 +527,25 @@ function EmptyState(): ReactElement {
   );
 }
 
-/**
- * Защитная очистка текста ассистента от служебных маркеров источников
- * `[BLOCK:<id>]`, которые приходят с бэкенда: цитаты показываем отдельным
- * блоком «Источники», в самом тексте маркеры пользователю не нужны.
- */
-function stripBlockMarkers(text: string): string {
-  return text
-    .replace(/\[BLOCK:[^\]]+\]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
-
 function MessageView({ message }: { message: ChatV2Message }): ReactElement {
   const isUser = message.role === 'user';
-  const displayText = isUser ? message.text : stripBlockMarkers(message.text);
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm whitespace-pre-wrap ${
+        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm ${
           isUser
-            ? 'bg-accent text-accent-fg'
+            ? 'whitespace-pre-wrap bg-accent text-accent-fg'
             : 'bg-surface border border-border text-fg-primary'
         }`}
       >
-        {!isUser && message.mode ? (
-          <div className="mb-1 text-xs text-fg-tertiary">
-            Режим: {chatV2ModeLabel(message.mode)}
-          </div>
+        {!isUser ? (
+          <div className="mb-1 text-xs text-fg-tertiary">✨ Мастер Кора</div>
         ) : null}
-        <div>{displayText}</div>
+        {isUser ? (
+          <div>{message.text}</div>
+        ) : (
+          <AssistantMarkdown text={message.text} />
+        )}
 
         {!isUser && message.citations.length > 0 ? (
           <div className="mt-3 space-y-1.5 border-t border-border pt-2">

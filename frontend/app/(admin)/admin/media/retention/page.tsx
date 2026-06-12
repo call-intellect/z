@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { RetentionClient } from './RetentionClient';
 
 export const metadata: Metadata = {
-  title: 'Сроки хранения — Z-Admin',
+  title: 'Сроки хранения',
 };
 
 /**

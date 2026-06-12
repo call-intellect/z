@@ -47,6 +47,7 @@ import { useSWRConfig } from 'swr';
 import { useIssues } from '@/hooks/tracker/useIssues';
 import { useStates } from '@/hooks/tracker/useStates';
 import { issuesApi } from '@/api/tracker/issues.api';
+import { humanizeApiError } from '@/api/api-error';
 import { toast } from 'sonner';
 import {
   ISSUE_PRIORITY_LABELS,
@@ -266,7 +267,7 @@ export function Board({
               },
             );
           } catch (err) {
-            toast.error(`Не удалось переставить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
+            toast.error(`Не удалось переставить задачу: ${humanizeApiError(err, 'попробуйте ещё раз')}`, { duration: 5000 });
             console.error(err);
           } finally {
             setPendingTransitionIssueId(null);
@@ -338,7 +339,7 @@ export function Board({
           { revalidate: true },
         );
       } catch (err) {
-        toast.error(`Не удалось переместить задачу: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
+        toast.error(`Не удалось переместить задачу: ${humanizeApiError(err, 'попробуйте ещё раз')}`, { duration: 5000 });
         console.error(err);
       } finally {
         setPendingTransitionIssueId(null);
@@ -648,15 +649,15 @@ function showAiSuggestionsToasts(
     if (passesThreshold) {
       const summary = buildFieldsSummary(fields);
       if (summary) {
-        toast(`AI предлагает: ${summary}. Принять?`, { duration: 12000, action: {
+        toast(`Кора предлагает: ${summary}. Принять?`, { duration: 12000, action: {
             label: 'Принять',
             onClick: async () => {
               try {
                 await acceptFieldSuggestions(issue.id, fields, ctx);
                 await ctx.mutateBoard();
-                toast.success('Подсказки AI применены.');
+                toast.success('Подсказки Коры применены.');
               } catch (err) {
-                toast.error(`Не удалось применить подсказки: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
+                toast.error(`Не удалось применить подсказки: ${humanizeApiError(err, 'попробуйте ещё раз')}`, { duration: 5000 });
               }
             },
           } });
@@ -668,7 +669,7 @@ function showAiSuggestionsToasts(
   if (suggestions.goal && suggestions.goal.confidence >= AI_CONFIDENCE_THRESHOLD) {
     const goalId = suggestions.goal.goalId;
     const pct = Math.round(suggestions.goal.confidence * 100);
-    toast(`AI предлагает связать с целью (∼${pct}%). Принять?`, { duration: 12000, action: {
+    toast(`Кора предлагает связать с целью (∼${pct}%). Принять?`, { duration: 12000, action: {
         label: 'Связать',
         onClick: async () => {
           try {
@@ -676,7 +677,7 @@ function showAiSuggestionsToasts(
             await ctx.mutateBoard();
             toast.success('Задача связана с целью.');
           } catch (err) {
-            toast.error(`Не удалось связать с целью: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`, { duration: 5000 });
+            toast.error(`Не удалось связать с целью: ${humanizeApiError(err, 'попробуйте ещё раз')}`, { duration: 5000 });
           }
         },
       } });

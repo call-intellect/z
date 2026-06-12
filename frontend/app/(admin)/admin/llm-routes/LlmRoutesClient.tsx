@@ -36,6 +36,7 @@ import {
   AdminLoading,
 } from '../AdminStateViews';
 import { EditRouteDialog } from './EditRouteDialog';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 export function LlmRoutesClient() {
   const { routes, error, isLoading, mutate } = useLlmRoutes();
@@ -72,7 +73,7 @@ export function LlmRoutesClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Управление роутами LLM' },
       ]}

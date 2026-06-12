@@ -23,7 +23,12 @@ export const InviteMemberSchema = z.object({
     .or(z.literal('').transform(() => undefined)),
   /** Имя сотрудника (для шаблона письма и карточки). */
   name: z.string().trim().min(1, 'Имя обязательно').max(120).optional(),
-  role: z.enum(['admin', 'manager']).default('manager'),
+  /**
+   * Роль участника. A5 / Р3 (2026-06-10, решение владельца): добавлены `coo`
+   * (операционный директор) и `hr_partner` (HR-партнёр) — уже есть в enum
+   * `MembershipRole` и RBAC-политиках; разблокированы для выдачи через API.
+   */
+  role: z.enum(['admin', 'manager', 'coo', 'hr_partner']).default('manager'),
   /**
    * Бизнес-Person, для которого создаётся приглашение (ТЗ «Команда + доступы»
    * Фаза 0.1). Если задан — email/имя берутся из карточки (когда не переданы

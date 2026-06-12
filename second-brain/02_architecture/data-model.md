@@ -53,6 +53,28 @@ type: architecture
 
 **Поле `card_id`** — опциональная привязка к CRM-карточке (см. [[../01_projects/cards]]). `onDelete: SetNull` — при удалении карточки встреча сохраняется, привязка обнуляется. Один `card_id` (one-to-many от Card к Meeting). Несколько карточек на встречу — vNext.
 
+**Поле `visibilityScope String @default("participants") @db.VarChar(16)`** (миграция `20260610130000_meeting_visibility`, ТЗ meeting-visibility-who-can-see) — «Кому видно» встречу: кто видит её страницу (а с ней — видео/запись/расшифровку/отчёт). Значения: `owner_only` (только создатель + bypass-роли) · `participants` (ДЕФОЛТ — создатель + участники с `Participant.userId`) · `custom` (участники + явные гранты `MeetingAccessGrant`) · `org` (вся компания одного tenant). Источник правды доступа к READ-поверхностям встречи (предикат `MeetingVisibilityService.canView`). **Отдельная подсистема от графа знаний** — `visibilityScope` НЕ читается ingest-конвейером/`block-access-deriver` (тот читает `closedGroupKind`/тип/участников). Управление встречей остаётся host-only. Kill-switch `MEETING_VISIBILITY_ENABLED` (=false → legacy owner-only). Back-relation: `accessGrants MeetingAccessGrant[]`.
+
+### MeetingAccessGrant
+
+```json
+{
+  "id": "ckxxxxxxxxxxxx",
+  "tenantId": "cmp...",
+  "meetingId": "meeting_123",
+  "granteeType": "person",
+  "granteeId": "person_456",
+  "grantedById": "user_abc",
+  "created_at": "2026-06-10T12:00:00Z"
+}
+```
+
+Явный грант доступа к встрече при `visibilityScope='custom'` — кому хост открыл руками (миграция `20260610130000_meeting_visibility`).
+- `granteeType String @db.VarChar(8)` — `'person'` (грант человеку, `granteeId` = `Person.id`) или `'group'` (грант группе, `granteeId` = `KnowledgeGroup.id`; срабатывает по **ПРЯМОМУ** членству, БЕЗ матрицы видимости отделов).
+- `grantedById` — `User.id` хоста, выдавшего доступ.
+- `tenantId` — денормализован скаляром для индекса `(tenantId, meetingId)`; FK/каскад идёт через `Meeting` (`onDelete: Cascade` — при удалении встречи гранты удаляются), НЕ через `Org`.
+- Индексы: unique `(meetingId, granteeType, granteeId)` (идемпотентность PATCH), `(tenantId, meetingId)`, `(granteeType, granteeId)`.
+
 ### Card (CRM)
 
 ```json
@@ -191,7 +213,9 @@ transcription_processing
 ai_processing → ai_ready
 ```
 
-Параллельная ветка: `failed` (с любого этапа, с указанием причины).
+Параллельная ветка: `failed` (с любого этапа, с указанием причины в `failureReason`). Известные коды `failureReason` для «встреча технически не состоялась» (2026-06-10, ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md)):
+- **`ended_before_start`** — хост нажал «Завершить», когда встреча ещё в `scheduled` (вебхук `room_started` потерян, записи нет): `finish` переводит `scheduled → failed`, отвечает 200 (не 409); UI показывает нейтральный текст «Встреча завершена (запись не велась)», не «ошибка» (`host-controls.service.finish`, Р1).
+- **`never_activated`** — брошенную `scheduled` старше `max(idle.timeoutMinutes, 30)` мин подбирает idle-cron: если LiveKit-room пуста/нет — `scheduled → failed('never_activated')`; если в room есть живые участники (значит `room_started` потерян, но встреча идёт) — наоборот `scheduled → active` + попытка стартовать запись (recovery) (`idle-meeting.cron`, Р2).
 
 ## Таблицы для аудио-дорожек
 
@@ -296,13 +320,16 @@ LlmModelPrice {
 
 ```
 Source {
-  id, tenantId, type: SourceType (meeting|chat|phone_call|bot|email|web_form|external),
+  id, tenantId, type: SourceType (meeting|chat|phone_call|bot|email|web_form|external
+                                  |conversational|tracker_event|chatbox|daily_checkin|meeting_report),
   name, config Json?, dataClass: DataClass (public|internal|sensitive|private),
   isActive Boolean (default true), createdAt, updatedAt
   @@unique([tenantId, type, name])
   @@index([tenantId, isActive])
 }
 ```
+
+> **`SourceType.meeting_report`** (2026-06-11, миграция `source_type_meeting_report`) — вторичный источник графа: чистая выжимка AI-отчёта встречи (см. [[knowledge-core]] §«Отчёт встречи → граф»). Дефолтный `Source(type='meeting_report', name='Отчёты встреч Z')` lazy-upsert'ится `ReportIngestAdapter`. Enum-значение добавлено **отдельным файлом миграции** перед миграцией поля `IdeaBlock.primarySource` (`ALTER TYPE ... ADD VALUE` не выполняется в одной транзакции с другим DDL в части версий PG).
 
 Дефолтный `Source(type=meeting, name='Встречи Z')` создаётся **автоматически
 при создании Org** (см. `OrgsService.createForOwner`). Backfill для
@@ -365,6 +392,7 @@ IdeaBlock {
   embedding vector(1536),                -- text-embedding-3-small
   status (draft | canonical | merged_into | archived),
   mergedIntoId? → IdeaBlock,
+  primarySource? VARCHAR(16),            -- 'transcript' | 'report' | null=transcript (2026-06-11, миграция idea_block_primary_source)
   evidenceCount, dynamicScore Decimal(8,4),
   createdAt, updatedAt,
   search_tsv tsvector                    -- generated column (postgres-init.sql)
@@ -375,6 +403,8 @@ IdeaBlock {
 ```
 
 HNSW индекс на `embedding` через `vector_cosine_ops` + GIN на `search_tsv`.
+
+**Поле `primarySource String? @db.VarChar(16)`** (миграция `idea_block_primary_source`, ТЗ [`report-to-graph-phase2`](../../plans/tz/2026-06-11-report-to-graph-phase2.md)) — провенанс блока на уровне самого блока: `'transcript'` (дословный транскрипт, первичный) | `'report'` (вторичный — из AI-отчёта встречи, источник `SourceType.meeting_report`) | `null` (исторические блоки трактуются как `'transcript'`). Нужно на уровне блока (а не только evidence), т.к. LLM-арбитр дедупа слеп к источнику, а evidence бывает мульти-source. Детерминированный признак для merge/distill-гардов: транскрипт всегда побеждает report при дедупе; report-блок — capped confidence (≤ `knowledge.reportBlockConfidenceCap`, default 0.6) + заниженный dynamicScore. Поле nullable, backfill не нужен. Подробно — [[knowledge-core]] §«Отчёт встречи → граф».
 
 ### IdeaBlockEvidence
 
@@ -561,6 +591,19 @@ Card {
 - `extractorVersion: String?` — `'v2'` если задача создана `meeting-analyze-v2.worker`'ом, NULL = legacy.
 - `assigneeUserId: String?` — жёсткая связь с `User.id` (relation `assignee`, `onDelete: SetNull`). Заполняется AI-pipeline после ТЗ 2026-05-25 `hard-participant-identification`: `ParticipantContextService.loadForMeeting` отдаёт participants → промпт (`tasks-v2` / `tasks-structured`) → LLM возвращает `assigneeUserId` → `TaskAssigneeResolverService` валидирует против participants (галлюцинации режутся, ≥2 кандидатов → null + метрика `z_task_assignee_ambiguous_total`). `assigneeRaw` сохраняется ВСЕГДА — для UI fallback и гостей. Index `@@index([assigneeUserId])` — для фильтра «мои задачи».
 
+**`Task` — source-поля (миграция `20260611110000_chatbox_tasks_and_customer_link`, ТЗ chatbox-memory-finishing Ф5/Ф6):** задача больше не обязана быть из встречи.
+- `meetingId: String?` — **стал nullable** (был NOT NULL): задача может родиться из переписки ChatBox или трекера. ⚠ Каскад на view-типы: все читатели «задач встречи» (`where:{meetingId}`) и UI-мапперы должны допускать `meetingId=null` (см. [[code-pitfalls]] §«meetingId nullable»).
+- `sourceType: String @default("meeting")` (FK на модель `TaskSource`) — `'meeting'` | `'chatbox'` | … : откуда пришла задача. Backfill пустых → `'meeting'`: `scripts/backfill-task-source-type.ts` (safety no-op, колонка с дефолтом).
+- `sourceChatSessionId: String?` / `sourceChatId: String?` — для `sourceType='chatbox'`: на какую сессию/чат переписки опирается задача (извлечена `chatbox` task-extractor'ом Ф5, гейт `CHATBOX_TASK_EXTRACTION_ENABLED`).
+- **Межисточниковый дедуп (Ф6):** задача из переписки, семантически совпадающая (cosine ≥ `tasks.cross_source_dedupe_threshold`, дефолт 0.85) с задачей из встречи/трекера, не плодит дубль. Гейт `TASKS_CROSS_SOURCE_DEDUPE_ENABLED`.
+
+**`TaskSource`** — новая справочная модель/enum источника задачи (значения `meeting`/`chatbox`/…), на которую ссылается `Task.sourceType`.
+
+**ChatBox: связка клиента переписки с графом (та же миграция).** `ChatboxCustomer` и `ChatboxChannelClient` (`ChannelClient`) получили:
+- `linkedPersonId: String?` — связь клиента/контакта переписки с `Person` графа знаний.
+- `linkMode: String?` — как установлена связка (ручная/по email/нечёткий матчинг по имени, гейт `chatbox.match.name_fuzzy_enabled`).
+Это снимает прежнее ограничение «`ChatboxCustomer` не связан с `Person`/`Entity`» (см. реестр не-сделанного).
+
 **`MeetingChapter` дополнительно:**
 - `evidenceBlockIds: String[]` (default `[]`) — id блоков главы.
 - `extractorVersion: String?` — `'v2'` или NULL (legacy).
@@ -641,7 +684,7 @@ erDiagram
 ### Группа А (с UI)
 - `Department(id, tenantId, name, parentDepartmentId?, deletedAt?)` — иерархия в схеме, UI плоский.
 - `Role(id, tenantId, name, departmentId?, tags[], deletedAt?)` — бизнес-должность.
-- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК.
+- `Person(id, tenantId, userId?, name, email, primaryDepartmentId?, entityId?, deletedAt?)` — сотрудник ЛК. **Partial unique по email (2026-06-10, в `postgres-init.sql`, не в schema):** `persons_tenant_email_active_uniq ON "persons" ("tenantId", lower("email")) WHERE "deletedAt" IS NULL AND "email" <> ''` — не более одной активной карточки на email в Org. (Schema-уровневый `@@unique([tenantId, email, deletedAt])` бесполезен: `NULL ≠ NULL` в PG пропускает несколько активных дублей с `deletedAt IS NULL`.) Индекс с **self-skip** при существующих дублях (встаёт после backfill `backfill-merge-duplicate-persons.ts`); при создании `Person` дедуп по email идёт ещё до вставки (`persons.service.create` → 409 `person_email_taken` либо линковка безличной карточки). ТЗ [`meeting-stuck-and-team-roster-fixes`](../../plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md) Ф2–Ф4.
 - `PersonRole(id, tenantId, personId, roleId, validFrom, validTo?)` — M:M Person↔Role с временем.
 - `JobDescription(id, tenantId, roleId, contentMd, sourceDocumentId?, version, deletedAt?)`.
 - `Skill(id, tenantId, name, description?, deletedAt?)`.
@@ -651,6 +694,7 @@ erDiagram
 ### Группа Б (без UI в Фазе 0)
 - `Mission, Vision, Strategy` — Уровень 1.
 - `Process, ProcessStep, Regulation, Policy` — Уровень 3. **SBA α-7** (2026-05-22) расширил эти модели in-place: `entityId @unique?`, `scope`, `ownerPersonId` (для Regulation/Policy), `currentVersionId → CardVersion`, `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `embedding Unsupported("vector(1536)")?`, `lastConfirmedAt`. Для `Regulation` дополнительно — `statement` (структурированное утверждение, альтернатива `contentMd` для дедупа/chat-v2), `supersedesId` (self-relation для версионирования). Для `Process` — `inputs`/`outputs`/`metricsJson` (JSON, не путать с моделью `Metric`). UI на `/regulations` (master-detail с фильтром `kind`).
+- **`Instruction`** (мастер-ТЗ промптов, Волна 6 A10, миграция `20260610120000_add_instruction`, `@@map("instructions")`) — first-class сущность **«Инструкция»**: пошаговое руководство «как сделать X» для **одной** роли. Полностью **зеркалит `Regulation`** + добавляет single-role признак `forRole String? @db.VarChar(120)`. Поля как у Regulation: `name @db.VarChar(300)`, `contentMd @db.Text`, `status ProcessStatus`, `version`, `confidence?`, `statement?` (структурированная суть для дедупа/retrieval), `scope?`, `ownerPersonId?` (FK Person, relation `InstructionOwnerPerson`), `supersedesId?` (self-relation `InstructionSupersedes` — версионирование), `currentVersionId? → CardVersion` (`InstructionCurrentVersion`), `entityId @unique?` (связка с графом), `sourceBlockIds[]`, `personSubjectIds[]`, `dataClass`, `dataClassAudit Json?`, `embedding Unsupported("vector(1536)")?` (name+statement, для KNN-дедупа), `lastConfirmedAt?`. Индексы btree: `@@unique([tenantId, name])`, `[tenantId, status]`, `[tenantId, forRole]`, `[tenantId, ownerPersonId]`, `[currentVersionId]`. HNSW `instructions_embedding_hnsw_cosine_idx` (cosine, `WHERE embedding IS NOT NULL`) — в `postgres-init.sql`, не в schema. Читается через тот же `/regulations` API с `kind=instruction` (см. api-layer.md). Извлечение/storage-роутинг — specialist-3-1-regulations + specialists-combined (`forRole` из `scope=role:<id>` или `roles[0]`).
 - `Tool` — Уровень 4.
 - `Metric` — Уровень 5.
 - `Decision` — миграционный долг.
@@ -948,6 +992,18 @@ Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` п�
 **`Person` (обратная связь):** `commitmentsToMe IdeaBlock[] @relation("CommitmentRecipient")` — обещания, адресованные этому человеку.
 
 **`IdeaBlockLinkType` (новое значение):** `resolves` — запись `signalType='commitment_status'` закрывает исходное `commitment` через `IdeaBlockLink`.
+
+### Probe-система — enum `ProbeStatus` (2026-06-11, Фаза 1)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Полная сущность `ProbeEvent` и pipeline — [[../01_projects/probe-agent]].
+
+Жизненный цикл probe (`ProbeEvent.status`, enum `ProbeStatus`): `pending → dispatched` (успех) либо `dropped_dedup` / `dropped_rate_limit` / `dropped_cold_start` / `dropped_dataclass_gate` / `expired` (отбраковки). Фаза 1 добавила **два значения** (миграция `20260611120000_probe_status_digest` — `ALTER TYPE "ProbeStatus" ADD VALUE`, аддитивно):
+- **`queued_digest`** — deferrable-probe сверх бюджета получателя **отложен в батч-дайджест** (вместо `dropped_rate_limit`); `ProbeDigestCron` соберёт его в одно сводное уведомление `probe.digest` и пометит `dispatched`.
+- **`suppressed_stale`** — повод **закрылся сам между `suggest` и `dispatch`** (recheck-предикат `PROBE_REASON_RECHECK` показал, что пробел больше не актуален); probe не шлётся, LLM не зовётся.
+
+Autonomy W2 (2026-06-12) добавила **ещё два значения** (миграция `20260612090000_probe_status_w2_autonomy`, `ADD VALUE IF NOT EXISTS`, аддитивно):
+- **`dropped_low_value`** — probe **не прошёл гейт ценности**: priority ниже `probe.minValuePriority` (30) — вопрос не задаётся вовсе (человека не беспокоим ради малоценного уточнения).
+- **`routed_to_digest`** — probe с NUDGE-причиной (7 типов `NUDGE_REASONS`) или ниже `probe.immediatePushMinPriority` (70) **маршрутизирован в дайджест вместо немедленного пуша**; у digest-статусов задаётся `expiresAt`. Также сюда уходят дропы cold-start (включён, 24ч).
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
@@ -1414,6 +1470,14 @@ voxTaskId  String?   // id задачи транскрибации в Vox (ASR) 
 
 Уникальный ключ на пару «транскрипт × участник (по `livekitIdentity`)`. Дорожки теперь пишутся через `upsert` (а не `create`) — повторный прогон транскрибации одного участника обновляет существующую запись, не плодит дубли. Это нижний слой per-track идемпотентности (вместе с `AudioTrack.voxTaskId`).
 
+### `TranscriptTrack.segments` (миграция `20260611100000_transcript_track_segments`, ТЗ asr-segment-timings-persist-and-merge)
+
+```prisma
+segments  Json?   // посегментные тайминги Vox (start/end/text по сегментам дорожки)
+```
+
+Vox-модель `v3_e2e_rnnt` отдаёт **посегментные** (а не пословные) тайминги в `extendedResult.segments` — даже при `diar:false`. Раньше эти тайминги терялись на этапе персиста+мерджа: транскрипт собирался «дорожками подряд» (сначала весь говорящий A, потом весь B), поведенческие метрики выходили абсурдными. Теперь сегменты сохраняются в `TranscriptTrack.segments` и `merger.ts` сводит дорожки **по времени** (interleave по `start`), а не подряд. Корень и форма ответа — см. [[code-pitfalls]] §«Vox: сегментные тайминги в extendedResult».
+
 ### `Insight.dataClassAudit` / `Decision.dataClassAudit` (Фаза 8, коммит `22446248`)
 
 ```prisma
@@ -1460,10 +1524,12 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 ### `SourceType += chatbox`
 
 ```prisma
-enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox }
+enum SourceType { meeting chat phone_call bot email web_form external conversational tracker_event chatbox daily_checkin }
 ```
 
 Сессия клиентского чата → `RawEvent(sourceType='chatbox', sourceExternalId=<sessionId>, dataClass='sensitive')` → knowledge-core (block-ingest подхватывает сам, без изменений).
+
+> **`SourceType += daily_checkin` (2026-06-10).** Ежедневный чек-ин сотрудника (план/отчёт) → knowledge-core. Мост `CheckinIngestService` пишет `RawEvent(sourceType='daily_checkin', sourceExternalId=<checkInId>, dataClass='sensitive')` на событие `checkin.created`. Enum-значение добавлено **отдельной** миграцией `20260610140000_source_type_daily_checkin` (`ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'daily_checkin'` — `ADD VALUE` нельзя выполнять в одной транзакции с использованием значения), применяется авто через `migrate deploy`. ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md); детали моста — [[../01_projects/ai-jobs]] §«Ежедневный чек-ин — источник графа знаний».
 
 ### 8 моделей домена (все tenant-scoped, upsert по `@@unique([tenantId, externalId])`)
 
@@ -1617,5 +1683,70 @@ enum SkillTraitStatus {
   - `assignment UploadSpeakerAssignment @default(unassigned)`, `personId String?` (FK `Person`, SetNull) ИЛИ внешний `externalName`/`externalCompany`/`externalPosition VarChar(200)`.
   - `mergedIntoLabel String?` — слияние двух дорожек в одного человека (без удаления записи, сохраняет провенанс), `participantId String?`.
   - `@@unique([meetingId, label])`, `@@index([meetingId])`.
+
+[[../index|← index]]
+
+## Служба поддержки — деск + закрытый контур + клон (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
+
+### Расширение существующих сущностей (миграция `_phase1`)
+
+- **`enum KnowledgeGroupKind += support`** — закрытый контур техподдержки (синглтон per вендор-Org, `refId=null`). Было 4 вида (department/leadership/council/personal). ⚠ `ALTER TYPE ... ADD VALUE` не-транзакционна (нормально).
+- **`Issue` += support-поля** (все nullable, заполняются ТОЛЬКО для тикетов поддержки — cross-tenant: клиент из другой Org):
+  - `supportCustomerOrgId String?` (Org клиента), `supportCustomerUserId String?` (глобальный `User.id`), `supportCustomerContact VarChar(320)?` (email/имя для деска).
+  - SLA-поля: `firstResponseDueAt`/`resolutionDueAt`/`firstRespondedAt`/`slaBreachedAt DateTime?`.
+  - Индексы `@@index([tenantId, supportCustomerUserId])`, `@@index([tenantId, firstResponseDueAt])`.
+- **`IssueComment` += провенанс/черновик клона** (поле `access` `"internal"|"external"` уже было — переиспользуется как видимость клиенту, R-INV-3):
+  - `authorType String @default("human")` (human|clone|system), `draftState String?` (null|pending|accepted|edited|rejected — только для clone), `cloneConfidence Decimal(4,3)?` (калиброванная уверенность), `groundednessScore Decimal(4,3)?` (результат critic).
+
+### Новые модели
+
+- **`SupportSlaPolicy`** (миграция `_phase1`) — синглтон SLA-политики per вендор-Org: `tenantId @unique`, `firstResponseMins Int @default(60)`, `resolutionMins Int @default(480)`, `businessHoursOnly Boolean @default(false)`.
+- **`IssueRating`** (миграция `_phase1`) — CSAT/оценка клиента (чистый сигнал для петли обучения): `issueId @unique`, `score Int` (1..5), `comment Text?`, `ratedByUserId String?`, `@@index([tenantId, createdAt])`.
+- **`SupportDraftOutcome`** (миграция `_draft_outcome`) — обучающий сигнал (R-INV-2), пара черновик→финал + тип правки: `issueId`, `draftCommentId String?`, `taskType @default("support-clone-draft")`, `draftText`/`finalText Text` (finalText null если отклонён), `outcome` (accepted|edited|rejected), `editType String?` (factual|tone|policy|empty), `cloneConfidence`/`groundednessScore Decimal(4,3)?`, `promotedToContour Boolean @default(false)` (прошёл ли гейт качества → в контур), `@@index([tenantId, taskType, createdAt])`, `@@index([tenantId, issueId])`.
+- **`SupportCuratorAction`** (миграция `_curator_action`) — аудит решений ночного куратора контура (что/почему/verdict debate; soft-archive only).
+
+[[../index|← index]]
+
+## Слой метода клона — RolePrinciple + SkillTrait.layer + CloneQueryLog (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
+
+### `RolePrinciple` (новая, `@@map("role_principles")`) — Reflection-слой принципов роли
+
+Синтезированный ПРИНЦИП/паттерн решений ДОЛЖНОСТИ (не черта человека): «При срыве срока — сначала эскалирует владельцу с 2 вариантами, затем режет scope». Отдельный узел (не SkillTrait), потому что принцип = обобщение многих наблюдений с периодическим ресинтезом, а черта = одно наблюдение. Пишется cron'ом `RolePrincipleSynthesisCron` (05:30, см. [[../01_projects/workers-queues]]).
+
+- `tenantId` (FK `Org`, Cascade) + `roleId String` (**без FK** — принцип переживает ротацию носителя), `situation VarChar(200)` (метка-ситуация: «срыв срока», «выбор подрядчика»), `statement Text` (обобщённая поведенческая формулировка ПРОЦЕССА, без оценок личности).
+- Grounding: `sourceBlockIds String[]` (IdeaBlock.id, на которых построено обобщение, ≥2), `observationCount Int`, `confidence SkillConfidence`.
+- `embedding Unsupported("vector(1536)")?` (situation+statement — дедуп 0.85 / ретрив), `status RolePrincipleStatus @default(active)`, `supersededById String?`, `lastSynthesizedAt`.
+- **Новый enum `RolePrincipleStatus`**: `active` / `superseded` / `archived`.
+- Индексы: `@@index([tenantId, roleId, status])`, `@@index([tenantId, situation])` + **HNSW** `role_principles_embedding_hnsw_cosine_idx` (вне schema.prisma — `postgres-init.sql`, `bun run apply-postgres-init`).
+
+### `SkillTrait.layer` (+ новый enum `SkillTraitLayer`)
+
+Дискриминатор слоя черты — чтобы persona-compile v2 секционировал (без него черты и ценности смешивались бы в общий топ-20):
+
+```prisma
+enum SkillTraitLayer {
+  skill          // поведение при решениях (текущий дефолт — все существующие черты)
+  value          // что ставит выше при конфликте приоритетов (revealed preference)
+  motivation     // что драйвит в работе
+  process_marker // конструктивный маркер процесса (перечисляет критерии / перепроверяет)
+}
+```
+
+- **`SkillTrait += layer SkillTraitLayer @default(skill)`** — backward-compatible (существующие черты получают `skill`).
+- Новый индекс `@@index([profileId, layer, status])` — выборка слоя при сборке persona и KNN-merge детекторов (merge фильтрует кандидатов по layer — value не сливается со skill).
+- Пишут: `skill-trait-detect` (skill, как раньше), `value-motivation-detect` (value/motivation, Э1.3), `process-marker-detect` (process_marker, Э2.1).
+
+### `CloneQueryLog` (новая, `@@map("clone_query_logs")`) — журнал запросов к клону
+
+Лёгкий лог каждого вопроса клону (все 4 пути ask, включая отказы) — видимость владельцу, кто и что спрашивает у клонов, и доля отказов. Отдаётся через `GET /api/v1/clones/query-log` (OrgAdminGuard, см. [[../01_projects/api-layer]] §Clones).
+
+- `tenantId` (FK `Org`, Cascade), `cloneScope PersonaScope` (person/role), `cloneTargetId String`, `userId String` (кто спросил).
+- Вопрос **не хранится целиком**: `questionPreview VarChar(200)` + `questionHash` (sha256).
+- Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
+- Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
 
 [[../index|← index]]

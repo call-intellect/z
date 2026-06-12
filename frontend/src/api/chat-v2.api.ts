@@ -101,6 +101,87 @@ export interface ChatV2AskResponseApi {
   cacheHit: boolean;
 }
 
+/**
+ * §4 Ф1 — событие SSE-стрима ответа AI-чата (стадии «думанья» + финал).
+ * Контракт: `POST /api/v1/chat-v2/messages/stream` (тело — `ChatV2AskBody`).
+ *   - `stage` — текущая стадия: понимаю вопрос / ищу в памяти / пишу ответ.
+ *   - `done` — финал, несёт весь `ChatV2AskResponseApi`.
+ *   - `error` — серверная ошибка стрима (caller делает fallback на sync).
+ * Heartbeat-строки (начинаются с `:`) игнорируются на уровне парсера.
+ */
+export type ChatV2StreamEvent =
+  | { type: 'stage'; stage: 'understanding' | 'searching' | 'writing' }
+  | ({ type: 'done' } & ChatV2AskResponseApi)
+  | { type: 'error'; code: string; message: string };
+
+/**
+ * §4 Ф1 — SSE-стрим ответа AI-чата. Async-генератор: отдаёт стадии «думанья»
+ * и финальное событие `done` с готовым ответом.
+ *
+ * Kill-switch OFF → сервер отвечает HTTP 503 ДО SSE; любой не-OK статус (и
+ * отсутствие тела) → бросаем — вызывающий перехватывает и делает прозрачный
+ * откат на синхронный `chatV2Api.ask`.
+ *
+ * Закрытие: вызывающий передаёт `signal` от `AbortController` и вызывает
+ * `abort()` при размонтировании/смене диалога.
+ */
+export async function* streamChatV2Message(
+  body: ChatV2AskBody,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatV2StreamEvent, void, unknown> {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+  const res = await fetch(`${baseUrl}/api/v1/chat-v2/messages/stream`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`chat-v2 stream: HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE: события разделены `\n\n`.
+      let idx: number;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        // Игнорируем heartbeat (`: heartbeat`).
+        if (raw.startsWith(':')) continue;
+        const dataLine = raw.split('\n').find((l) => l.startsWith('data:'));
+        if (!dataLine) continue;
+        const payload = dataLine.slice(5).trim();
+        try {
+          const ev = JSON.parse(payload) as ChatV2StreamEvent;
+          yield ev;
+          if (ev.type === 'done' || ev.type === 'error') {
+            return;
+          }
+        } catch {
+          // skip malformed
+        }
+      }
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* */
+    }
+  }
+}
+
 export interface ChatV2ListConversationsQuery {
   status?: ChatV2ConversationStatusApi;
   scope?: ChatV2ScopeApi;

@@ -726,7 +726,7 @@ export class DirectorDashboardService {
    *
    *   - `meetingsProtocoled`        — `Meeting` tenant'а в окне с готовым AI-отчётом
    *                                   (через relation `aiResult`: summaryFast OR
-   *                                   summary заполнены) ИЛИ `analyzeV2Status='ready'`;
+   *                                   summary заполнены);
    *   - `tasksExtracted`            — `Task` tenant'а, созданные в окне;
    *   - `decisionsExtracted`        — `Decision` tenant'а, созданные в окне;
    *   - `questionsAnsweredByMemory` — assistant-сообщения `ChatV2Message` с непустым
@@ -751,14 +751,14 @@ export class DirectorDashboardService {
       questionsRows,
       commitmentsKept,
     ] = await Promise.all([
-      // Встречи с готовым AI-отчётом: aiResult.summaryFast OR summary заполнены,
-      // ИЛИ analyzeV2Status='ready'. createdAt в окне.
+      // Встречи с готовым AI-отчётом: aiResult.summaryFast OR summary заполнены.
+      // createdAt в окне. (v2-ветка analyzeV2Status удалена 2026-06-10 — мёртвый
+      // стек; колонка осталась в БД, но больше не участвует в подсчёте.)
       this.prisma.meeting.count({
         where: {
           tenantId,
           createdAt: { gte: since },
           OR: [
-            { analyzeV2Status: 'ready' },
             { aiResult: { is: { summaryFast: { not: null } } } },
             { aiResult: { is: { summary: { not: '' } } } },
           ],

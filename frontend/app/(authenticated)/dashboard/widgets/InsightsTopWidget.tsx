@@ -15,7 +15,12 @@ import {
   CAUSE_CATEGORY_BG_CLASS,
   CAUSE_CATEGORY_LABELS_RU,
 } from '@/lib/cause-category-presentation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+} from '@/ui/components/dashboard/modern';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
 /**
@@ -48,18 +53,15 @@ export function InsightsTopWidget() {
   })();
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle size={16} className="text-accent" />
-          Топ-5 повторяющихся проблем
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <GlassCard>
+      <CardTitle icon={<AlertTriangle size={16} />} grad={GRAD.amber}>
+        Топ-5 повторяющихся проблем
+      </CardTitle>
+      <div className="mt-4">
         {swr.isLoading ? (
           <Skeleton className="h-32" />
         ) : !swr.data || swr.data.items.length === 0 ? (
-          <p className="py-6 text-center text-xs text-fg-tertiary">
+          <p className="py-6 text-center text-xs" style={{ color: CHART.faint }}>
             Повторяющихся сигналов пока не выявлено.
           </p>
         ) : (
@@ -85,13 +87,20 @@ export function InsightsTopWidget() {
                   <li key={it.id}>
                     <Link
                       href={`/insights/${it.id}`}
-                      className="flex items-start justify-between gap-3 rounded-md border border-transparent p-2 transition hover:border-border-subtle hover:bg-fg-tertiary/5"
+                      className="flex items-start justify-between gap-3 rounded-xl p-3 transition hover:brightness-110"
+                      style={{ background: 'oklch(1 0 0 / 0.04)' }}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="line-clamp-2 text-sm text-fg-primary">
+                        <p
+                          className="line-clamp-2 text-sm"
+                          style={{ color: CHART.text }}
+                        >
                           {it.statement}
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-fg-tertiary">
+                        <div
+                          className="mt-1 flex flex-wrap items-center gap-2 text-[10px]"
+                          style={{ color: CHART.faint }}
+                        >
                           <span
                             className={`rounded px-1.5 py-0.5 font-medium ${CAUSE_CATEGORY_BG_CLASS[cat]}`}
                           >
@@ -102,11 +111,11 @@ export function InsightsTopWidget() {
                           <span>{INSIGHT_SEVERITY_LABEL[it.severity]}</span>
                           <span>·</span>
                           <span
-                            className={
+                            style={
                               it.dynamicLabel === 'spike' ||
                               it.dynamicLabel === 'growing'
-                                ? 'text-danger'
-                                : ''
+                                ? { color: CHART.red }
+                                : undefined
                             }
                           >
                             <TrendingUp size={10} className="inline" />{' '}
@@ -114,7 +123,10 @@ export function InsightsTopWidget() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end text-[10px] text-fg-tertiary">
+                      <div
+                        className="flex flex-col items-end text-[10px]"
+                        style={{ color: CHART.faint }}
+                      >
                         <span className="tabular-nums">
                           {Math.round(it.frequencyScore * 100)}%
                         </span>
@@ -130,12 +142,13 @@ export function InsightsTopWidget() {
         <div className="mt-3 flex justify-end">
           <Link
             href="/insights"
-            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-xs hover:underline"
+            style={{ color: CHART.cyan }}
           >
             Открыть радар <ArrowRight size={12} />
           </Link>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }

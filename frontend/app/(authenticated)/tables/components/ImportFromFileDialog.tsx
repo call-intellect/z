@@ -19,7 +19,7 @@ import { useRouter } from 'next/navigation';
 import { CloudUpload, GitMerge, Loader2, Table2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { tablesApi } from '@/api/tables.api';
 import {
   ENTITY_SYNC_LABEL_RU,
@@ -88,7 +88,7 @@ export function ImportFromFileDialog({
         router.push(`/tables/${res.tableId}`);
       } catch (e) {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось импортировать файл.',
+          humanizeApiError(e, 'Не удалось импортировать файл.'),
         );
       } finally {
         setCommitting(false);

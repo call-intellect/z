@@ -29,7 +29,9 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 |---|---|---|
 | knowledge-core | `block-distill`, `block-ingest`, `entity-merge-arbiter`, `theme-classify`, `reframing`, `entity-graph-builder`, `block-link-arbiter` | DeepSeek-flash → OpenAI-mini → Ollama |
 | chat-v2 | `chat-v2-synthesize`, `chat-v2-conversation-title`, `synthesis-clone-style` | DeepSeek-flash → OpenAI-mini → Ollama |
-| specialist 3.1 (Regulations) | `regulation-extract`, `regulation-dedupe`, `process-steps-extract` | DeepSeek-flash → OpenAI-mini → Ollama |
+| specialist 3.1 (Regulations) | `regulation-extract`, `regulation-dedupe` (`process-steps-extract` — **ретайрнут** 2026-06-10, Волна 5) | DeepSeek-flash → OpenAI-mini → Ollama |
+| document-compiler (мастер-ТЗ промптов, 2026-06-10) | `compile-org-document` | DeepSeek V4 Pro (capable). См. §«Мастер-ТЗ промптов» ниже |
+| client-protocol (мастер-ТЗ промптов, 2026-06-10) | `client-meeting-split` | free-text DEFAULT-цепочка. См. §«Мастер-ТЗ промптов» ниже |
 | specialist 3.2 (Knowledge Clone) | `knowledge-clone-extract`, `knowledge-clone-merge` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.3 (Decisions) | `decision-extract`, `decision-supersede-detect` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.4 (Card / Project / Customer) | `card-rollup-v2`, `specialist-3-4-routing` | DeepSeek-flash → OpenAI-mini → Ollama |
@@ -37,7 +39,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | specialist 3.6 (Ideas) | `idea-extract`, `idea-cluster-merge`, `idea-status-summarize` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.7 (Skill) | `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond` | **GPT-5.4 capable primary** (КРИТИЧНО) → OpenAI-mini → Ollama |
 | specialist 3.8 (Helpfulness) | `helpfulness-detect`, `helpfulness-trait-merge`, `helpfulness-spotlight-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
-| probe + dialog | `probe-formulate`, `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
+| probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
 | meeting analyze | `analyze-default`, `type-sales`, `type-interview`, `type-1on1`, ..., `review`, `retrospective`, `task_discussion` | по типу — см. `seed-llm-task-routes*.ts` |
@@ -248,6 +250,24 @@ Consumers `dialog-*` taskType'ов: chat-v2 (с Фазы 4 §2), clones v2 (`dia
 
 [[../index|← index]]
 
+## Ежедневный чек-ин — источник графа знаний (мост `daily_checkin`, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md). Профильная заметка по каналам — [[conversational-channels]] §«`daily_checkin_self`»; enum — [[../02_architecture/data-model]] §SourceType; перечень ingest-источников — [[../02_architecture/knowledge-core]].
+
+Завершённый чек-ин сотрудника (план/отчёт) теперь **кормит граф знаний** (раньше из него только считался sentiment). Мост — **событийный**, по образцу `ChatboxIngestService`:
+
+`checkin.created` → `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`) → `CheckinIngestService.ingestCheckin(tenantId, checkInId)` → `IngestService.ingest` → `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest (knowledge-core подхватывает сам, без изменений).
+
+- **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие в `RawEvent`; LLM-извлечение блоков делает обычный `block-ingest.worker` ниже по конвейеру.
+- **Best-effort и независимо** — listener зарегистрирован рядом с `CheckinSentimentAnalyzerWorker` (тоже `@OnEvent('checkin.created')`), оба в `operations.module.ts`; провал моста не ломает sentiment и наоборот.
+- **Идемпотентность** — стабильный `idempotencyKey` по `sourceExternalId=checkInId`; `occurredAt` берётся из стабильного `dateLocal` (не из мутирующего `completedAt`). **НЕ ингестит** sentiment/qualityScore (только текст плана/отчёта).
+- **v1-ограничение** — replace чек-ина того же дня = no-op (первый завершённый чек-ин = канон, т.к. `idempotencyKey` стабилен по `dateLocal`); re-ingest при replace — vNext.
+- **Без новой BullMQ-очереди и без cron** — это событийный listener.
+- **Метрика** — `z_checkin_graph_ingest_total{result}`, `result ∈ ok|skipped|error` (Prometheus counter, `business-metrics.service.ts`).
+- **Kill-switch** — `CHECKIN_GRAPH_INGEST_ENABLED` (`betaOps.checkinGraphIngestEnabled`, zBool default true=ON; Ship-On, действий владельца не требует). OFF → чек-ины в граф не попадают.
+
+[[../index|← index]]
+
 ## Качество извлечения + устойчивость арбитра графа + измеритель (ТЗ-3/4/6, 2026-06-06)
 
 **Источник:** ТЗ-3 (устойчивость JSON-арбитра графа), ТЗ-4 (качество задач), ТЗ-6 (golden-измеритель), ветка `feature/prod-stability-2026-06-06`.
@@ -357,5 +377,146 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 - **Без новой очереди** — подсказка считается синхронно при загрузке/по запросу (не отдельный BullMQ-job).
 
 > ⚠ Загрузка встречи (ТЗ-5) использует существующий ASR-стек (Vox-диаризация в `meeting-upload-transcribe.worker`), **новых chat-LLM taskType не вводит** — анализ загруженной встречи после подписи говорящих идёт по обычному meeting-пайплайну (`core.meeting-analyze-v2` и т.д.).
+
+[[../index|← index]]
+
+## Понимание структуры запроса в чате — `dialog-extract-plan` (Query Understanding Волна 1, 2026-06-10)
+
+**Источник:** ТЗ [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0). Карта фичи — [[chat-v2]] §«Query Understanding Волна 1»; архитектура retrieval — [[../02_architecture/knowledge-core]] §«Структурный фильтр retrieval».
+
+### Новый taskType `dialog-extract-plan`
+
+| taskType | Что делает | Цепочка | Промпт |
+|---|---|---|---|
+| `dialog-extract-plan` | **один** LLM-вызов извлекает СТРУКТУРУ вопроса к AI-чату (период как символический токен + `signalTypes` + `themeBranches` + `entityHints` + «я»/`personScope` + `aggregation` + `needsAction` + `activeNow`) → `QueryPlanFilters`. Период затем резолвится **детерминированно** (без LLM, `period-resolver.ts`). **FAIL-OPEN:** ошибка LLM / битый JSON / confidence < 0.6 → пустой план, поиск без фильтра (как раньше). | `deepseek-v4-flash` (cheap, Р9) → fallback по DEFAULT-цепочке | `extract-plan.prompt.ts` (cache-friendly: стабильный SYSTEM + injection-guard, вопрос пользователя в конце USER за data-маркерами) |
+
+- Сервис `QueryPlanExtractorService` (`backend/src/modules/dialog-layer/services/`), вызывается из `DialogService.process`; результат проброшен в retrieval (см. [[chat-v2]]).
+- Маршрут засеивается `backend/scripts/seed-llm-task-routes-dialog-extract-plan.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентно).
+- Флаг `QUERY_PLAN_EXTRACTION_ENABLED` (kill-switch, ON). **Без новой очереди** — извлечение синхронно в пути чат-запроса, не отдельный BullMQ-job.
+
+## Служба поддержки — клон техподдержки (4 taskType, 2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
+
+| taskType | Модель | Роль |
+|---|---|---|
+| `support-clone-draft` | DeepSeek V4 Pro (capable) | Генерация черновика ответа клиенту: RAG **из закрытого контура поддержки** (R-INV-1) + few-shot топ-N принятых пар из `SupportDraftOutcome`. Цитаты `[BLOCK:id]` обязательны. Стабильный cache-friendly SYSTEM, переменное (вопрос + контур-блоки + few-shot) — в конце USER. |
+| `support-answer-critic` | `deepseek-v4-flash` (cheap judge, Б9) | Groundedness-проверка черновика: извлекает claims → сверяет с контур-блоками → `groundedness=truthful/total`. Ниже `support_critic_min_groundedness` (0.6) → исход `clarify`/`escalate`, не «ответить» (R-INV-5). |
+| `support-edit-classify` | `deepseek-v4-flash` (cheap judge) | Классификация ТИПА правки черновика человеком: `factual` / `tone` / `policy` / `empty` — ДО записи обучающего сигнала (R-INV-2; голый diff хакаем). |
+| `support-contour-curate` | DeepSeek V4 Pro (capable) | Ночной куратор контура: по дневным `SupportDraftOutcome` + сигналам (реоткрытия/CSAT) решает на блок `keep`/`promote`/`fix(supersede)`/`merge`/`archive` + обоснование. Destructive — только soft-archive за debate-гейтом (R-INV-6). |
+
+- Все 4 маршрута засеиваются `backend/scripts/seed-llm-task-routes-support.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'support'`, phase `seed-llm-routes`, идемпотентно). Fallback — `DEFAULT_FALLBACK_CHAIN`.
+- `support-clone-draft` вызывается по кнопке «черновик» (`POST /support/desk/tickets/:id/draft`); `support-answer-critic` — сразу после генерации (гейт показа сотруднику); `support-edit-classify` — при правке/отправке; `support-contour-curate` — из `SupportCuratorCron` (`@Cron('0 3 * * *')`).
+- **Без новой BullMQ-очереди** — draft/critic/classify считаются синхронно в пути деска; куратор — внутри cron-прохода.
+
+## Мастер-ТЗ промптов — 2 новых агента + ретайр v2-стека (2026-06-10)
+
+**Источник:** мастер-ТЗ упрочнения промптов (ветка `feature/master-prompt-fleet-2026-06-10`, 12 коммитов). Инфра-добавка Волны 0 (`applyInputGuards`, калибровки confidence, дискриминаторы, `inputKind` CI-lint) — массовая обёртка raw-промптов без смены поведения.
+
+### Новый агент `client-meeting-split` (taskType `client-meeting-split`, Волна 4)
+
+Нейтральный **протокол встречи для клиента** (наружу) — отдельный артефакт рядом с внутренним отчётом.
+
+| Свойство | Значение |
+|---|---|
+| Формат | **free-text** (DEFAULT-цепочка маршрутизации, не структурный) |
+| Когда | клиентские типы встреч: `sales` / `customer_success` / `partner` / `custdev` |
+| Промпт | `client-meeting-split.prompt.ts` — 5 разделов + таблица шагов; **граница D6**: ноль внутренних оценок / «температуры» сделки / ЛПР / упоминаний конкурентов / бюджета |
+| Где считается | `analyze.worker` → `runClientProtocol(...)` под флагом, best-effort `try/catch` |
+| Результат | merge в `AiResult.structuredData.client_protocol_md` (не перезатирает основной отчёт); `agentType=client_protocol` в usage-log |
+| Флаг | kill-switch `aiFeatures.clientProtocolEnabled` (ON) — `CLIENT_PROTOCOL_ENABLED` в env.schema + typed-config + admin-registry |
+| Фронт | `ClientProtocolCard` «Протокол для клиента» + кнопка «Скопировать»; `client_protocol_md` исключён из generic-грида и из «скопировать весь отчёт» (не задваивается) |
+
+### Новый агент `structured-document-compiler` (taskType `compile-org-document`, Волна 6 C)
+
+Единый владелец сборки `contentMd` орг-документа (regulation / process / policy / instruction).
+
+| Свойство | Значение |
+|---|---|
+| Модель | **DeepSeek V4 Pro** (capable); seed-маршрут `seed-llm-task-routes-compile-org-document.ts` (в `apply-prod-deploy` STEPS, phase `seed-llm-routes`) |
+| Контракт | tool `compile_org_document` → `{contentMd, steps[], changeReason, signals[]}`; `steps[]` только для `kind=process`, для прочих типов игнорируются |
+| Режимы | **СОЗДАНИЕ** (`existingContentMd` пуст — каркас с нуля по структуре типа) / **ДОПОЛНЕНИЕ** (непустой — слияние без потери старого, маркеры `withDocumentCompilerMode` из A0.7) |
+| Когда | вызывается из `specialist-3-1-regulations` **после `regulation-dedupe`** на вердиктах `merge` / `extension` (вместо plain-update) — `tryCompileContent(...)`, best-effort с fallback к `existingContentMd` |
+| Сервис | `structured-document-compiler.service.ts` (в `knowledge-core.module`), `compile()` через router |
+| Флаг | kill-switch `aiFeatures.docCompilerEnabled` (ON) — env.schema + typed-config + admin |
+| Отложено | версионная обвязка `changeReason → RegulationVersion` (модели нет) + `steps → ProcessStep` — см. `04_не-сделано` |
+
+### Ретайр v2-стека и `runTasks` (Волна 5, refactor)
+
+- **v2-стек удалён целиком** (мёртвый код, прод-флаг никогда не включался): промпты+экстракторы `tasks-v2` / `summary-v2` / `chapters-v2`, воркер+cron `meeting-analyze-v2`, очередь `MEETING_ANALYZE_V2`, плюс сирота `process-steps-extract`. Ссылки вычищены из llm-router union/ALL, knowledge-core.module, workers.module, core-queue, pick-primary-summary (теперь `summaryFast || summary`), а также из card-rollup / cards / shares / public-api / meetings / director-dashboard / admin-compare / ai-models. Колонки БД (`summaryV2*` / `analyzeV2*` / `tasks`) оставлены мёртвыми (миграций нет).
+- **`runTasks` убран** из `analyze.worker` — `AiResult.tasks` больше **не пишется**; фронт читает `Task`-модель.
+- Прочее A6: telegram create/forward → один builder (`today` из SYSTEM в user); `issue-infer-fields` — убрана goal-ветка (`suggestedGoalId=null`); мёртвый `chat-v2-synthesize` MODE_PROMPTS удалён (полезное перенесено в боевой `synthetic.prompt`).
+
+[[../index|← index]]
+
+## Probe-система Фаза 1 — формулировка + дайджест (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md). Ветка `svdev`, коммиты `5ed78b54..fa950cd1`. Полная карта изменений — [[probe-agent]] §«Фаза 1»; cron — [[workers-queues]].
+
+- **`probe-formulate` переписан** — SYSTEM получил персону + правила + few-shot + self-check (стабильный, cache-friendly); USER больше не подаёт машинные коды (`emittedByService`/сырой `reason`), вместо них человеческий `reasonLabel` из словаря `probe-reason-labels.ts`. Schema контракта `probe_formulate_v2` → `probe_formulate_v3`. Fallback при провале LLM: `suggestedQuestion → PROBE_REASON_FALLBACK[reason] → generic`.
+- **`ProbeDigestCron` (`@Cron('0 * * * *')`) — БЕЗ LLM.** Билдер `buildProbeDigestSummary` (`probe/prompts/probe-digest.prompt.ts`) собирает текст батч-дайджеста отложенных probe **детерминированно**, не вызывая модель (новый taskType не вводится). Подробности cron'а — [[workers-queues]].
+- **`ProbeDispatcherWorker` (Ф4)** перед `formulate()` перепроверяет повод (`PROBE_REASON_RECHECK`) — если пробел закрылся сам, probe помечается `suppressed_stale` и **LLM не зовётся** (экономия вызовов).
+- **Новая метрика `probe_outcome_total{outcome,reason}`** (`answered`/`ignored`) — калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса; отложена до накопления данных).
+
+[[../index|← index]]
+
+## Консолидация отчёта встречи + отчёт→граф (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Ф1/Ф3) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Ф2). Коммиты `2501d72b` (Ф1), `13a6ac69` (Ф2), `e4fded3c` (Ф3). Граф/гарды — [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф»; очереди — [[workers-queues]].
+
+### Фаза 1 — единое ядро отчёта = `meeting-report-fast`
+
+Три отдельных LLM-job'а **удалены** (`meeting-report-fast` уже делал то же ядро одним вызовом):
+- **`chapters`** (бывший воркер `ai/workers/chapters.worker.ts` + очередь `ai.chapters`) — главы теперь только из fast (`MeetingChapter` версии `fast`).
+- **`tasks-extract`** (воркер `ai/workers/tasks-extract.worker.ts` + очередь `ai.tasks`) — задачи только из fast. ⚠ `task-extraction.service` + `prompts/tasks-structured` **НЕ** удалены (использует `chatbox-analyze.worker`); удалён сам воркер.
+- **`quality-score`** (воркер `ai/workers/quality-score.worker.ts` + очередь `ai.quality-score`) — качество теперь пишет `meeting-report-fast.worker.writeQualityScore` в каноничную таблицу `MeetingQualityScore` (+ `Meeting.qualityScoreStatus='ready'`); читатели `QualityScoreService` без изменений.
+
+`LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). Регенерация глав/качества/полного отчёта перенаправлена на `CoreQueueService.enqueueMeetingReportFast`.
+
+### Фаза 2 — событие `meeting.report-fast-ready` + `ReportIngestListener` (отчёт→граф)
+
+После готовности быстрого отчёта (`reportFastStatus ∈ {ready, partial}`) `meeting-report-fast.worker` эмитит EventEmitter2-событие **`meeting.report-fast-ready`** `{meetingId, tenantId, status}` (try/catch best-effort — сбой эмита не откатывает статус). Слушатель **`ReportIngestListener`** (`@OnEvent`) → `ReportIngestAdapter.ingestReport` → отдельный `RawEvent(sourceType='meeting_report')` → штатный block-ingest. **Это НЕ новый taskType и НЕ LLM-вызов** — мост только пишет сырое событие; LLM-извлечение делает обычный `block-ingest.worker`. Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON). На `'failed'` событие не эмитится. Защита от галлюцинаций (report — вторичный источник, транскрипт побеждает при дедупе) — гарды A/B, см. [[../02_architecture/knowledge-core]].
+
+### Фаза 3 — апгрейд 3 промптов отчётов (коммит `e4fded3c`)
+
+Промпты edited code-side (prompt registry с code-fallback, едут с деплоем кода, отдельной seed-операции не требуют; cache-friendly — стабильный SYSTEM):
+- **`meeting-report-fast`** (`ai/services/prompts/meeting-report-fast.prompt.ts`) — роль «Кора+память», блок-дискриминатор 6 сущностей (задача/идея/решение/договорённость/открытый вопрос/риск-проблема), лестница деградации, self-check, запрет англицизмов в `summary_markdown`, 5 секций. Схема: `recommendations.maxItems` 10→7, `strengths.maxItems` 8→4.
+- **`type-sales` / `extract_sales`** (`ai/services/prompts/type-sales.ts`) — роль «аналитик продаж», дискриминатор близких сущностей (боль/возражение/вопрос/критерий/блокер), few-shot дополнены всеми required-полями (`competitors`, `decision_criteria`, `what_hooked`, `main_blocker`, `data_quality`), tool description.
+- **`client-meeting-split`** (`ai/services/prompts/client-meeting-split.prompt.ts`) — принцип нейтральной фиксации недовольства без сокрытия, 3-й few-shot, чистка англ. жаргона.
+- **Новое:** общий словарь ярлыков типов встреч `MEETING_TYPE_LABEL_RU` / `meetingTypeLabelRu` в `ai/services/prompts/common.ts`.
+
+[[../index|← index]]
+
+## Единый помощник в каналах + автономизация — 5 новых taskType (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-assistant-channels-telegram-max.md`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) + [`plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
+
+### Семейство `debate-conflict-arbiter` (autonomy W1, 4 taskType)
+
+Ночной LLM-арбитр конфликтов знаний (`ConflictArbiterCron`, 02:00) через `MultiAgentDebateService`: вердикт `keep_old|accept_new|merge|evolving|escalate` по payload'ам двух конфликтующих карточек.
+- `debate-conflict-arbiter` — зонтичный route (агрегатная аналитика стоимости debate-сессии; реальные вызовы — 3 stance ниже).
+- `debate-conflict-arbiter-critic` / `-neutral` — cheap-цепочка `deepseek-v4-flash` → `gpt-5.4-mini` → `ollama/qwen3.5:9b` (как у curation-verify).
+- `debate-conflict-arbiter-supporter` — primary **`gpt-5.4-mini`** (diversity голосов), затем flash → ollama.
+
+Сид — `seed-llm-task-routes-conflict-arbiter.ts` (в `apply-prod-deploy.ts` STEPS, alias `conflict-arbiter`). Авто-резолв только `keep_old`/`accept_new`/`merge` при консенсусе + средней confidence ≥ 0.7; `evolving`/`escalate` остаются человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON). Метрика `z_conflict_arbiter_total{verdict,outcome}`.
+
+### `assistant-confirm-classify` (Ф6 assistant-channels)
+
+LLM-judge текстового подтверждения мутаций в каналах (Telegram/MAX без кнопок, принцип zero-button): свободный ответ пользователя на `confirm_required` → вердикт да/нет/неясно. Зовётся только когда эвристика «да/нет» не дала однозначного ответа. Code-промпт `concierge/prompts/assistant-confirm-classify.prompt.ts`; отдельного seed-маршрута нет — едет по DEFAULT-цепочке (cheap).
+
+## Слой метода клона — 5 новых taskType (2026-06-12)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
+
+| taskType | Цепочка | Что делает |
+|---|---|---|
+| `role-principle-synthesize` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | Reflection-синтез принципов роли: по сгруппированным (cosine 0.78) subject-reasoning блокам должности формулирует обобщённые ПРИНЦИПЫ ПРОЦЕССА (`RolePrinciple`: situation + statement + sourceBlockIds ≥2). Запрет диагностической лексики о носителе (промпт + код-гард). Вызывается из `RolePrincipleSynthesisCron` (05:30). Флаг `ROLE_PRINCIPLE_SYNTHESIS_ENABLED`. |
+| `value-motivation-detect` (cheap) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | Детектор ценностей/мотивации (второй проход в `Specialist37Service.rebuildProfile`): извлекает `SkillTrait layer=value\|motivation` ТОЛЬКО из явных trade-off — роль выбрала одно в ущерб другому (revealed preference); KNN-merge с фильтром по layer. Флаг `VALUE_MOTIVATION_DETECT_ENABLED`. |
+| `process-marker-detect` (cheap) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | Детектор конструктивных маркеров процесса (третий проход в rebuild): «перечисляет критерии», «перепроверяет данными» → `SkillTrait layer=process_marker`; оценочные оси («избегает / не решает сам / нерешителен») запрещены промптом и код-гардом стоп-маркеров. Флаг `PROCESS_MARKER_DETECT_ENABLED`. |
+| `cdm-case-interview` (**capable**) | `deepseek-v4-pro` → `openai-via-proxy/gpt-5.4` → `ollama/qwen3:30b` | CDM-интервью носителя роли (Critical Decision Method): по свежему reasoning-кейсу формулирует не наводящие вопросы ретроспективного разбора («почему выбрали / что насторожило / альтернативы»). Вызывается из `Specialist37ProbeService.checkCdmInterview` (probe reason `skill.cdm_interview`, лимит 5 + cooldown 7 дн.); probe-dispatcher вопрос НЕ переформулирует. Флаг `CDM_INTERVIEW_ENABLED`. |
+| `persona-behavior-judge` (cheap judge) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | LLM-судья еженедельной валидации клона ПО ПОВЕДЕНИЮ: сравнивает ответы клона с persona v1 (baseline) vs v2 на реальных кейсах роли (кейс исключён из subgraph); оценивает только поведенческий ход, character-суждения запрещены, отказ клона = 0.3. Вызывается из `PersonaLayerValidationCron` (вс 07:00). Метрика `clone_persona_layer_score{variant}`. Флаг `PERSONA_LAYER_VALIDATION_ENABLED`. |
+
+- Все 5 в union `LlmTaskType` + `ALL_LLM_TASK_TYPES`. Сид — `backend/scripts/seed-llm-task-routes-clone-method.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'clone-method'`, phase `seed-llm-routes`, идемпотентен, защищает `editedByAdmin`).
+- Также в этом пакете (НЕ новые taskType): `clone-respond` получил пост-LLM **grounding-гейт** (factual без валидных цитат `[BLOCK:]`/`[DECISION:]` → программный отказ `'ungrounded'`, флаг `CLONE_RESPOND_GROUNDING_ENABLED`) + журнал `CloneQueryLog`; `executable-persona-compile` переписан на **v2** (секционная сборка 5 слоёв, пустые секции опускаются — деградация к v1; v1-промпт deprecated для rollback).
 
 [[../index|← index]]

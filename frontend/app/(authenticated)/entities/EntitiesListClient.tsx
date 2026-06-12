@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Network, Search } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { entitiesApi, type EntityTypeApi } from '@/api/entities.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -49,7 +49,7 @@ export function EntitiesListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -103,7 +103,7 @@ function EntitiesContent() {
           setForbidden(true);
         } else {
           setError(
-            e instanceof ApiError ? e.message : 'Не удалось загрузить список',
+            humanizeApiError(e, 'Не удалось загрузить список'),
           );
         }
       } finally {
@@ -295,7 +295,7 @@ function EntityDetailPane({
       setLinks(mapEntityLinks(l));
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить сущность',
+        humanizeApiError(e, 'Не удалось загрузить сущность'),
       );
     } finally {
       setLoading(false);

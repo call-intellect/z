@@ -118,6 +118,24 @@ export class Specialist31CardHandler
         take: Math.max(args.limit * 3, 30),
       });
 
+      // Instruction (A12, Волна 6) — пошаговое «как сделать X» для одной роли.
+      const instructions = await this.prisma.instruction.findMany({
+        where: {
+          tenantId,
+          sourceBlockIds: { hasSome: [...blockIds] },
+          status: 'active',
+        },
+        select: {
+          id: true,
+          name: true,
+          statement: true,
+          contentMd: true,
+          sourceBlockIds: true,
+          confidence: true,
+        },
+        take: Math.max(args.limit * 3, 30),
+      });
+
       interface Candidate {
         result: CardSpecialistResult;
         score: number;
@@ -176,6 +194,25 @@ export class Specialist31CardHandler
             title: po.name,
             text: po.contentMd ?? '',
             sourceBlockIds: po.sourceBlockIds,
+            confidence: finalConfidence,
+          },
+          score: overlap + 1,
+        });
+      }
+      for (const ins of instructions) {
+        const overlap = ins.sourceBlockIds.filter((b) => blockSet.has(b)).length;
+        const baseConfidence =
+          ins.confidence !== null
+            ? ins.confidence
+            : Specialist31CardHandler.DEFAULT_CONFIDENCE;
+        const finalConfidence = Math.min(1, baseConfidence + Math.min(0.1, overlap * 0.02));
+        candidates.push({
+          result: {
+            id: ins.id,
+            type: 'instruction',
+            title: ins.name,
+            text: ins.statement ?? ins.contentMd ?? '',
+            sourceBlockIds: ins.sourceBlockIds,
             confidence: finalConfidence,
           },
           score: overlap + 1,

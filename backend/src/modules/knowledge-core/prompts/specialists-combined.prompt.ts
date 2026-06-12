@@ -31,6 +31,10 @@
 import { z } from 'zod';
 
 import type { LlmTool } from '../../ai/services/llm.types';
+import {
+  EXTRACTION_STATUS_RU,
+  withConfidenceCalibration,
+} from '../../ai/services/prompts/common';
 
 // ──────────────────────────── Метаданные ────────────────────────────
 
@@ -126,10 +130,22 @@ export type ExperimentDraft = z.infer<typeof ExperimentDraftSchema>;
 export const RegulationDraftSchema = z
   .object({
     sourceBlockId: z.string().min(1),
-    kind: z.enum(['regulation', 'process', 'policy', 'standard']),
+    kind: z.enum(['regulation', 'process', 'policy', 'standard', 'instruction']),
     name: z.string().min(1),
     statement: z.string().min(1),
     severity: z.enum(['advisory', 'mandatory', 'blocking']).optional(),
+    // A12 (Волна 6) — извлечение «Инструкции». Все опциональные/nullable:
+    // обратная совместимость со старыми моделями, которые их не вернут.
+    extractionStatus: z
+      .enum(['существует', 'нужен', 'обсуждается'])
+      .nullable()
+      .optional(),
+    roles: z.array(z.string()).optional(),
+    evidenceQuote: z.string().nullable().optional(),
+    // A2.2 — повторяемая норма компании (true) vs чужая практика/гипотетика/
+    // разовое (false). Опционально для обратной совместимости со старыми
+    // моделями; используется как сигнал гейта, в БД не персистится.
+    isOrgNorm: z.boolean().optional(),
     confidence: Confidence01,
   })
   .strict();
@@ -360,7 +376,13 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
             sourceBlockId: { type: 'string' },
             kind: {
               type: 'string',
-              enum: ['regulation', 'process', 'policy', 'standard'],
+              enum: [
+                'regulation',
+                'process',
+                'policy',
+                'standard',
+                'instruction',
+              ],
             },
             name: { type: 'string' },
             statement: { type: 'string' },
@@ -368,6 +390,13 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
               type: 'string',
               enum: ['advisory', 'mandatory', 'blocking'],
             },
+            extractionStatus: {
+              type: ['string', 'null'],
+              enum: [null, 'существует', 'нужен', 'обсуждается'],
+            },
+            roles: { type: 'array', items: { type: 'string' } },
+            evidenceQuote: { type: ['string', 'null'] },
+            isOrgNorm: { type: 'boolean' },
             confidence: { type: 'number' },
           },
         },
@@ -446,7 +475,13 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
  * формулировку в system и user).
  */
 export function buildSpecialistsCombinedSystemPrompt(): string {
-  return [
+  // A9 (2026-06-10): у каждой извлечённой сущности есть `confidence`, которая
+  // течёт в вес/порог downstream (canonical draft → проекции). Единая шкала
+  // уверенности (`withConfidenceCalibration`) дописывается в КОНЕЦ SYSTEM
+  // (cache-friendly). Локальная калибровка confidence для regulations
+  // (голое упоминание → 0.5, шаги/роли/сроки → 0.9) остаётся в теле и не
+  // конфликтует с общей шкалой — это частный якорь для одного типа.
+  const body = [
     'Ты — knowledge-инженер компании Кора. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.',
     '',
     'Маршрутизация по signalType:',
@@ -469,8 +504,26 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
     '',
     'Не выдумывай факты вне блоков. sourceBlockId обязательно для всех сущностей кроме knowledge_categories/skill_traits (там — список sourceBlockIds[]). Все строки на русском.',
     '',
+    'regulations — различай kind:',
+    '- regulation — формальное правило/норматив компании; process — последовательность шагов СКВОЗЬ несколько ролей (есть передача работы между ролями); policy — политика со строгостью; standard — внешний стандарт (ISO и т.п.);',
+    '- instruction — пошаговое «как сделать X» для ОДНОЙ роли (single-role): все шаги выполняет один исполнитель/должность, передачи работы между ролями НЕТ (например, «как менеджеру оформить возврат»). Если работа передаётся между ролями — это process, НЕ instruction. Для instruction заполни roles (затронутая роль).',
+    `- extractionStatus (статус существования документа): ${EXTRACTION_STATUS_RU.join(' | ')}. «существует» — документ уже есть и действует; «нужен» — заявлена потребность, документа ещё нет; «обсуждается» — не финализирован. Извлечённый из разговора ≠ подтверждённый: не ставь «существует» только потому, что тему упомянули.`,
+    '- roles — список ролей/должностей, которых касается норма; evidenceQuote — дословная опора (≤15-20 слов).',
+    'regulations — чего НЕ извлекать как орг-документ:',
+    '- чужие практики (как делают у конкурентов / в Google / «в больших компаниях») — это не регламент компании;',
+    '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',
+    '- голое упоминание документа без его содержания: если документ лишь упомянут (есть, но что в нём — не раскрыто), это existence-сигнал с НИЗКИМ confidence — тело не извлекай.',
+    'Калибровка confidence для regulations: есть шаги / роли / сроки → 0.9; только голое упоминание документа → 0.5.',
+    'isOrgNorm — повторяемая норма/инструкция/политика КОМПАНИИ («как делаем всегда») → true; чужая практика, гипотетика, разовое поручение или голое упоминание → false (такое в regulations можно не добавлять).',
+    '',
+    'ПРИМЕР (regulations):',
+    '[BLOCK:blk_12] (signalType=regulation) «Проверка договоров» О: договоры с подрядчиком сначала к юристу, ответ за 3 дня.',
+    '→ regulations: [{"sourceBlockId":"blk_12","kind":"regulation","name":"Юр-проверка договоров с подрядчиками","statement":"Каждый договор с подрядчиком проходит юр-проверку до подписания; срок ответа юриста — 3 рабочих дня.","severity":"mandatory","extractionStatus":"существует","roles":["юрист"],"isOrgNorm":true,"confidence":0.9}].',
+    'НЕ извлекать: «хорошо бы как в Google» (чужая практика+гипотетика) → в regulations НЕ добавлять (или isOrgNorm=false).',
+    '',
     `ВАЖНО: верни результат строго через вызов инструмента \`${SPECIALISTS_COMBINED_TOOL_NAME}\`. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');
+  return withConfidenceCalibration(body);
 }
 
 // ──────────────────────────── User message ────────────────────────────

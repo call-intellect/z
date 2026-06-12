@@ -49,6 +49,92 @@ export interface OrchestratorPlan {
 }
 
 /**
+ * A9 (I11) — имя JSON Schema strict для `orchestrator-plan`.
+ */
+export const ORCHESTRATOR_PLAN_SCHEMA_NAME = 'orchestrator_plan_v1' as const;
+
+/**
+ * A9 (I11) — JSON Schema strict для `orchestrator-plan` (план шагов
+ * multi-agent research). Заменяет прежний `responseFormat: json_object`
+ * + «верни строго JSON» — снижает долю битого JSON.
+ *
+ * Совместимость: OpenAI Responses API (gpt-4o primary) — нативно;
+ * DeepSeek (secondary) — прозрачно через tool-путь (deepseek.service.ts);
+ * Ollama (tertiary) — бросит `LlmFormatNotSupportedError`, роутер перейдёт
+ * к следующему провайдеру (как в `regulation-extract`).
+ *
+ * Схема выровнена под реальный парс `PlanningService.tryParse`:
+ * верхнеуровневые `rationale` + `steps`, у каждого шага `agentType`
+ * (enum из whitelist), `description`, `contextSlice` с `focus` +
+ * опциональными `seedHints` / `params`. Все объектные узлы strict
+ * (additionalProperties:false, required = все ключи properties).
+ */
+export const ORCHESTRATOR_PLAN_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['rationale', 'steps'],
+  properties: {
+    rationale: {
+      type: 'string',
+      description: '1-2 предложения, почему такой план.',
+    },
+    steps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['agentType', 'description', 'contextSlice'],
+        properties: {
+          agentType: {
+            type: 'string',
+            enum: [...ALL_ORCHESTRATOR_AGENT_TYPES],
+          },
+          description: { type: 'string', maxLength: 240 },
+          contextSlice: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['focus', 'seedHints', 'params'],
+            properties: {
+              focus: { type: 'string', maxLength: 1_000 },
+              seedHints: {
+                type: 'array',
+                items: { type: 'string', maxLength: 300 },
+                description:
+                  'Имена сущностей / ключевые слова / blockId-ы (если применимы). Пустой массив, если нет.',
+              },
+              params: {
+                type: 'object',
+                additionalProperties: false,
+                // strict требует, чтобы все ключи properties были в required;
+                // опциональность выражаем nullable-типом (subjects/dimensions
+                // → null, если стратегия не comparison). Парсер и
+                // comparison.strategy фильтруют по Array.isArray — null
+                // деградирует в «нет параметров».
+                required: ['subjects', 'dimensions'],
+                properties: {
+                  subjects: {
+                    type: ['array', 'null'],
+                    items: { type: 'string' },
+                    description:
+                      'Только для comparison: что сравниваем. null/[] — иначе.',
+                  },
+                  dimensions: {
+                    type: ['array', 'null'],
+                    items: { type: 'string' },
+                    description:
+                      'Только для comparison: измерения сравнения. null/[] — иначе.',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+/**
  * Результат работы subagent'а. Всегда содержит `text` и optionally
  * `citations[]` (blockId / entityId, на которые опирался ответ).
  */

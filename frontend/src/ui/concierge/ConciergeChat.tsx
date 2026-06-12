@@ -11,12 +11,13 @@ import {
   type ConciergeStreamEvent,
 } from '@/api/concierge.api';
 import { tablesApi } from '@/api/tables.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import {
   isInferredTableSchema,
   type InferredTableSchema,
 } from '@/domain/table';
+import { toolNameLabel } from '@/domain/concierge';
 import { TableSchemaPreview } from './TableSchemaPreview';
 import { toast } from 'sonner';
 /**
@@ -112,7 +113,7 @@ export function ConciergeChat({
           );
         } else {
           toast.error(
-            e instanceof ApiError ? e.message : 'Не удалось создать таблицу',
+            humanizeApiError(e, 'Не удалось создать таблицу'),
           );
         }
       } finally {
@@ -201,7 +202,7 @@ export function ConciergeChat({
               {
                 id: `t-${tc.toolName}-${Date.now()}`,
                 role: 'tool',
-                text: `Инструмент: ${tc.toolName} (${tc.ok ? 'ок' : 'ошибка'})`,
+                text: `${toolNameLabel(tc.toolName)} (${tc.ok ? 'ок' : 'ошибка'})`,
                 meta: {
                   toolName: tc.toolName,
                   ok: tc.ok,
@@ -210,7 +211,7 @@ export function ConciergeChat({
               },
             ]);
             if (tc.undoLogId) {
-              toast.success(`Готово: ${tc.toolName}`, { action: { label: 'Отменить', onClick: () => handleUndo(tc.undoLogId!) } });
+              toast.success(`Готово: ${toolNameLabel(tc.toolName)}`, { action: { label: 'Отменить', onClick: () => handleUndo(tc.undoLogId!) } });
             }
           }
           if (r.text) {
@@ -245,7 +246,7 @@ export function ConciergeChat({
             {
               id: `tc-${Date.now()}`,
               role: 'system',
-              text: `Вызываю инструмент: ${ev.toolName}${
+              text: `${toolNameLabel(ev.toolName)}${
                 ev.requiresConfirm ? ' (требуется подтверждение)' : ''
               }`,
             },
@@ -278,7 +279,7 @@ export function ConciergeChat({
             {
               id: `tr-${Date.now()}`,
               role: 'tool',
-              text: `${ev.toolName}: ${ev.ok ? 'успех' : `ошибка ${ev.status}`}`,
+              text: `${toolNameLabel(ev.toolName)}: ${ev.ok ? 'успех' : `ошибка ${ev.status}`}`,
               meta: {
                 toolName: ev.toolName,
                 ok: ev.ok,
@@ -287,7 +288,7 @@ export function ConciergeChat({
             },
           ]);
           if (ev.undoLogId) {
-            toast.success(`Готово: ${ev.toolName}`, { action: { label: 'Отменить', onClick: () => handleUndo(ev.undoLogId!) } });
+            toast.success(`Готово: ${toolNameLabel(ev.toolName)}`, { action: { label: 'Отменить', onClick: () => handleUndo(ev.undoLogId!) } });
           }
           break;
         case 'message':

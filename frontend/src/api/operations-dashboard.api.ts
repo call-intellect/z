@@ -108,6 +108,8 @@ export interface OperationsOverviewApi {
   frictionsResolvedCount: number;
   /** ТЗ-2 Ф2 — kill-switch инфо-перекомпоновки COO-дашборда (по умолчанию true). */
   reworkEnabled: boolean;
+  /** Недельный инфлоу за 12 недель (old→new, null=нет данных). */
+  weeklyInflow: { blockers: Array<number | null>; frictions: Array<number | null> };
 }
 
 export interface OperationsTeamTemperatureSummaryApi {

@@ -13,7 +13,7 @@
 import { useState, type JSX } from 'react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { meetingsApi } from '@/api/meetings.api';
 import {
   ParticipantPicker,
@@ -66,7 +66,7 @@ export function InviteDialog({
       onClose();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось отправить приглашения';
+        humanizeApiError(e, 'Не удалось отправить приглашения');
       toast.error(msg);
     } finally {
       setSending(false);

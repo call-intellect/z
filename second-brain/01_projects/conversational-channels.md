@@ -336,6 +336,8 @@ type InboundMessage =
 4. `CheckinResponseHandler.onModuleInit` зарегистрировал handler через `subscribeInbound('daily_checkin_self', ...)` (Phase 5).
 5. Handler зовёт `processSelfInitiated()` → парсит rawText `CheckinParserService` → `DailyCheckInService.upsertFromParser({source:'self_initiated'})` → закрывает pending `checkin.prompt` notification через `markAsAnsweredByCheckin` → эмитит `checkin.created` → шлёт `checkin.ack` через `sendNotification` с `preferredChannelKinds=[originChannelKind]`.
 
+> **Чек-ин кормит граф знаний (2026-06-10).** Событие `checkin.created` (от любого пути — self-initiated или ответ на `checkin.prompt`) теперь, помимо sentiment-анализа, поднимает мост в knowledge-core: `CheckinGraphIngestListener` (`@OnEvent('checkin.created')`) → `CheckinIngestService.ingestCheckin` → `RawEvent(sourceType='daily_checkin', dataClass='sensitive')` → block-ingest. Завершённые чек-ины (план/отчёт) становятся источником графа, чтобы AI-чат компании отвечал «что делал сотрудник X на неделе». Best-effort, рядом и независимо с sentiment-воркером; kill-switch `CHECKIN_GRAPH_INGEST_ENABLED`. Детали — [[ai-jobs]] §«Ежедневный чек-ин — источник графа знаний», ТЗ [`plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md`](../../plans/tz/2026-06-10-daily-checkin-to-graph-bridge.md).
+
 ### Новый event-type `checkin.ack`
 
 Payload schema в `event-payload.registry.ts`:
@@ -441,5 +443,29 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 - Внутренний адаптер `telegram-bot.adapter.ts`, intent classification, voice/document inbound, метрики — остаются как в β-1.
 - Архитектура `Notification` / `NotificationDelivery` / `ChannelBindingPreferences` — не меняется.
 - MAX-бот остаётся per-tenant (как сейчас), это решение только про Telegram.
+
+---
+
+# Единый мозг помощника — Telegram/MAX как окна к ConciergeService (реализовано 2026-06-12)
+
+> **ТЗ:** [plans/tz/2026-06-11-assistant-channels-telegram-max.md](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) (Ф1–Ф6, ветка `feature/assistant-channels-and-autonomy`). Анализ: `plans/analysis/2026-06-11-telegram-agentic-interface.md` + PLAIN-документ Точка А→Б.
+
+**Решение владельца:** один помощник-мозг (ConciergeService), Telegram и кабинет — окна к нему. Отдельные интенты-«второй мозг» в Telegram отвергнуты.
+
+**Как работает:**
+- **Свободный текст/голос** из Telegram/MAX (бывшие `chat_query`/`free_note`) идёт inbound-типом **`assistant_turn`** → мост `AssistantChannelBridge` (модуль concierge) → `ConciergeService`. Kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON); при OFF — прежний узкий классификатор бит-в-бит.
+- **Память диалога per-binding** — Redis `concierge:channel-conv:<bindingId>`, TTL 24ч: помощник в канале помнит контекст разговора.
+- **Голос** → Vox ASR → тот же помощник (как текст).
+- **Чек-ин (`daily_checkin_self`) и task-intent** остаются прежними ветками — от флага не зависят.
+- **Whitelist инструментов по каналу:** SELF (свои данные) для всех, MANAGER-инструменты — по RBAC-роли. Read-only инструменты помечены `ToolSchema.readOnly` (`find_free_slot`, `ask_chat_v2`).
+- **Текстовое подтверждение мутаций** — без кнопок (принцип zero-button): событие `confirm_required`, ожидание в Redis (TTL 300с, атомарный consume), ответ «да/нет» эвристикой + LLM-judge `assistant-confirm-classify`.
+- **Ответ — одним сообщением** через событие `chat.answer` в канал-источник. Solicited-ответ доставляется при `dataClass` internal и critical при валидном binding (включая глобальный Telegram-канал); если из chat-v2 пришёл derived `sensitive`/`private` — вместо текста уходит указатель «откройте в кабинете» (рассинхрона-молчания больше нет).
+- **Ack на заметку** — `free_note` теперь подтверждается событием `note.ack` («записал в память»), а не молчанием.
+- **Проактивные события** — 10+ eventType рендерятся текстом и в Telegram, и в MAX (универсальная ветка title+body + спец-кейсы); `checkin.prompt` приходит текстом вопроса.
+- **Деградации** (quota chat-v2 / внутренняя ошибка) — русскими текстами, не молчанием.
+- **Native function-calling** в самом помощнике — kill-switch `CONCIERGE_NATIVE_TOOLS_ENABLED` (ON); для каналов ToolRouter работает в режиме `authMode='service'` (self-signed session JWT 60с, loopback `CONCIERGE_LOOPBACK_BASE_URL`).
+- Метрика: `z_assistant_turn_total`.
+
+**vNext (см. реестр не-сделано):** стрим в Telegram, чек-ин через помощника, инструмент `create_task` (ждёт policy intake_issue/write), расширение руководительских инструментов.
 
 [[../index|← index]]

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   apiKeysApi,
   type ApiKeyApi,
@@ -50,7 +50,7 @@ export function ApiKeysClient() {
       const res = await apiKeysApi.list();
       setKeys(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить ключи');
+      setError(humanizeApiError(e, 'Не удалось загрузить ключи'));
     } finally {
       setLoading(false);
     }
@@ -73,7 +73,7 @@ export function ApiKeysClient() {
       setKeys((prev) => prev.filter((k) => k.id !== id));
       toast.success('Ключ отозван');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось отозвать');
+      toast.error(humanizeApiError(e, 'Не удалось отозвать'));
     }
   };
 
@@ -220,7 +220,7 @@ function CreateKeyDialog({
       const res = await apiKeysApi.create({ name: name.trim(), scopes });
       onCreated(res);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось создать');
+      toast.error(humanizeApiError(e, 'Не удалось создать'));
     } finally {
       setSubmitting(false);
     }

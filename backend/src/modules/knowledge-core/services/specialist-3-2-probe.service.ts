@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
@@ -40,6 +41,8 @@ export class Specialist32ProbeService {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
   ) {}
@@ -242,6 +245,7 @@ export class Specialist32ProbeService {
       prisma: this.prisma,
       tenantId,
       subjectPersonId: personId,
+      subjectAddressingEnabled: this.cfg.probe.subjectAddressingEnabled,
     });
   }
 

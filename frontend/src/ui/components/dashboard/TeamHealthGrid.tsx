@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDownRight, ArrowUpRight, Minus, Users } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
 import type {
@@ -76,7 +76,7 @@ export function TeamHealthGrid({ className }: Props) {
       } catch (e) {
         if (alive) {
           setError(
-            e instanceof ApiError ? e.message : 'Не удалось загрузить здоровье команд',
+            humanizeApiError(e, 'Не удалось загрузить здоровье команд'),
           );
         }
       } finally {

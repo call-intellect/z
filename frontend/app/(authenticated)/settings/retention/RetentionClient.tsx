@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { retentionApi } from '@/api/retention.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
@@ -51,15 +51,15 @@ export function RetentionClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org. Попросите владельца пригласить вас."
+        description="Вы не состоите ни в одной организации. Попросите владельца пригласить вас."
       />
     );
   }
   if (!isOwner) {
     return (
       <AdminForbidden
-        title="Только для владельца Org"
-        description="Только владелец Org может управлять политикой хранения данных. Обратитесь к нему."
+        title="Только для владельца организации"
+        description="Только владелец организации может управлять политикой хранения данных. Обратитесь к нему."
       />
     );
   }
@@ -100,7 +100,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
         setForbidden(true);
       } else {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить политику',
+          humanizeApiError(e, 'Не удалось загрузить политику'),
         );
       }
     } finally {
@@ -157,7 +157,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
       setPolicy(domain);
       toast.success('Политика хранения сохранена');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSaving(false);
     }
@@ -174,7 +174,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
         <h1 className="text-2xl font-semibold">Хранение данных и 152-ФЗ</h1>
         <p className="mt-1 text-sm text-fg-secondary">
           Управление сроками хранения исходных событий, архивных блоков, чатов
-          и журнала аудита для вашей Org.
+          и журнала аудита для вашей организации.
         </p>
       </header>
 

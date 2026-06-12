@@ -40,7 +40,10 @@ import {
   mapCloneAnswer,
   type CloneAnswer,
 } from '@/domain/clone';
-import { toChatV2ConversationWithMessages } from '@/domain/chat-v2';
+import {
+  stripContextMarkers,
+  toChatV2ConversationWithMessages,
+} from '@/domain/chat-v2';
 import {
   useCloneByRoleId,
   useCloneConversations,
@@ -88,7 +91,7 @@ export function CloneChatClient({
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Раздел доступен только внутри Org."
+        description="Раздел доступен только внутри организации."
       />
     );
   }
@@ -465,7 +468,7 @@ function MessageBubble({ message }: { message: ChatMessageUi }) {
             : 'border border-border-subtle bg-bg-card text-fg-primary',
         )}
       >
-        {message.text}
+        {isUser ? message.text : stripContextMarkers(message.text)}
         {!isUser && message.citations.length > 0 ? (
           <div className="mt-2 space-y-1.5 border-t border-border-subtle pt-2">
             <div className="text-xs font-medium text-fg-tertiary">

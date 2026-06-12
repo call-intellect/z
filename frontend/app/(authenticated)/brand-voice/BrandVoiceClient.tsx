@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   brandVoiceApi,
   type BrandVoiceArtifactApi,
@@ -12,6 +12,7 @@ import {
 } from '@/api/brand-voice.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
+  brandVoiceArtifactStatusLabel,
   toBrandVoiceProfileDomain,
   type BrandVoiceProfileDomain,
 } from '@/domain/brand-voice';
@@ -46,7 +47,7 @@ export function BrandVoiceClient(): JSX.Element {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -81,7 +82,7 @@ function BrandVoiceContent({
       setArtifacts(a.items);
     } catch (err) {
       const msg =
-        err instanceof ApiError ? err.message : 'Не удалось загрузить голос бренда';
+        humanizeApiError(err, 'Не удалось загрузить голос бренда');
       setError(msg);
     } finally {
       setLoading(false);
@@ -103,7 +104,7 @@ function BrandVoiceContent({
       await load();
     } catch (err) {
       setRebuildMessage(
-        err instanceof ApiError ? err.message : 'Не удалось запустить пересборку',
+        humanizeApiError(err, 'Не удалось запустить пересборку'),
       );
     } finally {
       setRebuilding(false);
@@ -410,7 +411,7 @@ function ArtifactsCard({
                     {a.name}
                   </div>
                   <div className="text-xs text-fg-tertiary">
-                    {a.mimeType} · {a.status}
+                    {a.mimeType} · {brandVoiceArtifactStatusLabel(a.status)}
                     {isUsed && ' · использован в последней сборке'}
                   </div>
                 </div>
@@ -497,7 +498,7 @@ function EditModal({
       });
     } catch (error) {
       setErr(
-        error instanceof ApiError ? error.message : 'Не удалось сохранить',
+        humanizeApiError(error, 'Не удалось сохранить'),
       );
     } finally {
       setSaving(false);

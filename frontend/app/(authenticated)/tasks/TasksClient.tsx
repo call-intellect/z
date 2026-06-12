@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { destinationsApi, type DestinationApi } from '@/api/destinations.api';
 import {
   tasksApi,
@@ -120,7 +120,7 @@ export function TasksClient() {
       });
       setTasks(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить задачи');
+      setError(humanizeApiError(e, 'Не удалось загрузить задачи'));
     } finally {
       setLoading(false);
     }
@@ -159,7 +159,7 @@ export function TasksClient() {
         const updated = await tasksApi.update(id, patch);
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось обновить задачу');
+        toast.error(humanizeApiError(e, 'Не удалось обновить задачу'));
       }
     },
     [],
@@ -176,7 +176,7 @@ export function TasksClient() {
           return next;
         });
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить задачу');
+        toast.error(humanizeApiError(e, 'Не удалось удалить задачу'));
       }
     },
     [],
@@ -188,7 +188,7 @@ export function TasksClient() {
         await tasksApi.send(id, { destinationId });
         toast.success('Отправлено');
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось отправить');
+        toast.error(humanizeApiError(e, 'Не удалось отправить'));
       }
     },
     [],
@@ -204,7 +204,7 @@ export function TasksClient() {
         setSelectedIds(new Set());
         await fetchTasks();
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Bulk-операция не удалась');
+        toast.error(humanizeApiError(e, 'Bulk-операция не удалась'));
       }
     },
     [fetchTasks, selectedIds],

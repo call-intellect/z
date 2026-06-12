@@ -150,7 +150,7 @@ describe('BitrixIntegrationService', () => {
 
     expect(res.portalDomain).toBe('acme.bitrix24.ru');
     expect(clientMock.exchangeCode).toHaveBeenCalledWith('c1');
-    const upsertArg = prismaMock.bitrixIntegration.upsert.mock.calls[0][0];
+    const upsertArg = prismaMock.bitrixIntegration.upsert.mock.calls[0]![0];
     expect(upsertArg.where).toEqual({ memberId: 'M1' });
     expect(upsertArg.create.status).toBe('connected');
     expect(upsertArg.create.tenantId).toBe('t1');

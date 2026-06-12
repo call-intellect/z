@@ -92,6 +92,21 @@ export interface WeeklyDeltaApi {
   delta: number | null;
 }
 
+/**
+ * Ф1b редизайна дашбордов — точка исторического тренда (зеркало backend
+ * `WeeklyDigestTrendPointDto`). Считается из persisted-снимков metricsJson.
+ */
+export interface WeeklyDigestTrendPointApi {
+  weekStart: string;
+  totalCheckIns: number;
+  greenShare: number;
+  redShare: number;
+  goalsCompleted: number;
+  goalsFailed: number;
+  blockers: number;
+  hangingDecisions: number;
+}
+
 export interface WeeklyOperationsDigestApi {
   id: string;
   tenantId: string;
@@ -112,6 +127,8 @@ export interface WeeklyOperationsDigestApi {
     insights: WeeklyDeltaApi;
     ideas: WeeklyDeltaApi;
   };
+  // Ф1b — исторический тренд (runtime из persisted-снимков на backend), old→new.
+  trend: WeeklyDigestTrendPointApi[];
 }
 
 export const weeklyDigestApi = {

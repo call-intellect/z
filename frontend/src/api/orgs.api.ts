@@ -30,11 +30,21 @@ export type OrgApi = {
   setupCompletedAt?: string | null;
 };
 
+// A5 / Р3 (2026-06-10): coo / hr_partner — разблокированные роли (есть в enum
+// MembershipRole бэка и в RBAC-политиках). Read-типы расширены, чтобы корректно
+// отображать участников/приглашения с этими ролями.
+export type OrgMemberRole =
+  | 'owner'
+  | 'admin'
+  | 'manager'
+  | 'coo'
+  | 'hr_partner';
+
 export type MembershipApi = {
   userId: string;
   email: string;
   name: string;
-  role: 'owner' | 'admin' | 'manager';
+  role: OrgMemberRole;
   joinedAt: string;
   invitedBy: string | null;
 };
@@ -52,7 +62,7 @@ export type OrgInvitationApi = {
   orgName: string;
   /** β-9: nullable, см. JSDoc выше. */
   email: string | null;
-  role: 'owner' | 'admin' | 'manager';
+  role: OrgMemberRole;
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
   invitedBy: string;
   createdAt: string;
@@ -90,10 +100,13 @@ export type UpdateOrgRequest = {
 export type InviteMemberRequest = {
   email?: string;
   name: string;
-  role?: 'admin' | 'manager';
+  // A5 / Р3 (2026-06-10): добавлены роли coo (операционный директор) и
+  // hr_partner (HR-партнёр) — backend разблокировал их в DTO приглашения.
+  role?: 'admin' | 'manager' | 'coo' | 'hr_partner';
 };
 export type UpdateMemberRequest = {
-  role: 'owner' | 'admin' | 'manager';
+  // A5 / Р3 (2026-06-10): coo / hr_partner разблокированы в backend DTO.
+  role: 'owner' | 'admin' | 'manager' | 'coo' | 'hr_partner';
 };
 
 export interface CapabilityItemApi {
@@ -179,7 +192,7 @@ export const orgsApi = {
   acceptInvitation: (token: string) =>
     apiClient.post<{
       orgId: string;
-      membership: { role: 'owner' | 'admin' | 'manager'; joinedAt: string };
+      membership: { role: OrgMemberRole; joinedAt: string };
     }>(`/api/v1/orgs/invitations/${encodeURIComponent(token)}/accept`),
 
   listMemberCapabilities: (orgId: string, userId: string) =>

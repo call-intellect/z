@@ -6,6 +6,8 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
 
+import { OwnerResolverService } from './owner-resolver.service';
+
 /**
  * SBA α-6 — Specialist34ProbeService.
  *
@@ -59,6 +61,11 @@ export class Specialist34ProbeService {
     private readonly metrics: BusinessMetricsService,
     @Optional() @Inject(ProbeService)
     private readonly probeService?: ProbeService,
+    // W2 autonomy (2026-06-12) — «лестница владельца». Optional: без неё
+    // работает прежнее поведение (probe). M-2: авто-записи владельца для
+    // card нет — лестница даёт только кандидатов для текста вопроса.
+    @Optional() @Inject(OwnerResolverService)
+    private readonly ownerResolver?: OwnerResolverService,
   ) {}
 
   /**
@@ -118,7 +125,21 @@ export class Specialist34ProbeService {
     const admins = await this.findOrgAdminsAndOwner(card.tenantId);
     if (admins.length === 0) return;
 
-    const message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного — кто-то из команды возьмёт?`;
+    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe. M-2
+    // (2026-06-12): Card.ownerId — namespace/creator-ключ
+    // (@@unique([ownerId,name]) + cascade), его авто-перезапись опасна —
+    // АВТО-ветки для card НЕТ. Единственный кандидат → probe-вопрос
+    // «Назначить владельцем X?» (ambiguous с одним кандидатом); несколько →
+    // вопрос-выбор с именами; никого → probe как раньше.
+    const ladder = await this.tryResolveOwner(card);
+    let message: string;
+    if (ladder.outcome === 'ambiguous' && ladder.candidateNames.length === 1) {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного. Назначить владельцем ${ladder.candidateNames[0]}? Ответьте, кого назначить.`;
+    } else if (ladder.outcome === 'ambiguous') {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`;
+    } else {
+      message = `У карточки «${card.name}» (${this.kindLabel(card.kind)}) нет активного ответственного — кто-то из команды возьмёт?`;
+    }
     await this.emit({
       tenantId: card.tenantId,
       cardId: card.id,
@@ -127,6 +148,93 @@ export class Specialist34ProbeService {
       recipients: admins,
       suggestedActions: ['Назначить ответственного', 'Архивировать карточку'],
     });
+  }
+
+  /**
+   * W2 autonomy — лестница владельца для `card.missing_owner`.
+   * Кандидаты: subject-Person'ы карточки (`personSubjectIds`) с привязанным
+   * User И активным Membership в Org (проблема как раз в неактивном владельце).
+   * admin'ов в пул не кладём — в Org с одним admin'ом все бесхозные карточки
+   * молча падали бы на него.
+   *
+   * M-2 (2026-06-12): АВТО-записи владельца для card НЕТ — Card.ownerId это
+   * namespace/creator-ключ (@@unique([ownerId,name]), cascade-связи), его
+   * перезапись меняет идентичность карточки. resolved-исход трактуем как
+   * ambiguous с единственным кандидатом (probe-вопрос, без кнопок). Метрика
+   * incOwnerResolution для card — только ambiguous | none.
+   */
+  private async tryResolveOwner(
+    card: Card,
+  ): Promise<
+    | { outcome: 'ambiguous'; candidateNames: string[] }
+    | { outcome: 'none' }
+  > {
+    if (!this.ownerResolver || !card.tenantId) return { outcome: 'none' };
+    try {
+      const subjects =
+        card.personSubjectIds.length > 0
+          ? await this.prisma.person.findMany({
+              where: {
+                id: { in: card.personSubjectIds },
+                tenantId: card.tenantId,
+                deletedAt: null,
+                userId: { not: null },
+              },
+              select: { id: true, name: true, userId: true },
+              take: 20,
+            })
+          : [];
+      const subjectUserIds = [
+        ...new Set(
+          subjects.map((p) => p.userId).filter((u): u is string => !!u),
+        ),
+      ];
+      // Только кандидаты с активным Membership (владелец без Membership —
+      // и есть исходная проблема).
+      let candidatePool: string[] = [];
+      if (subjectUserIds.length > 0) {
+        const activeMembers = await this.prisma.membership.findMany({
+          where: { orgId: card.tenantId, userId: { in: subjectUserIds } },
+          select: { userId: true },
+        });
+        const activeSet = new Set(activeMembers.map((m) => m.userId));
+        candidatePool = subjectUserIds.filter((u) => activeSet.has(u));
+      }
+      const resolution = await this.ownerResolver.resolve({
+        tenantId: card.tenantId,
+        candidatePool,
+      });
+
+      if (resolution.kind === 'resolved') {
+        // M-2 — без авто-записи: единственный кандидат превращается в
+        // probe-вопрос с одним именем (см. checkMissingOwner).
+        const personName = subjects.find(
+          (p) => p.userId === resolution.userId,
+        )?.name;
+        if (personName && personName.length > 0) {
+          this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
+          return { outcome: 'ambiguous', candidateNames: [personName] };
+        }
+        this.metrics.incOwnerResolution({ outcome: 'none' });
+        return { outcome: 'none' };
+      }
+      if (resolution.kind === 'ambiguous') {
+        this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
+        const names = subjects
+          .filter((p) => p.userId && resolution.candidates.includes(p.userId))
+          .map((p) => p.name)
+          .filter((n) => n.length > 0);
+        if (names.length >= 2) {
+          return { outcome: 'ambiguous', candidateNames: names };
+        }
+        return { outcome: 'none' };
+      }
+      this.metrics.incOwnerResolution({ outcome: 'none' });
+      return { outcome: 'none' };
+    } catch (err) {
+      this.logProbeError('card.missing_owner.owner_resolver', card.id, err);
+      return { outcome: 'none' };
+    }
   }
 
   /**

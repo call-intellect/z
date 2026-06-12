@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
 import useSWR from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   departmentsApi,
   personsDomainApi,
@@ -227,7 +227,7 @@ function CreateDeptDialog({
                 await departmentsApi.create(orgId, { name: name.trim() });
                 onDone();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+                toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
               } finally {
                 setBusy(false);
               }
@@ -284,7 +284,7 @@ function RenameDeptDialog({
                 });
                 onDone();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить.');
+                toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
               } finally {
                 setBusy(false);
               }
@@ -420,7 +420,7 @@ function SetHeadDialog({
       onDone();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось сохранить главу отдела.',
+        humanizeApiError(e, 'Не удалось сохранить главу отдела.'),
       );
     } finally {
       setBusy(false);
@@ -530,7 +530,7 @@ function RemoveDeptDialog({
                 await departmentsApi.remove(orgId, dept.id);
                 onDone();
               } catch (e) {
-                toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить.');
+                toast.error(humanizeApiError(e, 'Не удалось удалить.'));
               } finally {
                 setBusy(false);
               }

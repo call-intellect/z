@@ -147,6 +147,36 @@ export const fieldEnum = (values: readonly string[]) =>
 export const fieldNullableEnum = (values: readonly string[]) =>
   ({ type: ['string', 'null'] as const, enum: [...values, null] }) as const;
 
+// ─────────────────── ярлыки типов встреч (§3.0 ТЗ consolidation) ───────────
+//
+// Русский ярлык в винительном падеже для подстановки вместо кода `MeetingType`
+// в роль/метки промптов («Получаешь транскрипт встречи (тип: командную
+// встречу)»). Общий словарь для meeting-report-fast / type-sales /
+// client-meeting-split — чтобы не плодить копии. Ключи — строковые значения
+// enum MeetingType (см. schema.prisma). Неизвестный тип → fallback на сам код.
+
+/** Русские ярлыки типов встреч (винительный падеж). §3.0 ТЗ consolidation. */
+export const MEETING_TYPE_LABEL_RU: Record<string, string> = {
+  sales: 'продажную встречу',
+  custdev: 'custdev-интервью',
+  interview: 'собеседование',
+  standup: 'планёрку',
+  team: 'командную встречу',
+  plan_fact: 'встречу «план-факт»',
+  project: 'проектную встречу',
+  partner: 'встречу с партнёром',
+  customer_success: 'встречу с действующим клиентом',
+  review: 'обзорную встречу',
+  retrospective: 'ретроспективу',
+  task_discussion: 'обсуждение задачи',
+  sprint_review: 'разбор итогов спринта',
+};
+
+/** Ярлык типа встречи для промпта; fallback на сам код для неизвестных типов. */
+export function meetingTypeLabelRu(type: string): string {
+  return MEETING_TYPE_LABEL_RU[type] ?? type;
+}
+
 /**
  * Базовый wrap для system-промпта с инструкциями про tool-use.
  */
@@ -474,3 +504,160 @@ export const FollowUpSchema = z
     body: z.string(),
   })
   .strict();
+
+// ─────────────────── applyInputGuards (A0.1, мастер-ТЗ) ────────────────────
+//
+// Единый слой входных guard'ов E1/E2 для всех extract/score-промптов вне
+// analyze.worker. Собирает тот же стек, что analyze.worker делает вручную:
+//   system: injection ? withInjectionGuard(system) : system; затем asr ? withAsrNote(...)
+//   user:   (meetingDateIso как доверенная мета ПЕРЕД блоком) + injection ? wrapUserData(user) : user
+//
+// ВАЖНО про kill-switch: переиспользуем существующий флаг
+// aiFeatures.promptInjectionGuardEnabled (дефолт ON) — НЕ вводим новый флаг
+// (один input-guard концерн = один рубильник). Caller читает флаг через
+// isPromptInjectionGuardEnabled() и передаёт его как opts.enabled.
+//
+// Идемпотентность: если user уже обёрнут (начинается с DATA_MARKER_OPEN) —
+// повторно не оборачиваем. No-op при пустом user.
+
+export interface InputGuardOptions {
+  /** Обернуть user в маркеры данных + добавить INJECTION_GUARD_NOTE в system. По умолчанию true. */
+  injection?: boolean;
+  /** Дописать ASR-ноту в КОНЕЦ system (для путей поверх сырого транскрипта). По умолчанию false. */
+  asr?: boolean;
+  /** ISO-дата встречи: прокидывается в user как доверенная мета ПЕРЕД блоком данных (для относительных сроков, см. EDGE_CASE_POLICY). */
+  meetingDateIso?: string | null;
+  /** Глобальный kill-switch (aiFeatures.promptInjectionGuardEnabled). false → guards off (legacy). По умолчанию true. */
+  enabled?: boolean;
+}
+
+/**
+ * Применяет входные guard'ы к паре (system, user). Чистая функция —
+ * kill-switch читает caller и передаёт через opts.enabled. Идемпотентна
+ * по обёртке user. No-op при пустом user.
+ */
+export function applyInputGuards(
+  system: string,
+  user: string,
+  opts: InputGuardOptions = {},
+): { system: string; user: string } {
+  const injection = opts.injection ?? true;
+  const asr = opts.asr ?? false;
+  const enabled = opts.enabled ?? true;
+
+  if (!enabled) {
+    return { system, user };
+  }
+
+  let outSystem = injection ? withInjectionGuard(system) : system;
+  if (asr) outSystem = withAsrNote(outSystem);
+
+  const trimmedUser = user ?? '';
+  // Идемпотентность: не оборачивать уже обёрнутый payload.
+  const alreadyWrapped = trimmedUser.startsWith(DATA_MARKER_OPEN);
+  const wrappedUser =
+    injection && trimmedUser.length > 0 && !alreadyWrapped
+      ? wrapUserData(trimmedUser)
+      : trimmedUser;
+
+  const datePrefix = opts.meetingDateIso
+    ? `meetingDateIso: ${opts.meetingDateIso}\n\n`
+    : '';
+
+  return { system: outSystem, user: `${datePrefix}${wrappedUser}` };
+}
+
+// ─────────────────── семейство калибровок confidence (A0.3) ────────────────
+// Рядом с базовым withConfidenceCalibration. Прогнозная и тональная —
+// отдельные шкалы (разная природа уверенности). Дописываются в КОНЕЦ system.
+
+/** Шкала уверенности ПРОГНОЗА (forecaster и т.п.). */
+export const FORECAST_CONFIDENCE_CALIBRATION = `Шкала уверенности прогноза (0..1):
+- 0.3 — слабый сигнал: одна метка, тренд неустойчив.
+- 0.6 — наблюдаемый тренд по нескольким точкам, без подтверждённой причины.
+- 0.85 — устойчивый тренд + названная причина + согласованные данные.
+- 0.95+ — тренд подтверждён несколькими источниками и согласован участниками.
+ПРАВИЛО: прогноз — это вероятность, не факт. Мало данных → снижай уверенность, не выдавай желаемое за прогноз.`;
+
+export function withForecastConfidenceCalibration(systemBody: string): string {
+  return `${systemBody}\n\n${FORECAST_CONFIDENCE_CALIBRATION}`;
+}
+
+/** Шкала уверенности оценки ТОНАЛЬНОСТИ/настроения (speaker-analyzer, team-health). */
+export const TONE_CONFIDENCE_CALIBRATION = `Шкала уверенности оценки тональности/настроения (0..1):
+- 0.3 — единичная реплика, возможна ирония или вырванный контекст.
+- 0.6 — повторяющийся тон в нескольких репликах одного человека.
+- 0.85 — устойчивый тон + явная реакция/согласие других участников.
+ПРАВИЛО: тон — наблюдаемое поведение, не диагноз. Не психологизируй; при сомнении снижай уверенность.`;
+
+export function withToneConfidenceCalibration(systemBody: string): string {
+  return `${systemBody}\n\n${TONE_CONFIDENCE_CALIBRATION}`;
+}
+
+// ─────────────────── дискриминатор смысла (A0.4) ───────────────────────────
+// Различает норму/повторяемое vs разовое, решение vs пожелание, insight vs
+// жалоба, черту vs эпизод. Для extract-промптов, где модель путает классы.
+
+export const DECISION_DISCRIMINATOR = `Различай (дискриминатор смысла):
+- Процесс/регламент (повторяемая норма «как делаем всегда») ≠ разовая задача/действие на эту встречу.
+- Решение (выбор из опций, зафиксирован, есть обоснование) ≠ пожелание / «надо бы» / намерение без фиксации.
+- Системный insight (обобщённый вывод, влияет на будущие решения) ≠ разовая жалоба или эмоция.
+- Устойчивая черта/паттерн человека (повторяется ≥2 раз) ≠ единичный эпизод.
+Если виден признак разовости/неповторяемости — НЕ извлекай это как норму/решение/черту.`;
+
+export function withDecisionDiscriminator(systemBody: string): string {
+  return `${systemBody}\n\n${DECISION_DISCRIMINATOR}`;
+}
+
+// ─────────────────── extraction-status орг-сущностей (A0.5, Р-B) ───────────
+// Владелец выбрал 3 значения (не 4). LLM выдаёт русские ярлыки; downstream
+// (API/БД) маппит в английские через EXTRACTION_STATUS_RU_TO_API.
+
+export const EXTRACTION_STATUS_RU = ['существует', 'нужен', 'обсуждается'] as const;
+export type ExtractionStatusRu = (typeof EXTRACTION_STATUS_RU)[number];
+
+/** Маппинг русских ярлыков LLM → стабильные API/БД-коды (англ.). */
+export const EXTRACTION_STATUS_RU_TO_API = {
+  существует: 'exists',
+  нужен: 'needed',
+  обсуждается: 'discussed',
+} as const;
+export type ExtractionStatusApi =
+  (typeof EXTRACTION_STATUS_RU_TO_API)[ExtractionStatusRu];
+
+/** Правило «извлечённый ≠ подтверждённый» — общий текст для extract-промптов. */
+export const EXTRACTED_NOT_CONFIRMED_NOTE = `Статус существования (extractionStatus) — одно из:
+- «существует» — документ/правило уже есть и упомянут как действующий;
+- «нужен» — заявлена потребность, но документ ещё не создан;
+- «обсуждается» — в процессе обсуждения, не финализирован.
+ПРАВИЛО: извлечённый из разговора ≠ подтверждённый/действующий. Не ставь «существует» только потому, что тему упомянули — нужен явный признак, что документ реально есть.`;
+
+export function withExtractedNotConfirmedNote(systemBody: string): string {
+  return `${systemBody}\n\n${EXTRACTED_NOT_CONFIRMED_NOTE}`;
+}
+
+// ─────────────────── people-hypothesis guard (A0.6) ────────────────────────
+// Любая оценка человека — гипотеза по наблюдаемому поведению, приватно.
+
+export const PEOPLE_HYPOTHESIS_NOTE = `Любая оценка человека (навык, черта, вовлечённость, риск выгорания, вклад) — это ГИПОТЕЗА по наблюдаемому поведению на встрече, а не факт и не диагноз.
+Формулируй осторожно: «похоже / наблюдается / по этой встрече», указывай, на чём основано (цитата или эпизод). Не приписывай мотивы и личностные ярлыки. Эти оценки приватны и не показываются самому человеку как вердикт.`;
+
+export function withPeopleHypothesisGuard(systemBody: string): string {
+  return `${systemBody}\n\n${PEOPLE_HYPOTHESIS_NOTE}`;
+}
+
+// ─────────────────── document-compiler mode (A0.7) ─────────────────────────
+// Режимы СОЗДАНИЕ/ДОПОЛНЕНИЕ + маркеры + «ничего не теряй» + версия/changelog.
+
+export const DOCUMENT_COMPILER_MODE_NOTE = `Режим компиляции документа:
+- СОЗДАНИЕ (нет существующего текста): собери структуру с нуля по типу документа.
+- ДОПОЛНЕНИЕ (есть существующий текст): встрой новое в существующий, НИЧЕГО НЕ ТЕРЯЯ из старого. Не переписывай заново — дополняй и уточняй.
+Маркеры прямо в тексте документа:
+- [требует уточнения] — место, где данных недостаточно или они неоднозначны;
+- [конфликт] — новое противоречит старому (оставь оба варианта, помеченные);
+- [изменено] — пункт, обновлённый относительно предыдущей версии.
+Всегда: повышай версию и добавляй короткую запись в changelog/changeReason — что и почему изменилось.`;
+
+export function withDocumentCompilerMode(systemBody: string): string {
+  return `${systemBody}\n\n${DOCUMENT_COMPILER_MODE_NOTE}`;
+}

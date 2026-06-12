@@ -71,6 +71,12 @@ export interface ExtractedBlock {
    * не извлечён или не commitment. Сопоставление с Person — в worker'е.
    */
   commitmentRecipientNameGuess?: string | null | undefined;
+  /**
+   * Wave 3b (2026-06-10) — сторона факта для клиентских типов встреч
+   * (sales/customer_success/partner/custdev). null для внутренних встреч
+   * или если LLM/кэш не вернул поле. Пока не используется обработчиком.
+   */
+  sideHint?: 'our' | 'client' | 'unknown' | null | undefined;
 }
 
 /**
@@ -140,6 +146,17 @@ export interface ExtractedTypedEntities {
 }
 
 /**
+ * Wave 3b (2026-06-10) — самооценка качества входных данных окна. Опциональна
+ * (старые кэш-результаты её не содержат). Пока не используется обработчиком —
+ * зарезервировано для будущих метрик надёжности извлечения.
+ */
+export interface ExtractedDataQuality {
+  speakerCoveragePercent: number | null;
+  transcriptTruncated: boolean;
+  lowConfidenceBlockCount: number;
+}
+
+/**
  * Один LLM-ответ из block-ingest v2.
  *
  * sourceBlockIndex у типизированных сущностей — индекс в `blocks` ТОГО ЖЕ
@@ -149,6 +166,11 @@ export interface ExtractedTypedEntities {
 export interface ExtractedWindow {
   blocks: ExtractedBlock[];
   typed: ExtractedTypedEntities;
+  /**
+   * Wave 3b (2026-06-10) — опциональная самооценка качества данных окна.
+   * undefined, если LLM/кэш её не вернул. Пока не агрегируется в extractFull.
+   */
+  dataQuality?: ExtractedDataQuality | undefined;
 }
 
 /**
@@ -188,6 +210,10 @@ const ExtractedBlockSchema = z.object({
   // старые модели/промпты могут не возвращать.
   commitmentDueDateGuess: z.string().nullable().optional(),
   commitmentRecipientNameGuess: z.string().nullable().optional(),
+  // Wave 3b (2026-06-10) — сторона факта для клиентских типов встреч.
+  // Опционально + nullable: старые кэш-результаты поля не содержат, для
+  // внутренних встреч приходит null.
+  sideHint: z.enum(['our', 'client', 'unknown']).nullable().optional(),
 });
 
 const ExtractedProcessSchema = z.object({
@@ -257,6 +283,15 @@ const BlockIngestResponseSchema = z.object({
   strategy: z.null().optional(),
   // Links — опц.; на эту итерацию не используем, оставляем для совместимости.
   links: z.array(z.unknown()).optional().default([]),
+  // Wave 3b (2026-06-10) — самооценка качества данных окна. Опциональна
+  // (старые кэш-результаты её не содержат). Пока не используется обработчиком.
+  dataQuality: z
+    .object({
+      speakerCoveragePercent: z.number().min(0).max(100).nullable(),
+      transcriptTruncated: z.boolean(),
+      lowConfidenceBlockCount: z.number().int().min(0),
+    })
+    .optional(),
 });
 
 interface ExtractArgs {
@@ -470,9 +505,11 @@ export class BlockExtractionService {
       roleHint: b.roleHint ?? undefined,
       commitmentDueDateGuess: b.commitmentDueDateGuess ?? null,
       commitmentRecipientNameGuess: b.commitmentRecipientNameGuess ?? null,
+      sideHint: b.sideHint ?? null,
     }));
     return {
       blocks,
+      dataQuality: data.dataQuality ?? undefined,
       typed: {
         processes: data.processes.map((p) => ({
           name: p.name,

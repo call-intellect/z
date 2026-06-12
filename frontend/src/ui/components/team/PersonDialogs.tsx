@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   personsDomainApi,
   type DepartmentApi,
@@ -174,7 +174,7 @@ export function PersonEditDialog({
                 onDone();
               } catch (e) {
                 toast.error(
-                  e instanceof ApiError ? e.message : 'Не удалось сохранить.',
+                  humanizeApiError(e, 'Не удалось сохранить.'),
                 );
               } finally {
                 setBusy(false);
@@ -225,7 +225,7 @@ export function RemovePersonDialog({
                 onDone();
               } catch (e) {
                 toast.error(
-                  e instanceof ApiError ? e.message : 'Не удалось удалить.',
+                  humanizeApiError(e, 'Не удалось удалить.'),
                 );
               } finally {
                 setBusy(false);

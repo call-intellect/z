@@ -11,9 +11,15 @@ import { meetingsApi } from '@/api/meetings.api';
 import { meProfileApi, type MyProfileApi } from '@/api/structure.api';
 import { mapTelegramChannelEntry } from '@/domain/me-channels';
 import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Skeleton } from '@/ui/shadcn/skeleton';
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+  MODERN_PAGE_BG,
+  ModernPageShell,
+} from '@/ui/components/dashboard/modern';
 
 import {
   AdminEmpty,
@@ -43,7 +49,7 @@ export function MeClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Этот раздел доступен только в рамках Org."
+        description="Этот раздел доступен только в рамках организации."
       />
     );
   }
@@ -77,24 +83,28 @@ function Content({
       profileSwr.error.code === 'http_404'
     ) {
       return (
-        <div className="mx-auto w-full max-w-4xl px-6 py-8">
-          <AdminEmpty
-            title="Раздел в разработке"
-            description="API личного профиля ещё не подключён."
-          />
+        <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+          <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
+            <AdminEmpty
+              title="Раздел в разработке"
+              description="API личного профиля ещё не подключён."
+            />
+          </div>
         </div>
       );
     }
     return (
-      <div className="mx-auto w-full max-w-4xl px-6 py-8">
-        <AdminError
-          message={
-            profileSwr.error instanceof Error
-              ? profileSwr.error.message
-              : 'Ошибка загрузки'
-          }
-          onRetry={() => void profileSwr.mutate()}
-        />
+      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+        <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
+          <AdminError
+            message={
+              profileSwr.error instanceof Error
+                ? profileSwr.error.message
+                : 'Ошибка загрузки'
+            }
+            onRetry={() => void profileSwr.mutate()}
+          />
+        </div>
       </div>
     );
   }
@@ -106,8 +116,24 @@ function Content({
   const needTelegram = !channelsSwr.isLoading && !channelsSwr.error && !tgLinked;
   const showNudge = needPosition || needTelegram;
 
+  // Заголовок shell: пока профиль грузится — нейтральный «Мой кабинет» без
+  // подзаголовка (скелетоны имени/должности остаются в теле, в ProfileHeader).
+  // После загрузки — имя пользователя в title, «должность · отдел» в subtitle.
+  const shellTitle = profileSwr.isLoading
+    ? 'Мой кабинет'
+    : (profile?.person?.fullName ?? userName ?? 'Мой кабинет');
+  const shellSubtitle = profileSwr.isLoading
+    ? undefined
+    : ([profile?.role?.name, profile?.department?.name]
+        .filter(Boolean)
+        .join(' · ') || undefined);
+
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
+    <ModernPageShell
+      maxWidth="max-w-4xl"
+      title={shellTitle}
+      subtitle={shellSubtitle}
+    >
       {showNudge && (
         <ProfileNudgeBanner
           needPosition={needPosition}
@@ -118,7 +144,6 @@ function Content({
       <ProfileHeader
         loading={profileSwr.isLoading}
         profile={profile ?? null}
-        userName={userName}
       />
 
       <MyPositionCard orgId={orgId} profile={profile ?? null} />
@@ -132,7 +157,7 @@ function Content({
       <MyDocumentsBlock orgId={orgId} />
 
       <MyMeetingsBlock />
-    </div>
+    </ModernPageShell>
   );
 }
 
@@ -166,9 +191,22 @@ function ProfileNudgeBanner({
   needTelegram: boolean;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="flex items-start gap-2 text-sm text-fg-secondary">
-        <Sparkles size={16} className="mt-0.5 shrink-0 text-accent" />
+    <div
+      className="mb-6 flex flex-col gap-2 rounded-2xl p-4 sm:flex-row sm:items-center sm:justify-between"
+      style={{
+        background: 'oklch(0.66 0.2 300 / 0.1)',
+        border: '1px solid oklch(0.66 0.2 300 / 0.3)',
+      }}
+    >
+      <p
+        className="flex items-start gap-2 text-sm"
+        style={{ color: CHART.dim }}
+      >
+        <Sparkles
+          size={16}
+          className="mt-0.5 shrink-0"
+          style={{ color: CHART.violet }}
+        />
         <span>
           Заполните профиль, чтобы Кора работала точнее
           {needPosition && needTelegram
@@ -182,7 +220,8 @@ function ProfileNudgeBanner({
         {needPosition && (
           <Link
             href="#me-card-position"
-            className="font-medium text-accent hover:underline"
+            className="font-medium hover:underline"
+            style={{ color: CHART.violet }}
           >
             Указать должность
           </Link>
@@ -190,7 +229,8 @@ function ProfileNudgeBanner({
         {needTelegram && (
           <Link
             href="#me-card-telegram"
-            className="font-medium text-accent hover:underline"
+            className="font-medium hover:underline"
+            style={{ color: CHART.violet }}
           >
             Подключить Telegram
           </Link>
@@ -200,46 +240,56 @@ function ProfileNudgeBanner({
   );
 }
 
+/**
+ * Слим-шапка профиля. Имя и «должность · отдел» вынесены в заголовок
+ * `ModernPageShell` (title/subtitle), поэтому здесь — только интерактивные
+ * чипы: кликабельная ссылка на должность (`/roles/[id]`) и отдел, плюс
+ * loading-скелетон. Это навигация, которой нет в текстовом subtitle.
+ */
 function ProfileHeader({
   loading,
   profile,
-  userName,
 }: {
   loading: boolean;
   profile: MyProfileApi | null;
-  userName: string | null;
 }) {
   if (loading) {
     return (
-      <header className="mb-8">
+      <header className="mb-6">
         <Skeleton className="h-8 w-1/3" />
         <Skeleton className="mt-2 h-4 w-1/4" />
       </header>
     );
   }
-  const name = profile?.person?.fullName ?? userName ?? 'Я';
   const role = profile?.role;
   const department = profile?.department;
   return (
-    <header className="mb-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-        {name}
-      </h1>
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-fg-secondary">
+    <header className="mb-6">
+      <div
+        className="flex flex-wrap items-center gap-3 text-sm"
+        style={{ color: CHART.dim }}
+      >
         {role ? (
           <Link
             href={`/roles/${encodeURIComponent(role.id)}`}
-            className="inline-flex items-center gap-1 hover:text-accent"
+            className="inline-flex items-center gap-1 hover:underline"
+            style={{ color: CHART.text }}
           >
             <IdCard size={14} /> {role.name}
           </Link>
         ) : (
-          <span className="inline-flex items-center gap-1 text-fg-tertiary">
+          <span
+            className="inline-flex items-center gap-1"
+            style={{ color: CHART.faint }}
+          >
             <IdCard size={14} /> Должность не назначена
           </span>
         )}
         {department && (
-          <span className="inline-flex items-center gap-1 text-fg-tertiary">
+          <span
+            className="inline-flex items-center gap-1"
+            style={{ color: CHART.faint }}
+          >
             <Users size={14} /> {department.name}
           </span>
         )}
@@ -256,40 +306,50 @@ function RoleProfileBlock({
   profile: MyProfileApi | null;
 }) {
   return (
-    <Card className="mb-6">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Моя карта должности</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : !profile?.roleProfile || !profile.roleProfile.summaryCache ? (
-          <p className="text-sm text-fg-tertiary">
-            Карта формируется. Заполнится автоматически по мере встреч,
-            документов и дампов.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {profile.roleProfile.summaryCache.blocks.map((block) => (
-              <div key={block.key}>
-                <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
-                  {block.title ?? BLOCK_TITLES[block.key] ?? block.key}
-                </h3>
-                {block.items.length === 0 ? (
-                  <p className="text-sm text-fg-tertiary">—</p>
-                ) : (
-                  <ul className="list-disc space-y-1 pl-5 text-sm text-fg-primary">
-                    {block.items.map((it, i) => (
-                      <li key={i}>{it}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="mb-6">
+      <GlassCard>
+        <CardTitle icon={<IdCard size={16} />} grad={GRAD.violet}>
+          Моя карта должности
+        </CardTitle>
+        <div className="mt-4">
+          {loading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : !profile?.roleProfile || !profile.roleProfile.summaryCache ? (
+            <p className="text-sm" style={{ color: CHART.faint }}>
+              Карта формируется. Заполнится автоматически по мере встреч,
+              документов и дампов.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {profile.roleProfile.summaryCache.blocks.map((block) => (
+                <div key={block.key}>
+                  <h3
+                    className="mb-1 text-xs font-medium uppercase tracking-wider"
+                    style={{ color: CHART.faint }}
+                  >
+                    {block.title ?? BLOCK_TITLES[block.key] ?? block.key}
+                  </h3>
+                  {block.items.length === 0 ? (
+                    <p className="text-sm" style={{ color: CHART.faint }}>
+                      —
+                    </p>
+                  ) : (
+                    <ul
+                      className="list-disc space-y-1 pl-5 text-sm"
+                      style={{ color: CHART.text }}
+                    >
+                      {block.items.map((it, i) => (
+                        <li key={i}>{it}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </GlassCard>
+    </div>
   );
 }
 
@@ -301,43 +361,57 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
     documentsApi.list(orgId, { uploaderId: 'me' }),
   );
   return (
-    <Card className="mb-6">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FileText size={16} /> Мои документы
+    <div className="mb-6">
+      <GlassCard>
+        <CardTitle icon={<FileText size={16} />} grad={GRAD.teal}>
+          Мои документы
         </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {swr.isLoading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : swr.error ? (
-          <p className="text-sm text-fg-tertiary">
-            Список документов недоступен. Попробуйте позже.
-          </p>
-        ) : (swr.data?.items.length ?? 0) === 0 ? (
-          <p className="text-sm text-fg-tertiary">Документы пока не загружены.</p>
-        ) : (
-          <ul className="divide-y divide-border-subtle">
-            {swr.data!.items.slice(0, 5).map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between py-2 text-sm"
-              >
-                <Link
-                  href={`/documents/${encodeURIComponent(d.id)}`}
-                  className="flex-1 truncate text-fg-primary hover:text-accent"
+        <div className="mt-4">
+          {swr.isLoading ? (
+            <Skeleton className="h-16 w-full" />
+          ) : swr.error ? (
+            <p className="text-sm" style={{ color: CHART.faint }}>
+              Список документов недоступен. Попробуйте позже.
+            </p>
+          ) : (swr.data?.items.length ?? 0) === 0 ? (
+            <p className="text-sm" style={{ color: CHART.faint }}>
+              Документы пока не загружены.
+            </p>
+          ) : (
+            <ul>
+              {swr.data!.items.slice(0, 5).map((d, i) => (
+                <li
+                  key={d.id}
+                  className="flex items-center justify-between gap-2 py-3 text-sm"
+                  style={
+                    i === 0
+                      ? undefined
+                      : { borderTop: '1px solid oklch(1 0 0 / 0.06)' }
+                  }
                 >
-                  {d.name}
-                </Link>
-                <Badge variant="secondary" className="ml-2 text-[10px]">
-                  {documentStatusLabel(d.status)}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+                  <Link
+                    href={`/documents/${encodeURIComponent(d.id)}`}
+                    className="flex-1 truncate hover:underline"
+                    style={{ color: CHART.text }}
+                  >
+                    {d.name}
+                  </Link>
+                  <span
+                    className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                    style={{
+                      color: documentStatusColor(d.status),
+                      background: 'oklch(1 0 0 / 0.06)',
+                    }}
+                  >
+                    {documentStatusLabel(d.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </GlassCard>
+    </div>
   );
 }
 
@@ -353,43 +427,52 @@ function MyMeetingsBlock() {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Calendar size={16} /> Мои встречи
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+    <GlassCard>
+      <CardTitle icon={<Calendar size={16} />} grad={GRAD.blue}>
+        Мои встречи
+      </CardTitle>
+      <div className="mt-4">
         {swr.isLoading ? (
           <Skeleton className="h-16 w-full" />
         ) : swr.error || !swr.data ? (
-          <p className="text-sm text-fg-tertiary">
+          <p className="text-sm" style={{ color: CHART.faint }}>
             Список встреч пока недоступен.
           </p>
         ) : swr.data.items.length === 0 ? (
-          <p className="text-sm text-fg-tertiary">Встреч пока нет.</p>
+          <p className="text-sm" style={{ color: CHART.faint }}>
+            Встреч пока нет.
+          </p>
         ) : (
-          <ul className="divide-y divide-border-subtle">
-            {swr.data.items.slice(0, 5).map((m) => (
+          <ul>
+            {swr.data.items.slice(0, 5).map((m, i) => (
               <li
                 key={m.id}
-                className="flex items-center justify-between py-2 text-sm"
+                className="flex items-center justify-between gap-2 py-3 text-sm"
+                style={
+                  i === 0
+                    ? undefined
+                    : { borderTop: '1px solid oklch(1 0 0 / 0.06)' }
+                }
               >
                 <Link
                   href={`/meetings/${encodeURIComponent(m.id)}/result`}
-                  className="flex-1 truncate text-fg-primary hover:text-accent"
+                  className="flex-1 truncate hover:underline"
+                  style={{ color: CHART.text }}
                 >
                   {m.title}
                 </Link>
-                <span className="ml-2 text-xs text-fg-tertiary">
+                <span
+                  className="shrink-0 text-xs"
+                  style={{ color: CHART.faint }}
+                >
                   {formatDate(m.createdAt)}
                 </span>
               </li>
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 
@@ -405,6 +488,21 @@ function documentStatusLabel(status: string): string {
       return 'ошибка';
     default:
       return status;
+  }
+}
+
+/** Цвет плашки статуса документа в палитре современного языка. */
+function documentStatusColor(status: string): string {
+  switch (status) {
+    case 'parsed':
+      return CHART.mint;
+    case 'failed':
+      return CHART.red;
+    case 'parsing':
+    case 'uploaded':
+      return CHART.amber;
+    default:
+      return CHART.dim;
   }
 }
 

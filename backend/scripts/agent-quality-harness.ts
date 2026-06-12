@@ -222,15 +222,20 @@ function pickStringArray(obj: unknown, keys: string[]): string[] {
     const v = rec[k];
     if (Array.isArray(v)) {
       return v
-        .map((x) =>
-          typeof x === 'string'
-            ? x
-            : x && typeof x === 'object' && 'title' in (x as object)
-              ? String((x as { title: unknown }).title)
-              : x && typeof x === 'object' && 'text' in (x as object)
-                ? String((x as { text: unknown }).text)
-                : '',
-        )
+        .map((x) => {
+          if (typeof x === 'string') return x;
+          if (x && typeof x === 'object') {
+            // Толерантность к БРЕЙК-объектам провенанс (Волна 3b): элемент
+            // может быть { text|item|what|title, ... }. Берём первое строковое
+            // из приоритетного набора ключей.
+            const rec = x as Record<string, unknown>;
+            for (const key of ['title', 'text', 'item', 'what']) {
+              const val = rec[key];
+              if (typeof val === 'string' && val.length > 0) return val;
+            }
+          }
+          return '';
+        })
         .filter((s) => s.length > 0);
     }
   }

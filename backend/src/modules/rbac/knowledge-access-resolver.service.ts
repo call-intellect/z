@@ -23,6 +23,10 @@ const CACHE_MAX_SIZE = 10_000;
 export class KnowledgeAccessResolver {
   private readonly logger = new Logger(KnowledgeAccessResolver.name);
   private cache = new Map<string, CacheEntry>();
+  private directCache = new Map<
+    string,
+    { value: { personId: string | null; isBypass: boolean; groupIds: string[] }; fetchedAt: number }
+  >();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -126,6 +130,100 @@ export class KnowledgeAccessResolver {
     };
     this.cacheSet(key, ctx);
     return ctx;
+  }
+
+  /**
+   * ТЗ 2026-06-10 meeting-visibility — ПРЯМЫЕ группы пользователя БЕЗ матрицы
+   * видимости отделов (в отличие от resolveAccessibleGroups). Грант группе в
+   * видео-видимости видит ТОЛЬКО прямой член, а не «кто видит группу по матрице».
+   * Additive: НЕ меняет существующие методы. Своя кэш-карта, тот же TTL.
+   * Возвращает { personId, isBypass, groupIds } где groupIds = ownDeptGroups ∪ closedGroups
+   * (состояние ДО матрицы — строки 112-120 resolveAccessibleGroups НЕ применяются).
+   */
+  async resolveDirectGroupIds(args: { tenantId: string; userId: string }): Promise<{
+    personId: string | null;
+    isBypass: boolean;
+    groupIds: string[];
+  }> {
+    const key = `${args.userId}:${args.tenantId}`;
+    const cached = this.directCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.value;
+
+    const rbacCtx = await this.rbac.loadContext(args.userId, args.tenantId);
+    const isBypass =
+      !!rbacCtx &&
+      (rbacCtx.isSuperAdmin || rbacCtx.role === 'owner' || rbacCtx.role === 'admin');
+    if (isBypass) {
+      const value = { personId: null, isBypass: true, groupIds: [] as string[] };
+      this.directCacheSet(key, value);
+      return value;
+    }
+
+    const person = await this.prisma.person.findFirst({
+      where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
+      select: { id: true, primaryDepartmentId: true },
+    });
+    if (!person) {
+      const value = { personId: null, isBypass: false, groupIds: [] as string[] };
+      this.directCacheSet(key, value);
+      return value;
+    }
+
+    const deptIds = new Set<string>();
+    if (person.primaryDepartmentId) deptIds.add(person.primaryDepartmentId);
+    const [personRoles, appointments, headOf] = await Promise.all([
+      this.prisma.personRole.findMany({
+        where: { tenantId: args.tenantId, personId: person.id, validTo: null },
+        select: { role: { select: { departmentId: true } } },
+      }),
+      this.prisma.appointment.findMany({
+        where: { tenantId: args.tenantId, personId: person.id, status: 'active', validTo: null },
+        select: { departmentId: true },
+      }),
+      this.prisma.department.findMany({
+        where: { tenantId: args.tenantId, headPersonId: person.id, deletedAt: null },
+        select: { id: true },
+      }),
+    ]);
+    for (const pr of personRoles) if (pr.role?.departmentId) deptIds.add(pr.role.departmentId);
+    for (const ap of appointments) if (ap.departmentId) deptIds.add(ap.departmentId);
+    for (const d of headOf) deptIds.add(d.id);
+
+    const [deptGroups, memberships] = await Promise.all([
+      deptIds.size > 0
+        ? this.prisma.knowledgeGroup.findMany({
+            where: { tenantId: args.tenantId, kind: 'department', refId: { in: [...deptIds] } },
+            select: { id: true },
+          })
+        : Promise.resolve([] as { id: string }[]),
+      this.prisma.knowledgeGroupMember.findMany({
+        where: { personId: person.id },
+        select: { groupId: true, group: { select: { kind: true, isClosed: true, tenantId: true } } },
+      }),
+    ]);
+
+    const groupIds = new Set<string>(deptGroups.map((g) => g.id));
+    for (const m of memberships) {
+      if (m.group.tenantId !== args.tenantId) continue; // tenant-guard
+      if (m.group.isClosed) groupIds.add(m.groupId);
+      else if (m.group.kind === 'department') groupIds.add(m.groupId); // ручной dept-override
+    }
+    // МАТРИЦУ НЕ применяем (в этом и смысл «прямых» групп).
+
+    const value = { personId: person.id, isBypass: false, groupIds: [...groupIds] };
+    this.directCacheSet(key, value);
+    return value;
+  }
+
+  private directCacheSet(
+    key: string,
+    value: { personId: string | null; isBypass: boolean; groupIds: string[] },
+  ): void {
+    if (this.directCache.size >= CACHE_MAX_SIZE) {
+      const firstKey = this.directCache.keys().next().value;
+      if (firstKey) this.directCache.delete(firstKey);
+    }
+    this.directCache.set(key, { value, fetchedAt: Date.now() });
   }
 
   /**

@@ -36,6 +36,7 @@ import type { PromptTemplateSection, PromptTemplateVersion } from '@prisma/clien
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { applyInputGuards } from '../../ai/services/prompts/common';
 
 import type { DemoMeetingKey, PreviewPromptDto } from './dto/prompt-templates.dto';
 import { AdminPromptTemplatesService } from './prompt-templates.service';
@@ -100,12 +101,21 @@ export class PromptTemplatesPreviewService {
     const systemPrompt = this.buildSystemPrompt(version);
     const userMessage = this.buildUserMessage(demo);
 
+    // A2: оборачиваем сырой транскрипт demo-встречи в анти-инъекционные маркеры.
+    // asr:true — это транскрипт (демо). У сервиса нет TypedConfigService —
+    // глобальный kill-switch здесь не гейтит (enabled по умолчанию true);
+    // конструктор ради флага не расширяем.
+    const guarded = applyInputGuards(systemPrompt, userMessage, {
+      injection: true,
+      asr: true,
+    });
+
     const startedAt = Date.now();
     try {
       const res = await this.router.call({
         taskType: 'summary',
-        systemPrompt,
-        userMessage,
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
         // Tenant неизвестен на preview-уровне (super_admin запускает за себя).
         // null допустимо по контракту LlmRouterService.
         tenantId: null,

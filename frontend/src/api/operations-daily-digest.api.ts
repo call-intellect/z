@@ -128,6 +128,21 @@ export interface DailyDigestChronicBlockerApi {
   responsiblePersonId: string | null;
 }
 
+/**
+ * Ф1b редизайна дашбордов — точка исторического тренда (зеркало backend
+ * `DailyDigestTrendPointDto`). Считается из persisted-снимков metricsJson.
+ */
+export interface DailyDigestTrendPointApi {
+  dateLocal: string;
+  totalCheckIns: number;
+  greenShare: number;
+  redShare: number;
+  blockers: number;
+  overdueCommitments: number;
+  goalsCompleted: number;
+  goalsFailed: number;
+}
+
 export interface DailyDigestApi {
   id: string;
   tenantId: string;
@@ -147,6 +162,8 @@ export interface DailyDigestApi {
   whoStruggled: DailyDigestPersonStruggledApi[];
   // ТЗ-2 Ф3 — хронические блокеры (runtime-вычислены на backend).
   chronicBlockers: DailyDigestChronicBlockerApi[];
+  // Ф1b — исторический тренд (runtime из persisted-снимков на backend), old→new.
+  trend: DailyDigestTrendPointApi[];
 }
 
 /** Обёртка-helper: ловит digest_not_found и превращает в `null`. */

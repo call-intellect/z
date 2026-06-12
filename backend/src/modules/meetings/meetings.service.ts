@@ -36,7 +36,9 @@ import type {
   Paginated,
 } from './domain/meeting.domain';
 import type { MeetingPublicDto } from './dto/meeting-public.dto';
+import type { SetVisibilityBody } from './dto/visibility.dto';
 import { assertTransition } from './fsm/meeting-fsm';
+import { MeetingVisibilityService } from './meeting-visibility.service';
 import { MeetingsRepository } from './meetings.repository';
 
 /**
@@ -92,6 +94,7 @@ export class MeetingsService {
     @Inject(MailService) private readonly mail: MailService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
+    @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
   ) {}
 
   /**
@@ -656,15 +659,43 @@ export class MeetingsService {
   async getForUser(id: string, userId: string): Promise<MeetingWithOwnerAndParticipants> {
     const meeting = await this.meetings.findByIdWithOwnerAndParticipants(id);
     if (!meeting) throw new MeetingNotFoundError(id);
-    if (meeting.ownerId !== userId) {
-      // По ТЗ Фазы 2 — детали может видеть только хост. Гость использует /access.
-      throw new NotAuthorizedError('not_meeting_host');
-    }
+    await this.visibility.assertCanView(id, userId);
     return meeting;
+  }
+
+  /**
+   * Host-only гейт для МУТАЦИЙ встречи (rename participant, setClosedGroupKind,
+   * retry-ai/regenerate в контроллере). Раньше эти места переиспользовали
+   * `getForUser` ради owner-проверки, но после перевода `getForUser` на предикат
+   * «Кому видно» (ТЗ meeting-visibility Ф3) чтение видно не только хосту —
+   * поэтому host-only действия проверяют владельца напрямую. Публичный: вызывается
+   * и из контроллера (retry-ai). Возвращает встречу для дальнейшего использования.
+   */
+  async assertMeetingHost(
+    meetingId: string,
+    userId: string,
+  ): Promise<MeetingWithOwnerAndParticipants> {
+    const meeting = await this.meetings.findByIdWithOwnerAndParticipants(meetingId);
+    if (!meeting) throw new MeetingNotFoundError(meetingId);
+    if (meeting.ownerId !== userId) throw new NotAuthorizedError('not_meeting_host');
+    return meeting;
+  }
+
+  /** ТЗ Ф4 — текущий режим «Кому видно» (host-only). */
+  async getMeetingVisibility(meetingId: string, userId: string) {
+    const meeting = await this.assertMeetingHost(meetingId, userId);
+    return this.visibility.getVisibility(meeting);
+  }
+
+  /** ТЗ Ф4 — задать «Кому видно» (host-only). */
+  async setMeetingVisibility(meetingId: string, userId: string, dto: SetVisibilityBody): Promise<void> {
+    const meeting = await this.assertMeetingHost(meetingId, userId);
+    await this.visibility.setVisibility(meeting, userId, dto);
   }
 
   async list(
     userId: string,
+    tenantId: string | undefined,
     filters: {
       page: number;
       limit: number;
@@ -676,7 +707,17 @@ export class MeetingsService {
       cardId?: string;
     },
   ): Promise<Paginated<Meeting>> {
-    const { items, total } = await this.meetings.listByOwner(userId, filters);
+    // tenantId из X-Org-Id (TenantMiddleware → @CurrentOrg). Fallback — единственный
+    // membership пользователя (продукт: один user = одна Org). Нет Org → пусто.
+    let tid = tenantId;
+    if (!tid) {
+      const m = await this.prisma.membership.findFirst({ where: { userId }, select: { orgId: true } });
+      tid = m?.orgId ?? undefined;
+    }
+    if (!tid) return { items: [], total: 0, page: filters.page, limit: filters.limit };
+    const ctx = await this.visibility.resolveContext(tid, userId);
+    const where = this.visibility.buildListWhere(ctx, tid, userId);
+    const { items, total } = await this.meetings.listVisible(where, filters);
     return { items, total, page: filters.page, limit: filters.limit };
   }
 
@@ -742,7 +783,7 @@ export class MeetingsService {
     newName: string;
     actorUserId: string;
   }): Promise<Participant> {
-    await this.getForUser(args.meetingId, args.actorUserId);
+    await this.assertMeetingHost(args.meetingId, args.actorUserId);
 
     const participant = await this.prisma.participant.findFirst({
       where: { id: args.participantId, meetingId: args.meetingId },
@@ -780,7 +821,7 @@ export class MeetingsService {
     closedGroupKind: 'leadership' | 'council' | 'personal' | null,
     actorUserId: string,
   ): Promise<{ id: string; closedGroupKind: string | null }> {
-    await this.getForUser(meetingId, actorUserId);
+    await this.assertMeetingHost(meetingId, actorUserId);
     const updated = await this.prisma.meeting.update({
       where: { id: meetingId },
       data: { closedGroupKind },
@@ -993,6 +1034,7 @@ export class MeetingsService {
       customPrompt: string | null;
       failureReason: string | null;
       cardId: string | null;
+      visibilityScope: string;
     };
     participants: Array<{
       id: string;
@@ -1022,14 +1064,6 @@ export class MeetingsService {
       summaryFast: string | null;
       summaryFastModel: string | null;
       summaryFastGeneratedAt: string | null;
-      /**
-       * Сводка предыдущего поколения (knowledge-core v2). Fallback, если
-       * `summaryFast` ещё не сгенерирован. Поле сохраняется до полного
-       * удаления v2-агентов (через 2 недели A/B-сравнения).
-       */
-      summaryV2: string | null;
-      summaryV2Model: string | null;
-      summaryV2GeneratedAt: string | null;
     } | null;
     recording: {
       hasRecording: boolean;
@@ -1054,9 +1088,7 @@ export class MeetingsService {
       },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
-    if (meeting.ownerId !== userId) {
-      throw new NotAuthorizedError('not_meeting_host');
-    }
+    await this.visibility.assertCanView(meetingId, userId);
 
     return {
       meeting: {
@@ -1070,6 +1102,7 @@ export class MeetingsService {
         customPrompt: meeting.customPrompt ?? null,
         failureReason: meeting.failureReason ?? null,
         cardId: meeting.cardId ?? null,
+        visibilityScope: meeting.visibilityScope,
       },
       participants: meeting.participants
         .filter(isPresentParticipant)
@@ -1106,9 +1139,7 @@ export class MeetingsService {
       select: { ownerId: true, status: true, failureReason: true },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
-    if (meeting.ownerId !== userId) {
-      throw new NotAuthorizedError('not_meeting_host');
-    }
+    await this.visibility.assertCanView(meetingId, userId);
     return { stage: meeting.status, failureReason: meeting.failureReason ?? null };
   }
 
@@ -1129,9 +1160,7 @@ export class MeetingsService {
       include: { transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } } },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
-    if (meeting.ownerId !== userId) {
-      throw new NotAuthorizedError('not_meeting_host');
-    }
+    await this.visibility.assertCanView(meetingId, userId);
     const t = meeting.transcript;
     if (!t?.turns) {
       throw new MeetingNotFoundError(`transcript:${meetingId}`);
@@ -1159,9 +1188,6 @@ export class MeetingsService {
     summaryFast: string | null;
     summaryFastModel: string | null;
     summaryFastGeneratedAt: string | null;
-    summaryV2: string | null;
-    summaryV2Model: string | null;
-    summaryV2GeneratedAt: string | null;
   } {
     return {
       summary: r.summary,
@@ -1175,9 +1201,6 @@ export class MeetingsService {
       summaryFast: r.summaryFast ?? null,
       summaryFastModel: r.summaryFastModel ?? null,
       summaryFastGeneratedAt: r.summaryFastGeneratedAt?.toISOString() ?? null,
-      summaryV2: r.summaryV2 ?? null,
-      summaryV2Model: r.summaryV2Model ?? null,
-      summaryV2GeneratedAt: r.summaryV2GeneratedAt?.toISOString() ?? null,
     };
   }
 

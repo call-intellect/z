@@ -11,6 +11,7 @@
 import { useEffect, useRef } from 'react';
 import useSWR, { type Key, type SWRConfiguration, type SWRResponse } from 'swr';
 import { toast } from '@/ui/shadcn/toast';
+import { humanizeApiError } from '@/api/api-error';
 
 type Fetcher<Data> = (...args: unknown[]) => Promise<Data> | Data;
 
@@ -39,8 +40,8 @@ export function useSwrWithToast<Data = unknown, Err = unknown>(
     if (lastErrorRef.current === result.error) return;
     lastErrorRef.current = result.error;
     const title = errorTitle ?? 'Не удалось загрузить данные';
-    const description =
-      result.error instanceof Error ? result.error.message : undefined;
+    // Человеческое сообщение; пустую строку (технический код/HTTP) не показываем.
+    const description = humanizeApiError(result.error, '');
     toast.error(title, description ? { description } : undefined);
   }, [result.error, errorTitle, silent]);
 

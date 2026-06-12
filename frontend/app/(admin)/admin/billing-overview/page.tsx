@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { AdminBillingOverviewClient } from './AdminBillingOverviewClient';
 
 export const metadata: Metadata = {
-  title: 'Z-Admin — Биллинг overview',
+  title: 'Биллинг overview',
 };
 
 export default function AdminBillingOverviewPage() {

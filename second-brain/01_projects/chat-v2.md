@@ -90,6 +90,29 @@ Push-pattern: каждый специалист в `onModuleInit` зовёт `re
 
 UI `/chat` показывает баннер с приглашением попробовать `/chat-v2`.
 
+## Query Understanding Волна 1 (понимание структуры запроса) — 2026-06-10
+
+**Источник:** [`plans/tz/2026-06-10-query-understanding-tier0-tier1.md`](../../plans/tz/2026-06-10-query-understanding-tier0-tier1.md) (Tier 0 + Tier 1, 5 фаз, без миграций БД). Архитектура retrieval — [[../02_architecture/knowledge-core]] §«Структурный фильтр retrieval»; taskType — [[ai-jobs]].
+
+До этой волны chat-v2 retrieval ранжировал только по смысловому сходству (cosine + BM25 + 1-hop граф), а dialog-layer извлекал лишь `intent`. Запрос с периодом/типом/отделом («что мы решали по маркетингу на этой неделе?») молча деградировал: слова уходили в эмбеддинг, фильтра не было — мог вернуться ответ трёхмесячной давности по другому отделу. Теперь чат **понимает структуру** вопроса и применяет её как **recall-safe структурный фильтр** поверх графа.
+
+### Tier 0 — извлечение плана запроса
+- Новый сервис `QueryPlanExtractorService` (`backend/src/modules/dialog-layer/services/query-plan-extractor.service.ts`) — **один** LLM-вызов (taskType `dialog-extract-plan`, primary `deepseek-v4-flash`) извлекает `QueryPlanFilters`: период (как символический токен) + `signalTypes` + `themeBranches` (отдел/тема из enum `ThemeBranch`) + `entityHints` (имена сущностей как написаны) + `personScope` («я/мой/мне») + `aggregation` + `needsAction` + `activeNow` («сейчас/действующие»).
+- Период резолвится **детерминированно**, не LLM: `period-resolver.ts` переводит токен (`this_week`/`last_week`/`yesterday`/`today`/`this_month`/`last_month`/`last_n_days`/`none`) в пару `[dateFrom, dateTo]` в поясе Europe/Moscow (фиксированный UTC+3, без перехода на летнее время; иные пояса — задача следующего этапа). Без date-библиотек — голый `Date.UTC`.
+- **FAIL-OPEN на каждом шаге:** ошибка LLM / невалидный JSON / низкая уверенность (`QUERY_PLAN_MIN_CONFIDENCE=0.6`) → пустой план `applied=false` → поиск работает как раньше, без фильтра. Лучше «не сузить», чем «потерять релевантное».
+- `entityHints` резолвятся в `Entity.id` (по `canonicalName`/`aliases`, **не мутирующе**), `personScope` («я») → `Person.entityId` спрашивающего из сессии (userId, не из текста) и сворачивается в тот же entity-фильтр.
+
+### Tier 1 — recall-safe структурный фильтр
+- `DialogProcessResult.structuralFilters` (`StructuralRetrievalFilters`: dateFrom/dateTo/signalTypes/entityIds/themeBranches/bitemporalActiveOnly) пробрасывается `SynthesisInput → ChatV2Input → RetrievalInput`.
+- В `ChatV2RetrievalService` — новый метод `rankByStructuralFilter`: при наличии хотя бы одного фильтра делает **полный точный скан** WHERE-фильтрованного пула с `ORDER BY score DESC` (вычисляемый алиас cosine), а **не** HNSW-пробу `embedding<=>qvec LIMIT` (которая роняет recall на узком окне). Предикаты: дата по `IdeaBlockEvidence.sourceTimestamp`, `signalType`, entity (EXISTS по `IdeaBlockEntity`), тема (`ThemeIdeaBlock`+`Theme.branch`), bitemporal `validUntil IS NULL`. 1-hop graph-расширение при фильтрации пропускается. Без фильтров путь байт-в-байт прежний (без регрессии).
+- **Честный пустой ответ:** применён фильтр, но пул пуст → «По заданным условиям (…) в памяти ничего не нашлось» **без** LLM-синтеза (хелпер `describeStructuralFilters`). Не выдумывает ответ, когда под условия ничего не подошло.
+
+### Флаг и метрики
+- `QUERY_PLAN_EXTRACTION_ENABLED` — kill-switch (ON по умолчанию, Ship-On; строка в `docs/operations/feature-flags.md`).
+- `z_query_plan_extraction_total{result}`, `z_query_plan_retrieval_filtered_total{filtered}`, `z_query_plan_empty_pool_total{result}`.
+
+> **Дальнейшие волны (НЕ входят):** оркестратор в горячем чате, grounded-специалист-аналитик, text-to-SQL агрегации — отдельные ТЗ.
+
 ## Что отложено
 
 - **Streaming SSE** — на α-5 синхронный ответ (1-3 сек обычно). Перенесено в β.

@@ -21,6 +21,32 @@ export const DAILY_DIGEST_TASK_TYPE = 'operations-daily-digest';
 /** Маркер для отделения основного текста от shortSummary в ответе LLM. */
 const SHORT_SUMMARY_DELIMITER = '---SHORT_SUMMARY---';
 
+/** RU-названия типов сигналов (InsightKind). Неизвестный — как есть. */
+const INSIGHT_KIND_RU: Record<string, string> = {
+  problem: 'проблема',
+  risk: 'риск',
+  blocker: 'блокер',
+  inefficiency: 'неэффективность',
+};
+function insightKindRu(k: string): string {
+  return INSIGHT_KIND_RU[k] ?? k;
+}
+
+/** RU-названия статусов решений (DecisionStatus). Неизвестный — как есть. */
+const DECISION_STATUS_RU: Record<string, string> = {
+  active: 'действует',
+  rolled_back: 'откатано',
+  superseded: 'заменено',
+  proposed: 'предложено',
+  approved: 'утверждено',
+  rejected: 'отклонено',
+  implemented: 'внедрено',
+  cancelled: 'отменено',
+};
+function decisionStatusRu(s: string): string {
+  return DECISION_STATUS_RU[s] ?? s;
+}
+
 export const DAILY_DIGEST_SYSTEM_PROMPT = [
   'Ты — аналитик операционного директора. На вход — агрегат показателей компании за прошедшие сутки.',
   'Твоя задача — собрать связный комментарий из 4-6 коротких разделов в формате Markdown:',
@@ -29,7 +55,7 @@ export const DAILY_DIGEST_SYSTEM_PROMPT = [
   '  2. Новые блокеры за день.',
   '  3. Просроченные обещания (на кого ждём ответа).',
   '  4. Что закрыли / что упустили из целей.',
-  '  5. Сигналы (новые high-severity инсайты).',
+  '  5. Сигналы (новые важные инсайты).',
   '  6. Что критично взять в руки сегодня (1-2 пункта).',
   '',
   'После основного текста — отдельной секцией строка-разделитель:',
@@ -93,10 +119,10 @@ export function buildDailyDigestUserMessage(agg: DailyDigestAggregates): string 
 
   if (agg.newHighInsights.length > 0) {
     lines.push('');
-    lines.push('Новые сигналы (high-severity, топ-5):');
+    lines.push('Новые сигналы (важные, топ-5):');
     for (const i of agg.newHighInsights.slice(0, 5)) {
       const cause = i.causeCategory ? `, причина: ${i.causeCategory}` : '';
-      lines.push(`  - [${i.kind}${cause}] ${truncate(i.statement, 200)}.`);
+      lines.push(`  - [${insightKindRu(i.kind)}${cause}] ${truncate(i.statement, 200)}.`);
     }
   }
 
@@ -104,7 +130,7 @@ export function buildDailyDigestUserMessage(agg: DailyDigestAggregates): string 
     lines.push('');
     lines.push('Решения за вчера (топ-5):');
     for (const d of agg.decisions.slice(0, 5)) {
-      lines.push(`  - [${d.status}] ${truncate(d.statement, 200)}.`);
+      lines.push(`  - [${decisionStatusRu(d.status)}] ${truncate(d.statement, 200)}.`);
     }
   }
 
@@ -179,9 +205,9 @@ export function buildFallbackDigestMarkdown(
 
   if (agg.newHighInsights.length > 0) {
     lines.push('');
-    lines.push('## Сигналы (high-severity)');
+    lines.push('## Сигналы (важные)');
     for (const i of agg.newHighInsights.slice(0, 5)) {
-      lines.push(`- [${i.kind}] ${i.statement}`);
+      lines.push(`- [${insightKindRu(i.kind)}] ${i.statement}`);
     }
   }
 
@@ -189,7 +215,7 @@ export function buildFallbackDigestMarkdown(
     lines.push('');
     lines.push('## Решения');
     for (const d of agg.decisions.slice(0, 5)) {
-      lines.push(`- [${d.status}] ${d.statement}`);
+      lines.push(`- [${decisionStatusRu(d.status)}] ${d.statement}`);
     }
   }
 

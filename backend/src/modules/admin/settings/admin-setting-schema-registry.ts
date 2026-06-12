@@ -51,6 +51,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutoThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationDeepReviewThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationStaleDynamicScoreThreshold', UNIT_INTERVAL],
+  // Report-to-graph Ф4 ГАРД A — cap уверенности блоков из отчёта встречи [0..1].
+  ['knowledge.reportBlockConfidenceCap', UNIT_INTERVAL],
   // Action Center «лестница доверия» A1/A2 — пороги [0..1].
   ['knowledge.curationProvisionalThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationAuditSampleRate', UNIT_INTERVAL],
@@ -75,6 +77,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.meetingAnalyzeV2DebounceMs', POSITIVE_INT],
   ['knowledge.chatV2TopBlocks', POSITIVE_INT],
   ['knowledge.chatV2GraphHops', POSITIVE_INT],
+  ['knowledge.chatV2SynthesisTimeoutMs', POSITIVE_INT],
   ['knowledge.insightFrequencyWindowDays', POSITIVE_INT],
   ['knowledge.ideaMinSupportersForCluster', POSITIVE_INT],
   ['knowledge.skillMinObservations', POSITIVE_INT],
@@ -122,6 +125,9 @@ const registry = new Map<string, ZodTypeAny>([
   // (analyze.worker runSummary, MiniMax). Дефолт TRUE — обратимо; false = −1
   // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
+  // Волна 4 B0 (2026-06-10) — kill-switch агента client-meeting-split
+  // (нейтральный протокол встречи наружу для клиента). Дефолт TRUE — фича ON.
+  ['aiFeatures.clientProtocolEnabled', z.boolean()],
 
   // ── LLM cache-smoke (llm.*) — Ф6 Часть 3, наблюдаемость ───────────────
   // cacheSmokeEnabled — включает smoke-проверку доли cache-хитов в cron'е.
@@ -179,6 +185,13 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.reply_latency_rise.factor', z.number().positive()],
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],
+  // Probe Фаза 3 — батч-дайджест probe (касание-кап · час отправки UTC · рубильник).
+  ['probe.digestTouchCap', POSITIVE_INT],
+  ['probe.digestHourUtc', z.number().int().min(0).max(23)],
+  ['probe.digestEnabled', z.boolean()],
+  // Probe Фаза 5 — adaptive fatigue (cooldown темы · рубильник снижения частоты).
+  ['probe.topicCooldownHours', POSITIVE_INT],
+  ['probe.adaptiveFatigueEnabled', z.boolean()],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

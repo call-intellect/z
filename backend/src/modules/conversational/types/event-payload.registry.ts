@@ -24,6 +24,36 @@ const ProbeQuestionPayloadSchema = z
   })
   .strict();
 
+// Probe Фаза 3 — батч-дайджест отложенных probe (queued_digest → ProbeDigestCron).
+const ProbeDigestPayloadSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          question: z.string().min(1).max(400),
+          objectTitle: z.string().max(200).optional(),
+          probeEventId: z.string(),
+        }),
+      )
+      .min(1)
+      .max(20),
+    total: z.number().int().nonnegative(),
+    /** Человеческий собранный текст (его рендерят каналы и кабинет). */
+    summary: z.string().max(4_000).optional(),
+  })
+  .strict();
+
+// Probe Фаза 6 — видимое следствие: подтверждение «ваш ответ записан».
+const ProbeAnswerAckPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(400),
+    objectTitle: z.string().max(200).optional(),
+    probeEventId: z.string().optional(),
+    /** Дубль text для generic-рендера (кабинет читает payload.summary). */
+    summary: z.string().max(400).optional(),
+  })
+  .strict();
+
 const CurationPendingPayloadSchema = z
   .object({
     resourceType: z.string().min(1),
@@ -83,8 +113,12 @@ const SpecialistProbePayloadSchema = z
  */
 const ChatAnswerPayloadSchema = z
   .object({
-    conversationId: z.string().min(1),
-    messageId: z.string().min(1),
+    // C-1 (2026-06-12): допускаем '' — confirm/quota/error-ответы моста
+    // помощника не имеют ConciergeMessage/conversation (раньше Zod молча
+    // ронял отправку → тишина в канале). Мост подставляет синтетические
+    // значения, но защита в глубину — схема тоже не должна бросать.
+    conversationId: z.string(),
+    messageId: z.string(),
     text: z.string().min(1).max(16_000),
     citationsCount: z.number().int().min(0).default(0),
     /** Опц. mode ответа (factual/synthetic/clone_style) — для UI-индикатора. */
@@ -288,6 +322,19 @@ const CheckinAckPayloadSchema = z
   .strict();
 
 /**
+ * Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — подтверждение
+ * приёма свободной заметки (free_note). Отправляется
+ * `ConversationalFreeNoteBridge` после успешного `ingestFreeNote`, чтобы
+ * человек в канале (Telegram/MAX/кабинет) видел: заметка не потерялась.
+ * `text` — готовая строка для рендера («Записал в память Коры 🧠»).
+ */
+const NoteAckPayloadSchema = z
+  .object({
+    text: z.string().min(1).max(500),
+  })
+  .strict();
+
+/**
  * Calendar MVP (2026-05-25) — payload `event.reminder` для напоминания
  * о событии календаря. Доставляется через ConversationalService.sendNotification
  * по каналу telegram_bot / push / email.
@@ -358,8 +405,31 @@ const MeetingInvitePayloadSchema = z
   })
   .strict();
 
+/**
+ * ТЗ 2026-06-09 support-desk (Р-6) — дублирование сотруднику поддержки.
+ *
+ * `support.ticket_created` — новое обращение клиента; `support.ticket_reply` —
+ * клиент ответил в своём тикете. Recipient — userId сотрудника-члена группы
+ * контура. `ticketId`/`ticketNumber` — для drill-down на тикет в деске,
+ * `subject` — тема (для предпросмотра), `snippet` — обрезок текста (для
+ * `ticket_reply`). Текст клиента передаётся как ДАННЫЕ (не инструкция).
+ */
+const SupportTicketEventPayloadSchema = z
+  .object({
+    ticketId: z.string().min(1).max(80),
+    ticketNumber: z.string().min(1).max(40),
+    subject: z.string().min(1).max(300),
+    snippet: z.string().max(2_000).optional(),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const registry = new Map<string, z.ZodTypeAny>([
   ['probe.question', ProbeQuestionPayloadSchema],
+  // Probe Фаза 3 — батч-дайджест отложенных probe.
+  ['probe.digest', ProbeDigestPayloadSchema],
+  // Probe Фаза 6 — видимое следствие ответа («ваш ответ записан»).
+  ['probe.answer_acknowledged', ProbeAnswerAckPayloadSchema],
   ['curation.pending', CurationPendingPayloadSchema],
   ['system.message', SystemMessagePayloadSchema],
   ['chat.answer', ChatAnswerPayloadSchema],
@@ -386,10 +456,16 @@ const registry = new Map<string, z.ZodTypeAny>([
   // ТЗ 2026-05-29 telegram-self-initiated-checkins — подтверждение сохранения
   // самоинициированного плана/отчёта в чек-ин.
   ['checkin.ack', CheckinAckPayloadSchema],
+  // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — подтверждение
+  // приёма свободной заметки (free_note).
+  ['note.ack', NoteAckPayloadSchema],
   // Action Center B3 — повторяющееся напоминание о pending-подтверждениях.
   ['actions.reminder', ActionsReminderPayloadSchema],
   // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
   ['meeting.invite', MeetingInvitePayloadSchema],
+  // ТЗ 2026-06-09 support-desk (Р-6) — дублирование сотруднику поддержки.
+  ['support.ticket_created', SupportTicketEventPayloadSchema],
+  ['support.ticket_reply', SupportTicketEventPayloadSchema],
 ]);
 
 /** Регистрация дополнительной схемы извне (например, в `onModuleInit` потребителя). */

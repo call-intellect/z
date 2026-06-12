@@ -58,13 +58,14 @@ async function main(): Promise<void> {
   console.log(`=== smoke ${TASK_TYPE} ===`);
   const fixture: Fixture = JSON.parse(await fs.readFile(FIXTURE_PATH, 'utf-8'));
 
-  const systemPrompt = buildCloneRespondSystemPrompt({
+  // F1 cache-friendly (2026-06-10): SYSTEM стабилен по режиму; roleName /
+  // bearerName / personaPrompt едут в user через CLONE_RESPOND_USER_TEMPLATE.
+  const systemPrompt = buildCloneRespondSystemPrompt();
+  const userMessage = CLONE_RESPOND_USER_TEMPLATE({
+    question: fixture.question,
     roleName: fixture.roleName,
     bearerName: fixture.bearerName,
     personaPrompt: fixture.personaPrompt,
-  });
-  const userMessage = CLONE_RESPOND_USER_TEMPLATE({
-    question: fixture.question,
     subgraph: fixture.subgraph,
   });
 

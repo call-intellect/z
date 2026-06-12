@@ -13,6 +13,7 @@ import { useState, useRef } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
 import { issuesApi } from '@/api/tracker/issues.api';
+import { humanizeApiError } from '@/api/api-error';
 
 export function IssueAttachments({
   orgId,
@@ -37,7 +38,7 @@ export function IssueAttachments({
       await onUploaded?.();
       if (fileRef.current) fileRef.current.value = '';
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить файл');
+      setError(humanizeApiError(err, 'Не удалось загрузить файл'));
     } finally {
       setUploading(false);
     }

@@ -110,7 +110,8 @@ export class ChaptersController {
     /**
      * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
      * `'fast'` = новый `MeetingReportFastWorker` (приоритет в UI пользователя),
-     * `'v2'` = knowledge-core `meeting-analyze-v2.worker` (fallback),
+     * `'v2'` = историческое значение снятого v2-стека (генератор удалён
+     *          2026-06-10; старые строки в БД могут его нести),
      * `null` = legacy `chapters.worker`.
      */
     extractorVersion: string | null;

@@ -9,7 +9,9 @@ export interface StructureSummaryDto {
   documents: number;
   roleProfiles: {
     total: number;
-    building: number;
+    // #85 — ключ статуса RoleProfile = 'forming' (как в БД и на фронте);
+    // раньше DTO отдавал 'building' → фронт читал undefined → «undefined формируется».
+    forming: number;
     ready: number;
     stale: number;
     error: number;
@@ -72,7 +74,7 @@ export class StructureService {
       documents,
       roleProfiles: {
         total: roleProfilesTotal,
-        building: grouped.forming ?? 0,
+        forming: grouped.forming ?? 0,
         ready: grouped.ready ?? 0,
         stale: grouped.stale ?? 0,
         error: grouped.error ?? 0,

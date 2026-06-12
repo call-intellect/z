@@ -91,6 +91,12 @@ export function InviteCreatedDialog({ open, result, onOpenChange }: Props) {
             </strong>
             . Если сотрудник не успеет — перевыпустите приглашение.
           </p>
+
+          <p className="text-xs text-fg-secondary">
+            Telegram-бот — личный помощник сотрудника: через него Кора присылает
+            чек-ины, напоминания и собирает короткие апдейты. Подключение по
+            желанию.
+          </p>
         </div>
 
         <DialogFooter>

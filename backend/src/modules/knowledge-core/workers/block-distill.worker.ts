@@ -158,6 +158,28 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Report-to-graph Ф4 ГАРД B (детерминированный пост-гард) — транскрипт
+    // ПОБЕЖДАЕТ при дедупе с отчётом. Опасный случай: LLM решил merge, НОВЫЙ
+    // блок — транскриптный (первичный, дословный), а выбранный canonical —
+    // из отчёта (вторичный). Слепой mergeInto превратил бы транскрипт в
+    // merged_into под report-canonical → провенанс деградирует. Вместо этого
+    // разворачиваем направление: транскрипт становится canonical-носителем,
+    // report → merged_into. Условие СТРОГОЕ по primarySource, поэтому
+    // transcript↔transcript и report↔report не затронуты (регресс-тесты Ф4 а/б).
+    const chosenCanonical = candidates.find(
+      (c) => c.candidate.id === verdict.canonicalId,
+    )?.candidate;
+    const newIsTranscript = (block.primarySource ?? 'transcript') === 'transcript';
+    const canonicalIsReport = chosenCanonical?.primarySource === 'report';
+    if (chosenCanonical && newIsTranscript && canonicalIsReport) {
+      await this.swapDirection({
+        transcriptBlock: block,
+        reportCanonicalId: verdict.canonicalId,
+        explanation: verdict.explanation,
+      });
+      return;
+    }
+
     await this.mergeInto({
       block,
       canonicalId: verdict.canonicalId,
@@ -383,6 +405,186 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
     this.emitIdeaBlockUpdated({
       tenantId: block.tenantId,
       blockId: canonicalId,
+      changeKind: 'merged',
+      emittedAt: Date.now(),
+    });
+  }
+
+  /**
+   * Report-to-graph Ф4 ГАРД B — РАЗВОРОТ направления merge.
+   *
+   * Зеркало `mergeInto`, но роли меняются местами: новый ТРАНСКРИПТНЫЙ блок
+   * становится canonical-носителем, а выбранный REPORT-canonical помечается
+   * `merged_into` под транскрипт. Срабатывает СТРОГО при
+   * `new.primarySource='transcript' && canonical.primarySource='report'`
+   * (проверка в `process()`), поэтому transcript↔transcript и report↔report
+   * НЕ затрагиваются.
+   *
+   * Ключевое отличие от `mergeInto`: confidence нового canonical =
+   * `max(transcript, report)`, НЕ weighted-average — иначе высокоуверенный
+   * транскрипт просел бы в низкоуверенном (capped ≤0.6) report.
+   */
+  private async swapDirection(args: {
+    transcriptBlock: IdeaBlock;
+    reportCanonicalId: string;
+    explanation: string;
+  }): Promise<void> {
+    const { transcriptBlock, reportCanonicalId } = args;
+    if (reportCanonicalId === transcriptBlock.id) {
+      this.logger.warn(
+        { blockId: transcriptBlock.id },
+        'block-distill: swap reportCanonicalId == blockId — fallback canonical',
+      );
+      await this.markCanonical(transcriptBlock);
+      return;
+    }
+
+    let canonicalSignalType: SignalType | null = null;
+
+    await this.prisma.$transaction(async (tx) => {
+      const reportCanonical = await tx.ideaBlock.findUnique({
+        where: { id: reportCanonicalId },
+      });
+      if (!reportCanonical) {
+        throw new Error(
+          `block-distill: report-canonical ${reportCanonicalId} не найден — abort swap`,
+        );
+      }
+      // Идемпотентность/гонка: report-canonical мог быть сам merged_into между
+      // KNN и сейчас. Безопаснее всего — fallback: новый транскриптный блок
+      // просто становится canonical (цепочки merge не выстраиваем).
+      if (reportCanonical.status !== 'canonical') {
+        throw new Error(
+          `block-distill: swap target ${reportCanonicalId} имеет статус ${reportCanonical.status}, не canonical`,
+        );
+      }
+
+      // 1. Транскриптный блок становится canonical-носителем.
+      //    signalType берём с транскрипта (он первичный) — это итоговый тип
+      //    для диспатча специалистов после коммита.
+      canonicalSignalType = transcriptBlock.signalType;
+
+      // 2. Report-canonical → merged_into под транскрипт.
+      await tx.ideaBlock.update({
+        where: { id: reportCanonicalId },
+        data: {
+          status: 'merged_into',
+          mergedIntoId: transcriptBlock.id,
+        },
+      });
+
+      // 3. Переносим все evidence С report НА транскрипт.
+      await tx.ideaBlockEvidence.updateMany({
+        where: { blockId: reportCanonicalId },
+        data: { blockId: transcriptBlock.id },
+      });
+
+      // 4. Переносим entity-mention'ы С report НА транскрипт (skip ON CONFLICT
+      //    composite PK, как в mergeInto).
+      const mentions = await tx.ideaBlockEntity.findMany({
+        where: { blockId: reportCanonicalId },
+      });
+      for (const m of mentions) {
+        try {
+          await tx.ideaBlockEntity.update({
+            where: {
+              blockId_entityId: {
+                blockId: reportCanonicalId,
+                entityId: m.entityId,
+              },
+            },
+            data: { blockId: transcriptBlock.id },
+          });
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002'
+          ) {
+            await tx.ideaBlockEntity.delete({
+              where: {
+                blockId_entityId: {
+                  blockId: reportCanonicalId,
+                  entityId: m.entityId,
+                },
+              },
+            });
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      // 5. Транскрипт делаем canonical-носителем: статус, evidenceCount (сумма),
+      //    confidence = MAX (НЕ усреднение — транскрипт не должен просесть в
+      //    capped report), tags = union.
+      const newEvidenceCount =
+        transcriptBlock.evidenceCount + Math.max(1, reportCanonical.evidenceCount);
+      const transcriptConf = new Prisma.Decimal(transcriptBlock.confidence);
+      const reportConf = new Prisma.Decimal(reportCanonical.confidence);
+      const maxConf = transcriptConf.greaterThanOrEqualTo(reportConf)
+        ? transcriptConf
+        : reportConf;
+      const mergedTags = Array.from(
+        new Set([...transcriptBlock.tags, ...reportCanonical.tags]),
+      );
+
+      await tx.ideaBlock.update({
+        where: { id: transcriptBlock.id },
+        data: {
+          status: 'canonical',
+          mergedIntoId: null,
+          evidenceCount: newEvidenceCount,
+          confidence: new Prisma.Decimal(maxConf.toFixed(3)),
+          tags: mergedTags,
+        },
+      });
+    });
+
+    // 6. Линкер для нового canonical-транскрипта (как markCanonical) — связи
+    //    изменились (вобрал evidence/entities report'а).
+    await this.coreQueue.enqueueBlockLinker(transcriptBlock.id).catch((err) => {
+      this.logger.warn(
+        {
+          blockId: transcriptBlock.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'block-distill: enqueueBlockLinker(swap canonical) упал — пересчёт отложен',
+      );
+    });
+
+    this.logger.log(
+      {
+        transcriptBlockId: transcriptBlock.id,
+        reportCanonicalId,
+        explanation: args.explanation,
+      },
+      'block-distill: swapDirection — транскрипт стал canonical, report → merged_into',
+    );
+
+    // 7. Диспатч специалистов на новый canonical-транскрипт (как markCanonical
+    //    делает для нового canonical). Best-effort — статус уже зафиксирован.
+    if (canonicalSignalType !== null) {
+      await this.router
+        .dispatch({
+          id: transcriptBlock.id,
+          tenantId: transcriptBlock.tenantId,
+          signalType: canonicalSignalType,
+        })
+        .catch((err) => {
+          this.logger.warn(
+            {
+              blockId: transcriptBlock.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'block-distill: router.dispatch(swap canonical) упал — проекции отложены',
+          );
+        });
+    }
+
+    // KC-Temporal W3.5 — emit по новому canonical (транскрипт), changeKind='merged'.
+    this.emitIdeaBlockUpdated({
+      tenantId: transcriptBlock.tenantId,
+      blockId: transcriptBlock.id,
       changeKind: 'merged',
       emittedAt: Date.now(),
     });

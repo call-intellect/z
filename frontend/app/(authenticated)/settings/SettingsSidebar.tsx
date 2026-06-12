@@ -65,7 +65,7 @@ export function SettingsSidebar() {
         {showOwner && (
           <>
             <div className="mt-3 px-3 text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              Владелец Org
+              Владелец компании
             </div>
             <ul className="flex flex-col gap-0.5 pt-1">
               {OWNER_ITEMS.map((item) => (

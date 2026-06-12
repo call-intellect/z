@@ -13,6 +13,7 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
+import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 
 import {
   ChatboxApiClient,
@@ -58,6 +59,10 @@ export class ChatboxSyncService {
     private readonly sessions: ChatboxSessionService,
     @Inject(AdminSettingsService)
     private readonly adminSettings: AdminSettingsService,
+    // Ф1 — fuzzy-резолв имени собеседника в Person для имя-ступени каскада
+    // автосвязки (`resolvePersonByHint`: exact + ILIKE; неоднозначность → null).
+    @Inject(EntityResolutionService)
+    private readonly entityResolution: EntityResolutionService,
   ) {}
 
   // ─────────────────────────── helpers ──────────────────────────────
@@ -81,6 +86,20 @@ export class ChatboxSyncService {
   private async isEnabled(): Promise<boolean> {
     return (
       (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true
+    );
+  }
+
+  /**
+   * Ф1 — ступень fuzzy-сопоставления по имени (AdminSetting,
+   * code-fallback true). Когда false — каскад автосвязки ограничивается
+   * email-ступенью (имя-ступень пропускается).
+   */
+  private async isNameFuzzyEnabled(): Promise<boolean> {
+    return (
+      (await this.adminSettings.get<boolean>(
+        'chatbox.match.name_fuzzy_enabled',
+        true,
+      )) ?? true
     );
   }
 
@@ -183,6 +202,12 @@ export class ChatboxSyncService {
         update: data,
       });
     }
+
+    // Ф1 — автосвязка клиентов (ChatboxCustomer) с Person (email → имя-fuzzy).
+    // linkedPersonId / linkMode не пишем в upsert выше (как у members), чтобы не
+    // перетереть manual.
+    await this.autoLinkCustomerTable(tenantId);
+
     return customers.length;
   }
 
@@ -250,6 +275,10 @@ export class ChatboxSyncService {
         update: data,
       });
     }
+
+    // Ф1 — автосвязка собеседников канала (ChatboxChannelClient) с Person.
+    await this.autoLinkChannelClientTable(tenantId);
+
     return clients.length;
   }
 
@@ -293,21 +322,28 @@ export class ChatboxSyncService {
   }
 
   /**
-   * Автосвязка членов ChatBox с Person Коры по email (case-insensitive),
-   * Фаза 9. Эффективно (батч, без N+1):
-   *   1) собрать членов с непустым email и linkMode != manual (ручную не трогаем);
-   *   2) один findMany Person по списку email → карта lowercase(email) → personId;
-   *   3) для совпавших проставить linkedPersonId + linkMode='auto'.
-   * Если Person не найден — оставляем как есть (не сбрасываем).
+   * Автосвязка членов ChatBox с Person Коры. Каскад (Ф1):
+   *   1) email-ступень (case-insensitive) — Фаза 9;
+   *   2) имя-ступень (fuzzy, `resolvePersonByHint`) для оставшихся несвязанных,
+   *      за AdminSetting `chatbox.match.name_fuzzy_enabled` (code-fallback true).
+   * Ручную связку (`linkMode='manual'`) НЕ трогаем (исключена из выборки).
+   *
+   * Email-ступень — батч (один findMany Person, без N+1). Имя-ступень —
+   * per-candidate резолв (exact + ILIKE; неоднозначность → null), как у встреч.
    */
   private async autoLinkMembers(tenantId: string): Promise<void> {
+    // ── ступень 1: email (батч) ──
     const candidates = await this.prisma.chatboxMember.findMany({
       where: {
         tenantId,
         linkMode: { not: 'manual' },
-        email: { not: null },
       },
-      select: { id: true, email: true, linkedPersonId: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        linkedPersonId: true,
+      },
     });
     if (candidates.length === 0) return;
 
@@ -318,30 +354,187 @@ export class ChatboxSyncService {
           .filter((e): e is string => !!e),
       ),
     ];
-    if (emails.length === 0) return;
 
-    const persons = await this.prisma.person.findMany({
-      where: { tenantId, email: { in: emails, mode: 'insensitive' } },
-      select: { id: true, email: true },
-    });
     const personByEmail = new Map<string, string>();
-    for (const p of persons) {
-      // Первый выигрывает; lowercase-ключ для case-insensitive сопоставления.
-      const key = p.email.trim().toLowerCase();
-      if (!personByEmail.has(key)) personByEmail.set(key, p.id);
+    if (emails.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId, email: { in: emails, mode: 'insensitive' } },
+        select: { id: true, email: true },
+      });
+      for (const p of persons) {
+        // Первый выигрывает; lowercase-ключ для case-insensitive сопоставления.
+        const key = p.email.trim().toLowerCase();
+        if (!personByEmail.has(key)) personByEmail.set(key, p.id);
+      }
     }
 
+    // Отслеживаем, кто остался несвязанным после email-ступени — для имя-ступени.
+    const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
     for (const c of candidates) {
       const key = c.email?.trim().toLowerCase();
-      if (!key) continue;
-      const personId = personByEmail.get(key);
-      if (!personId) continue;
-      if (c.linkedPersonId === personId) continue; // уже связан корректно
-      await this.prisma.chatboxMember.update({
-        where: { id: c.id },
-        data: { linkedPersonId: personId, linkMode: 'auto' },
-      });
+      const personId = key ? personByEmail.get(key) : undefined;
+      if (personId) {
+        if (c.linkedPersonId === personId) continue; // уже связан корректно
+        await this.prisma.chatboxMember.update({
+          where: { id: c.id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        });
+        continue;
+      }
+      // email не дал результата — кандидат на имя-ступень (если ещё не связан).
+      if (c.linkedPersonId === null) {
+        unlinkedAfterEmail.push({ id: c.id, name: c.name });
+      }
     }
+
+    // ── ступень 2: имя (fuzzy), за флагом ──
+    await this.autoLinkByName({
+      tenantId,
+      rows: unlinkedAfterEmail,
+      update: (id, personId) =>
+        this.prisma.chatboxMember.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /**
+   * Имя-ступень каскада (общая для members/customers/channelClients). Для каждой
+   * несвязанной строки с непустым именем — `resolvePersonByHint` (однозначный хит
+   * → linkedPersonId + linkMode='auto'). Пропускается целиком, если флаг
+   * `chatbox.match.name_fuzzy_enabled` выключен. Неоднозначное имя → null → пропуск.
+   */
+  private async autoLinkByName(args: {
+    tenantId: string;
+    rows: { id: string; name: string | null }[];
+    update: (id: string, personId: string) => Promise<unknown>;
+  }): Promise<void> {
+    if (args.rows.length === 0) return;
+    if (!(await this.isNameFuzzyEnabled())) return;
+
+    for (const row of args.rows) {
+      const name = row.name?.trim();
+      if (!name) continue;
+      const personId = await this.entityResolution.resolvePersonByHint(
+        args.tenantId,
+        name,
+      );
+      if (!personId) continue; // нет хита / неоднозначно
+      await args.update(row.id, personId);
+    }
+  }
+
+  /**
+   * Автосвязка клиентов ChatBox (ChatboxCustomer И ChatboxChannelClient) с Person
+   * Коры за один проход. Тот же каскад, что и для менеджеров: email
+   * (case-insensitive) → имя-fuzzy (за флагом). Ручную связку (`manual`) не
+   * трогаем. Доступен как единая точка; синк-методы вызывают пер-табличные
+   * варианты (`autoLinkCustomerTable` / `autoLinkChannelClientTable`), чтобы не
+   * дублировать работу в `fullSync`.
+   */
+  async autoLinkCustomers(tenantId: string): Promise<void> {
+    await this.autoLinkCustomerTable(tenantId);
+    await this.autoLinkChannelClientTable(tenantId);
+  }
+
+  /** Ф1 — автосвязка только таблицы ChatboxCustomer. */
+  private async autoLinkCustomerTable(tenantId: string): Promise<void> {
+    await this.autoLinkContactTable({
+      tenantId,
+      load: () =>
+        this.prisma.chatboxCustomer.findMany({
+          where: { tenantId, linkMode: { not: 'manual' } },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            linkedPersonId: true,
+          },
+        }),
+      update: (id, personId) =>
+        this.prisma.chatboxCustomer.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /** Ф1 — автосвязка только таблицы ChatboxChannelClient. */
+  private async autoLinkChannelClientTable(tenantId: string): Promise<void> {
+    await this.autoLinkContactTable({
+      tenantId,
+      load: () =>
+        this.prisma.chatboxChannelClient.findMany({
+          where: { tenantId, linkMode: { not: 'manual' } },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            linkedPersonId: true,
+          },
+        }),
+      update: (id, personId) =>
+        this.prisma.chatboxChannelClient.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /**
+   * Обобщённый каскад автосвязки для контактной таблицы (Customer/ChannelClient).
+   * email-ступень батчем + имя-ступень fuzzy. Не трогает уже-связанные и manual.
+   */
+  private async autoLinkContactTable(args: {
+    tenantId: string;
+    load: () => Promise<
+      { id: string; email: string | null; name: string | null; linkedPersonId: string | null }[]
+    >;
+    update: (id: string, personId: string) => Promise<unknown>;
+  }): Promise<void> {
+    const candidates = await args.load();
+    if (candidates.length === 0) return;
+
+    const emails = [
+      ...new Set(
+        candidates
+          .map((c) => c.email?.trim())
+          .filter((e): e is string => !!e),
+      ),
+    ];
+
+    const personByEmail = new Map<string, string>();
+    if (emails.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId: args.tenantId, email: { in: emails, mode: 'insensitive' } },
+        select: { id: true, email: true },
+      });
+      for (const p of persons) {
+        const key = p.email.trim().toLowerCase();
+        if (!personByEmail.has(key)) personByEmail.set(key, p.id);
+      }
+    }
+
+    const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
+    for (const c of candidates) {
+      const key = c.email?.trim().toLowerCase();
+      const personId = key ? personByEmail.get(key) : undefined;
+      if (personId) {
+        if (c.linkedPersonId === personId) continue;
+        await args.update(c.id, personId);
+        continue;
+      }
+      if (c.linkedPersonId === null) {
+        unlinkedAfterEmail.push({ id: c.id, name: c.name });
+      }
+    }
+
+    await this.autoLinkByName({
+      tenantId: args.tenantId,
+      rows: unlinkedAfterEmail,
+      update: args.update,
+    });
   }
 
   // ─────────────────────────── messages ────────────────────────────

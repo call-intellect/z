@@ -13,7 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { useAuth } from '@/contexts/auth-context';
 import {
@@ -78,7 +78,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
       setData(teamDetailFromApi(res));
     } catch (e) {
       if (e instanceof ApiError) {
-        setError({ code: e.code, message: e.message });
+        setError({ code: e.code, message: humanizeApiError(e) });
       } else {
         setError({
           code: 'unknown',

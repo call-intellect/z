@@ -20,6 +20,7 @@ import type { BusinessMetricsService } from '../../common/metrics/business-metri
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
+import type { ConversationalService } from '../conversational/conversational.service';
 
 import { ProbeResponseHandler } from './probe-response.handler';
 import type { NotificationRespondedPayload } from './probe.types';
@@ -92,6 +93,7 @@ function makeMocks(): Mocks {
     incProbeClosed: vi.fn(),
     incProbeResponseClassified: vi.fn(),
     incProbeResponseUnclear: vi.fn(),
+    incProbeOutcome: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const ingestAdapter = {
@@ -119,12 +121,16 @@ function makeHandler(args: {
       responseClassifyMinConfidence: args.minConfidence ?? 0.5,
     },
   } as unknown as TypedConfigService;
+  const conversational = {
+    sendNotification: vi.fn().mockResolvedValue({ id: 'ack-notif-1' }),
+  } as unknown as ConversationalService;
   return new ProbeResponseHandler(
     args.mocks.prisma,
     args.mocks.metrics,
     args.mocks.ingestAdapter,
     llm,
     cfg,
+    conversational,
   );
 }
 
@@ -266,6 +272,62 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     expect(llmArgs.userMessage).not.toContain('устаревший legacy ключ');
     expect(llmArgs.userMessage).not.toContain(
       'контекст от specialist, не сам вопрос',
+    );
+  });
+
+  // ─── TZ clone-method Э3.1 — high-priority reasoning для CDM-ответов ───
+  it('reason=skill.cdm_interview → ingest получает signalTypeHint=reasoning и questionText (каскад formulatedQuestion)', async () => {
+    const probeCdm = {
+      ...buildProbe(),
+      reason: 'skill.cdm_interview',
+      payload: {
+        formulatedQuestion:
+          'Какие альтернативы вы рассматривали и почему отвергли?',
+        suggestedQuestion: 'fallback-вопрос специалиста',
+        message: 'контекст кейса',
+      },
+    };
+    (mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>) = vi
+      .fn()
+      .mockResolvedValue(probeCdm);
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        answer: 'Рассматривал выкат в пятницу',
+        confidence: 0.9,
+        requiresFollowup: false,
+      }),
+    });
+
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+    await handler.handle(event);
+
+    expect(mocks.ingestArgs).toHaveLength(1);
+    const ingested = mocks.ingestArgs[0]!;
+    expect(ingested.signalTypeHint).toBe('reasoning');
+    // Каскад: formulatedQuestion в приоритете.
+    expect(ingested.questionText).toBe(
+      'Какие альтернативы вы рассматривали и почему отвергли?',
+    );
+  });
+
+  it('обычный reason → signalTypeHint НЕ передаётся (undefined), questionText из каскада есть', async () => {
+    mocks.llmCall.mockResolvedValueOnce({
+      text: JSON.stringify({
+        answer: 'Да',
+        confidence: 0.9,
+        requiresFollowup: false,
+      }),
+    });
+
+    const handler = makeHandler({ mocks, classifyEnabled: true });
+    await handler.handle(event);
+
+    expect(mocks.ingestArgs).toHaveLength(1);
+    const ingested = mocks.ingestArgs[0]!;
+    expect(ingested.signalTypeHint).toBeUndefined();
+    // buildProbe payload: { question, message } → каскад берёт question.
+    expect(ingested.questionText).toBe(
+      'Решение по миграции на DeepSeek принято?',
     );
   });
 });

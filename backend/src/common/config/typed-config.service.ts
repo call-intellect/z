@@ -307,13 +307,12 @@ export class TypedConfigService {
         baseUrl: this.get('DEEPSEEK_BASE_URL'),
         defaultModel: this.get('DEEPSEEK_DEFAULT_MODEL'),
         // ТЗ-3 Фаза 3 — форс synthetic-tool через tool_choice для не-thinking
-        // моделей при autoConvert. Дефолт OFF (см. env.schema.ts): включает
-        // владелец после прод-пробы agent-lia. Guard в deepseek.service
-        // откатывает на 'auto' при format-400 прокси.
+        // моделей при autoConvert. Дефолт ON (Ship-On, retest3 #56): kill-switch.
+        // Guard в deepseek.service откатывает на 'auto' при format-400 прокси.
         forceToolChoiceEnabled: this.resolveSync<boolean>(
           'ai.deepseek.forceToolChoiceEnabled',
           'LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED',
-          false,
+          true,
         ),
       },
       ollama: {
@@ -323,6 +322,11 @@ export class TypedConfigService {
       minimax: {
         apiKey: this.get('MINIMAX_API_KEY'),
         baseUrl: this.get('MINIMAX_BASE_URL'),
+      },
+      // retest3 Ф5 #51/Р3 — основной провайдер главного отчёта встречи
+      // (LlmFallbackService). 'deepseek' (Ship-On) | 'minimax' (kill-switch-откат).
+      mainReport: {
+        primary: this.get('LLM_MAIN_REPORT_PRIMARY'),
       },
       grsai: {
         apiKey: this.get('GRSAI_API_KEY'),
@@ -670,6 +674,75 @@ export class TypedConfigService {
         'SUMMARY_AGENT_ENABLED',
         true,
       ),
+      /**
+       * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+       * (нейтральный протокол встречи наружу для клиента). При `true` (default)
+       * `analyze.worker` для клиентских типов встреч дополнительно генерит
+       * протокол и мержит его в `AiResult.structuredData.client_protocol_md`.
+       * При `false` — пропуск (фича не валит основной отчёт). Фича готова →
+       * выкатывается ON; рубильник только для экстренного выключения.
+       */
+      clientProtocolEnabled: this.resolveSync<boolean>(
+        'aiFeatures.clientProtocolEnabled',
+        'CLIENT_PROTOCOL_ENABLED',
+        true,
+      ),
+      /**
+       * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+       * орг-документа (`compile-org-document`). При `true` (default) на verdict
+       * merge/extension от regulation-dedupe специалист 3.1 собирает
+       * структурный `contentMd` через компилятор. При `false` — legacy
+       * plain-update поля (фича не валит dedupe-путь).
+       */
+      docCompilerEnabled: this.resolveSync<boolean>(
+        'aiFeatures.docCompilerEnabled',
+        'DOC_COMPILER_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 prompts-finalization A1.2 — строгий гейт `isOrgNorm`
+       * для regulation-экстракторов (kill-switch, default ON). false →
+       * recall-страховка: гейт игнорируется, старое поведение «создавать всегда».
+       */
+      regulationGateStrict: this.resolveSync<boolean>(
+        'aiFeatures.regulationGateStrict',
+        'REGULATION_GATE_STRICT_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф5 — kill-switch извлечения задач из
+       * переписки Чат-бокса (`chatbox-analyze.worker` после ingestSession).
+       * Default ON (Ship-On). AdminSetting `chatbox.taskExtraction.enabled` →
+       * ENV `CHATBOX_TASK_EXTRACTION_ENABLED` → default.
+       */
+      chatboxTaskExtractionEnabled: this.resolveSync<boolean>(
+        'chatbox.taskExtraction.enabled',
+        'CHATBOX_TASK_EXTRACTION_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф6 — kill-switch межисточникового дедупа
+       * задач (`CrossSourceTaskDedupeService`). При false кандидат всегда
+       * создаётся как новая задача (non-lossy). Default ON (Ship-On).
+       * AdminSetting `tasks.crossSourceDedupe.enabled` → ENV
+       * `TASKS_CROSS_SOURCE_DEDUPE_ENABLED` → default.
+       */
+      tasksCrossSourceDedupeEnabled: this.resolveSync<boolean>(
+        'tasks.crossSourceDedupe.enabled',
+        'TASKS_CROSS_SOURCE_DEDUPE_ENABLED',
+        true,
+      ),
+      /**
+       * ТЗ 2026-06-11 chatbox-tasks Ф6 — порог семантической близости задач
+       * для межисточникового дедупа (cosine). Серая зона = [threshold-0.07,
+       * threshold) → LLM-арбитр `task-dedupe`. Admin-editable (resolveSync:
+       * cacheMap → default; ENV не вводим — крутилка). Дефолт 0.85.
+       */
+      crossSourceDedupeThreshold: this.resolveSync<number>(
+        'tasks.cross_source_dedupe_threshold',
+        undefined,
+        0.85,
+      ),
     } as const;
   }
 
@@ -816,13 +889,9 @@ export class TypedConfigService {
       ),
       themeCosineThreshold: this.get('THEME_COSINE_THRESHOLD'),
       cardRollupV2DebounceMs: this.get('CARD_ROLLUP_V2_DEBOUNCE_MS'),
-      // Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0).
-      // НАМЕРЕННО через this.get(ENV), НЕ resolveSync: seed выставляет
-      // knowledge.v2AgentsEnabled=true, а ENV-дефолт=false; перевод на
-      // resolveSync читал бы AdminSetting первым и ВКЛЮЧИЛ бы v2-агентов на
-      // засеянном проде (текущее поведение — OFF). Это master-флаг фичи, а не
-      // крутилка-порог малого тенанта — включать v2 должно быть отдельным
-      // осознанным решением, не побочкой Фазы 6. См. §Фаза 6 МТЗ.
+      // DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2) удалён как мёртвый
+      // код. Эти три поля остались инертными (никто их больше не читает) —
+      // оставлены, чтобы не трогать env-валидацию/admin-setting-registry/specs.
       v2AgentsEnabled: this.get('KNOWLEDGE_CORE_V2_AGENTS_ENABLED'),
       meetingAnalyzeV2Cron: this.get('MEETING_ANALYZE_V2_CRON'),
       meetingAnalyzeV2DebounceMs: this.get('MEETING_ANALYZE_V2_DEBOUNCE_MS'),
@@ -830,10 +899,22 @@ export class TypedConfigService {
       // на сыром транскрипте (один LLM-вызов). Включается флагом отдельно от
       // v2-агентов; producer — MergeWorker (после готовности транскрипта).
       meetingReportFastEnabled: this.get('MEETING_REPORT_FAST_ENABLED'),
+      // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md
+      // §4): kill-switch вторичного пути готового отчёта в граф. Ship-On (ON).
+      reportIngestEnabled: this.get('REPORT_INGEST_ENABLED'),
       // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов).
       chatV2Enabled: this.get('CHAT_V2_ENABLED'),
       chatV2TopBlocks: this.get('CHAT_V2_TOP_BLOCKS'),
       chatV2GraphHops: this.get('CHAT_V2_GRAPH_HOPS'),
+      // §4 Ф3 (2026-06-11): свой hard-timeout синтеза chat-v2 (ms), независимый
+      // от глобального LLM_ROUTER_DISPATCH_TIMEOUT_MS — чтобы длинный ответ AI-чата
+      // не обрывался. Admin-editable крутилка (cacheMap → default; ENV не вводим).
+      // Дефолт 90с — комфортно выше ~28с реального синтеза.
+      chatV2SynthesisTimeoutMs: this.resolveSync<number>(
+        'knowledge.chatV2SynthesisTimeoutMs',
+        undefined,
+        90_000,
+      ),
       // Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges retrieval filter.
       // При false (default) retrieval НЕ фильтрует edges по validFrom/validUntil.
       // См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
@@ -882,6 +963,33 @@ export class TypedConfigService {
       ageEnabled: this.resolveSync<boolean>(
         'graph.ageEnabled',
         'GRAPH_AGE_ENABLED',
+        true,
+      ),
+    } as const;
+  }
+
+  // ─────────────────────────── support desk (TZ 2026-06-09) ──────────
+  /**
+   * Вендорская служба поддержки (support-desk-clone Ф1).
+   *
+   *   - `enabled` — аварийный kill-switch. Дефолт TRUE (Ship-On). При FALSE
+   *     `SupportIntakeService.createTicket` отдаёт 503 SUPPORT_DESK_DISABLED,
+   *     а `SupportSlaCron` — no-op. Admin-editable (resolveSync: cacheMap →
+   *     ENV `SUPPORT_DESK_ENABLED` → default). Параметр владельца, какая Org —
+   *     вендор-деск, хранится отдельно в AdminSetting `support.vendor_org_id`
+   *     (читается через `getDynamic`, не здесь — это не bool-флаг).
+   */
+  get supportDesk() {
+    return {
+      enabled: this.resolveSync<boolean>(
+        'support_desk.enabled',
+        'SUPPORT_DESK_ENABLED',
+        true,
+      ),
+      // Ф4 kill-switch ночного куратора контура (no-op при false).
+      curatorEnabled: this.resolveSync<boolean>(
+        'support_desk.curator_enabled',
+        'SUPPORT_CURATOR_ENABLED',
         true,
       ),
     } as const;
@@ -1007,9 +1115,11 @@ export class TypedConfigService {
    * Параметры `PracticeSkillExtractor`/`Retrieval`/`Evaluator` сервисов
    * (Agents v2 §C1).
    *
-   *   - `enabled` — мастер-флаг retrieval'а в clone-respond. Default false;
-   *     extraction-cron всё равно работает (наполняет shadow), но в промпт
-   *     skill'ы не подмешиваются, пока флаг не включат.
+   *   - `enabled` — аварийный рубильник (kill-switch) retrieval'а в
+   *     clone-respond. Default true (ТЗ clone-persona-method-layer Э2.1 —
+   *     Ship-On активация): активные процедуры подмешиваются в ответы клона.
+   *     Выкл → retrieval перестаёт подмешивать; extraction/evaluator
+   *     продолжают копить shadow (этим флагом не гейтятся).
    *   - `minTraitsForExtract` — минимум активных SkillTrait в концепте,
    *     ниже которого extractor пропускает concept (рано извлекать procedure).
    *   - `shadowTrafficShare` — стартовый `trafficShare` для новых skill'ов.
@@ -1086,6 +1196,9 @@ export class TypedConfigService {
       conversationTtlDays: this.get('CHAT_V2_CONVERSATION_TTL_DAYS'),
       cleanupCron: this.get('CHAT_V2_CLEANUP_CRON'),
       defaultMode: this.get('CHAT_V2_DEFAULT_MODE'),
+      // §4 Ф1 (2026-06-11) — kill-switch SSE-стриминга стадий прогресса
+      // AI-чата (POST /chat-v2/messages/stream). ON по умолчанию (Ship-On).
+      streamingEnabled: this.get('CHAT_V2_STREAMING_ENABLED'),
     } as const;
   }
 
@@ -1313,12 +1426,20 @@ export class TypedConfigService {
    *   - documentEnabled — приём документов (PDF/DOCX/MD/TXT) → DocumentsService.
    *   - intentClassifierEnabled — LLM-классификатор intent. False → fallback
    *     на эвристики (тот же fallback срабатывает на throw LLM).
+   *   - assistantChannelRoutingEnabled — Ф5 assistant-channels (2026-06-11):
+   *     kill-switch единого помощника в каналах. ON (default, Ship-On) —
+   *     свободный текст/голос Telegram/MAX → assistant_turn → ConciergeService;
+   *     OFF — прежний узкий роутер бит-в-бит (аварийный откат). Чек-ин
+   *     (план/отчёт) не зависит от флага. ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`.
    */
   get bot() {
     return {
       voiceEnabled: this.get('BOT_VOICE_ENABLED'),
       documentEnabled: this.get('BOT_DOCUMENT_ENABLED'),
       intentClassifierEnabled: this.get('BOT_INTENT_CLASSIFIER_ENABLED'),
+      assistantChannelRoutingEnabled: this.get(
+        'ASSISTANT_CHANNEL_ROUTING_ENABLED',
+      ),
     } as const;
   }
 
@@ -1396,6 +1517,12 @@ export class TypedConfigService {
    *   - `autotuneStep` — A2: шаг автоподстройки порога.
    *   - `minDecisionsForAutotune` — A2: минимум решений до автоподстройки.
    *   - `maxProvisionalOverride` — A2: порог override-rate для kill-switch.
+   *   - `conflictArbiterEnabled` — Autonomy W1: kill-switch ночного
+   *     LLM-арбитра конфликтов (Ship-On, дефолт TRUE).
+   *   - `conflictArbiterMinConfidence` — Autonomy W1: минимальная средняя
+   *     confidence голосов-победителей для авто-резолва.
+   *   - `conflictArbiterBatchSize` — Autonomy W1: лимит open-конфликтов
+   *     на Org за один ночной проход.
    *   - `staleDetectorCron` — расписание CardStaleDetectorCron.
    *   - `staleMonthsThreshold` — порог `lastConfirmedAt > N мес.`.
    *   - `staleDynamicScoreThreshold` — порог упавшего `dynamicScore`.
@@ -1430,7 +1557,7 @@ export class TypedConfigService {
       auditSampleRate: this.resolveSync<number>(
         'knowledge.curationAuditSampleRate',
         undefined,
-        0.05,
+        0.01,
       ),
       autotuneEnabled: this.resolveSync<boolean>(
         'knowledge.curationAutotuneEnabled',
@@ -1462,6 +1589,23 @@ export class TypedConfigService {
         undefined,
         0.2,
       ),
+      // Autonomy W1 (2026-06-12) — LLM-арбитр конфликтов (ConflictArbiterCron).
+      // kill-switch, Ship-On: дефолт TRUE (фича выкатывается включённой).
+      conflictArbiterEnabled: this.resolveSync<boolean>(
+        'knowledge.curationConflictArbiterEnabled',
+        undefined,
+        true,
+      ),
+      conflictArbiterMinConfidence: this.resolveSync<number>(
+        'knowledge.curationConflictArbiterMinConfidence',
+        undefined,
+        0.7,
+      ),
+      conflictArbiterBatchSize: this.resolveSync<number>(
+        'knowledge.curationConflictArbiterBatchSize',
+        undefined,
+        20,
+      ),
       staleDetectorCron: this.get('CARD_STALE_DETECTOR_CRON'),
       staleMonthsThreshold: this.get('CARD_STALE_MONTHS_THRESHOLD'),
       staleDynamicScoreThreshold: this.get('CARD_STALE_DYNAMIC_SCORE_THRESHOLD'),
@@ -1476,6 +1620,8 @@ export class TypedConfigService {
    *
    *   - `reminderWindowStartHour` / `reminderWindowEndHour` / `reminderStepHours`
    *     — окно и шаг слот-часов Telegram-напоминаний (PendingActionsReminderCron).
+   *     Дефолты 9/9/12 → единственный слот 09:00: одна сводка в день;
+   *     срочное приходит сразу отдельными уведомлениями (W0 Ф0.1, 2026-06-12).
    *   - `urgentAgeDays` — возраст pending-item (дни), с которого он помечается
    *     срочным (CurationPendingProvider).
    *   - `reminderLeadDays` — за сколько дней до истечения expiresAt помечать
@@ -1491,12 +1637,12 @@ export class TypedConfigService {
       reminderWindowEndHour: this.resolveSync<number>(
         'pendingActions.reminderWindowEndHour',
         undefined,
-        21,
+        9,
       ),
       reminderStepHours: this.resolveSync<number>(
         'pendingActions.reminderStepHours',
         undefined,
-        3,
+        12,
       ),
       urgentAgeDays: this.resolveSync<number>(
         'pendingActions.urgentAgeDays',
@@ -1601,6 +1747,8 @@ export class TypedConfigService {
    *
    * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify:
    *   - `responseClassifyEnabled` — master-флаг LLM-классификации ответа.
+   *   - `subjectAddressingEnabled` — само-подтверждение probe субъектом
+   *     (cabinet-leftovers §3, 2026-06-11): probe идёт первым самому X.
    *   - `voiceInputEnabled` — приём голосовых ответов на probe (Фаза 0.3).
    *   - `responseClassifyMinConfidence` — порог confidence для accept.
    */
@@ -1616,6 +1764,7 @@ export class TypedConfigService {
       ),
       coldStartModeHours: this.get('PROBE_COLD_START_MODE_HOURS'),
       responseClassifyEnabled: this.get('PROBE_RESPONSE_CLASSIFY_ENABLED'),
+      subjectAddressingEnabled: this.get('PROBE_SUBJECT_ADDRESSING_ENABLED'),
       voiceInputEnabled: this.get('PROBE_VOICE_INPUT_ENABLED'),
       responseClassifyMinConfidence: this.get(
         'PROBE_RESPONSE_CLASSIFY_MIN_CONFIDENCE',
@@ -1654,6 +1803,32 @@ export class TypedConfigService {
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 1 ──
       cloneTopicSimilarityThreshold: this.get('CLONE_TOPIC_SIMILARITY_THRESHOLD'),
       cloneTopicMinBlocks: this.get('CLONE_TOPIC_MIN_BLOCKS'),
+      // ── TZ clone-method Э0.1 — пост-LLM grounding-гейт (kill-switch, ON) ──
+      cloneRespondGroundingEnabled: this.get('CLONE_RESPOND_GROUNDING_ENABLED'),
+      // ── TZ clone-method Э1.3 — детектор ценностей/мотивации (kill-switch, ON) ──
+      valueMotivationDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.valueMotivationDetectEnabled',
+        'VALUE_MOTIVATION_DETECT_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method Э2.1 — детектор маркеров процесса (kill-switch, ON) ──
+      processMarkerDetectEnabled: this.resolveSync<boolean>(
+        'knowledge.processMarkerDetectEnabled',
+        'PROCESS_MARKER_DETECT_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method Э3.1 — CDM-интервью носителя через probe (kill-switch, ON) ──
+      cdmInterviewEnabled: this.resolveSync<boolean>(
+        'knowledge.cdmInterviewEnabled',
+        'CDM_INTERVIEW_ENABLED',
+        true,
+      ),
+      // ── TZ clone-method ВАЛ.1 — поведенческая валидация persona v1-vs-v2 (kill-switch, ON) ──
+      personaLayerValidationEnabled: this.resolveSync<boolean>(
+        'knowledge.personaLayerValidationEnabled',
+        'PERSONA_LAYER_VALIDATION_ENABLED',
+        true,
+      ),
       // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 ──
       personaRebuildTraitDeltaThreshold: this.get(
         'PERSONA_REBUILD_TRAIT_DELTA_THRESHOLD',
@@ -1675,6 +1850,24 @@ export class TypedConfigService {
   get cloneV2() {
     return {
       enabled: this.get('CLONE_V2_ENABLED'),
+    } as const;
+  }
+
+  // ─────────────────────── role principles (TZ clone-method Э1.2) ──
+  /**
+   * Reflection-слой принципов роли (`RolePrincipleSynthesisCron`).
+   * `synthesisEnabled` — kill-switch ночного синтеза `RolePrinciple`
+   * (ON; выкл → принципы не синтезируются, persona работает без них).
+   * Пороги minObservations/dedupThreshold — НЕ здесь: крутилки читаются
+   * сервисом через `getDynamic('knowledge.rolePrinciple…')` (AdminSetting).
+   */
+  get rolePrinciples() {
+    return {
+      synthesisEnabled: this.resolveSync<boolean>(
+        'knowledge.rolePrincipleSynthesisEnabled',
+        'ROLE_PRINCIPLE_SYNTHESIS_ENABLED',
+        true,
+      ),
     } as const;
   }
 
@@ -1708,6 +1901,7 @@ export class TypedConfigService {
       contextualizerConfidenceMin: this.get('CONTEXTUALIZER_CONFIDENCE_MIN'),
       summarizerMessageThreshold: this.get('SUMMARIZER_MESSAGE_THRESHOLD'),
       multiQueryExpansionEnabled: this.get('MULTI_QUERY_EXPANSION_ENABLED'),
+      queryPlanExtractionEnabled: this.get('QUERY_PLAN_EXTRACTION_ENABLED'),
       summarizerCron: this.get('DIALOG_SUMMARIZER_CRON'),
       summarizerKeepLast: this.get('DIALOG_SUMMARIZER_KEEP_LAST'),
       summarizerStalenessHours: this.get('DIALOG_SUMMARIZER_STALENESS_HOURS'),
@@ -1749,6 +1943,15 @@ export class TypedConfigService {
         '*/1 * * * *',
       ),
     } as const;
+  }
+
+  /** ТЗ 2026-06-10 meeting-visibility — kill-switch «Кому видно» (Ship-On: true). */
+  get meetingVisibilityEnabled(): boolean {
+    return this.resolveSync<boolean>(
+      'meeting.visibility.enabled',
+      'MEETING_VISIBILITY_ENABLED',
+      true,
+    );
   }
 
   // ─────────────────────── recording reliability ─────────────────
@@ -1945,6 +2148,10 @@ export class TypedConfigService {
       ),
       // SBA β-8.1 — добивка панели операционного директора.
       sentimentEnabled: this.get('COO_SENTIMENT_ENABLED') !== false,
+      // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста
+      // чек-ин → knowledge-core (CheckinGraphIngestListener). ON по умолчанию.
+      checkinGraphIngestEnabled:
+        this.get('CHECKIN_GRAPH_INGEST_ENABLED') !== false,
       weeklyDigestEnabled: this.get('COO_WEEKLY_DIGEST_ENABLED') !== false,
       weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
       weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),
@@ -2105,6 +2312,17 @@ export class TypedConfigService {
    *     для которых запускается PRM shadow (0..1). Default 1.0 (все).
    *     Cost-защита: при дорогих доп. вызовах можно понизить до 0.1.
    *     ENV `CONCIERGE_PRM_SHADOW_SAMPLE_RATE`.
+   *   - `nativeToolsEnabled` — Ф3 assistant-channels (2026-06-11): native
+   *     function-calling в Concierge. При `true` (default — kill-switch,
+   *     Ship-On) tools уходят провайдеру через `LlmCallParams.tools`, а
+   *     SYSTEM собирается без JSON-инструкции `{"tool_call"}` и списка
+   *     инструментов. При `false` — прежняя regex-эмуляция tool_call в
+   *     тексте (без изменений). ENV `CONCIERGE_NATIVE_TOOLS_ENABLED`.
+   *   - `loopbackBaseUrl` — Ф4 assistant-channels (2026-06-11): базовый URL
+   *     backend'а для loopback tool-вызовов ToolRouter в service-режиме
+   *     (каналы Telegram/MAX — у них нет HTTP-запроса с baseUrl). Default
+   *     `http://127.0.0.1:3000`. ENV `CONCIERGE_LOOPBACK_BASE_URL`
+   *     (невалидный URL → fallback на default; trailing slash срезается).
    */
   get concierge() {
     // NB: ключи CONCIERGE_* читаем из process.env, а не через ConfigService.
@@ -2150,6 +2368,25 @@ export class TypedConfigService {
       1.0,
     );
     const prmShadowSampleRate = Math.min(Math.max(prmShadowSampleRateRaw, 0), 1);
+    // Ф3 assistant-channels (2026-06-11) — native function-calling
+    // (kill-switch, default true: фича выкатывается включённой, Ship-On).
+    const nativeToolsRaw = process.env.CONCIERGE_NATIVE_TOOLS_ENABLED;
+    const nativeToolsEnabled =
+      nativeToolsRaw === undefined ||
+      nativeToolsRaw === '' ||
+      ['true', '1', 'yes', 'on'].includes(nativeToolsRaw.trim().toLowerCase());
+    // Ф4 assistant-channels (2026-06-11) — loopback base URL для
+    // service-режима ToolRouter (каналы без HTTP-запроса).
+    const loopbackBaseUrlRaw = process.env.CONCIERGE_LOOPBACK_BASE_URL?.trim();
+    let loopbackBaseUrl = 'http://127.0.0.1:3000';
+    if (loopbackBaseUrlRaw) {
+      try {
+        void new URL(loopbackBaseUrlRaw);
+        loopbackBaseUrl = loopbackBaseUrlRaw.replace(/\/+$/, '');
+      } catch {
+        // невалидный URL — остаёмся на default
+      }
+    }
     return {
       enabled,
       dailyMessagesLimit: parseInt(process.env.CONCIERGE_DAILY_MESSAGES_LIMIT, 100),
@@ -2171,6 +2408,8 @@ export class TypedConfigService {
       prmEnabled,
       prmTopK,
       prmShadowSampleRate,
+      nativeToolsEnabled,
+      loopbackBaseUrl,
     } as const;
   }
 

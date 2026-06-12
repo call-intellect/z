@@ -87,7 +87,9 @@ describe('Prompts registry — все типы MeetingType покрыты', () =
     const d = getPromptForType('team');
     const sample = {
       discussed: ['релиз'],
-      decisions: ['выпускаем в пятницу'],
+      decisions: [
+        { text: 'выпускаем в пятницу', speaker: 'Алиса', changes_what: 'дату релиза' },
+      ],
       tasks: [{ title: 'починить баг X', assignee: 'Боб', dueDate: null }],
       blockers: [],
       next_step: 'тестируем в четверг',

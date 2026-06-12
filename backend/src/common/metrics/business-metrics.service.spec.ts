@@ -117,3 +117,81 @@ describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
     expect(snap.ratio).toBeNull();
   });
 });
+
+/**
+ * Ф3 (ТЗ 2026-06-11 remaining-handoff) — метрики синка/анализа ChatBox.
+ * Проверяем, что новые методы не бросают, метрики появляются в registry и
+ * лейблы корректны.
+ */
+describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
+  let service: BusinessMetricsService;
+
+  beforeEach(() => {
+    register.clear();
+    service = new BusinessMetricsService();
+    service.onModuleInit();
+  });
+
+  afterEach(() => {
+    register.clear();
+  });
+
+  async function rows(name: string) {
+    const metrics = await register.getMetricsAsJSON();
+    return metrics.find((m) => m.name === name)?.values ?? [];
+  }
+
+  it('incChatboxSync — счётчик z_chatbox_syncs_total{scope,status}', async () => {
+    service.incChatboxSync({ scope: 'incremental', status: 'success' });
+    service.incChatboxSync({ scope: 'incremental', status: 'success' });
+    service.incChatboxSync({ scope: 'full', status: 'failed' });
+
+    const vals = await rows('z_chatbox_syncs_total');
+    const ok = vals.find(
+      (v) => v.labels.scope === 'incremental' && v.labels.status === 'success',
+    );
+    const fail = vals.find(
+      (v) => v.labels.scope === 'full' && v.labels.status === 'failed',
+    );
+    expect(ok?.value).toBe(2);
+    expect(fail?.value).toBe(1);
+  });
+
+  it('incChatboxAnalyze — счётчик z_chatbox_analyzes_total{status}', async () => {
+    service.incChatboxAnalyze({ status: 'success' });
+    service.incChatboxAnalyze({ status: 'failed' });
+    service.incChatboxAnalyze({ status: 'failed' });
+
+    const vals = await rows('z_chatbox_analyzes_total');
+    expect(vals.find((v) => v.labels.status === 'success')?.value).toBe(1);
+    expect(vals.find((v) => v.labels.status === 'failed')?.value).toBe(2);
+  });
+
+  it('setChatboxPendingSessions — gauge z_chatbox_pending_sessions', async () => {
+    service.setChatboxPendingSessions(42);
+    let vals = await rows('z_chatbox_pending_sessions');
+    expect(vals[0]?.value).toBe(42);
+    // gauge перезаписывается, не накапливается
+    service.setChatboxPendingSessions(7);
+    vals = await rows('z_chatbox_pending_sessions');
+    expect(vals[0]?.value).toBe(7);
+  });
+
+  it('setChatboxLastSyncTs — gauge z_chatbox_last_sync_ts_seconds{scope}', async () => {
+    service.setChatboxLastSyncTs({ scope: 'incremental', tsSeconds: 1700000000 });
+    const vals = await rows('z_chatbox_last_sync_ts_seconds');
+    expect(
+      vals.find((v) => v.labels.scope === 'incremental')?.value,
+    ).toBe(1700000000);
+  });
+
+  it('методы не бросают на «голом» сервисе без onModuleInit (Optional-safe)', () => {
+    const bare = new BusinessMetricsService();
+    expect(() => {
+      bare.incChatboxSync({ scope: 'full', status: 'success' });
+      bare.incChatboxAnalyze({ status: 'failed' });
+      bare.setChatboxPendingSessions(1);
+      bare.setChatboxLastSyncTs({ scope: 'full', tsSeconds: 1 });
+    }).not.toThrow();
+  });
+});

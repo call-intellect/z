@@ -15,6 +15,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
@@ -23,6 +28,20 @@ import {
   TRACKER_QUEUE_NAMES,
 } from '../queues';
 import { IssuesService } from '../services/issues.service';
+import { ProjectsService } from '../services/projects.service';
+
+/**
+ * W4 autonomy (2026-06-12) — имя per-tenant дефолт-проекта для авто-принятых
+ * задач без выводимого проекта (Р4.1: не мариновать в pending).
+ */
+const INBOX_PROJECT_NAME = 'Входящие';
+
+/**
+ * W4 autonomy (2026-06-12) — пометка в description, когда исполнителя не
+ * удалось определить и Issue назначен fallback'ом на владельца Org.
+ */
+const ASSIGNEE_UNRESOLVED_NOTE =
+  '⚠️ Кора: не удалось определить исполнителя — уточните';
 
 /**
  * JSON Schema (strict) для ответа LLM `intake-auto-triage`.
@@ -72,7 +91,7 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
 - "suggestedLabels": массив меток (короткие slug'и) — может быть пустой.
 - "confidence": число 0..1, насколько ты уверен что задача чётко сформулирована и атрибуция верна.
 
-Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.92 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста.`;
+Не выдумывай. Если что-то непонятно — возвращай null. Confidence ≥ 0.75 ставь только если ВСЕ ключевые поля найдены и явно следуют из текста (это порог авто-создания задачи).`;
 
 /**
  * Wave 3 / Tracker Phase 3 part B (2026-05-24) — IntakeAutoTriageWorker.
@@ -82,9 +101,13 @@ const INTAKE_AUTO_TRIAGE_SYSTEM = `Ты — AI-триаж входящих за�
  *   2. Загружает контекст организации (projects, people, goals, recent
  *      issues для паттернов).
  *   3. LLM `intake-auto-triage` → структурированный suggestion.
- *   4. Если confidence ≥ 0.92 + source='meeting' + suggestedAssigneeId
- *      разрешён через Person → создаёт Issue автоматически, помечает
- *      IntakeIssue.status='accepted', triagedAt=now, createdIssueId.
+ *   4. Если confidence ≥ tracker.autoAcceptConfidenceThreshold (дефолт 0.75) +
+ *      исполнитель и проект определены → создаёт Issue автоматически,
+ *      помечает IntakeIssue.status='accepted', triagedAt=now, createdIssueId.
+ *      W4 autonomy (2026-06-12): авто-приём из ВСЕХ каналов (раньше только
+ *      source='meeting'); для не-meeting при null-исполнителе — fallback на
+ *      владельца Org (поля автора у IntakeIssue нет) + пометка «уточните»;
+ *      при null-проекте — резолв/создание дефолт-проекта «Входящие».
  *   5. Иначе — обновляет suggested* поля (status остаётся 'pending').
  *
  * Все шаги в одном методе `process` ради читаемости. На любую ошибку LLM —
@@ -112,6 +135,9 @@ export class IntakeAutoTriageWorker
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(IssuesService) private readonly issues: IssuesService,
+    // W4 autonomy (2026-06-12) — создание дефолт-проекта «Входящие» через
+    // штатный сервис (slug/identifier/статусы/доска), не дублируем логику.
+    @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(BusinessMetricsService)
@@ -180,6 +206,7 @@ export class IntakeAutoTriageWorker
       this.metrics?.incAiIntakeSuggested({
         tenantTop,
         status: 'skipped_already_triaged',
+        source: intake.source,
       });
       return;
     }
@@ -212,13 +239,29 @@ export class IntakeAutoTriageWorker
       }),
     ]);
 
-    const userMessage = this.buildUserMessage({
+    const rawUserMessage = this.buildUserMessage({
       intake,
       projects,
       people: people.map((p) => p.name),
       goals: goals.map((g) => g.name),
       recentIssues,
     });
+
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. rawContent
+    // из внешнего канала идёт в LLM в маркерах данных, system — с
+    // INJECTION_GUARD_NOTE. Observability — sanitize по самому rawContent
+    // (source='chat'), без отклонения текста.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(intake.rawContent);
+      for (const pattern of sanitized.reasons) {
+        this.metrics?.incPromptInjectionAttempt({ source: 'chat', pattern });
+      }
+    }
+    const systemPrompt = guardOn
+      ? withInjectionGuard(INTAKE_AUTO_TRIAGE_SYSTEM)
+      : INTAKE_AUTO_TRIAGE_SYSTEM;
+    const userMessage = guardOn ? wrapUserData(rawUserMessage) : rawUserMessage;
 
     // 3. LLM-вызов с устойчивым разбором (ТЗ B Фаза 4): tryParseJson + ретрай×2
     //    + validate-callback (router уйдёт на secondary на битом JSON, как
@@ -231,7 +274,7 @@ export class IntakeAutoTriageWorker
         const result = await this.llm.call({
           taskType: 'intake-auto-triage',
           tenantId,
-          systemPrompt: INTAKE_AUTO_TRIAGE_SYSTEM,
+          systemPrompt,
           userMessage,
           responseFormat: {
             type: 'json_schema',
@@ -259,7 +302,11 @@ export class IntakeAutoTriageWorker
       }
     }
     if (!parsed) {
-      this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'llm_error' });
+      this.metrics?.incAiIntakeSuggested({
+        tenantTop,
+        status: 'llm_error',
+        source: intake.source,
+      });
       if (lastErr) {
         // LLM реально падал (сеть/прокси) → throw для BullMQ-ретрая (политика 5 попыток).
         throw lastErr;
@@ -304,26 +351,74 @@ export class IntakeAutoTriageWorker
     const confidence = clampConfidence(parsed.confidence ?? 0);
 
     // 5. Auto-create Issue или просто update suggested*.
+    // W4 autonomy (2026-06-12): авто-приём из всех каналов; страховка — порог
+    // 0.75 + injection-guard + обратимость Issue.
+    const confidentEnough =
+      confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold;
+
+    // Р4.1 — невыводимая атрибуция не маринуется в pending. Для не-meeting
+    // источников при null-исполнителе подставляем автора задачи; поля автора
+    // у IntakeIssue нет (только sourceEmail/externalId), поэтому fallback —
+    // владелец Org + пометка «уточните» в description. Для meeting исполнитель
+    // identity-резолвится upstream (Ф5.1) — null там значит «не выводится»,
+    // оставляем pending (прежнее поведение).
+    let effectiveAssigneeId = suggestedAssigneeId;
+    let assigneeUnresolved = false;
+    if (
+      confidentEnough &&
+      effectiveAssigneeId === null &&
+      intake.source !== 'meeting'
+    ) {
+      const orgOwnerId = await this.resolveOrgOwnerId(tenantId);
+      if (orgOwnerId) {
+        effectiveAssigneeId = orgOwnerId;
+        assigneeUnresolved = true;
+      }
+    }
+
+    // Ф4.2 — при невыводимом проекте: резолв/создание per-tenant дефолт-проекта
+    // «Входящие», затем autoAccept в него. Резолвим только когда auto-accept
+    // реально возможен (порог + исполнитель), чтобы не плодить проект
+    // side-effect'ом для заведомо pending-карточек.
+    let effectiveProjectId = suggestedProjectId;
+    let viaDefaultProject = false;
+    if (
+      confidentEnough &&
+      effectiveAssigneeId !== null &&
+      effectiveProjectId === null
+    ) {
+      effectiveProjectId = await this.resolveInboxProjectId(tenantId);
+      viaDefaultProject = effectiveProjectId !== null;
+    }
+
     const canAutoAccept =
-      confidence >= this.cfg.tracker.autoAcceptConfidenceThreshold &&
-      intake.source === 'meeting' &&
-      suggestedAssigneeId !== null &&
-      suggestedProjectId !== null;
+      confidentEnough &&
+      effectiveAssigneeId !== null &&
+      effectiveProjectId !== null;
 
     if (canAutoAccept) {
       await this.autoAccept({
         tenantId,
         intake,
-        suggestedProjectId: suggestedProjectId!,
-        suggestedAssigneeId: suggestedAssigneeId!,
+        suggestedProjectId: effectiveProjectId!,
+        suggestedAssigneeId: effectiveAssigneeId!,
         suggestedGoalId,
         suggestedPriority,
         suggestedDueDate,
         suggestedLabels,
         confidence,
+        appendAssigneeNote: assigneeUnresolved,
       });
-      this.metrics?.incAiIntakeAutoAccepted({ tenantTop });
-      this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'auto_accepted' });
+      this.metrics?.incAiIntakeAutoAccepted({
+        tenantTop,
+        source: intake.source,
+        viaDefaultProject: viaDefaultProject ? 'true' : 'false',
+      });
+      this.metrics?.incAiIntakeSuggested({
+        tenantTop,
+        status: 'auto_accepted',
+        source: intake.source,
+      });
       this.logger.log(
         {
           intakeIssueId,
@@ -348,7 +443,11 @@ export class IntakeAutoTriageWorker
         confidence: new Prisma.Decimal(confidence),
       },
     });
-    this.metrics?.incAiIntakeSuggested({ tenantTop, status: 'pending' });
+    this.metrics?.incAiIntakeSuggested({
+      tenantTop,
+      status: 'pending',
+      source: intake.source,
+    });
     this.logger.log(
       {
         intakeIssueId,
@@ -386,6 +485,12 @@ export class IntakeAutoTriageWorker
     suggestedDueDate: Date | null;
     suggestedLabels: string[];
     confidence: number;
+    /**
+     * W4 autonomy (2026-06-12) — true когда исполнитель не выводился и Issue
+     * назначен fallback'ом на владельца Org: в description добавляется
+     * пометка «уточните».
+     */
+    appendAssigneeNote: boolean;
   }): Promise<void> {
     const { tenantId, intake } = args;
     // Гард от дубля: если createdIssueId уже есть — выходим.
@@ -398,8 +503,11 @@ export class IntakeAutoTriageWorker
     }
     const title =
       intake.extractedTitle ?? intake.rawContent.slice(0, 200);
-    const description =
+    const baseDescription =
       intake.extractedDescription ?? intake.rawContent;
+    const description = args.appendAssigneeNote
+      ? `${baseDescription}\n\n${ASSIGNEE_UNRESOLVED_NOTE}`
+      : baseDescription;
     // Системный userId для «AI-action». Берём owner'а проекта, чтобы FK на
     // createdBy не упал (User.id required).
     const proj = await this.prisma.project.findUnique({
@@ -465,6 +573,100 @@ export class IntakeAutoTriageWorker
         confidence: new Prisma.Decimal(args.confidence),
       },
     });
+  }
+
+  /**
+   * W4 autonomy (2026-06-12) — владелец Org (tenantId === Org.id, паттерн как
+   * в worker-org-gate). Используется как fallback-исполнитель при невыводимой
+   * атрибуции не-meeting intake (Р4.1: поля автора у IntakeIssue нет) и как
+   * владелец создаваемого дефолт-проекта «Входящие».
+   */
+  private async resolveOrgOwnerId(tenantId: string): Promise<string | null> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: tenantId },
+      select: { ownerId: true },
+    });
+    return org?.ownerId ?? null;
+  }
+
+  /**
+   * W4 autonomy (2026-06-12), Ф4.2 — резолв/создание per-tenant дефолт-проекта
+   * «Входящие» для авто-приёма intake без выводимого проекта. Идемпотентно
+   * best-effort: findFirst по имени → ProjectsService.create (slug/identifier
+   * генерятся сервисом из name + дефолтные статусы/доска/member) → при гонке
+   * параллельных воркеров повторный findFirst. Владелец проекта — владелец Org.
+   * На любой сбой возвращает null — карточка останется pending (не ломаем job).
+   */
+  private async resolveInboxProjectId(tenantId: string): Promise<string | null> {
+    const findExisting = (): Promise<{ id: string } | null> =>
+      this.prisma.project.findFirst({
+        where: {
+          tenantId,
+          name: INBOX_PROJECT_NAME,
+          deletedAt: null,
+          archivedAt: null,
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    const existing = await findExisting();
+    if (existing) return existing.id;
+    const ownerId = await this.resolveOrgOwnerId(tenantId);
+    if (!ownerId) {
+      this.logger.warn(
+        { tenantId },
+        'intake-auto-triage: не нашли владельца Org — проект «Входящие» не создан',
+      );
+      return null;
+    }
+    try {
+      const created = await this.projects.create(
+        {
+          name: INBOX_PROJECT_NAME,
+          description:
+            'Задачи из внешних каналов без определённого проекта. Создан Корой автоматически (авто-приём входящих).',
+          network: 0,
+          timezone: 'Europe/Moscow',
+          cycleViewEnabled: true,
+          intakeViewEnabled: true,
+          gantViewEnabled: false,
+          timeTrackingEnabled: false,
+        },
+        tenantId,
+        ownerId,
+      );
+      return created.id;
+    } catch (err) {
+      // Гонка двух воркеров (оба не нашли проект, один успел создать) или
+      // иной сбой — best-effort повторный поиск, иначе pending.
+      const retry = await findExisting();
+      if (retry) return retry.id;
+      this.logger.warn(
+        {
+          tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'intake-auto-triage: создание проекта «Входящие» упало — оставляем pending',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * E2 (мастер-ТЗ Волна 1, Кластер A) — мастер-флаг защиты от
+   * prompt-injection. IntakeIssue.rawContent приходит из ВНЕШНИХ каналов
+   * (telegram/in_app/meeting) и может содержать инъекцию, которая ложно
+   * завышает confidence/atтрибуцию и через auto-accept создаёт реальный
+   * Issue. Поэтому user-блок обязан идти в LLM обёрнутым в маркеры данных.
+   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
+   * `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
   }
 
   /**

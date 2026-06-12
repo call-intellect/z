@@ -11,7 +11,6 @@ import { BehaviorLlmRefineService } from './services/behavior-llm-refine';
 import { BehaviorMetricsCalculator } from './services/behavior-metrics-calculator';
 import { BudgetGuardService } from './services/budget-guard.service';
 import { CardRollupService } from './services/card-rollup.service';
-import { ChapterExtractionService } from './services/chapter-extraction.service';
 import { DeepSeekService } from './services/deepseek.service';
 import { GrsaiService } from './services/grsai.service';
 import { KieService } from './services/kie.service';
@@ -47,12 +46,13 @@ import { VoxService } from './services/vox.service';
  *   - `LlmRouterService` — маршрутизатор LLM-задач (используется
  *      `RegenerateService`, и эндпоинтами M3 — chat / regenerate-section).
  *   - `RegenerateService` — endpoint `POST /api/v1/meetings/:id/regenerate*`.
- *   - `ChapterExtractionService` / `TaskExtractionService` — на случай
- *      синхронного вызова из admin / debug.
+ *   - `TaskExtractionService` — на случай синхронного вызова из admin / debug
+ *      (используется также ChatboxAnalyzeWorker'ом).
  *
- * Воркеры (transcribe/merge/analyze/notify/chapters/tasks-extract/
- * transcript-index/clip-render) живут в отдельном `WorkersModule`,
- * запускаются процессом `bun run worker:dev` (`workers/main.ts`).
+ * Воркеры (transcribe/merge/analyze/notify/transcript-index/clip-render) живут
+ * в отдельном `WorkersModule`, запускаются процессом `bun run worker:dev`
+ * (`workers/main.ts`). Главы / задачи / качество встречи делает ЕДИНЫЙ воркер
+ * `meeting-report-fast` (core-очередь).
  *
  * EmbeddingsModule импортируется здесь, чтобы EmbeddingFallback /
  * TranscriptIndexer были доступны в HTTP-side (например, для on-demand
@@ -100,7 +100,6 @@ import { VoxService } from './services/vox.service';
     CustomHttpProtocolAdapter,
     LlmProtocolAdapterRegistry,
     ProviderInfoResolver,
-    ChapterExtractionService,
     TaskExtractionService,
     // ТЗ 2026-05-25 hard-participant-identification — загрузка списка
     // участников встречи (с userId/fullName) для AI-промптов задач.
@@ -137,7 +136,6 @@ import { VoxService } from './services/vox.service';
     LlmRouterService,
     MultiAgentDebateService,
     RegenerateService,
-    ChapterExtractionService,
     TaskExtractionService,
     ParticipantContextService,
     OrgContextService,

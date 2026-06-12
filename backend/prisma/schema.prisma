@@ -271,6 +271,16 @@ enum SourceType {
   tracker_event
   /// ChatBox-интеграция: сессия клиентского чата → RawEvent → knowledge-core.
   chatbox
+  /// Ежедневный чек-ин сотрудника (план/отчёт) → RawEvent → knowledge-core.
+  /// Мост CheckinIngestService (ТЗ 2026-06-10-daily-checkin-to-graph-bridge).
+  daily_checkin
+  /// Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2).
+  /// ВТОРИЧНЫЙ источник: выжимка fast-отчёта (summaryFast + структурные выводы
+  /// по типу встречи) идёт в граф отдельным RawEvent. Блоки помечаются
+  /// `IdeaBlock.primarySource='report'` с capped confidence (ГАРД A) — ниже
+  /// trust, чем у транскриптного primary. По одному `Source(type=meeting_report)`
+  /// на Org — создаётся лениво в ReportIngestAdapter.
+  meeting_report
 }
 
 enum DataClass {
@@ -1364,6 +1374,12 @@ model Meeting {
   /// (Ф3) для привязки блоков к закрытой группе. UI — Ф7.
   closedGroupKind String? @db.VarChar(20)
 
+  /// ТЗ 2026-06-10 meeting-visibility — «Кому видно» встреча (видео/запись/расшифровка/отчёт).
+  /// 'owner_only' | 'participants' (дефолт) | 'custom' | 'org'. Источник правды доступа к
+  /// READ-поверхностям встречи. НЕ влияет на граф знаний (отдельная подсистема).
+  visibilityScope String               @default("participants") @db.VarChar(16)
+  accessGrants    MeetingAccessGrant[]
+
   /// ТЗ-5 Ф1 (meeting-upload-diarization) — источник встречи. `livekit` (дефолт)
   /// для встреч в комнате; `upload` для встреч, загруженных файлом и диаризованных.
   source                MeetingSource @default(livekit)
@@ -1382,6 +1398,25 @@ model Meeting {
   @@index([linkedIssueId])
   @@index([linkedCycleId])
   @@index([tenantId, source, createdAt])
+}
+
+/// ТЗ 2026-06-10 meeting-visibility — явный грант доступа к встрече (scope='custom').
+/// Кому хост открыл руками: человек (Person) или группа (KnowledgeGroup, ПРЯМОЕ членство).
+/// tenantId — денормализован скаляром для индекса; каскад через Meeting (не через Org,
+/// чтобы не править модель Org). При удалении встречи гранты удаляются.
+model MeetingAccessGrant {
+  id          String   @id @default(cuid())
+  tenantId    String
+  meetingId   String
+  granteeType String   @db.VarChar(8) /// 'person' | 'group'
+  granteeId   String /// Person.id | KnowledgeGroup.id
+  grantedById String /// User.id хоста, выдавшего доступ
+  createdAt   DateTime @default(now())
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, granteeType, granteeId])
+  @@index([tenantId, meetingId])
+  @@index([granteeType, granteeId])
 }
 
 /// ТЗ-5 Ф1 (meeting-upload-diarization) — спикер диаризации загруженной встречи.
@@ -1518,6 +1553,10 @@ model TranscriptTrack {
   durationSeconds Float
   /// Array<{ word: string; startMs: number; endMs: number }>
   words           Json
+  /// Посегментные тайминги речи дорожки из Vox extendedResult.segments.
+  /// Array<{ startSec: number; endSec: number; text: string }> (секунды, float).
+  /// NULL для дорожек, расшифрованных до появления колонки (backfill не делаем).
+  segments        Json?
 
   @@unique([transcriptId, livekitIdentity])
   @@index([transcriptId])
@@ -1696,8 +1735,16 @@ model Task {
   /// tenant: Org, к которой принадлежит задача. После backfill — NOT NULL.
   tenantId         String?
   tenant           Org?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  meetingId        String
-  meeting          Meeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  /// D5 (ТЗ 2026-06-11 chatbox-tasks): задача может быть из переписки, не только
+  /// из встречи → nullable. FK сохраняется (теперь nullable). Backfill: существующие → sourceType='meeting'.
+  meetingId        String?
+  meeting          Meeting?   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  /// meeting | chatbox (расширяемо строкой, не enum).
+  sourceType       String     @default("meeting")
+  /// ChatboxChatSession.id — если задача из переписки.
+  sourceChatSessionId String?
+  /// ChatboxChat.id (денорм, для drill-down/ссылки на чат).
+  sourceChatId     String?
   userId           String
   user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   title            String
@@ -1725,6 +1772,8 @@ model Task {
   extractorVersion String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
+  /// D5/Р-2 — дополнительные источники задачи (межисточниковый дедуп).
+  sources          TaskSource[]
 
   @@index([userId, status])
   @@index([meetingId])
@@ -1732,6 +1781,30 @@ model Task {
   @@index([tenantId])
   /// Индекс для фильтра «мои задачи» по assigneeUserId.
   @@index([assigneeUserId])
+  @@index([tenantId, sourceType])
+  @@index([sourceChatSessionId])
+}
+
+/// D5/Р-2 (ТЗ 2026-06-11 chatbox-tasks) — дополнительные источники задачи.
+/// Первичный источник остаётся на Task.*; сюда пишем КАЖДУЮ привязку при
+/// межисточниковом дедупе (след не теряем). Идемпотентность — @@unique.
+model TaskSource {
+  id          String   @id @default(cuid())
+  tenantId    String
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// meeting | chatbox
+  sourceType  String
+  /// meetingId | chatSessionId
+  sourceRefId String
+  /// ChatboxChat.id (денорм, опц.)
+  chatId      String?
+  /// фрагмент-доказательство из источника
+  quote       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@unique([taskId, sourceType, sourceRefId])
+  @@index([tenantId, sourceType, sourceRefId])
 }
 
 model MeetingChapter {
@@ -2519,6 +2592,7 @@ model Org {
   processes       Process[]
   processSteps    ProcessStep[]
   regulations     Regulation[]
+  instructions    Instruction[]
   policies        Policy[]
   tools           Tool[]
   metrics         Metric[]
@@ -2639,6 +2713,10 @@ model Org {
   /// ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
   /// Канонизация SkillTrait'ов разных сотрудников в общий концепт.
   skillTraitConcepts   SkillTraitConcept[]  @relation("SkillTraitConceptTenant")
+
+  // ── TZ clone-method (2026-06-11) — Reflection-слой + журнал клона ──
+  rolePrinciples RolePrinciple[] @relation("RolePrincipleTenant")
+  cloneQueryLogs CloneQueryLog[] @relation("CloneQueryLogTenant")
 
   /// Org-настройки Слоя 4 (curation). См. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §8.
   /// Структура: `{ autoThreshold: 0.85, deepReviewThreshold: 0.6,
@@ -2838,6 +2916,7 @@ enum KnowledgeGroupKind {
   leadership
   council
   personal
+  support // закрытый контур техподдержки (синглтон per вендор-Org, refId=null) — TZ support-desk
 }
 
 model KnowledgeGroup {
@@ -3268,6 +3347,13 @@ model IdeaBlock {
   evidenceCount               Int                          @default(0)
   /// Динамический рейтинг: пересчитывается ретеншеном; влияет на ранжирование в поиске.
   dynamicScore                Decimal                      @default(1.0) @db.Decimal(8, 4)
+  /// Фаза 2 «отчёт→граф» (ТЗ 2026-06-11-report-to-graph-phase2). Первичный
+  /// источник факта на УРОВНЕ блока (evidence может быть мульти-source):
+  /// 'transcript' (дословный, первичный) | 'report' (выжимка отчёта, вторичный).
+  /// null = исторические блоки → трактуются как 'transcript'. Детерминированный
+  /// machine-guard провенанса: ГАРД B в block-distill (транскрипт всегда
+  /// побеждает report при дедупе), ГАРД A в block-ingest (cap confidence report).
+  primarySource               String?                      @db.VarChar(16)
   /// Фаза 0b — пометка role-relevance из BlockExtractionService.
   /// Если true и roleId != null — блок учитывается RoleProfileAgent'ом (Фаза 0d).
   roleRelevant                Boolean                      @default(false)
@@ -3874,6 +3960,7 @@ model CardVersion {
   /// после triage'а (см. sub-TZ §4, §5).
   processesAsCurrent   Process[]     @relation("ProcessCurrentVersion")
   regulationsAsCurrent Regulation[]  @relation("RegulationCurrentVersion")
+  instructionCurrent   Instruction[] @relation("InstructionCurrentVersion")
   policiesAsCurrent    Policy[]      @relation("PolicyCurrentVersion")
   /// SBA β-3 — обратное relation для Decision.currentVersionId.
   decisionsAsCurrent   Decision[]    @relation("DecisionCurrentVersion")
@@ -4798,6 +4885,7 @@ model Person {
   ownedGoals                  Goal[]                             @relation("GoalOwnerPerson")
   /// SBA α-7 — Person как owner регламента / политики (см. sub-TZ §4, §6).
   ownedRegulations            Regulation[]                       @relation("RegulationOwnerPerson")
+  instructionsOwned           Instruction[]                      @relation("InstructionOwnerPerson")
   ownedPolicies               Policy[]                           @relation("PolicyOwnerPerson")
   /// SBA α-7 wave 2 — Person как owner ProcessTemplate.
   ownedProcessTemplates       ProcessTemplate[]                  @relation("ProcessTemplateOwnerPerson")
@@ -5871,6 +5959,57 @@ model Regulation {
   @@map("regulations")
 }
 
+/// Instruction — first-class сущность «Инструкция»: пошаговое руководство для ОДНОЙ роли
+/// (Волна 6 A10). Зеркалит Regulation, но с признаком single-role `forRole`.
+model Instruction {
+  id               String                       @id @default(cuid())
+  tenantId         String
+  name             String                       @db.VarChar(300)
+  contentMd        String                       @db.Text
+  status           ProcessStatus                @default(active)
+  version          Int                          @default(1)
+  confidence       Float?
+  /// `forRole` — роль-владелец инструкции (single-role признак).
+  forRole          String?                      @db.VarChar(120)
+  /// `entityId` — связка с графом.
+  entityId         String?                      @unique
+  /// `statement` — структурированная суть инструкции (альтернатива contentMd для дедупа / retrieval).
+  statement        String?                      @db.Text
+  /// `scope` — область действия: 'org' | 'department:<id>' | 'role:<id>' | 'project:<id>'.
+  scope            String?                      @db.VarChar(120)
+  /// FK на Person — назначенный ответственный за инструкцию.
+  ownerPersonId    String?
+  /// Self-relation для версионирования (новая запись «заменяет» старую).
+  supersedesId     String?
+  /// FK на CardVersion (последняя активная версия после triage).
+  currentVersionId String?
+  /// `sourceBlockIds[]` — IdeaBlock-источники последнего извлечения.
+  sourceBlockIds   String[]                     @default([])
+  /// `personSubjectIds[]` — Person'ы, которым инструкция присвоена как subject.
+  personSubjectIds String[]                     @default([])
+  dataClass        DataClass                    @default(internal)
+  /// audit-trail вычисления dataClass (policyVersion + sources).
+  dataClassAudit   Json?
+  /// Эмбеддинг (name + statement) — для KNN-дедупа.
+  embedding        Unsupported("vector(1536)")?
+  lastConfirmedAt  DateTime?
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  org              Org              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerPerson      Person?          @relation("InstructionOwnerPerson", fields: [ownerPersonId], references: [id], onDelete: SetNull)
+  supersedes       Instruction?     @relation("InstructionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy     Instruction[]    @relation("InstructionSupersedes")
+  currentVersion   CardVersion?     @relation("InstructionCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, forRole])
+  @@index([tenantId, ownerPersonId])
+  @@index([currentVersionId])
+  @@map("instructions")
+}
+
 /// Policy — политика (Фаза 0a, группа Б). UI в Фазе α-7.
 model Policy {
   id               String                       @id @default(cuid())
@@ -6246,6 +6385,19 @@ enum ProbeStatus {
   /// W4.3 — outbound canEmit заблокировал доставку (и in_app fallback тоже rejected).
   /// Видно в `/admin/policy/dataclass` → «История нарушений».
   dropped_dataclass_gate
+  /// Probe Фаза 3 — deferrable-probe сверх бюджета отложен в батч-дайджест
+  /// (вместо dropped_rate_limit). ProbeDigestCron соберёт и пометит dispatched.
+  queued_digest
+  /// Probe Фаза 4 — повод закрылся сам между suggest и dispatch (recheck
+  /// предикатом PROBE_REASON_RECHECK показал, что пробел уже не актуален).
+  suppressed_stale
+  /// W2 autonomy (2026-06-12) — гейт ценности: priority ниже крутилки
+  /// `probe.minValuePriority` → вопрос не задаётся (audit-запись).
+  dropped_low_value
+  /// W2 autonomy (2026-06-12) — NUDGE-политика (§9.2): напоминание-NUDGE
+  /// не пингует сразу, а уходит ежедневным батч-дайджестом (ProbeDigestCron).
+  /// Отличие от queued_digest (rate-limit) — для аудита источника отложки.
+  routed_to_digest
 }
 
 /// Idea — карточка идеи / запроса. SBA β-5 §4.1.
@@ -7968,6 +8120,10 @@ model SkillTrait {
   conceptId String?
   concept   SkillTraitConcept? @relation(fields: [conceptId], references: [id], onDelete: SetNull)
 
+  /// TZ clone-method (2026-06-11) — слой черты (skill | value | motivation |
+  /// process_marker). persona-compile v2 секционирует по нему.
+  layer SkillTraitLayer @default(skill)
+
   profile    SkillProfile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
   categoryFk SkillTraitCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
@@ -7976,6 +8132,7 @@ model SkillTrait {
   @@index([profileId, categoryId])
   @@index([categoryId])
   @@index([conceptId])
+  @@index([profileId, layer, status])
   @@map("skill_traits")
 }
 
@@ -8019,6 +8176,88 @@ enum SkillTraitConceptStatus {
   active
   merged_into
   archived
+}
+
+/// TZ clone-method (2026-06-11) — дискриминатор СЛОЯ черты: persona-compile v2
+/// отбирает черты по слою (подход/ценности/мотивация/маркеры процесса), без
+/// него черты и ценности смешиваются в одном топ-20.
+enum SkillTraitLayer {
+  skill          // поведение при решениях (текущий дефолт)
+  value          // что ставит выше при конфликте приоритетов (revealed preference)
+  motivation     // что драйвит в работе
+  process_marker // конструктивный маркер процесса (перечисляет критерии / перепроверяет)
+}
+
+/// TZ clone-method (2026-06-11) — RolePrinciple — синтезированный ПРИНЦИП/паттерн
+/// решений роли (Reflection-слой, Park 2023). НЕ черта человека («осторожный»),
+/// а обобщённый ПРОЦЕСС роли («типовой ход: сначала пилот на 5%, потом раскатка»).
+/// Синтезируется периодическим cron из накопленных reasoning-блоков должности,
+/// с обратными ссылками на наблюдения (grounding). Отдельный узел: черта = одно
+/// наблюдение, принцип = обобщение многих.
+model RolePrinciple {
+  id                String                       @id @default(uuid())
+  tenantId          String
+  /// Role.id — принцип процесса ДОЛЖНОСТИ (переживает ротацию носителя).
+  /// Без FK (как PracticeSkill.scopeRefId) — архивация вместо каскада.
+  roleId            String
+  /// Краткая метка-ситуация, к которой относится принцип («срыв срока», «выбор подрядчика»).
+  situation         String                       @db.VarChar(200)
+  /// Обобщённая ПОВЕДЕНЧЕСКАЯ формулировка процесса (без оценок личности):
+  /// «При срыве срока — сначала эскалирует владельцу с 2 вариантами, затем режет scope».
+  statement         String                       @db.Text
+  /// IdeaBlock.id, на которых построено обобщение (grounding-trail, ≥ порога).
+  sourceBlockIds    String[]                     @default([])
+  observationCount  Int                          @default(0)
+  confidence        SkillConfidence
+  /// Эмбеддинг (situation+statement) — дедуп/ретрив. HNSW — postgres-init.sql.
+  embedding         Unsupported("vector(1536)")?
+  status            RolePrincipleStatus          @default(active)
+  supersededById    String?
+  lastSynthesizedAt DateTime                     @default(now())
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  org Org @relation("RolePrincipleTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, roleId, status])
+  @@index([tenantId, situation])
+  @@map("role_principles")
+}
+
+/// TZ clone-method (2026-06-11) — жизненный цикл принципа роли.
+enum RolePrincipleStatus {
+  active
+  superseded
+  archived
+}
+
+/// TZ clone-method (2026-06-11), Этап 0 — лёгкий журнал запросов к клону,
+/// видимый владельцу Org. Пишется на каждый ask (включая отказы).
+/// Текст вопроса храним превью+hash (не полный текст — он уже в ChatV2Message).
+model CloneQueryLog {
+  id               String       @id @default(uuid())
+  tenantId         String
+  /// person | role — какой клон спрашивали (reuse PersonaScope).
+  cloneScope       PersonaScope
+  /// personId (scope=person) или roleId (scope=role) — без FK (как PracticeSkill.scopeRefId).
+  cloneTargetId    String
+  /// User.id спросившего.
+  userId           String
+  /// Первые 200 символов вопроса — для списка у владельца.
+  questionPreview  String       @db.VarChar(200)
+  /// sha256(вопроса) — дедуп/аналитика без хранения полного текста.
+  questionHash     String       @db.VarChar(64)
+  /// true — ответ опёрся на наблюдения (grounded); false — отказ или ответ без опоры.
+  answeredGrounded Boolean
+  /// Причина отказа, если был: 'topic_starved' | 'ungrounded' | null.
+  refusalReason    String?      @db.VarChar(64)
+  createdAt        DateTime     @default(now())
+
+  tenant Org @relation("CloneQueryLogTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, cloneTargetId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("clone_query_logs")
 }
 
 /// Agents v2 Фаза C1 (2026-05-30) — PracticeSkill — выполняемая процедура
@@ -8913,6 +9152,16 @@ model Issue {
   // RBAC и owner
   createdById String
 
+  // Support desk (TZ 2026-06-09 support-desk) — заполняются ТОЛЬКО для тикетов
+  // поддержки (cross-tenant: клиент из другой Org пишет в вендор-Org).
+  supportCustomerOrgId   String?   /// Org клиента, приславшего обращение
+  supportCustomerUserId  String?   /// User клиента (глобальный User.id)
+  supportCustomerContact String?   @db.VarChar(320) /// email/имя для отображения в деске
+  firstResponseDueAt     DateTime? /// SLA: дедлайн первого ответа
+  resolutionDueAt        DateTime? /// SLA: дедлайн решения
+  firstRespondedAt       DateTime? /// факт первого ответа клиенту
+  slaBreachedAt          DateTime? /// зафиксированное нарушение SLA
+
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
@@ -8962,6 +9211,9 @@ model Issue {
   @@index([parentId])
   /// Tracker Boards (2026-05-27) — фильтр задач по доске на канбане.
   @@index([boardId])
+  /// Support desk (TZ 2026-06-09) — тикеты конкретного клиента + SLA-сканер.
+  @@index([tenantId, supportCustomerUserId])
+  @@index([tenantId, firstResponseDueAt])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
@@ -9052,6 +9304,12 @@ model IssueComment {
 
   access String @default("internal") // internal | external (гость)
 
+  // Support desk (TZ 2026-06-09) — провенанс + состояние черновика клона.
+  authorType        String   @default("human") /// human | clone | system
+  draftState        String?  /// null=обычный | pending | accepted | edited | rejected (только authorType=clone)
+  cloneConfidence   Decimal? @db.Decimal(4, 3) /// калиброванная уверенность клона
+  groundednessScore Decimal? @db.Decimal(4, 3) /// результат critic (truthful/total)
+
   // Голосовое сообщение
   voiceUrl        String?
   voiceDuration   Int? // секунды
@@ -9073,6 +9331,69 @@ model IssueComment {
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentCommentId])
+}
+
+/// SLA-политика деска поддержки (синглтон per вендор-Org для v1). TZ support-desk Ф1.
+model SupportSlaPolicy {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique /// вендор-Org
+  firstResponseMins Int      @default(60)
+  resolutionMins    Int      @default(480)
+  businessHoursOnly Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+/// CSAT/оценка тикета поддержки клиентом. TZ support-desk Ф1 (R-INV-2/R3 — чистый сигнал петле).
+model IssueRating {
+  id            String   @id @default(cuid())
+  tenantId      String
+  issueId       String   @unique
+  score         Int      /// 1..5
+  comment       String?  @db.Text
+  ratedByUserId String?  /// клиент (User.id)
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+/// Обучающий сигнал клона поддержки (R-INV-2): пара черновик→финал + тип правки.
+/// TZ support-desk Ф3.
+model SupportDraftOutcome {
+  id                String   @id @default(cuid())
+  tenantId          String   /// вендор-Org
+  issueId           String
+  draftCommentId    String?
+  taskType          String   @default("support-clone-draft")
+  draftText         String   @db.Text
+  finalText         String?  @db.Text /// что реально ушло клиенту (null если отклонён)
+  outcome           String   /// accepted | edited | rejected
+  editType          String?  /// factual | tone | policy | empty | null
+  cloneConfidence   Decimal? @db.Decimal(4, 3)
+  groundednessScore Decimal? @db.Decimal(4, 3)
+  promotedToContour Boolean  @default(false) /// прошёл гейт качества и попал в контур
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, taskType, createdAt])
+  @@index([tenantId, issueId])
+}
+
+/// Аудит действий ночного куратора контура поддержки (TZ Ф4, R-INV-6/R24).
+/// Каждая операция (в т.ч. отклонённая дебатом) фиксируется — что/почему/verdict.
+model SupportCuratorAction {
+  id             String   @id @default(cuid())
+  tenantId       String   /// вендор-Org
+  runDate        String   /// YYYY-MM-DD прогон (идемпотентность в пределах дня)
+  blockId        String
+  action         String   /// keep | promote | fix | merge | archive
+  reason         String   @db.Text
+  targetBlockId  String?  /// для merge — куда слили
+  debateDecision String?  /// итог MultiAgentDebateService (для destructive)
+  applied        Boolean  @default(false) /// применена ли (false = дебат отклонил / keep)
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, runDate])
+  @@index([tenantId, blockId])
 }
 
 /// Вложение к задаче или комментарию.
@@ -11065,6 +11386,9 @@ model ChatboxCustomer {
   phone         String?
   email         String?
   externalCrmId String?
+  /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
+  linkedPersonId String?
+  linkMode       ChatboxMemberLinkMode @default(none)
   raw           Json?
   syncedAt      DateTime @default(now())
   createdAt     DateTime @default(now())
@@ -11075,6 +11399,7 @@ model ChatboxCustomer {
 
   @@unique([tenantId, externalId])
   @@index([tenantId])
+  @@index([tenantId, linkedPersonId])
 }
 
 /// ChatBox: identity клиента в конкретном мессенджере (ChannelClient).
@@ -11092,6 +11417,9 @@ model ChatboxChannelClient {
   email              String?
   avatarUrl          String?  @db.Text
   isBlocked          Boolean  @default(false)
+  /// Ф1 (ТЗ 2026-06-11) — связка клиента с Person Коры (как у ChatboxMember).
+  linkedPersonId     String?
+  linkMode           ChatboxMemberLinkMode @default(none)
   raw                Json?
   syncedAt           DateTime @default(now())
   createdAt          DateTime @default(now())
@@ -11102,6 +11430,7 @@ model ChatboxChannelClient {
 
   @@unique([tenantId, externalId])
   @@index([tenantId, customerId])
+  @@index([tenantId, linkedPersonId])
 }
 
 /// ChatBox: менеджер (Member воркспейса). Связь с Person Коры.

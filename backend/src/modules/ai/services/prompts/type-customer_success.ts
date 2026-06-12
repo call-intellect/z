@@ -21,6 +21,10 @@ export const SCHEMA = z
     upsell_opportunities: z.array(z.string()),
     actions_required: z.array(z.string()),
     next_contact: z.string().nullable(),
+    // A11-Волна2 (additive, опциональные — обратная совместимость):
+    churn_risk_quote: z.string().nullable().optional(),
+    competitors_mentioned: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -43,7 +47,24 @@ const SYSTEM = `Ты — ассистент Customer Success. Это разго�
   - low — продукт встроен в процессы, обсуждается расширение.
 - "upsell_opportunities": возможности расширения / апсейла.
 - "actions_required": что нашей команде нужно сделать.
-- "next_contact": когда следующий контакт с клиентом или null.`;
+- "next_contact": когда следующий контакт с клиентом или null.
+
+Стороны: НАША сторона — менеджер CS; вторая — клиент. issues — из реплик клиента; actions_required — обязательства ТОЛЬКО нашей стороны. Не приписывай слова не тому спикеру. Пусто — честно «не выявлено».
+
+Дополнительно извлеки:
+- "churn_risk_quote": дословная цитата клиента, в которой звучит риск оттока (намёк на уход, сравнение с конкурентом, угроза не продлевать), строкой; null, если такой реплики не было.
+- "competitors_mentioned": конкуренты / альтернативные решения, упомянутые клиентом (массив). Пустой массив [], если конкурентов не называли.
+- "data_quality": 1–2 фразы о полноте данных встречи — насколько полный транскрипт, есть ли неопределённые спикеры, ненадёжные для распознавания места (числа/имена/термины); null, если оговорок нет.
+
+ПРИМЕРЫ.
+
+Положительный пример (что извлечь):
+Транскрипт-фрагмент: «Клиент: Честно, мы смотрим в сторону Aurora — у них дешевле, и если до конца квартала не закроете баг с выгрузкой, будем переезжать. Менеджер: Понял, до пятницы дадим фикс и план миграции.».
+Вывод: {"customer_outcome": "клиент не получает рабочую выгрузку — ключевой сценарий сломан", "issues": ["баг с выгрузкой данных не закрыт"], "churn_risk": "high", "upsell_opportunities": [], "actions_required": ["выкатить фикс выгрузки до пятницы", "подготовить план удержания"], "next_contact": "пятница", "churn_risk_quote": "если до конца квартала не закроете баг с выгрузкой, будем переезжать", "competitors_mentioned": ["Aurora"], "data_quality": null}.
+
+Что НЕ делать (edge case — внутренний риск-комментарий и обрезанный транскрипт):
+Транскрипт-фрагмент: «Менеджер (себе под нос): клиент похоже уходит, давить на скидку. Клиент: …выгрузка вроде раб… [запись обрывается]».
+Вывод: {"customer_outcome": null, "issues": [], "churn_risk": null, "upsell_opportunities": [], "actions_required": [], "next_contact": null, "churn_risk_quote": null, "competitors_mentioned": [], "data_quality": "транскрипт обрывается на середине реплики клиента, последняя фраза не дочитана; уверенность низкая"}. Пояснение: внутренняя реплика менеджера «клиент похоже уходит, давить на скидку» — это НАШ риск-домысел, она НЕ идёт в customer_outcome/issues и не выдаётся за слова клиента; обсуждение ≠ решение, поэтому actions_required пуст; обрезанный фрагмент → честная пустота + заполнен data_quality, без выдумки.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -65,6 +86,9 @@ export const TOOL = buildExtractTool(
     upsell_opportunities: fieldStringArray,
     actions_required: fieldStringArray,
     next_contact: fieldNullableString,
+    churn_risk_quote: fieldNullableString,
+    competitors_mentioned: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'customer_outcome',
@@ -73,5 +97,8 @@ export const TOOL = buildExtractTool(
     'upsell_opportunities',
     'actions_required',
     'next_contact',
+    'churn_risk_quote',
+    'competitors_mentioned',
+    'data_quality',
   ],
 );

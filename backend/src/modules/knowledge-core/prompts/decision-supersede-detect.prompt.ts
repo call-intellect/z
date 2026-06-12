@@ -35,6 +35,9 @@ export const DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT = [
   '- existingValidUntil — ISO дата/время, до которой старое решение было действительно. Если не указано иначе — используй decidedAt нового черновика.',
   '- newValidFrom — ISO дата/время, с которой новое решение действует. Обычно совпадает с existingValidUntil.',
   '',
+  // D1 supersession-правило (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8).
+  'При противоречии источников бери более позднее / актуальное решение (по decidedAt); устаревшее помечай как заменённое (verdict="supersedes", supersedesId=targetId). НЕ смешивай старую и новую редакцию решения в одно — это две разные версии.',
+  '',
   'Отвечай строго в формате JSON по схеме decision_supersede_detect_v1.',
 ].join('\n');
 

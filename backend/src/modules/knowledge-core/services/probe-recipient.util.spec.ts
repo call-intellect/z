@@ -6,7 +6,12 @@ import { resolveProbeRecipients } from './probe-recipient.util';
 
 /**
  * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — unit-тесты выбора
- * получателей probe (3 сценария из §3.5 DoD).
+ * получателей probe (3 сценария из §3.5 DoD) при флаге OFF (старое
+ * поведение).
+ *
+ * Cabinet-leftovers §3 (2026-06-11) — само-подтверждение субъектом за
+ * kill-switch `PROBE_SUBJECT_ADDRESSING_ENABLED`. Новые ON-кейсы внизу:
+ * субъект первым, затем глава, затем admins; дедуп; subject без userId.
  */
 
 interface MockSubject {
@@ -36,7 +41,7 @@ function buildPrismaMock(args: {
   } as unknown as PrismaService;
 }
 
-describe('resolveProbeRecipients — Фаза 3 ТЗ clone-reliability-hardening', () => {
+describe('resolveProbeRecipients — старое поведение (флаг OFF)', () => {
   it('сценарий 1: глава отдела назначен и не совпадает с субъектом → возвращает userId главы', async () => {
     const prisma = buildPrismaMock({
       subject: { userId: 'user-subject', primaryDepartmentId: 'dept-1' },
@@ -48,6 +53,7 @@ describe('resolveProbeRecipients — Фаза 3 ТЗ clone-reliability-hardening
       prisma,
       tenantId: 'org-1',
       subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: false,
     });
 
     expect(recipients).toEqual(['user-head']);
@@ -68,6 +74,7 @@ describe('resolveProbeRecipients — Фаза 3 ТЗ clone-reliability-hardening
       prisma,
       tenantId: 'org-1',
       subjectPersonId: 'person-head',
+      subjectAddressingEnabled: false,
     });
 
     // Сам субъект исключается из списка admin'ов; остальные admin'ы — получатели.
@@ -85,8 +92,128 @@ describe('resolveProbeRecipients — Фаза 3 ТЗ clone-reliability-hardening
       prisma,
       tenantId: 'org-1',
       subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: false,
     });
 
     expect(recipients).toEqual(['user-admin-1']);
+  });
+
+  it('флаг undefined (не передан) ≡ OFF: глава-only, субъекту probe не шлётся', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: 'user-subject', primaryDepartmentId: 'dept-1' },
+      dept: { headPerson: { id: 'person-head', userId: 'user-head' } },
+      admins: [{ userId: 'user-admin-1' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-subject',
+      // subjectAddressingEnabled опущен — должно вести себя как OFF.
+    });
+
+    expect(recipients).toEqual(['user-head']);
+    expect(recipients).not.toContain('user-subject');
+  });
+});
+
+describe('resolveProbeRecipients — само-подтверждение субъектом (флаг ON, cabinet-leftovers §3)', () => {
+  it('ON + есть глава: субъект ПЕРВЫМ, затем глава, затем admins', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: 'user-subject', primaryDepartmentId: 'dept-1' },
+      dept: { headPerson: { id: 'person-head', userId: 'user-head' } },
+      admins: [{ userId: 'user-admin-1' }, { userId: 'user-admin-2' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: true,
+    });
+
+    expect(recipients).toEqual([
+      'user-subject',
+      'user-head',
+      'user-admin-1',
+      'user-admin-2',
+    ]);
+    // субъект — первый получатель (само-подтверждение).
+    expect(recipients[0]).toBe('user-subject');
+  });
+
+  it('ON + нет главы: [subject.userId, ...admins(excl subject)]', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: 'user-subject', primaryDepartmentId: 'dept-1' },
+      dept: { headPerson: null },
+      admins: [{ userId: 'user-subject' }, { userId: 'user-admin-1' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: true,
+    });
+
+    // субъект первым; admin-дубль самого субъекта отброшен.
+    expect(recipients).toEqual(['user-subject', 'user-admin-1']);
+    expect(recipients[0]).toBe('user-subject');
+  });
+
+  it('ON + у субъекта нет userId: начинается с главы/admins, без падения', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: null, primaryDepartmentId: 'dept-1' },
+      dept: { headPerson: { id: 'person-head', userId: 'user-head' } },
+      admins: [{ userId: 'user-admin-1' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: true,
+    });
+
+    // subject.userId отсутствует → список начинается с главы, затем admins.
+    expect(recipients).toEqual(['user-head', 'user-admin-1']);
+    expect(recipients[0]).toBe('user-head');
+  });
+
+  it('ON + дедуп: subject.userId совпадает с admin → не дублируется (subject первым)', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: 'user-subject', primaryDepartmentId: null },
+      // нет primaryDepartmentId → глава не ищется.
+      admins: [{ userId: 'user-subject' }, { userId: 'user-admin-1' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-subject',
+      subjectAddressingEnabled: true,
+    });
+
+    // user-subject один раз (как само-подтверждение), admin-дубль отброшен.
+    expect(recipients).toEqual(['user-subject', 'user-admin-1']);
+    expect(recipients.filter((r) => r === 'user-subject')).toHaveLength(1);
+  });
+
+  it('ON + глава == субъект: глава не дублирует субъекта, дальше admins', async () => {
+    const prisma = buildPrismaMock({
+      subject: { userId: 'user-same', primaryDepartmentId: 'dept-1' },
+      // headPerson.userId === subject.userId → headUserId не выставляется.
+      dept: { headPerson: { id: 'person-head', userId: 'user-same' } },
+      admins: [{ userId: 'user-admin-1' }],
+    });
+
+    const recipients = await resolveProbeRecipients({
+      prisma,
+      tenantId: 'org-1',
+      subjectPersonId: 'person-head',
+      subjectAddressingEnabled: true,
+    });
+
+    expect(recipients).toEqual(['user-same', 'user-admin-1']);
   });
 });

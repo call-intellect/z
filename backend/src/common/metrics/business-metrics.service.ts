@@ -54,6 +54,16 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── семантический дедуп задач встречи (Ф5 Р2) ────────────────────────
   private taskDedupeTotal!: Counter<'result'>;
 
+  // ── ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3) ──────────
+  // syncs — успех/провал синка per scope; analyzes — успех/провал анализа
+  // сессии; pending — сколько закрытых сессий ждут анализа (gauge);
+  // last_sync_ts — unixtime последнего успешного синка per scope (для алёрта
+  // «синк отстал»).
+  private chatboxSyncsTotal!: Counter<'scope' | 'status'>;
+  private chatboxAnalyzesTotal!: Counter<'status'>;
+  private chatboxPendingSessions!: Gauge<string>;
+  private chatboxLastSyncTsSeconds!: Gauge<'scope'>;
+
   // ── llm prompt caching (T7-F3 prompt caching distribution) ───────────
   // Все 3 счётчика инкрементируются из AiUsageLogService.record() — там
   // одна точка для router-вызовов и для LlmFallbackService-вызовов.
@@ -112,6 +122,11 @@ export class BusinessMetricsService implements OnModuleInit {
   //                    вернул text вместо tool_use (Anthropic игнорирует
   //                    tool_choice в редких случаях).
   private promptInvalidResponseTotal!: Counter<'task_type' | 'model' | 'reason'>;
+
+  // ── Query Understanding Волна 1 (ТЗ 2026-06-10 query-understanding-tier0-tier1) ──
+  private queryPlanExtractionTotal!: Counter<'result'>;
+  private queryPlanRetrievalFilteredTotal!: Counter<'filtered'>;
+  private queryPlanEmptyPoolTotal!: Counter<'result'>;
 
   // ── task assignee resolver (ТЗ 2026-05-25 hard-participant-identification) ─
   // Инкрементируется в `TaskAssigneeResolverService`, когда участников с
@@ -244,6 +259,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private personalDailyBriefDeliveredTotal!: Counter<'channel'>;
   private personalDailyBriefOpenedTotal!: Counter<string>;
   private knowsWhoMatchTotal!: Counter<'found'>;
+  // ── B6/Ф7 (mobile-cora-exec-manager §Ф7) — утренний exec web-push ──
+  private execMorningPushDeliveredTotal!: Counter<'channel'>;
 
   // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
   // Cardinality-safe: status ∈ new|recurring|resolved; decision_throughput —
@@ -417,6 +434,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private curationProvisionalTotal!: Counter<'resource_type'>;
   private curationAuditSampleTotal!: Counter<'resource_type'>;
   private curationVerifierVerdictTotal!: Counter<'decision' | 'consensus_type'>;
+  // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
+  // `z_conflict_arbiter_total{verdict, outcome}` — исходы ночного арбитра
+  // конфликтов знаний: verdict дебата × outcome ∈ auto_resolved|left_open|error.
+  private conflictArbiterTotal!: Counter<'verdict' | 'outcome'>;
   // ── Action Center A2 «лестница доверия» (2026-06-02) — autotune + kill-switch ──
   private curationKillSwitchTotal!: Counter<'resource_type'>;
   private curationAutotuneAdjustmentTotal!: Counter<'resource_type' | 'direction'>;
@@ -608,6 +629,12 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify ──
   private probeResponseClassifiedTotal!: Counter<'confidence_bucket'>;
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
+  // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
+  private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
+  private ownerResolutionTotal!: Counter<'outcome'>;
+  // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
+  private assistantTurnTotal!: Counter<'outcome'>;
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
   private promptFeedbackTotal!: Counter<'prompt_key' | 'has_edit'>;
   private autoruleExtractedTotal!: Counter<'prompt_key' | 'rule_type'>;
@@ -679,6 +706,12 @@ export class BusinessMetricsService implements OnModuleInit {
   // ── Clones=Roles Ф2 (2026-05-25) — версионирование клонов ролей ──
   private cloneRoleVersionCreatedTotal!: Counter<'role_id'>;
   private cloneRoleVersionsTotal!: Gauge<'role_id'>;
+  // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+  private rolePrinciplesSynthesizedTotal!: Counter<'outcome'>;
+  private rolePrinciplesActiveTotal!: Gauge<never>;
+  // ── TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona v1-vs-v2 ──
+  private clonePersonaLayerScore!: Histogram<'variant'>;
+  private personaLayerValidationCasesTotal!: Counter<'outcome'>;
 
   // ── SBA α-3 wave 3 — AxisClassifierService + LLM-fallback Router ──
   private axisLabelsTotal!: Counter<'tenant_top' | 'axis' | 'source'>;
@@ -771,6 +804,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //         'other' — LLM упал/timeout/нет tool_call/update в БД упал.
   // Cardinality: 2 значения reason × ≤101 tenant_top = ≤202 series.
   private cooSentimentFailedTotal!: Counter<'tenant_top' | 'reason'>;
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core.
+  // result ∈ ok (RawEvent создан/идемпотентный возврат) | skipped (completedAt=
+  // null / нет записи / флаг off) | error (исключение моста, best-effort). 3 series.
+  private checkinGraphIngestTotal!: Counter<'result'>;
   private cooWeeklyDigestGeneratedTotal!: Counter<'tenant_top'>;
   private cooWeeklyDigestFailedTotal!: Counter<'tenant_top' | 'reason'>;
   private cooTeamTemperatureRedShare!: Gauge<'tenant_top'>;
@@ -942,8 +979,10 @@ export class BusinessMetricsService implements OnModuleInit {
   //   worker заполнил suggested* (но не auto-accepted). accepted_or_pending — для
   //   совместимости с метрикой auto_accepted (легче считать ratio).
   private aiMeetingActionsExtractedTotal!: Counter<'tenant_top' | 'status'>;
-  private aiIntakeAutoAcceptedTotal!: Counter<'tenant_top'>;
-  private aiIntakeSuggestedTotal!: Counter<'tenant_top' | 'status'>;
+  private aiIntakeAutoAcceptedTotal!: Counter<
+    'tenant_top' | 'source' | 'via_default_project'
+  >;
+  private aiIntakeSuggestedTotal!: Counter<'tenant_top' | 'status' | 'source'>;
   // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker метрики.
   // Cardinality-safe: tenant_top — top-100 bucket (паттерн как у остальных
   // tracker tenant_top-метрик); source — фиксированный enum (trello |
@@ -1175,6 +1214,27 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: ['result'] as const,
     });
 
+    // ChatBox синк/анализ (ТЗ 2026-06-11 remaining-handoff Ф3).
+    this.chatboxSyncsTotal = this.getOrCreateCounter({
+      name: 'z_chatbox_syncs_total',
+      help: 'Ф3 — синк ChatBox per scope. status=success|failed. Падения видны сразу (раньше синк-ошибка была только в логе воркера).',
+      labelNames: ['scope', 'status'] as const,
+    });
+    this.chatboxAnalyzesTotal = this.getOrCreateCounter({
+      name: 'z_chatbox_analyzes_total',
+      help: 'Ф3 — анализ закрытой сессии чата (LLM-summary + мост в граф). status=success|failed.',
+      labelNames: ['status'] as const,
+    });
+    this.chatboxPendingSessions = this.getOrCreateGauge({
+      name: 'z_chatbox_pending_sessions',
+      help: 'Ф3 — сколько закрытых сессий чата ждут анализа (analysisStatus=pending, по всем org). Растёт и не убывает → анализ встал.',
+    });
+    this.chatboxLastSyncTsSeconds = this.getOrCreateGauge({
+      name: 'z_chatbox_last_sync_ts_seconds',
+      help: 'Ф3 — unixtime последнего успешного синка ChatBox per scope. time()-max(...)>7200 → синк отстал.',
+      labelNames: ['scope'] as const,
+    });
+
     // T7-F3 — prompt caching distribution. Помогает увидеть hit-rate и
     // объём токенов, экономящихся за счёт кеша Anthropic (cache_read ≈ 0.1×
     // input price, cache_creation ≈ 1.25× для 5min-TTL). Алёрт: cache_hit
@@ -1266,6 +1326,22 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'z_prompt_invalid_response_total',
       help: 'Невалидный ответ LLM (ТЗ 2026-05-24 §9 F6): не парсится JSON / не проходит Zod-схему / отсутствует ожидаемый tool_use. Накапливается на каждый retry, не только финальный fail.',
       labelNames: ['task_type', 'model', 'reason'] as const,
+    });
+
+    this.queryPlanExtractionTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_extraction_total',
+      help: 'Query Understanding Волна 1 — извлечение структуры запроса (dialog-extract-plan). result="applied" план применён (фильтр); "failopen" низкий confidence/невалидный JSON/LLM упал → смысловой путь без фильтра.',
+      labelNames: ['result'] as const,
+    });
+    this.queryPlanRetrievalFilteredTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_retrieval_filtered_total',
+      help: 'Query Understanding Волна 1 — chat-v2 retrieval: filtered="yes" применён структурный recall-safe фильтр (полный скан), "no" обычный смысловой путь.',
+      labelNames: ['filtered'] as const,
+    });
+    this.queryPlanEmptyPoolTotal = this.getOrCreateCounter({
+      name: 'z_query_plan_empty_pool_total',
+      help: 'Query Understanding Волна 1 — misroute-proxy: применённый структурный фильтр дал ПУСТОЙ пул (честный ответ «в памяти нет»). Рост может означать слишком узкий/неверный фильтр.',
+      labelNames: ['result'] as const,
     });
 
     this.taskAssigneeAmbiguousTotal = this.getOrCreateCounter({
@@ -1696,6 +1772,13 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'knows_who_match_total',
       help: 'TZ-1 Ф2 — поиск носителя знания «кто знает X» (found ∈ yes|no).',
       labelNames: ['found'] as const,
+    });
+
+    // ── B6/Ф7 (mobile-cora-exec-manager §Ф7) — утренний exec web-push ──
+    this.execMorningPushDeliveredTotal = this.getOrCreateCounter({
+      name: 'z_exec_morning_push_delivered_total',
+      help: 'B6/Ф7 — поставлен в очередь утренний exec web-push «Требует тебя сегодня» (channel=webpush).',
+      labelNames: ['channel'] as const,
     });
 
     // ── TZ-1 Фаза 3.A/B/C (daily-value-engine) — агенты исполнения ──
@@ -2188,6 +2271,12 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'A1 — вердикты AI-судьи canonical-verify (decision ∈ accept|reject|split_uncertain|unavailable × consensus_type).',
       labelNames: ['decision', 'consensus_type'] as const,
     });
+    // ── Autonomy W1 (2026-06-12) — Conflict-Arbiter (LLM-арбитр конфликтов) ──
+    this.conflictArbiterTotal = this.getOrCreateCounter({
+      name: 'z_conflict_arbiter_total',
+      help: 'Autonomy W1 — исходы ночного LLM-арбитра конфликтов знаний (ConflictArbiterCron): verdict дебата × outcome ∈ auto_resolved|left_open|error.',
+      labelNames: ['verdict', 'outcome'] as const,
+    });
     // ── Action Center A2 «лестница доверия» (2026-06-02) ──
     this.curationKillSwitchTotal = this.getOrCreateCounter({
       name: 'curation_kill_switch_total',
@@ -2555,6 +2644,24 @@ export class BusinessMetricsService implements OnModuleInit {
       help: 'Agents v2 Фаза 0.1 — сколько ответов на probe признано непонятными (confidence < min). Метка original_reason — reason эмиттера, чтобы видеть, какие probe чаще получают «мусорный» ответ.',
       labelNames: ['original_reason'] as const,
     });
+    // ── Probe Фаза 5 (2026-06-11) — исход probe для калибровки Фазы 2 ──
+    this.probeOutcomeTotal = this.getOrCreateCounter({
+      name: 'probe_outcome_total',
+      help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
+      labelNames: ['outcome', 'reason'] as const,
+    });
+    // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
+    this.ownerResolutionTotal = this.getOrCreateCounter({
+      name: 'z_owner_resolution_total',
+      help: 'W2 autonomy — исход «лестницы владельца» для missing_owner: auto (Кора назначила сама) | ambiguous (вопрос-выбор) | none (некому, probe как раньше).',
+      labelNames: ['outcome'] as const,
+    });
+    // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
+    this.assistantTurnTotal = this.getOrCreateCounter({
+      name: 'z_assistant_turn_total',
+      help: 'Ф5/Ф6 assistant-channels — исход одного хода помощника в канале (AssistantChannelBridge): ok | error | quota | confirm_hold (мутация отложена до текстового «да») | handler_error (внешний catch, ответ потерян).',
+      labelNames: ['outcome'] as const,
+    });
 
     // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ──
     this.promptFeedbackTotal = this.getOrCreateCounter({
@@ -2844,6 +2951,31 @@ export class BusinessMetricsService implements OnModuleInit {
       labelNames: [] as const,
     });
 
+    // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+    this.rolePrinciplesSynthesizedTotal = this.getOrCreateCounter({
+      name: 'role_principles_synthesized_total',
+      help: 'TZ clone-method Э1.2 — исходы синтеза RolePrinciple ночным cron (outcome: created | merged | rejected_guard). rejected_guard = код-гард отбросил диагностическую лексику.',
+      labelNames: ['outcome'] as const,
+    });
+    this.rolePrinciplesActiveTotal = this.getOrCreateGauge({
+      name: 'role_principles_active_total',
+      help: 'TZ clone-method Э1.2 — gauge числа active RolePrinciple по всем Org (обновляется cron-синтезатором раз в сутки).',
+      labelNames: [] as const,
+    });
+
+    // ── TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona ──
+    this.clonePersonaLayerScore = this.getOrCreateHistogram({
+      name: 'clone_persona_layer_score',
+      help: 'TZ clone-method ВАЛ.1 — score (0..1) LLM-судьи поведенческой верности ответа клона реальному ходу роли (variant: v1 — baseline «только черты» | v2 — все слои метода). Еженедельный офлайн-прогон, ничего не блокирует.',
+      labelNames: ['variant'] as const,
+      buckets: [0, 0.25, 0.5, 0.75, 0.9, 1],
+    });
+    this.personaLayerValidationCasesTotal = this.getOrCreateCounter({
+      name: 'persona_layer_validation_cases_total',
+      help: 'TZ clone-method ВАЛ.1 — кейсы еженедельной поведенческой валидации persona (outcome: judged — оценён судьёй | skipped — кейс упал / битый JSON судьи).',
+      labelNames: ['outcome'] as const,
+    });
+
     // ── Clones=Roles Ф2 (2026-05-25) — версионирование клонов ролей ──
     this.cloneRoleVersionCreatedTotal = this.getOrCreateCounter({
       name: 'clones_role_version_created_total',
@@ -3076,6 +3208,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'coo_sentiment_failed_total',
       help: 'SBA β-8.1 — счётчик отказов LLM при анализе настроения чек-ина. reason: invalid_element (silent-skip батч-парсером) | other (LLM down / нет tool_call / update упал).',
       labelNames: ['tenant_top', 'reason'] as const,
+    });
+    this.checkinGraphIngestTotal = this.getOrCreateCounter({
+      name: 'z_checkin_graph_ingest_total',
+      help: 'ТЗ 2026-06-10-daily-checkin-to-graph-bridge — мост чек-ин → knowledge-core. result: ok (RawEvent создан или идемпотентный возврат) | skipped (пустой чек-ин / нет записи / kill-switch off) | error (исключение моста, best-effort).',
+      labelNames: ['result'] as const,
     });
     this.cooWeeklyDigestGeneratedTotal = this.getOrCreateCounter({
       name: 'coo_weekly_digest_generated_total',
@@ -3484,13 +3621,13 @@ export class BusinessMetricsService implements OnModuleInit {
     });
     this.aiIntakeAutoAcceptedTotal = this.getOrCreateCounter({
       name: 'ai_intake_auto_accepted_total',
-      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ 0.92 + source=meeting + suggestedAssigneeId).',
-      labelNames: ['tenant_top'] as const,
+      help: 'Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriageWorker автоматически принял IntakeIssue (confidence ≥ порога, любой source; via_default_project=true — Issue создан в дефолт-проект «Входящие»).',
+      labelNames: ['tenant_top', 'source', 'via_default_project'] as const,
     });
     this.aiIntakeSuggestedTotal = this.getOrCreateCounter({
       name: 'ai_intake_suggested_total',
-      help: 'Tracker Phase 3 part B — IntakeAutoTriageWorker заполнил suggested* (status ∈ auto_accepted|pending|llm_error|skipped_already_triaged).',
-      labelNames: ['tenant_top', 'status'] as const,
+      help: 'Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriageWorker заполнил suggested* (status ∈ auto_accepted|pending|llm_error|skipped_already_triaged; source — канал intake).',
+      labelNames: ['tenant_top', 'status', 'source'] as const,
     });
     // Tracker Phase 5 part 1 (2026-05-24) — Import-tracker.
     this.importStartedTotal = this.getOrCreateCounter({
@@ -3849,6 +3986,19 @@ export class BusinessMetricsService implements OnModuleInit {
     });
   }
 
+  /** Query Understanding Волна 1 — результат извлечения плана запроса. */
+  incQueryPlanExtraction(args: { result: 'applied' | 'failopen' }): void {
+    this.queryPlanExtractionTotal.inc({ result: args.result });
+  }
+  /** Query Understanding Волна 1 — применён ли структурный фильтр в retrieval. */
+  incQueryPlanRetrievalFiltered(args: { filtered: 'yes' | 'no' }): void {
+    this.queryPlanRetrievalFilteredTotal.inc({ filtered: args.filtered });
+  }
+  /** Query Understanding Волна 1 — применённый фильтр дал пустой пул (misroute-proxy). */
+  incQueryPlanEmptyPool(args: { result: 'empty' }): void {
+    this.queryPlanEmptyPoolTotal.inc({ result: args.result });
+  }
+
   /**
    * Task assignee resolver (ТЗ 2026-05-25 hard-participant-identification):
    * инкрементируется когда нельзя однозначно сопоставить `assigneeRaw` с
@@ -4181,6 +4331,32 @@ export class BusinessMetricsService implements OnModuleInit {
    */
   incTaskDedupe(args: { result: string }): void {
     this.taskDedupeTotal?.inc({ result: args.result });
+  }
+
+  /**
+   * Ф3 — один прогон синка ChatBox по scope (full/incremental/…). status:
+   * 'success' | 'failed'. Optional-safe для тестов без onModuleInit.
+   */
+  incChatboxSync(args: { scope: string; status: 'success' | 'failed' }): void {
+    this.chatboxSyncsTotal?.inc({ scope: args.scope, status: args.status });
+  }
+
+  /**
+   * Ф3 — один анализ закрытой сессии чата (мост в граф). status:
+   * 'success' | 'failed'.
+   */
+  incChatboxAnalyze(args: { status: 'success' | 'failed' }): void {
+    this.chatboxAnalyzesTotal?.inc({ status: args.status });
+  }
+
+  /** Ф3 — текущее число pending-сессий чата, ждущих анализа (gauge). */
+  setChatboxPendingSessions(count: number): void {
+    this.chatboxPendingSessions?.set(count);
+  }
+
+  /** Ф3 — unixtime последнего успешного синка ChatBox per scope (gauge). */
+  setChatboxLastSyncTs(args: { scope: string; tsSeconds: number }): void {
+    this.chatboxLastSyncTsSeconds?.set({ scope: args.scope }, args.tsSeconds);
   }
 
   /**
@@ -4680,6 +4856,13 @@ export class BusinessMetricsService implements OnModuleInit {
     this.knowsWhoMatchTotal.inc({ found: args.found });
   }
 
+  // ──────────── B6/Ф7 (mobile-cora-exec-manager §Ф7) — exec web-push ────────
+
+  /** Counter `z_exec_morning_push_delivered_total{channel}`. */
+  incExecMorningPushDelivered(args: { channel: string }): void {
+    this.execMorningPushDeliveredTotal.inc({ channel: args.channel });
+  }
+
   // ──────────────── TZ-1 Фаза 3.A/B/C — агенты исполнения ──────────────
 
   /** Counter `blocker_synthesis_recurring_total{status}`. */
@@ -5154,10 +5337,15 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
-  /** Результат intent-классификации входящего текста бота (LLM или эвристика). */
+  /**
+   * Результат intent-классификации входящего текста бота (LLM или эвристика).
+   * ТЗ 2026-06-10 §2 Ф4 — добавлены значения `task` / `show_tasks` (гейт
+   * намерения перед созданием задачи): теперь метрика показывает РАСПРЕДЕЛЕНИЕ
+   * всех терминальных намерений бота, а не только chat_query/free_note.
+   */
   incBotIntentClassified(args: {
     channel: 'telegram_bot' | 'max_bot';
-    intent: 'chat_query' | 'free_note';
+    intent: 'chat_query' | 'free_note' | 'task' | 'show_tasks';
     source: 'llm' | 'heuristic';
   }): void {
     this.botIntentClassifiedTotal.inc({
@@ -5359,6 +5547,21 @@ export class BusinessMetricsService implements OnModuleInit {
     this.curationConflictsTotal.inc({
       relation_type: args.relationType,
       resolution: args.resolution,
+    });
+  }
+
+  /**
+   * Autonomy W1 — исход одного конфликта в ночном LLM-арбитре конфликтов
+   * (ConflictArbiterCron): verdict дебата × outcome
+   * (auto_resolved | left_open | error).
+   */
+  incConflictArbiter(args: {
+    verdict: string;
+    outcome: 'auto_resolved' | 'left_open' | 'error';
+  }): void {
+    this.conflictArbiterTotal.inc({
+      verdict: args.verdict,
+      outcome: args.outcome,
     });
   }
 
@@ -5894,6 +6097,25 @@ export class BusinessMetricsService implements OnModuleInit {
     this.probeColdStartDroppedTotal.inc();
   }
 
+  /**
+   * W2 autonomy (2026-06-12) — исход «лестницы владельца» (OwnerResolver)
+   * для missing_owner-триггеров: auto | ambiguous | none.
+   */
+  incOwnerResolution(args: { outcome: 'auto' | 'ambiguous' | 'none' }): void {
+    this.ownerResolutionTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
+   * Ф5/Ф6 assistant-channels (2026-06-12) — исход одного хода помощника в
+   * канале (AssistantChannelBridge): ok | error | quota | confirm_hold |
+   * handler_error.
+   */
+  incAssistantTurn(args: {
+    outcome: 'ok' | 'error' | 'quota' | 'confirm_hold' | 'handler_error';
+  }): void {
+    this.assistantTurnTotal.inc({ outcome: args.outcome });
+  }
+
   /** Probe истёк без ответа. */
   incProbeExpired(): void {
     this.probeExpiredTotal.inc();
@@ -5945,6 +6167,17 @@ export class BusinessMetricsService implements OnModuleInit {
     this.probeResponseUnclearTotal.inc({
       original_reason: args.originalReason,
     });
+  }
+
+  /**
+   * Probe Фаза 5 — исход probe (answered|ignored) по reason. Калибровочный
+   * сигнал для будущего LLM-judge ценности вопроса (Фаза 2).
+   */
+  incProbeOutcome(args: {
+    outcome: 'answered' | 'ignored';
+    reason: string;
+  }): void {
+    this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────
@@ -6393,6 +6626,52 @@ export class BusinessMetricsService implements OnModuleInit {
   }
 
   /**
+   * TZ clone-method Э1.2 — counter исходов синтеза RolePrinciple:
+   * created — новый принцип; merged — дедуп в существующий active;
+   * rejected_guard — отброшен код-гардом диагностической лексики.
+   */
+  incRolePrincipleSynthesized(args: {
+    outcome: 'created' | 'merged' | 'rejected_guard';
+  }): void {
+    this.rolePrinciplesSynthesizedTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
+   * TZ clone-method Э1.2 — gauge числа active RolePrinciple по всем Org.
+   * Обновляется RolePrincipleSynthesisCron после каждого прохода.
+   */
+  setRolePrinciplesActiveTotal(value: number): void {
+    if (value < 0) return;
+    this.rolePrinciplesActiveTotal.set(value);
+  }
+
+  /**
+   * TZ clone-method ВАЛ.1 — observe score (0..1) LLM-судьи поведенческой
+   * верности ответа клона (variant: v1 — baseline «только черты» |
+   * v2 — persona всех слоёв метода). Только наблюдение, ничего не блокирует.
+   */
+  observePersonaLayerScore(args: {
+    variant: 'v1' | 'v2';
+    score: number;
+  }): void {
+    if (!Number.isFinite(args.score) || args.score < 0 || args.score > 1) {
+      return;
+    }
+    this.clonePersonaLayerScore.observe({ variant: args.variant }, args.score);
+  }
+
+  /**
+   * TZ clone-method ВАЛ.1 — counter кейсов еженедельной поведенческой
+   * валидации persona: judged — кейс оценён судьёй; skipped — кейс упал
+   * (ошибка LLM / битый JSON судьи).
+   */
+  incPersonaLayerValidationCase(args: {
+    outcome: 'judged' | 'skipped';
+  }): void {
+    this.personaLayerValidationCasesTotal.inc({ outcome: args.outcome });
+  }
+
+  /**
    * Clones=Roles Ф2 — инкремент counter'а «создана новая версия клона роли».
    * Дёргается из `RoleClonePersonaVersioningHandler` и admin force-new-version API.
    */
@@ -6820,6 +7099,15 @@ export class BusinessMetricsService implements OnModuleInit {
       tenant_top: args.tenantTop,
       reason: args.reason ?? 'other',
     });
+  }
+
+  /**
+   * Counter `z_checkin_graph_ingest_total{result}` — мост чек-ин → граф знаний
+   * (ТЗ 2026-06-10-daily-checkin-to-graph-bridge). result ∈ ok | skipped | error
+   * (best-effort, ошибка моста не ломает создание чек-ина).
+   */
+  incCheckinGraphIngest(args: { result: 'ok' | 'skipped' | 'error' }): void {
+    this.checkinGraphIngestTotal.inc({ result: args.result });
   }
 
   /** Counter `coo_weekly_digest_generated_total{tenant_top}`. */
@@ -7567,12 +7855,28 @@ export class BusinessMetricsService implements OnModuleInit {
     );
   }
 
-  /** Tracker Phase 3 part B — IntakeAutoTriage авто-принял IntakeIssue. */
-  incAiIntakeAutoAccepted(args: { tenantTop: string }): void {
-    this.aiIntakeAutoAcceptedTotal.inc({ tenant_top: args.tenantTop });
+  /**
+   * Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriage
+   * авто-принял IntakeIssue. Разрезы: source — канал intake (meeting/telegram/
+   * in_app/…); viaDefaultProject='true' — Issue создан в дефолт-проект
+   * «Входящие» (атрибуция проекта не выводилась).
+   */
+  incAiIntakeAutoAccepted(args: {
+    tenantTop: string;
+    source: string;
+    viaDefaultProject: 'true' | 'false';
+  }): void {
+    this.aiIntakeAutoAcceptedTotal.inc({
+      tenant_top: args.tenantTop,
+      source: args.source,
+      via_default_project: args.viaDefaultProject,
+    });
   }
 
-  /** Tracker Phase 3 part B — IntakeAutoTriage заполнил suggested* (или ошибка). */
+  /**
+   * Tracker Phase 3 part B + W4 autonomy (2026-06-12) — IntakeAutoTriage
+   * заполнил suggested* (или ошибка). source — канал intake.
+   */
   incAiIntakeSuggested(args: {
     tenantTop: string;
     status:
@@ -7580,10 +7884,12 @@ export class BusinessMetricsService implements OnModuleInit {
       | 'pending'
       | 'llm_error'
       | 'skipped_already_triaged';
+    source: string;
   }): void {
     this.aiIntakeSuggestedTotal.inc({
       tenant_top: args.tenantTop,
       status: args.status,
+      source: args.source,
     });
   }
 

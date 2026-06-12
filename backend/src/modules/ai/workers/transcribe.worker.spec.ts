@@ -176,6 +176,8 @@ function makeWorker(opts: {
   const cfg = {
     ai: { vox: { model: 'v3_rnnt', pollIntervalMs: 5000, pollMaxAttempts: 180 } },
     s3: { bucket: 'bucket' },
+    // #74 — порог «битого» аудио (AdminSetting); в тесте отдаём default.
+    getDynamic: vi.fn(async (_k: string, _e: unknown, d: number) => d),
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
 
@@ -366,6 +368,46 @@ describe('TranscribeWorker.process', () => {
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
   });
 
+  it('#74: пустой результат + малое аудио (битое) → ОДИН ре-submit свежей задачи', async () => {
+    const empty = {
+      status: 'COMPLETED' as const,
+      transcriptText: '',
+      durationSeconds: 0,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => empty,
+    });
+    // getObject по умолчанию даёт 11 байт (< minAudioBytes 1024) → битое.
+    await run(worker);
+
+    // initial submit + один ре-submit = 2; poll вызван дважды.
+    expect(deps.submit).toHaveBeenCalledTimes(2);
+    expect(deps.poll).toHaveBeenCalledTimes(2);
+  });
+
+  it('#74: пустой результат, но аудио не малое и dur>0 (тишина) → БЕЗ ре-submit', async () => {
+    const silent = {
+      status: 'COMPLETED' as const,
+      transcriptText: '',
+      durationSeconds: 120,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => silent,
+    });
+    // большое аудио (> minAudioBytes) + ненулевая длительность → не битое.
+    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(
+      Buffer.alloc(5000),
+    );
+    await run(worker);
+
+    expect(deps.submit).toHaveBeenCalledTimes(1);
+    expect(deps.poll).toHaveBeenCalledTimes(1);
+  });
+
   it('merge ровно один раз только когда ВСЕ дорожки успешны', async () => {
     const { worker, deps } = makeWorker({
       tracks: [
@@ -439,6 +481,35 @@ describe('TranscribeWorker.process', () => {
     expect(deps.metrics.incMeetingFailed).toHaveBeenCalledWith('transcribe');
     // submit/poll не вызываются — короткое замыкание на отсутствии треков.
     expect(deps.submit).not.toHaveBeenCalled();
+  });
+
+  it('Ф2 (ASR ТЗ 2026-06-11): персистит voxResult.segments в slim-форме (без speaker/speakerId)', async () => {
+    const withSegments = {
+      status: 'COMPLETED' as const,
+      transcriptText: 'привет',
+      durationSeconds: 5,
+      words: [] as Array<{ word: string; startMs: number; endMs: number }>,
+      // Vox отдаёт сегмент с speaker/speakerId — персист обязан их отбросить (Б2).
+      segments: [{ startSec: 1, endSec: 2, text: 'а', speaker: 'SPEAKER 1', speakerId: 1 }],
+    };
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+      pollImpl: async () => withSegments as unknown as typeof completedResult,
+    });
+    // Не «битое» аудио (words пусты, но есть текст и длительность) → без ре-submit.
+    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(Buffer.alloc(5000));
+    await run(worker);
+
+    // upsert получает segments как Array<{startSec,endSec,text}> — точно slim
+    // (массив-литерал в toHaveBeenCalledWith сверяется рекурсивно: лишние ключи
+    // speaker/speakerId провалили бы матч).
+    expect(deps.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          segments: [{ startSec: 1, endSec: 2, text: 'а' }],
+        }),
+      }),
+    );
   });
 });
 

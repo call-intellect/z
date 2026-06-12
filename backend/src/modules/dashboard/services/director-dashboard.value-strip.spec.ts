@@ -18,7 +18,7 @@ import type { SentimentIndexService } from './sentiment-index.service';
  * ТЗ-2 Ф1 — unit-тесты «Полосы пользы» (`fetchValueStrip`).
  *
  *   - 5 счётчиков мапятся на правильные запросы Prisma:
- *       meetingsProtocoled  → meeting.count (OR aiResult/analyzeV2Status);
+ *       meetingsProtocoled  → meeting.count (OR aiResult.summaryFast/summary);
  *       tasksExtracted      → task.count;
  *       decisionsExtracted  → decision.count;
  *       questionsAnswered…  → $queryRaw (jsonb citations type-guard);

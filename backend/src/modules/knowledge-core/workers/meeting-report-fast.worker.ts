@@ -36,6 +36,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
@@ -88,8 +89,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
     // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
     // пост-фактум резолв `assigneeUserId` из `assigneeRaw` по списку участников
-    // встречи (БЕЗ правки LLM-промпта). Паттерн скопирован из
-    // `meeting-analyze-v2.worker.ts`.
+    // встречи (БЕЗ правки LLM-промпта).
     @Inject(ParticipantContextService)
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
@@ -104,6 +104,12 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     // (gate на создание пользовательского Task для action-items встречи).
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
+    // best-effort эмит `meeting.report-fast-ready` после готовности отчёта.
+    // @Optional — в старых unit-тестах воркера эмиттер не передаётся (no-op).
+    @Optional()
+    @Inject(EventEmitter2)
+    private readonly events?: EventEmitter2,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -377,6 +383,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     try {
       await this.writeQualityScore({
         meetingId,
+        tenantId,
         qualityScore: parsed.quality_score,
       });
     } catch (err) {
@@ -409,6 +416,25 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     const durationSec = (Date.now() - startedAt) / 1000;
     this.metrics?.observeMeetingReportFastDuration?.(durationSec);
     this.metrics?.incMeetingReportFast?.({ tenant: tenantId, status });
+
+    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
+    // эмитим `meeting.report-fast-ready` ТОЛЬКО при ready/partial (на failed
+    // класть в граф нечего). Best-effort try/catch — сбой эмита НЕ откатывает
+    // уже записанный reportFastStatus (паттерн analyze.worker MEETING_AI_READY).
+    if (this.events && (status === 'ready' || status === 'partial')) {
+      try {
+        this.events.emit('meeting.report-fast-ready', {
+          meetingId,
+          tenantId,
+          status,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'meeting-report-fast: эмит meeting.report-fast-ready не удался (best-effort) — продолжаем',
+        );
+      }
+    }
 
     this.logger.log(
       {
@@ -626,7 +652,12 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Сохраняет quality_score целиком в Meeting.reportFastQualityScore (Json).
+   * Сохраняет quality_score в ДВА места одной транзакцией:
+   *   1. Meeting.reportFastQualityScore (Json) — сырой снимок результата
+   *      meeting-report-fast + Meeting.qualityScoreStatus='ready'.
+   *   2. Каноничная таблица MeetingQualityScore (upsert) — её читают
+   *      QualityScoreService.getForMeeting / getOrgDashboard БЕЗ изменений
+   *      (маппинг полей идентичен упразднённому quality-score.worker'у).
    * Защищается от пустого/неожиданного объекта: если у `qualityScore` нет хотя бы
    * `overallScore` числом — лог warn и пропуск (не пишем мусор). Структуру
    * гарантирует zod-схема `MeetingReportFastQualityScoreSchema`, поэтому в
@@ -634,6 +665,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
    */
   private async writeQualityScore(args: {
     meetingId: string;
+    tenantId: string;
     qualityScore: MeetingReportFastOutput['quality_score'] | null | undefined;
   }): Promise<void> {
     const qs = args.qualityScore;
@@ -651,11 +683,41 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    await this.prisma.meeting.update({
-      where: { id: args.meetingId },
-      data: {
-        reportFastQualityScore: qs as unknown as Prisma.InputJsonValue,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.meeting.update({
+        where: { id: args.meetingId },
+        data: {
+          reportFastQualityScore: qs as unknown as Prisma.InputJsonValue,
+          qualityScoreStatus: 'ready',
+        },
+      });
+      await tx.meetingQualityScore.upsert({
+        where: { meetingId: args.meetingId },
+        create: {
+          meetingId: args.meetingId,
+          tenantId: args.tenantId,
+          overallScore: qs.overallScore,
+          preparationScore: qs.categories.preparation,
+          structureScore: qs.categories.structure,
+          clarityScore: qs.categories.clarity,
+          outcomesScore: qs.categories.outcomes,
+          engagementScore: qs.categories.engagement,
+          recommendations: qs.recommendations as unknown as Prisma.InputJsonValue,
+          strengths: qs.strengths as unknown as Prisma.InputJsonValue,
+          promptTemplateVersionId: null,
+        },
+        update: {
+          overallScore: qs.overallScore,
+          preparationScore: qs.categories.preparation,
+          structureScore: qs.categories.structure,
+          clarityScore: qs.categories.clarity,
+          outcomesScore: qs.categories.outcomes,
+          engagementScore: qs.categories.engagement,
+          recommendations: qs.recommendations as unknown as Prisma.InputJsonValue,
+          strengths: qs.strengths as unknown as Prisma.InputJsonValue,
+          computedAt: new Date(),
+        },
+      });
     });
   }
 
@@ -778,7 +840,6 @@ function clamp01(v: number): number {
 
 /**
  * Парсит dueDateIso. Формат: YYYY-MM-DD или ISO datetime. Иначе null.
- * Идентично `meeting-analyze-v2.worker.ts.parseDueDateIso`.
  */
 function parseDueDateIso(raw: string | null): Date | null {
   if (!raw) return null;

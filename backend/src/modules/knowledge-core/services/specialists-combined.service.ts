@@ -40,6 +40,7 @@ import {
   type SkillConfidence,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -81,6 +82,8 @@ export interface SpecialistsCombinedExtractResult {
     insights: number;
     experiments: number;
     regulations: number;
+    /** A12 (Волна 6) — инструкции (kind='instruction' в regulations[]). */
+    instructions: number;
     knowledgeCategories: number;
     skillTraits: number;
     helpfulnessTraits: number;
@@ -126,6 +129,9 @@ export class SpecialistsCombinedService {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    @Optional()
+    @Inject(TypedConfigService)
+    private readonly cfg?: TypedConfigService,
   ) {}
 
   /**
@@ -182,6 +188,7 @@ export class SpecialistsCombinedService {
       insights: 0,
       experiments: 0,
       regulations: 0,
+      instructions: 0,
       knowledgeCategories: 0,
       skillTraits: 0,
       helpfulnessTraits: 0,
@@ -194,6 +201,7 @@ export class SpecialistsCombinedService {
     created.insights = await this.persistInsights(args.tenantId, parsed, blockIdSet, errors);
     created.experiments = await this.persistExperiments(args.tenantId, parsed, blockIdSet, errors);
     created.regulations = await this.persistRegulations(args.tenantId, parsed, blockIdSet, errors);
+    created.instructions = await this.persistInstructions(args.tenantId, parsed, blockIdSet, errors);
     created.knowledgeCategories = await this.persistKnowledgeCategories(args.tenantId, parsed, errors);
     created.skillTraits = await this.persistSkillTraits(args.tenantId, parsed, errors);
     created.helpfulnessTraits = await this.persistHelpfulness(args.tenantId, parsed, blockIdSet, errors);
@@ -447,6 +455,31 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const r of parsed.regulations) {
       if (!blockIdSet.has(r.sourceBlockId)) continue;
+      // A12 (Волна 6) — инструкции едут в отдельную таблицу `instructions`
+      // через persistInstructions. Здесь — только regulation/process/policy/
+      // standard (process/policy сейчас тоже схлопываются в regulation, как и
+      // раньше — это поведение НЕ меняем).
+      if (r.kind === 'instruction') continue;
+      // A2.2 (ТЗ 2026-06-11) — анти-плодёж гейт isOrgNorm (тот же смысл, что у
+      // single-экстрактора): фрагмент с isOrgNorm=false (чужая практика /
+      // гипотетика / разовое поручение) НЕ создаёт регламент. Исключение —
+      // заявленная потребность (extractionStatus нужен/обсуждается). Kill-switch
+      // regulationGateStrict (default ON); OFF → старое поведение.
+      let gateStrict: boolean;
+      try {
+        gateStrict = this.cfg?.aiFeatures.regulationGateStrict !== false;
+      } catch {
+        gateStrict = true;
+      }
+      const isDeclaredNeed =
+        r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается';
+      if (gateStrict && r.isOrgNorm === false && !isDeclaredNeed) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'regulation',
+          reason: 'not_a_norm',
+        });
+        continue;
+      }
       try {
         await this.prisma.regulation.upsert({
           where: {
@@ -472,6 +505,63 @@ export class SpecialistsCombinedService {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`regulation[${r.sourceBlockId}]: ${msg}`);
+      }
+    }
+    return created;
+  }
+
+  // ─────────────────────── persist: instructions (A12) ─────────
+  //
+  // Инструкции (kind='instruction' в regulations[]) — пошаговое «как сделать X»
+  // для ОДНОЙ роли. Едут в отдельную таблицу `instructions` (не regulations).
+  // Зеркалит persistRegulations по простоте: upsert по (tenantId, name), без
+  // KNN-дедупа и triage (MVP, как у остальных типов в combined-сервисе).
+  //   - extractionStatus → status: «существует»→active; иначе deprecated.
+  //   - roles[0] → forRole (≤120 символов, лимит схемы).
+
+  private async persistInstructions(
+    tenantId: string,
+    parsed: SpecialistsCombinedOutput,
+    blockIdSet: Set<string>,
+    errors: string[],
+  ): Promise<number> {
+    let created = 0;
+    for (const r of parsed.regulations) {
+      if (r.kind !== 'instruction') continue;
+      if (!blockIdSet.has(r.sourceBlockId)) continue;
+      const forRole =
+        r.roles?.find((x) => x && x.trim().length > 0)?.trim().slice(0, 120) ??
+        null;
+      const status: 'active' | 'deprecated' =
+        r.extractionStatus === 'нужен' || r.extractionStatus === 'обсуждается'
+          ? 'deprecated'
+          : 'active';
+      try {
+        await this.prisma.instruction.upsert({
+          where: { tenantId_name: { tenantId, name: r.name } },
+          update: {
+            statement: r.statement,
+            contentMd: r.statement,
+            sourceBlockIds: { push: r.sourceBlockId },
+            confidence: r.confidence,
+            forRole: forRole ?? undefined,
+            status,
+          },
+          create: {
+            tenantId,
+            name: r.name,
+            contentMd: r.statement,
+            statement: r.statement,
+            confidence: r.confidence,
+            forRole,
+            status,
+            sourceBlockIds: [r.sourceBlockId],
+          },
+        });
+        created += 1;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`instruction[${r.sourceBlockId}]: ${msg}`);
       }
     }
     return created;
@@ -689,6 +779,7 @@ export class SpecialistsCombinedService {
         insights: 0,
         experiments: 0,
         regulations: 0,
+        instructions: 0,
         knowledgeCategories: 0,
         skillTraits: 0,
         helpfulnessTraits: 0,
@@ -725,6 +816,7 @@ export class SpecialistsCombinedService {
       created.insights +
       created.experiments +
       created.regulations +
+      created.instructions +
       created.knowledgeCategories +
       created.skillTraits +
       created.helpfulnessTraits;

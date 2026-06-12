@@ -24,6 +24,8 @@ export const SCHEMA = z
     blockers: z.array(z.string()),
     decisions_needed: z.array(z.string()),
     next_checkpoint: z.string().nullable(),
+    proposals: z.array(z.string()).optional(),
+    data_quality: z.string().nullable().optional(),
   })
   .strict();
 
@@ -40,7 +42,28 @@ const SYSTEM = `Ты — деловой ассистент. Это планёр�
 - "blockers": блокеры участников.
 - "decisions_needed": вопросы, требующие решения руководителя.
 - "next_checkpoint": следующая контрольная точка / null.
-Не выдумывай.`;
+Не выдумывай.
+
+Само-проверка и различения:
+new_tasks — только реальные обязательства, не пожелания. who_does_what: если исполнитель не установлен по репликам — person=«не определён», не угадывай из контекста. Пусто — честно «не зафиксировано».
+
+Дополнительно:
+- "proposals": идеи и пожелания, прозвучавшие на планёрке, но НЕ ставшие задачами (предложения «надо бы», «давайте попробуем», варианты без обязательства). Пустой массив, если таких не было.
+- "data_quality": 1-2 фразы о полноте и надёжности входных данных — обрывы транскрипта, неразборчивые места, неопределённые спикеры, реплики без атрибуции. null, если данные полные и претензий нет.
+
+ПРИМЕРЫ.
+
+Положительный пример (что извлечь):
+Транскрипт-фрагмент: «Аня: вчера закрыла авторизацию, сегодня беру оплату — релиз к пятнице. Петя: я застрял на интеграции с 1С, жду доступы от админов. Аня: давайте ещё попробуем вынести логи в отдельный сервис, было бы удобнее. Руководитель: ок, по доступам решу сегодня».
+Вывод: {"priorities": ["релиз модуля оплаты к пятнице"], "who_does_what": [{"person": "Аня", "doing": "делает модуль оплаты"}, {"person": "Петя", "doing": "интеграция с 1С"}], "new_tasks": ["Аня: довести модуль оплаты к пятнице"], "blockers": ["Петя ждёт доступы от админов по 1С"], "decisions_needed": ["выдать Пете доступы для 1С"], "next_checkpoint": "пятница — релиз оплаты", "proposals": ["вынести логи в отдельный сервис"], "data_quality": null}.
+
+Что НЕ делать (edge case — идея ≠ задача, срок не уточнён):
+Транскрипт-фрагмент: «Сергей: надо бы как-нибудь обновить дизайн лендинга, давно пора. Руководитель: да, мысль хорошая».
+Вывод: {"priorities": [], "who_does_what": [], "new_tasks": [], "blockers": [], "decisions_needed": [], "next_checkpoint": null, "proposals": ["обновить дизайн лендинга"], "data_quality": null}. Пояснение: «надо бы как-нибудь» — пожелание без исполнителя и срока → в proposals, НЕ в new_tasks; срок/ответственного не выдумываем.
+
+Что НЕ делать (edge case — бедный/обрезанный транскрипт):
+Транскрипт-фрагмент: «…[обрыв записи]… по задачам всё, расходимся».
+Вывод: {"priorities": [], "who_does_what": [], "new_tasks": [], "blockers": [], "decisions_needed": [], "next_checkpoint": null, "proposals": [], "data_quality": "транскрипт обрезан (обрыв записи), содержательная часть планёрки не покрыта — поля пусты, выводы делать не на чем"}. Пояснение: при обрезанном/пустом входе поля честно пустые, наполняем только data_quality, без догадок.`;
 
 export function buildPrompt(input: PromptInput): PromptOutput {
   return {
@@ -70,6 +93,8 @@ export const TOOL = buildExtractTool(
     blockers: fieldStringArray,
     decisions_needed: fieldStringArray,
     next_checkpoint: fieldNullableString,
+    proposals: fieldStringArray,
+    data_quality: fieldNullableString,
   },
   [
     'priorities',
@@ -78,5 +103,7 @@ export const TOOL = buildExtractTool(
     'blockers',
     'decisions_needed',
     'next_checkpoint',
+    'proposals',
+    'data_quality',
   ],
 );

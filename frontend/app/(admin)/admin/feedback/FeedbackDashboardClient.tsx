@@ -36,6 +36,7 @@ import { MergeTopicDialog } from './components/MergeTopicDialog';
 import { RenameTopicDialog } from './components/RenameTopicDialog';
 import { TopicsFilters } from './components/TopicsFilters';
 import { TopicsTable } from './components/TopicsTable';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 type DialogState =
   | { kind: 'rename'; topic: FeedbackTopicSummary }
@@ -130,7 +131,7 @@ export function FeedbackDashboardClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Обратная связь' },
       ]}
       title="Обратная связь пользователей"

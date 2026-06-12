@@ -92,6 +92,18 @@ export class ConversationalIngestAdapter {
     sourceChannelKind?: string | null;
     contextBlockId?: string | null;
     contextCardId?: string | null;
+    /**
+     * TZ clone-method Э3.1 — вопрос, который реально задали человеку.
+     * SegmentBuilder строит из него сегмент «Вопрос Коры: … Ответ: …»
+     * вместо JSON-stringify-шума.
+     */
+    questionText?: string | null;
+    /**
+     * TZ clone-method Э3.1 — детерминированный signalType ответа (для
+     * CDM-интервью — 'reasoning'). Кладётся TOP-LEVEL в payload: именно там
+     * его читает `BlockIngestWorker.tryGetSignalTypeHint`.
+     */
+    signalTypeHint?: string;
   }): Promise<RawEvent> {
     const source = await this.ensureSource(args.tenantId);
     const occurredAt = args.occurredAt ?? new Date();
@@ -104,7 +116,11 @@ export class ConversationalIngestAdapter {
       sourceChannelKind: args.sourceChannelKind ?? null,
       contextBlockId: args.contextBlockId ?? null,
       contextCardId: args.contextCardId ?? null,
+      questionText: args.questionText ?? null,
       response: args.payload,
+      // signalTypeHint — только при наличии (block-ingest игнорирует
+      // не-строки, но не плодим null-ключ в каждом payload'е).
+      ...(args.signalTypeHint ? { signalTypeHint: args.signalTypeHint } : {}),
     };
 
     const result = await this.ingest.ingest({

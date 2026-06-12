@@ -51,7 +51,7 @@ export class BlockFetchService {
    * Если встреча не имеет RawEvent (legacy до Фазы 1) или ни одного блока —
    * возвращает пустой массив.
    *
-   * Соответствует контрактам meeting-analyze-v2.worker:
+   * Контракт (используется SpecialistsCombinedWorker'ом):
    *   - tenantId передаётся отдельно (worker уже его проверил),
    *     метод дополнительно фильтрует tenantId на стороне БД.
    */

@@ -11,6 +11,7 @@ import {
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LivekitService } from '../livekit/livekit.service';
+import type { MeetingVisibilityService } from '../meetings/meeting-visibility.service';
 import type { MeetingsService } from '../meetings/meetings.service';
 
 
@@ -68,6 +69,7 @@ function makeService(setup: {
   metrics: any;
   cfg: any;
   livekit: any;
+  visibility: any;
 } {
   const meetingFindUnique = vi.fn(async () => setup.meeting ?? null);
   const recordingFindUnique = vi.fn(async (args: any) => {
@@ -142,6 +144,12 @@ function makeService(setup: {
     listParticipants: vi.fn(async () => setup.livekitParticipants ?? []),
   } as unknown as LivekitService;
 
+  // ТЗ meeting-visibility Ф3 — READ-доступ к записи решает assertCanView.
+  // Дефолт — резолвится (доступ есть); тесты «нет доступа» делают mockRejectedValueOnce.
+  const visibility = {
+    assertCanView: vi.fn(async () => ({})),
+  } as unknown as MeetingVisibilityService;
+
   const cfg = {
     retention: { defaultDays: 30, cron: '0 * * * *' },
     s3: {
@@ -154,8 +162,8 @@ function makeService(setup: {
     },
   } as unknown as TypedConfigService;
 
-  const svc = new RecordingsService(prisma, egress, s3, meetings, metrics, cfg, livekit);
-  return { svc, prisma, egress, s3, metrics, cfg, livekit };
+  const svc = new RecordingsService(prisma, egress, s3, meetings, metrics, cfg, livekit, visibility);
+  return { svc, prisma, egress, s3, metrics, cfg, livekit, visibility };
 }
 
 describe('RecordingsService', () => {
@@ -468,11 +476,26 @@ describe('RecordingsService', () => {
 
   // ─────────────────────────── getDownloadUrl ────────────────────────────
 
-  it('getDownloadUrl: чужой owner → NotAuthorizedError', async () => {
-    const { svc } = makeService({
+  it('getDownloadUrl: нет доступа (visibility отказала) → NotAuthorizedError', async () => {
+    const { svc, visibility } = makeService({
       meeting: { id: 'm-1', ownerId: 'u-other', status: 'completed' },
     });
+    (visibility as any).assertCanView.mockRejectedValueOnce(
+      new NotAuthorizedError('meeting_not_visible'),
+    );
     await expect(svc.getDownloadUrl('m-1', 'u-1')).rejects.toBeInstanceOf(
+      NotAuthorizedError,
+    );
+  });
+
+  it('getAudioTracks: нет доступа (visibility отказала) → NotAuthorizedError', async () => {
+    const { svc, visibility } = makeService({
+      meeting: { id: 'm-1', ownerId: 'u-other', status: 'completed' },
+    });
+    (visibility as any).assertCanView.mockRejectedValueOnce(
+      new NotAuthorizedError('meeting_not_visible'),
+    );
+    await expect(svc.getAudioTracks('m-1', 'u-1')).rejects.toBeInstanceOf(
       NotAuthorizedError,
     );
   });

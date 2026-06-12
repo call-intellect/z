@@ -229,6 +229,10 @@ function buildSettings(): SettingSeed[] {
   // ── Knowledge-Core пороги (knowledge.*) — ~40.
   const knowledge: Array<[string, unknown, Severity, string]> = [
     ['knowledge.distillMergeThreshold', envFloat('DISTILL_MERGE_THRESHOLD', 0.85), 'medium', 'KNN cosine-порог merge IdeaBlock'],
+    // Report-to-graph Ф4 ГАРД A — cap уверенности блоков из отчёта встречи
+    // (вторичный источник). Дефолт 0.6 — report виден в поиске, но ниже
+    // транскриптного primary.
+    ['knowledge.reportBlockConfidenceCap', envFloat('REPORT_BLOCK_CONFIDENCE_CAP', 0.6), 'medium', 'Cap уверенности блоков из отчёта встречи (вторичный источник)'],
     ['knowledge.distillDebounceMs', envInt('DISTILL_DEBOUNCE_MS', 30000), 'low', 'Дебаунс distill-воркера, мс'],
     ['knowledge.distillKnnTopK', envInt('DISTILL_KNN_TOP_K', 10), 'medium', 'KNN top-K для distill'],
     ['knowledge.entityMergeThreshold', envFloat('ENTITY_MERGE_THRESHOLD', 0.9), 'medium', 'KNN cosine-порог merge Entity'],
@@ -271,13 +275,18 @@ function buildSettings(): SettingSeed[] {
     // Action Center «лестница доверия» A1/A2 — admin-editable дефолты курации.
     ['knowledge.curationProvisionalThresholdDefault', envFloat('CURATION_PROVISIONAL_THRESHOLD_DEFAULT', 0.8), 'medium', 'Курация: порог провизорной AI-канонизации'],
     ['knowledge.curationAiVerifierEnabled', envBool('CURATION_AI_VERIFIER_ENABLED', true), 'medium', 'Курация: включён ли AI-судья для критических типов'],
-    ['knowledge.curationAuditSampleRate', envFloat('CURATION_AUDIT_SAMPLE_RATE', 0.05), 'low', 'Курация: доля авто/провизорных решений в аудит-выборку'],
-    ['knowledge.curationAutotuneEnabled', envBool('CURATION_AUTOTUNE_ENABLED', false), 'medium', 'Курация: автоподстройка порогов по override-rate'],
+    ['knowledge.curationAuditSampleRate', envFloat('CURATION_AUDIT_SAMPLE_RATE', 0.01), 'low', 'Курация: доля авто/провизорных решений в аудит-выборку (W3: 0.05→0.01 — меньше аудит-шума при сохранении сигнала autotune)'],
+    ['knowledge.curationAutotuneEnabled', envBool('CURATION_AUTOTUNE_ENABLED', true), 'medium', 'Курация: автоподстройка порогов по override-rate (kill-switch, ON)'],
     ['knowledge.curationThresholdMin', envFloat('CURATION_THRESHOLD_MIN', 0.6), 'medium', 'Курация: нижняя граница автоподстройки порога'],
     ['knowledge.curationThresholdMax', envFloat('CURATION_THRESHOLD_MAX', 0.97), 'medium', 'Курация: верхняя граница автоподстройки порога'],
     ['knowledge.curationAutotuneStep', envFloat('CURATION_AUTOTUNE_STEP', 0.02), 'low', 'Курация: шаг автоподстройки порога'],
     ['knowledge.curationMinDecisionsForAutotune', envInt('CURATION_MIN_DECISIONS_FOR_AUTOTUNE', 20), 'low', 'Курация: минимум решений до автоподстройки'],
     ['knowledge.curationMaxProvisionalOverride', envFloat('CURATION_MAX_PROVISIONAL_OVERRIDE', 0.2), 'medium', 'Курация: порог override-rate для kill-switch провизорного уровня'],
+    // Autonomy W1 (2026-06-12) — LLM-арбитр авто-разрешения конфликтов знаний
+    // (ConflictArbiterCron). Ship-On: kill-switch с дефолтом TRUE.
+    ['knowledge.curationConflictArbiterEnabled', envBool('CURATION_CONFLICT_ARBITER_ENABLED', true), 'medium', 'Курация: LLM-арбитр авто-разрешения конфликтов (kill-switch, ON)'],
+    ['knowledge.curationConflictArbiterMinConfidence', envFloat('CURATION_CONFLICT_ARBITER_MIN_CONFIDENCE', 0.7), 'medium', 'Курация: минимальная средняя confidence голосов-победителей дебата для авто-резолва конфликта'],
+    ['knowledge.curationConflictArbiterBatchSize', envInt('CURATION_CONFLICT_ARBITER_BATCH_SIZE', 20), 'low', 'Курация: лимит open-конфликтов на Org за один ночной проход арбитра'],
     ['knowledge.executablePersonaThresholdTraitsCount', envInt('EXECUTABLE_PERSONA_THRESHOLD_TRAITS_COUNT', 10), 'medium', 'ExecutablePersona: порог traits для rebuild'],
     // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
     // Дефолт TRUE — атрибуция критична для skill/persona/clone-проекций.
@@ -594,13 +603,28 @@ function buildSettings(): SettingSeed[] {
   // ── Pending-actions «требует действия» (pendingActions.*) — 5. Action Center C2.
   const pendingActions: Array<[string, unknown, Severity, string]> = [
     ['pendingActions.reminderWindowStartHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_START_HOUR', 9), 'low', 'Напоминания: начало окна слотов (локальный час)'],
-    ['pendingActions.reminderWindowEndHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_END_HOUR', 21), 'low', 'Напоминания: конец окна слотов (локальный час)'],
-    ['pendingActions.reminderStepHours', envInt('PENDING_ACTIONS_REMINDER_STEP_HOURS', 3), 'low', 'Напоминания: шаг между слотами (часы)'],
+    ['pendingActions.reminderWindowEndHour', envInt('PENDING_ACTIONS_REMINDER_WINDOW_END_HOUR', 9), 'low', 'Напоминания: конец окна слотов (локальный час). Дефолт: одна сводка в день в 09:00; срочное приходит сразу отдельными уведомлениями.'],
+    ['pendingActions.reminderStepHours', envInt('PENDING_ACTIONS_REMINDER_STEP_HOURS', 12), 'low', 'Напоминания: шаг между слотами (часы). Дефолт: одна сводка в день в 09:00; срочное приходит сразу отдельными уведомлениями.'],
     ['pendingActions.urgentAgeDays', envInt('PENDING_ACTIONS_URGENT_AGE_DAYS', 5), 'low', 'Pending Actions: возраст (дни), с которого item помечается срочным'],
     ['pendingActions.reminderLeadDays', envInt('PENDING_ACTIONS_REMINDER_LEAD_DAYS', 3), 'low', 'Pending Actions: за сколько дней до истечения помечать срочным'],
   ];
   for (const [key, value, severity, description] of pendingActions) {
     out.push({ key, value, category: 'platform', section: 'pending-actions', severity, description });
+  }
+
+  // ── Probe-система Фаза 3/5 (probe.*) — батч-дайджест + adaptive fatigue.
+  const probe: Array<[string, unknown, Severity, string]> = [
+    ['probe.digestTouchCap', envInt('PROBE_DIGEST_TOUCH_CAP', 5), 'low', 'Максимум вопросов в одном батч-дайджесте probe'],
+    ['probe.digestHourUtc', envInt('PROBE_DIGEST_HOUR_UTC', 9), 'low', 'Час (UTC) ежедневной отправки дайджеста probe'],
+    ['probe.digestEnabled', envBool('PROBE_DIGEST_ENABLED', true), 'low', 'Рубильник батч-дайджеста probe (kill-switch, ON)'],
+    ['probe.topicCooldownHours', envInt('PROBE_TOPIC_COOLDOWN_HOURS', 48), 'low', 'Cooldown повтора одной темы probe одному человеку (часы)'],
+    ['probe.adaptiveFatigueEnabled', envBool('PROBE_ADAPTIVE_FATIGUE_ENABLED', true), 'low', 'Снижать частоту probe тем, кто не отвечает (kill-switch, ON)'],
+    ['probe.immediatePushMinPriority', envInt('PROBE_IMMEDIATE_PUSH_MIN_PRIORITY', 70), 'low', 'Минимальный priority (0-100) для немедленного пуша probe; ниже — вопрос уходит в ежедневный батч-дайджест'],
+    // W2 autonomy (2026-06-12) — гейт ценности probe.
+    ['probe.minValuePriority', envInt('PROBE_MIN_VALUE_PRIORITY', 30), 'low', 'Минимальный priority (0-100) ценности probe; ниже — вопрос не задаётся (dropped_low_value)'],
+  ];
+  for (const [key, value, severity, description] of probe) {
+    out.push({ key, value, category: 'platform', section: 'probe', severity, description });
   }
 
   // ── W4.3 (2026-05-25) — DataClass policy floors + channel defaults.

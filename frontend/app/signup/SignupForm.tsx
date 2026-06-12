@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
 import { Button } from '@/ui/shadcn/button';
@@ -70,7 +70,7 @@ export function SignupForm() {
             'Этот почтовый сервис не поддерживается. Используйте основной email.',
           );
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось отправить запрос. Попробуйте ещё раз.');

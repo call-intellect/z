@@ -137,6 +137,87 @@ describe('OrgsService.listTeamRoster', () => {
     expect(roster.find((r) => r.userId === 'u-other')?.telegramLinked).toBe(false);
   });
 
+  it('дедуп: аккаунт-карточка ⊕ ручная карточка, тот же email (разный регистр) → 1 строка, accepted, человеческое имя/должность', async () => {
+    prisma.person.findMany.mockResolvedValue([
+      {
+        id: 'p-acc',
+        userId: 'u-ain',
+        name: 'ainaz860707',
+        email: 'Ainaz@x.test',
+        primaryDepartmentId: null,
+        primaryDepartment: null,
+        personRoles: [],
+        appointments: [],
+        invitations: [],
+      },
+      {
+        id: 'p-man',
+        userId: null,
+        name: 'Айназ',
+        email: 'ainaz@x.test',
+        primaryDepartmentId: 'dep-9',
+        primaryDepartment: { id: 'dep-9', name: 'Внедрение' },
+        personRoles: [],
+        appointments: [
+          { role: { id: 'r-impl', name: 'руководитель отдела внедрения' } },
+        ],
+        invitations: [],
+      },
+    ]);
+    prisma.membership.findMany.mockResolvedValue([
+      {
+        userId: 'u-ain',
+        role: 'admin',
+        user: { id: 'u-ain', email: 'Ainaz@x.test', name: 'ainaz860707' },
+      },
+    ]);
+    prisma.channelBinding.findMany.mockResolvedValue([]);
+
+    const svc = make();
+    const roster = await svc.listTeamRoster('org-1', 'u-ain');
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0]).toMatchObject({
+      userId: 'u-ain',
+      fullName: 'Айназ',
+      roleName: 'руководитель отдела внедрения',
+      departmentName: 'Внедрение',
+      systemRole: 'admin',
+      invitationStatus: 'accepted',
+      hasPersonCard: true,
+    });
+  });
+
+  it('membership без invitation → accepted', async () => {
+    prisma.person.findMany.mockResolvedValue([
+      {
+        id: 'p-o',
+        userId: 'u-o',
+        name: 'Влад',
+        email: 'o@x.test',
+        primaryDepartmentId: null,
+        primaryDepartment: null,
+        personRoles: [],
+        appointments: [],
+        invitations: [],
+      },
+    ]);
+    prisma.membership.findMany.mockResolvedValue([
+      {
+        userId: 'u-o',
+        role: 'owner',
+        user: { id: 'u-o', email: 'o@x.test', name: 'Влад' },
+      },
+    ]);
+    prisma.channelBinding.findMany.mockResolvedValue([]);
+
+    const svc = make();
+    const roster = await svc.listTeamRoster('org-1', 'u-o');
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0]!.invitationStatus).toBe('accepted');
+  });
+
   it('negative: rbac.loadContext → null → ForbiddenException', async () => {
     rbac.loadContext.mockResolvedValueOnce(null);
     const svc = make();

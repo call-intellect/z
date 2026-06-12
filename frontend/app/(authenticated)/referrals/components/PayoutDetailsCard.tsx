@@ -11,7 +11,7 @@ import {
   Wallet,
 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { referralsApi } from '@/api/referrals.api';
 import {
   legalFormLabel,
@@ -175,7 +175,7 @@ function PayoutDetailsForm({ referral, onUpdated }: Props) {
       setSavedAt(Date.now());
     } catch (e2) {
       setError(
-        e2 instanceof ApiError ? e2.message : 'Не удалось сохранить реквизиты.',
+        humanizeApiError(e2, 'Не удалось сохранить реквизиты.'),
       );
     } finally {
       setSaving(false);

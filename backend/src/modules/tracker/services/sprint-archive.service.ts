@@ -184,10 +184,13 @@ export class SprintArchiveService {
           })
         : items;
 
+    // D10/R10 (ТЗ 2026-06-11): тайлы архива «Завершены/Отменены» считаем по
+    // СТАТУСУ цикла, а не по гипотезе (UI-релейбл A2 уже сделан). Имена полей
+    // confirmed/rejected — легаси (фронт читает их), семантика — completed/cancelled.
     const summary: SprintArchiveSummaryDto = {
       total: filtered.length,
-      confirmed: filtered.filter((i) => i.confirmedHypothesis === true).length,
-      rejected: filtered.filter((i) => i.confirmedHypothesis === false).length,
+      confirmed: filtered.filter((i) => i.status === 'completed').length,
+      rejected: filtered.filter((i) => i.status === 'cancelled').length,
       inProgress: filtered.filter((i) => i.status === 'in_progress').length,
     };
 

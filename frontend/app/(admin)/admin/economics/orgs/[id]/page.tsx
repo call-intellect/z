@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { OrgEconomicsDetailClient } from './OrgEconomicsDetailClient';
 
-export const metadata: Metadata = { title: 'Z-Admin — Org Юнит-экономика' };
+export const metadata: Metadata = { title: 'Org Юнит-экономика' };
 
 export default async function OrgEconomicsDetailPage({
   params,

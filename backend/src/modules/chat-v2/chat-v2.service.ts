@@ -3,6 +3,7 @@ import {
   type ChatV2Conversation,
   type ChatV2Mode,
   type ChatV2Scope,
+  type DataClass,
   Prisma,
 } from '@prisma/client';
 
@@ -12,6 +13,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnswerCacheService } from '../dialog-layer/services/answer-cache.service';
 import { DialogService } from '../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../dialog-layer/services/query-classifier.service';
+
+import type { ChatV2Stage } from '../knowledge-core/services/chat-v2.service';
 
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
@@ -43,6 +46,15 @@ export interface AskInput {
    * conversation и для outbound reply через ConversationalService).
    */
   channelKindOrigin?: string | null;
+  /**
+   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
+   * Дефолт undefined = текущее поведение (синхронный `/messages` его не
+   * передаёт). Эмитит 'understanding' в начале ask (до dialog-классификации),
+   * затем пробрасывается через SynthesisService в knowledge-core ChatV2Service,
+   * который эмитит 'searching' и 'writing'. При AnswerCache-HIT (быстрый путь)
+   * стадии searching/writing не сработают — это нормально.
+   */
+  onStage?: (stage: ChatV2Stage) => void;
 }
 
 export interface ChatAnswer {
@@ -57,6 +69,13 @@ export interface ChatAnswer {
    * вызова retrieval+LLM). UI может показать subtle badge «кэш».
    */
   cacheHit: boolean;
+  /**
+   * M-1 (2026-06-12) — derived класс данных ответа (от SynthesisService /
+   * knowledge-core). Каналы-мосты не льют sensitive/private текстом во
+   * внешний канал. Для cache-hit без сохранённого класса (старые записи) —
+   * консервативно 'sensitive'.
+   */
+  dataClass: DataClass;
 }
 
 @Injectable()
@@ -77,6 +96,14 @@ export class ChatV2OrchestrationService {
   ) {}
 
   async ask(input: AskInput): Promise<ChatAnswer> {
+    // §4 Ф1 (2026-06-11) — стадия «Понимаю вопрос»: эмитим в самом начале,
+    // ДО dialog-классификации. Колбэк опционален и не должен бросать.
+    try {
+      input.onStage?.('understanding');
+    } catch {
+      /* колбэк прогресса не критичен — не ломаем ask */
+    }
+
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
     const scopeRefId = input.scopeRefId ?? null;
@@ -191,6 +218,8 @@ export class ChatV2OrchestrationService {
         uncertaintyNote: cached.uncertaintyNote,
         mode,
         cacheHit: true,
+        // M-1 — класс из кэша; старые записи без него → 'sensitive'.
+        dataClass: coerceDataClass(cached.dataClass),
       };
     }
 
@@ -215,6 +244,7 @@ export class ChatV2OrchestrationService {
       standaloneQuestion: dialogResult.standaloneQuestion,
       queries: dialogResult.queries,
       validAt,
+      structuralFilters: dialogResult.structuralFilters ?? null,
       conversationSummary: convSummary,
       // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
       // ChatDialogIntent (4 категории) для chat-v2 synthesis. Новые
@@ -222,6 +252,9 @@ export class ChatV2OrchestrationService {
       // bot-adapter раньше и сюда не доходят; для безопасности маппим
       // их в 'factual'.
       intent: narrowToChatIntent(dialogResult.intent),
+      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE) до
+      // knowledge-core ChatV2Service (стадии 'searching'/'writing').
+      onStage: input.onStage,
     });
 
     const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -281,6 +314,8 @@ export class ChatV2OrchestrationService {
             mode,
             usedBlockIds,
             cachedAt: new Date().toISOString(),
+            // M-1 — сохраняем derived класс, чтобы cache-hit не терял его.
+            dataClass: result.dataClass,
           },
         )
         .catch((err) => {
@@ -315,6 +350,8 @@ export class ChatV2OrchestrationService {
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
+      // M-1 — derived класс от SynthesisService (knowledge-core).
+      dataClass: result.dataClass,
     };
   }
 
@@ -351,4 +388,16 @@ export class ChatV2OrchestrationService {
       .reverse()
       .map((m) => ({ role: m.role, content: m.text }));
   }
+}
+
+/**
+ * M-1 (2026-06-12) — безопасное сужение значения из AnswerCache (Redis JSON,
+ * без схемы) до DataClass. Старые записи кэша не содержат dataClass —
+ * консервативно считаем 'sensitive' (текст не уйдёт во внешний канал).
+ */
+function coerceDataClass(v: unknown): DataClass {
+  if (v === 'public' || v === 'internal' || v === 'sensitive' || v === 'private') {
+    return v;
+  }
+  return 'sensitive';
 }

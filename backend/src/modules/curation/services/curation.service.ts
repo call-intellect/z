@@ -24,6 +24,7 @@ import {
   MultiAgentDebateService,
 } from '../../ai/services/multi-agent-debate.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { levelRu, resourceTypeRu } from '../../pending-actions/resource-type-ru';
 import { SkillTraitCategoryService } from '../../skills/services/skill-trait-categories.service';
 import type {
   CurationDecisionDto,
@@ -1526,7 +1527,7 @@ export class CurationService {
   private buildProbeSummary(item: CurationItem): string {
     const conf = this.extractConfidenceFromReason(item.triageReason);
     const confText = conf !== undefined ? ` (уверенность ${(conf * 100).toFixed(0)}%)` : '';
-    return `На проверке карточка ${item.resourceType} ${item.resourceId}${confText} — уровень: ${item.level}.`;
+    return `На проверке карточка «${resourceTypeRu(item.resourceType)}»${confText} — уровень: ${levelRu(item.level)}.`;
   }
 
   private extractConfidenceFromReason(reason: Prisma.JsonValue): number | undefined {

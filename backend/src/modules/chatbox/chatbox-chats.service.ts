@@ -387,24 +387,14 @@ export class ChatboxChatsService {
       });
     }
 
-    // ChatBox может вернуть сообщение как есть либо в обёртке {message|data}.
-    // Нормализуем. Если id нет — синтетический ключ, чтобы не падать 500 и
-    // показать отправленное сразу (реальное доедет синком). Лог формы — чтобы
-    // зафиксировать реальную форму ответа POST.
-    const raw = (apiMsg ?? {}) as unknown as Record<string, unknown>;
-    const m = (
-      raw.id
-        ? raw
-        : ((raw.message as Record<string, unknown>) ??
-          (raw.data as Record<string, unknown>) ??
-          raw)
-    ) as {
-      id?: string;
-      createdAt?: string;
-      sender?: { id?: string | null; name?: string | null } | null;
-    };
+    // ChatBox может вернуть сообщение как есть либо в обёртке {message|data|
+    // result}. Извлекаем id/createdAt/sender best-effort (форма ответа POST
+    // ещё не зафиксирована боевой отправкой). Если id нет — синтетический ключ,
+    // чтобы не падать 500 и показать отправленное сразу (реальное доедет
+    // синком). Лог формы — чтобы зафиксировать реальную форму ответа POST.
+    const parsed = extractChatboxOutboundId(apiMsg);
 
-    if (!m.id) {
+    if (parsed.id === null) {
       this.logger.warn(
         {
           keys:
@@ -415,9 +405,9 @@ export class ChatboxChatsService {
         'chatbox sendMessage: ответ ChatBox без message id — сохраняю по синтетическому ключу',
       );
     }
-    const createdAt = m.createdAt ? new Date(m.createdAt) : new Date();
+    const createdAt = parsed.createdAt ? new Date(parsed.createdAt) : new Date();
     const externalId =
-      m.id ??
+      parsed.id ??
       `kora-out-${createdAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // messageCount инкрементим только если сообщение реально новое — иначе при
@@ -437,8 +427,8 @@ export class ChatboxChatsService {
         chatId: chatDbId,
         externalId,
         senderType: 'USER',
-        senderName: m.sender?.name ?? null,
-        senderExternalId: m.sender?.id ?? null,
+        senderName: parsed.senderName,
+        senderExternalId: parsed.senderId,
         contentType: 'TEXT',
         text,
         externalCreatedAt: createdAt,
@@ -447,8 +437,8 @@ export class ChatboxChatsService {
       update: {
         chatId: chatDbId,
         senderType: 'USER',
-        senderName: m.sender?.name ?? null,
-        senderExternalId: m.sender?.id ?? null,
+        senderName: parsed.senderName,
+        senderExternalId: parsed.senderId,
         contentType: 'TEXT',
         text,
         externalCreatedAt: createdAt,
@@ -502,4 +492,82 @@ function toNameMap(
   const map = new Map<string, string | null>();
   for (const r of rows) map.set(r.externalId, r.name ?? null);
   return map;
+}
+
+/** Результат разбора ответа ChatBox на POST-отправку сообщения. */
+export interface ChatboxOutboundParsed {
+  id: string | null;
+  createdAt: string | null;
+  senderId: string | null;
+  senderName: string | null;
+}
+
+/** id-кандидаты по приоритету (берём первый непустой → String()). */
+const OUTBOUND_ID_KEYS = [
+  'id',
+  'messageId',
+  'message_id',
+  'externalId',
+  'external_id',
+  '_id',
+] as const;
+/** Кандидаты на дату создания. */
+const OUTBOUND_CREATED_KEYS = ['createdAt', 'created_at', 'timestamp'] as const;
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+}
+
+/** Первый непустой scalar (строка/число) из record по списку ключей → String(). */
+function firstScalar(
+  rec: Record<string, unknown> | null,
+  keys: readonly string[],
+): string | null {
+  if (!rec) return null;
+  for (const k of keys) {
+    const v = rec[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
+/**
+ * Best-effort извлечение id отправленного сообщения из ответа ChatBox на POST.
+ *
+ * Форма ответа боевой отправки ещё не зафиксирована, поэтому пробуем id-ключи
+ * по приоритету и в самом `raw`, и во вложенных обёртках `message`/`data`/
+ * `result`. createdAt и sender — тем же best-effort. Чистая функция (без
+ * сети/Prisma) — экспортируется ради юнит-теста.
+ *
+ * @returns `{ id, createdAt, senderId, senderName }`; любое поле = null, если
+ *          его не нашли (вызывающий код подставит синтетический ключ).
+ */
+export function extractChatboxOutboundId(raw: unknown): ChatboxOutboundParsed {
+  const root = asRecord(raw);
+  // Кандидаты-контейнеры: сам объект + типовые обёртки.
+  const containers: Array<Record<string, unknown> | null> = [
+    root,
+    asRecord(root?.message),
+    asRecord(root?.data),
+    asRecord(root?.result),
+  ];
+
+  let id: string | null = null;
+  let createdAt: string | null = null;
+  let senderId: string | null = null;
+  let senderName: string | null = null;
+
+  for (const c of containers) {
+    if (!c) continue;
+    id ??= firstScalar(c, OUTBOUND_ID_KEYS);
+    createdAt ??= firstScalar(c, OUTBOUND_CREATED_KEYS);
+    const sender = asRecord(c.sender) ?? asRecord(c.from);
+    if (sender) {
+      senderId ??= firstScalar(sender, ['id']);
+      senderName ??= firstScalar(sender, ['name']);
+    }
+  }
+
+  return { id, createdAt, senderId, senderName };
 }

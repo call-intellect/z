@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { tryParseJson } from '../../ai/services/json-extract.util';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { OrgContextService } from '../../ai/services/org-context.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
@@ -210,10 +211,15 @@ export class MeetingExtractActionsService implements OnModuleInit {
           },
           strict: true,
         },
+        // #73 — HTTP-200 с телом, которое не парсится/не проходит схему, НЕ
+        // считаем успехом: роутер перейдёт к следующему провайдеру в каскаде.
+        validate: (text) => TASKS_SCHEMA.safeParse(tryParseJson(text)).success,
         dataClass: 'internal',
         sourceRef: { type: 'meeting', id: meetingId },
       });
-      const json = JSON.parse(result.text) as unknown;
+      // #73 — tryParseJson снимает ```json-обёртку и достаёт первый {…}, чтобы
+      // markdown-обёрнутый ответ не терялся (голый JSON.parse падал на fence).
+      const json = tryParseJson(result.text);
       const validated = TASKS_SCHEMA.safeParse(json);
       if (validated.success) {
         parsedTasks = validated.data.tasks;

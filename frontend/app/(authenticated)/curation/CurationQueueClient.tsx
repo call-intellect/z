@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   curationApi,
   type CurationDecisionTypeApi,
@@ -31,8 +31,10 @@ import {
   type CurationItem,
   type CurationItemDetail,
 } from '@/domain/curation';
+import { resourceTypeRu } from '@/domain/resource-type';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
+import { ReadablePayload } from '@/ui/readable-payload';
 
 const COMPLETENESS_CARD_TYPES_BY_RESOURCE: Partial<
   Record<string, CompletenessParentCardType>
@@ -78,7 +80,7 @@ export function CurationQueueClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -135,7 +137,7 @@ function CurationQueueContent() {
       if (e instanceof ApiError && e.code === 'forbidden') {
         setForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Не удалось загрузить очередь');
+        setError(humanizeApiError(e, 'Не удалось загрузить очередь'));
       }
     } finally {
       setIsLoading(false);
@@ -164,7 +166,7 @@ function CurationQueueContent() {
         }
       } catch (e) {
         setError(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить детали',
+          humanizeApiError(e, 'Не удалось загрузить детали'),
         );
       }
     },
@@ -288,13 +290,10 @@ function CurationQueueContent() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{it.resourceType}</span>
+                      <span className="font-medium">{resourceTypeRu(it.resourceType)}</span>
                       <span className="text-xs text-fg-tertiary">
                         {curationLevelLabel(it.level)}
                       </span>
-                    </div>
-                    <div className="truncate text-xs text-fg-tertiary">
-                      {it.resourceId}
                     </div>
                     <div className="flex items-center justify-between text-xs text-fg-tertiary">
                       <span>{curationStatusLabel(it.status)}</span>
@@ -374,7 +373,7 @@ function CurationDetailPanel({
       });
       onAfterDecide();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось сохранить решение');
+      setError(humanizeApiError(e, 'Не удалось сохранить решение'));
     } finally {
       setSubmitting(false);
     }
@@ -392,9 +391,9 @@ function CurationDetailPanel({
     <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-6">
       <header>
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
-          {item.resourceType}
+          {resourceTypeRu(item.resourceType)}
         </div>
-        <h2 className="mt-1 text-xl font-semibold">{item.resourceId}</h2>
+        <h2 className="mt-1 text-xl font-semibold">Требует вашей проверки</h2>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
           <span>{curationLevelLabel(item.level)}</span>
           <span>{curationStatusLabel(item.status)}</span>
@@ -410,16 +409,12 @@ function CurationDetailPanel({
 
       <section>
         <h3 className="mb-1 text-sm font-medium">Предлагается канонизировать</h3>
-        <pre className="max-h-72 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.proposedPayload, null, 2)}
-        </pre>
+        <ReadablePayload value={item.proposedPayload} />
       </section>
 
       <section>
         <h3 className="mb-1 text-sm font-medium">Почему сюда попала</h3>
-        <pre className="max-h-32 overflow-auto rounded-md border border-border-subtle bg-bg-input p-3 text-xs">
-          {JSON.stringify(item.triageReason, null, 2)}
-        </pre>
+        <ReadablePayload value={item.triageReason} />
       </section>
 
       {/* SBA α-4 wave 2 — Вкладка «Полнота карточки». Показывается только для
@@ -586,7 +581,7 @@ function ConflictRow({
       });
       onResolved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось разрешить конфликт');
+      setError(humanizeApiError(e, 'Не удалось разрешить конфликт'));
     } finally {
       setSubmitting(false);
     }
@@ -603,7 +598,7 @@ function ConflictRow({
     <li className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium">
-          {conflict.resourceType}: {conflict.existingId} ↔ {conflict.newId}
+          {resourceTypeRu(conflict.resourceType)}: {conflict.existingId} ↔ {conflict.newId}
         </span>
         <span className="text-xs">{conflictStatusLabel(conflict.status)}</span>
       </div>
@@ -692,7 +687,7 @@ function CompletenessPanel({
       setSlots(res.items.map(mapCompletenessSlot));
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить слоты',
+        humanizeApiError(e, 'Не удалось загрузить слоты'),
       );
     } finally {
       setIsLoading(false);

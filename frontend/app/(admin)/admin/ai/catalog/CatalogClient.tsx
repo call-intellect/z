@@ -21,6 +21,7 @@ import { LlmModelsClient } from '../../llm/models/LlmModelsClient';
 import { LlmProvidersClient } from '../../llm/providers/LlmProvidersClient';
 import { LlmPricesClient } from '../../llm-prices/LlmPricesClient';
 import { SmokeTestClient } from './SmokeTestClient';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const TABS: AdminTabDef[] = [
   { value: 'providers', label: 'Провайдеры', icon: Plug },
@@ -33,7 +34,7 @@ export function CatalogClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Каталог LLM' },
       ]}

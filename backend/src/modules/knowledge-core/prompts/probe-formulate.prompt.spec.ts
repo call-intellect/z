@@ -1,16 +1,13 @@
 /**
- * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Formulate без кнопок.
+ * Probe-система Фаза 1 (2026-06-11) — probe-formulate v3.
  *
- * Property test для `PROBE_FORMULATE_JSON_SCHEMA` / `PROBE_FORMULATE_SCHEMA_NAME`.
- * Проверяет, что:
- *   - схема НЕ требует поля `options` (убрано в v2);
- *   - в `properties` нет ключа `options`;
- *   - schema name обновлён до `probe_formulate_v2` (синхронизирован с UI/каналами,
- *     которые рисуют ответ как свободный ввод).
- *
- * Если придёт PR, возвращающий `options` в схему — этот тест упадёт и
- * вынудит автора осознанно обновить весь канал (frontend, telegram bot,
- * dispatcher worker), а не просто «откатить промпт».
+ * Проверяет контракт промпта:
+ *   - SCHEMA_NAME = probe_formulate_v3;
+ *   - JSON Schema требует только `question`, без `options`;
+ *   - SYSTEM стабилен (строка, без переменных), содержит правило «без
+ *     вариантов ответа» и запрет на коды/английские слова;
+ *   - USER-шаблон подаёт человеческий `reasonLabel` и НЕ содержит машинных
+ *     кодов (emittedByService/сырой reason), подсказки — как контекст.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -21,41 +18,58 @@ import {
   PROBE_FORMULATE_USER_TEMPLATE,
 } from './probe-formulate.prompt';
 
-describe('probe-formulate prompt — v2 без options', () => {
-  it('SCHEMA_NAME = probe_formulate_v2', () => {
-    expect(PROBE_FORMULATE_SCHEMA_NAME).toBe('probe_formulate_v2');
+describe('probe-formulate prompt — v3 (Фаза 1)', () => {
+  it('SCHEMA_NAME = probe_formulate_v3', () => {
+    expect(PROBE_FORMULATE_SCHEMA_NAME).toBe('probe_formulate_v3');
   });
 
-  it('JSON Schema требует ТОЛЬКО question', () => {
+  it('JSON Schema требует ТОЛЬКО question (без options)', () => {
     const required = PROBE_FORMULATE_JSON_SCHEMA.required;
     expect(Array.isArray(required)).toBe(true);
     expect(required).toEqual(['question']);
-    expect((required as string[]).includes('options')).toBe(false);
-  });
-
-  it('JSON Schema.properties не содержит options', () => {
     const properties = PROBE_FORMULATE_JSON_SCHEMA.properties as Record<
       string,
       unknown
     >;
-    expect(properties).toBeDefined();
     expect(properties.options).toBeUndefined();
     expect(properties.question).toBeDefined();
   });
 
-  it('SYSTEM_PROMPT упоминает «без вариантов ответа»', () => {
-    // Регрессия: если кто-то вернёт «2-4 кнопки» в SYSTEM — тест упадёт.
-    expect(PROBE_FORMULATE_SYSTEM_PROMPT).toContain('без вариантов ответа');
+  it('SYSTEM стабилен (тип string, без интерполяции) и задаёт правила', () => {
+    expect(typeof PROBE_FORMULATE_SYSTEM_PROMPT).toBe('string');
+    // Стабильность для prompt-caching: никаких ${...} плейсхолдеров.
+    expect(PROBE_FORMULATE_SYSTEM_PROMPT).not.toContain('${');
+    expect(PROBE_FORMULATE_SYSTEM_PROMPT).toContain('Без вариантов ответа');
+    expect(PROBE_FORMULATE_SYSTEM_PROMPT).toContain('Чистый русский');
   });
 
-  it('USER_TEMPLATE передаёт suggestedActions как КОНТЕКСТ, а не как варианты', () => {
+  it('USER подаёт reasonLabel и НЕ содержит машинных кодов', () => {
     const user = PROBE_FORMULATE_USER_TEMPLATE({
-      emittedByService: 'test',
-      reason: 'demo',
-      message: 'msg',
-      suggestedActions: ['A', 'B'],
+      reasonLabel: 'решение просрочено',
+      message: 'Решение "Перейти на нового подрядчика" просрочено.',
+      suggestedActions: ['Уточнить статус', 'Назначить ответственного'],
+      contextCard: { kind: 'Решение', title: 'Новый подрядчик' },
     });
-    // Промпт должен прямо сказать модели «НЕ перечисляй их человеку».
+    expect(user).toContain('Тип ситуации: решение просрочено');
+    expect(user).toContain('Объект: Решение «Новый подрядчик»');
+    // Машинных кодов быть не должно.
+    expect(user).not.toContain('decision.overdue');
+    expect(user).not.toContain('3-3-decisions');
+    expect(user).not.toContain('Источник: специалист');
+    expect(user).not.toContain('Причина:');
+    // Подсказки — как контекст, с явным запретом перечислять.
     expect(user).toContain('НЕ перечисляй');
+    expect(user).toContain('probe_formulate_v3');
+  });
+
+  it('USER без объекта и без подсказок не падает', () => {
+    const user = PROBE_FORMULATE_USER_TEMPLATE({
+      reasonLabel: 'требуется уточнение',
+      message: 'msg',
+      suggestedActions: [],
+    });
+    expect(user).toContain('Тип ситуации: требуется уточнение');
+    expect(user).not.toContain('Объект:');
+    expect(user).not.toContain('Служебная подсказка');
   });
 });

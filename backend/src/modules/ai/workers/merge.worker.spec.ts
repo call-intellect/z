@@ -275,3 +275,130 @@ describe('MergeWorker.onJobFailed (Фаза 11: развязка записи о
     expect(m.metrics.incMeetingFailed).toHaveBeenCalledWith('merge');
   });
 });
+
+describe('MergeWorker.process — посегментная переплётка (ASR ТЗ 2026-06-11, Ф3)', () => {
+  // Happy-path (turns=null): строим perTrack из сегментов и проверяем реальный
+  // выход mergeWordTimestamps, перехватывая turns, переданные в transcript.update.
+  function runWithTracks(
+    tracks: Array<{
+      speakerName: string;
+      words?: unknown[];
+      segments?: unknown[];
+      transcriptText?: string;
+      durationSeconds?: number;
+      offsetMs?: number;
+    }>,
+  ): {
+    worker: MergeWorker;
+    getTurns: () => Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+    getDuration: () => number;
+  } {
+    const base = new Date('2026-06-11T10:00:00.000Z');
+    let capturedTurns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> = [];
+    let capturedDuration = 0;
+
+    const meetingFindUnique = vi.fn(async () => ({
+      id: 'm-seg',
+      type: 'sales',
+      status: 'transcription_ready', // не transcription_processing → без transitionStatus
+      tenantId: 'org-1',
+      transcript: {
+        turns: null, // happy-path: ещё не склеено
+        mergedS3Url: 's3://x/merged.json',
+        tracks: tracks.map((t, i) => ({
+          words: t.words ?? [],
+          segments: t.segments ?? [],
+          transcriptText: t.transcriptText ?? '',
+          durationSeconds: t.durationSeconds ?? 0,
+          speakerName: t.speakerName,
+          trackStartedAt: new Date(base.getTime() + (t.offsetMs ?? 0)),
+          baseStartedAt: base,
+          participantId: `p-${i}`,
+          livekitIdentity: `id-${i}`,
+        })),
+      },
+    }));
+    const transcriptUpdate = vi.fn(
+      async (arg: { data: { turns: unknown; totalDurationSeconds: number } }) => {
+        capturedTurns = arg.data.turns as typeof capturedTurns;
+        capturedDuration = arg.data.totalDurationSeconds;
+        return undefined;
+      },
+    );
+    const prisma = {
+      meeting: { findUnique: meetingFindUnique },
+      transcript: { update: transcriptUpdate },
+      org: { findUnique: vi.fn(async () => ({ transcriptCleaningAuto: false })) },
+    } as unknown as PrismaService;
+
+    const m = buildBaseMocks({ meetingId: 'm-seg' });
+    const cfg = buildCfg({ meetingReportFastEnabled: false });
+    const coreQueue = {
+      enqueueMeetingReportFast: vi.fn(async () => undefined),
+    } as unknown as CoreQueueService;
+    const worker = new MergeWorker(
+      m.redis,
+      prisma,
+      m.queue,
+      m.meetings,
+      m.metrics,
+      cfg,
+      m.s3,
+      coreQueue,
+    );
+
+    return { worker, getTurns: () => capturedTurns, getDuration: () => capturedDuration };
+  }
+
+  async function process(worker: MergeWorker, id: string): Promise<void> {
+    await (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
+      data: { meetingId: 'm-seg', attempt: 1 },
+      id,
+    });
+  }
+
+  it('R3: words пустые, segments → переплётка по времени A→B→A; totalDuration=15 (не сумма дорожек)', async () => {
+    const { worker, getTurns, getDuration } = runWithTracks([
+      {
+        speakerName: 'Alice',
+        segments: [
+          { startSec: 0, endSec: 5, text: 'A1' },
+          { startSec: 10, endSec: 15, text: 'A2' },
+        ],
+      },
+      { speakerName: 'Bob', segments: [{ startSec: 6, endSec: 9, text: 'B1' }] },
+    ]);
+    await process(worker, 'job-seg-1');
+    const turns = getTurns();
+    expect(turns.map((t) => t.speaker)).toEqual(['Alice', 'Bob', 'Alice']);
+    expect(turns.map((t) => t.text)).toEqual(['A1', 'B1', 'A2']);
+    expect(getDuration()).toBe(15);
+  });
+
+  it('R5: вырожденные сегменты (endSec<=startSec / пустой текст) исключены', async () => {
+    const { worker, getTurns } = runWithTracks([
+      {
+        speakerName: 'Alice',
+        segments: [
+          { startSec: 0, endSec: 5, text: 'A1' },
+          { startSec: 1, endSec: 1, text: 'bad' }, // endSec<=startSec
+          { startSec: 0, endSec: 1, text: '   ' }, // пустой текст
+        ],
+      },
+    ]);
+    await process(worker, 'job-seg-2');
+    const turns = getTurns();
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.text).toBe('A1');
+  });
+
+  it('R4: ни words, ни segments — резерв «1 псевдо-слово на дорожку» (transcriptText, поведение сохранено)', async () => {
+    const { worker, getTurns } = runWithTracks([
+      { speakerName: 'Alice', transcriptText: 'привет', durationSeconds: 12 },
+    ]);
+    await process(worker, 'job-seg-3');
+    const turns = getTurns();
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.text).toBe('привет');
+  });
+});

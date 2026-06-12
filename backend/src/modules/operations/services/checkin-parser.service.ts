@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { applyInputGuards } from '../../ai/services/prompts/common';
 
 /**
  * SBA β-8 — CheckinParserService.
@@ -49,17 +50,26 @@ export class CheckinParserService {
       'Никакого комментария вне JSON.',
     ].join('\n');
 
-    const userMessage = [
+    const rawUserMessage = [
       `Тип чек-ина: ${args.kind === 'morning' ? 'утренний (план на день)' : 'вечерний (что сделано + блокеры)'}.`,
       'Ответ сотрудника:',
       args.rawText.slice(0, 4_000),
     ].join('\n');
 
+    // Анти-инъекционная обёртка: rawText — свободный текст сотрудника (raw).
+    // У сервиса нет TypedConfigService, поэтому глобальный kill-switch
+    // (aiFeatures.promptInjectionGuardEnabled) здесь не гейтит — guards всегда ON.
+    const { system: guardedSystem, user: userMessage } = applyInputGuards(
+      systemPrompt,
+      rawUserMessage,
+      { injection: true },
+    );
+
     try {
       const result = await this.llm.call({
         taskType: 'checkin-parse',
         tenantId: args.tenantId,
-        systemPrompt,
+        systemPrompt: guardedSystem,
         userMessage,
         responseFormat: { type: 'json_object' },
         maxTokens: 800,

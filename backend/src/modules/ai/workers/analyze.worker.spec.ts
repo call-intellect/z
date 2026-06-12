@@ -33,6 +33,13 @@ interface BuildArgs {
    */
   summaryAgentEnabled?: boolean;
   /**
+   * Волна 4 B0 — kill-switch агента client-meeting-split (нейтральный протокол
+   * наружу для клиента). По умолчанию undefined (ключа нет в cfg → воркер
+   * трактует как вкл). Передай `false`, чтобы проверить, что протокол НЕ
+   * генерится для клиентского типа.
+   */
+  clientProtocolEnabled?: boolean;
+  /**
    * Ф7 МТЗ — кастомный impl для `MeetingIngestAdapter.ingestMeeting`. По
    * умолчанию noop, возвращающий null (как раньше). Передай функцию, которая
    * бросает, чтобы проверить видимый провал моста (failureReason + метрика).
@@ -173,6 +180,11 @@ function buildWorker(args: BuildArgs): {
       ...(args.summaryAgentEnabled !== undefined
         ? { summaryAgentEnabled: args.summaryAgentEnabled }
         : {}),
+      // Волна 4 B0: ключ присутствует только если тест явно его задал — иначе
+      // воркер трактует отсутствие как «вкл» (дефолт, обратно совместимо).
+      ...(args.clientProtocolEnabled !== undefined
+        ? { clientProtocolEnabled: args.clientProtocolEnabled }
+        : {}),
     },
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
@@ -245,7 +257,12 @@ describe('AnalyzeWorker.process', () => {
         },
       ]),
     );
-    // 3) follow-up
+    // 3) client_protocol (Волна 4 B0) — free-text Markdown протокол наружу
+    //    (sales — клиентский тип, флаг clientProtocolEnabled по умолчанию ON).
+    llmComplete.mockResolvedValueOnce(
+      makeLlmOutput('## Протокол встречи\n2026-06-10 · ...\n\n## Кратко\nОбсудили КП.'),
+    );
+    // 4) follow-up
     llmComplete.mockResolvedValueOnce(
       makeLlmOutput('', [
         {
@@ -266,8 +283,8 @@ describe('AnalyzeWorker.process', () => {
     // transitions: transcription_ready→ai_processing, ai_processing→ai_ready
     expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_processing', expect.any(Object));
     expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
-    // 3 update'а: summary, structured, follow-up.
-    expect(aiResultUpdate).toHaveBeenCalledTimes(3);
+    // 4 update'а: summary, structured, client_protocol (merge), follow-up.
+    expect(aiResultUpdate).toHaveBeenCalledTimes(4);
     expect(enqueueNotify).toHaveBeenCalledWith('m-1');
 
     // Проверяем, что structured был сохранён.
@@ -278,7 +295,7 @@ describe('AnalyzeWorker.process', () => {
     expect(structuredCall).toBeDefined();
   });
 
-  it('customPrompt → customOutputMd, structuredData=null, для team дополнительно tasks', async () => {
+  it('customPrompt → customOutputMd, structuredData=null (tasks-блок снят 2026-06-10)', async () => {
     const llmComplete = vi.fn();
     // 1) summary
     llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
@@ -286,19 +303,8 @@ describe('AnalyzeWorker.process', () => {
     llmComplete.mockResolvedValueOnce(
       makeLlmOutput('# Отчёт\n\n- пункт 1\n- пункт 2'),
     );
-    // 3) tasks — t.k. type=team нужен tasks-промпт.
-    llmComplete.mockResolvedValueOnce(
-      makeLlmOutput('', [
-        {
-          name: 'extract_tasks',
-          input: {
-            tasks: [
-              { title: 'починить баг', assignee: 'Боб', dueDate: null },
-            ],
-          },
-        },
-      ]),
-    );
+    // Блок «7. tasks» удалён вместе с v2-стеком: analyze больше не пишет
+    // AiResult.tasks (фронт читает Task-модель из tasks-extract.worker'а).
 
     const { worker, aiResultUpdate, transitionStatus } = buildWorker({
       type: 'team',
@@ -309,7 +315,8 @@ describe('AnalyzeWorker.process', () => {
       worker as unknown as { process: (j: unknown) => Promise<void> }
     ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
 
-    expect(llmComplete).toHaveBeenCalledTimes(3);
+    // summary + custom = 2 LLM-вызова (tasks-вызов снят).
+    expect(llmComplete).toHaveBeenCalledTimes(2);
     expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
     // Удостоверимся, что есть update с customOutputMd.
     const calls = aiResultUpdate.mock.calls.map((c) => c[0]?.data ?? c[0]);
@@ -318,11 +325,11 @@ describe('AnalyzeWorker.process', () => {
         typeof d?.['customOutputMd'] === 'string' && (d?.['customOutputMd'] as string).length > 0,
     );
     expect(custom).toBeDefined();
-    // tasks update тоже произошёл.
+    // tasks update больше НЕ происходит.
     const tasksUpd = calls.find(
       (d: Record<string, unknown> | undefined) => Array.isArray(d?.['tasks']),
     );
-    expect(tasksUpd).toBeDefined();
+    expect(tasksUpd).toBeUndefined();
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -553,6 +560,120 @@ describe('AnalyzeWorker.process', () => {
         .find((u) => u?.data?.['failureReason'] !== undefined);
       expect(failureUpdate).toBeUndefined();
       expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Волна 4 B0 — client-meeting-split: нейтральный ПРОТОКОЛ наружу для клиента.
+  // ──────────────────────────────────────────────────────────────────────
+  describe('client-meeting-split (Волна 4 B0)', () => {
+    it('клиентский тип (partner) + флаг ON → протокол мержится в structuredData.client_protocol_md, основной отчёт сохранён', async () => {
+      const llmComplete = vi.fn();
+      // 1) summary
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      // 2) structured (partner) — валидный tool_use.
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('', [
+          {
+            name: 'extract_partner',
+            input: {
+              benefit_for_us: ['доступ к рынку'],
+              benefit_for_partner: ['наш продукт'],
+              partnership_model: 'комиссия с продаж',
+              joint_mechanics: [],
+              pilot: null,
+              risks: [],
+              next_step: 'подписать NDA',
+            },
+          },
+        ]),
+      );
+      // 3) client_protocol — free-text Markdown (без tool).
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('## Протокол встречи\n2026-06-10 · ...\n\n## Кратко\nПартнёрство.'),
+      );
+
+      const { worker, aiResultUpdate, transitionStatus } = buildWorker({
+        type: 'partner',
+        llmComplete,
+        clientProtocolEnabled: true,
+      });
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      // 3 LLM-вызова: summary + structured + client_protocol.
+      expect(llmComplete).toHaveBeenCalledTimes(3);
+
+      // 3-й LLM-вызов — free-text протокол: agentType client_protocol, без tools.
+      const protocolCall = llmComplete.mock.calls[2]?.[0] as
+        | { system: { text: string }; user: string; tools?: unknown }
+        | undefined;
+      expect(protocolCall).toBeDefined();
+      expect(protocolCall!.tools).toBeUndefined();
+      // Граница D6: SYSTEM содержит правило конфиденциальности.
+      expect(protocolCall!.system.text).toMatch(/граница конфиденциальности/i);
+
+      // Был update, который записал client_protocol_md в structuredData, не
+      // потеряв основной отчёт (benefit_for_us остался).
+      const calls = aiResultUpdate.mock.calls.map((c) => c[0]?.data ?? c[0]);
+      const mergeUpd = calls.find(
+        (d: Record<string, unknown> | undefined) =>
+          typeof (d?.['structuredData'] as Record<string, unknown> | undefined)?.[
+            'client_protocol_md'
+          ] === 'string',
+      ) as { structuredData: Record<string, unknown> } | undefined;
+      expect(mergeUpd).toBeDefined();
+      expect(mergeUpd!.structuredData['client_protocol_md']).toContain('Протокол встречи');
+      // Основной отчёт не затёрт мержем.
+      expect(mergeUpd!.structuredData['benefit_for_us']).toEqual(['доступ к рынку']);
+
+      expect(transitionStatus).toHaveBeenCalledWith('m-1', 'ai_ready', expect.any(Object));
+    });
+
+    it('флаг OFF → протокол НЕ генерится (нет лишнего LLM-вызова, нет client_protocol_md)', async () => {
+      const llmComplete = vi.fn();
+      // 1) summary
+      llmComplete.mockResolvedValueOnce(makeLlmOutput('Краткое резюме.'));
+      // 2) structured (partner)
+      llmComplete.mockResolvedValueOnce(
+        makeLlmOutput('', [
+          {
+            name: 'extract_partner',
+            input: {
+              benefit_for_us: ['x'],
+              benefit_for_partner: ['y'],
+              partnership_model: null,
+              joint_mechanics: [],
+              pilot: null,
+              risks: [],
+              next_step: null,
+            },
+          },
+        ]),
+      );
+
+      const { worker, aiResultUpdate } = buildWorker({
+        type: 'partner',
+        llmComplete,
+        clientProtocolEnabled: false,
+      });
+      await (
+        worker as unknown as { process: (j: unknown) => Promise<void> }
+      ).process({ data: { meetingId: 'm-1', attempt: 1 }, id: 'j' });
+
+      // Только 2 LLM-вызова: summary + structured. Протокол не запрашивался.
+      expect(llmComplete).toHaveBeenCalledTimes(2);
+
+      // Ни один update не содержит client_protocol_md.
+      const calls = aiResultUpdate.mock.calls.map((c) => c[0]?.data ?? c[0]);
+      const mergeUpd = calls.find(
+        (d: Record<string, unknown> | undefined) =>
+          (d?.['structuredData'] as Record<string, unknown> | undefined)?.[
+            'client_protocol_md'
+          ] !== undefined,
+      );
+      expect(mergeUpd).toBeUndefined();
     });
   });
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Loader2, Trash2 } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   exportsApi,
   type ExportApi,
@@ -62,7 +62,7 @@ export function ExportsClient() {
       const res = await exportsApi.list();
       setItems(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(humanizeApiError(e, 'Не удалось загрузить'));
     } finally {
       setLoading(false);
     }
@@ -78,7 +78,7 @@ export function ExportsClient() {
       const res = await exportsApi.download(id);
       window.open(res.url, '_blank', 'noopener,noreferrer');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось получить ссылку');
+      toast.error(humanizeApiError(e, 'Не удалось получить ссылку'));
     } finally {
       setDownloadingId(null);
     }
@@ -96,7 +96,7 @@ export function ExportsClient() {
       setItems((prev) => prev.filter((e) => e.id !== id));
       toast.success('Удалено');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(humanizeApiError(e, 'Не удалось удалить'));
     }
   };
 

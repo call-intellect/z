@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 
 import { TypedConfigService } from '../../../common/config/index';
 
+import { appendJsonWordToUser } from './json-mode.util';
 import type {
   LlmCompleteInput,
   LlmCompleteOutput,
@@ -57,7 +58,17 @@ export class OpenAiProxyService {
     // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
     // OpenAI Responses API не поддерживает Anthropic-style cache_control;
     // распаковываем в строку (caching работает автоматически на уровне API).
-    const userText = typeof input.user === 'string' ? input.user : input.user.text;
+    const rawUserText =
+      typeof input.user === 'string' ? input.user : input.user.text;
+    // #72: прокси agent-lia валидирует слово «json» в `input` (USER), а не в
+    // `instructions` (SYSTEM). При json-режиме дописываем подсказку в ХВОСТ USER
+    // (cache-friendly — SYSTEM не трогаем), иначе proxy отдаёт 400.
+    const jsonMode =
+      input.responseFormat?.type === 'json_object' ||
+      input.responseFormat?.type === 'json_schema';
+    const userText = jsonMode
+      ? appendJsonWordToUser(input.system.text, rawUserText)
+      : rawUserText;
     const params: Record<string, unknown> = {
       model,
       stream: false,
@@ -88,10 +99,9 @@ export class OpenAiProxyService {
     const fmt = input.responseFormat;
     if (fmt) {
       if (fmt.type === 'json_object') {
-        params['instructions'] = ensureJsonHint(String(params['instructions'] ?? ''));
+        // Слово «json» уже гарантировано в USER `input` выше (appendJsonWordToUser).
         params['text'] = { format: { type: 'json_object' } };
       } else if (fmt.type === 'json_schema') {
-        params['instructions'] = ensureJsonHint(String(params['instructions'] ?? ''));
         params['text'] = {
           format: {
             type: 'json_schema',

@@ -221,6 +221,7 @@ describe('SpecialistsCombinedService.extractAll', () => {
       insights: 1,
       experiments: 1,
       regulations: 1,
+      instructions: 0,
       knowledgeCategories: 1,
       skillTraits: 1,
       helpfulnessTraits: 1,

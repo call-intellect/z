@@ -42,6 +42,20 @@ export interface RetrievalInput {
   /** Ф4 — Prisma-фрагмент доступа (buildAccessWhere). Применяется к pool-запросам.
    *  undefined/{} = без фильтра (off/shadow). Только при enforce передаётся непустой. */
   accessWhere?: Record<string, unknown>;
+  /** Support-desk Ф2 — закрытый контур (support): ПОЗИТИВНЫЙ pre-filter,
+   *  безусловный — независим от KNOWLEDGE_ACCESS_ENFORCEMENT (R-INV-1).
+   *  Если задан — пул ретрива ограничивается блоками, у которых есть
+   *  `IdeaBlockAccess` в этой группе (`blockAccess.some.groupId`), ДО
+   *  ранжирования. undefined = поведение byte-identical сегодняшнему. */
+  contourGroupId?: string;
+  /** Query Understanding Волна 1 (Ф3 consume) — структурные recall-safe фильтры.
+   *  Ф2 только переносит эти поля; SQL-фильтрацию реализует Ф3. */
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+  signalTypes?: string[];
+  entityIds?: string[];
+  themeBranches?: string[];
+  bitemporalActiveOnly?: boolean;
 }
 
 export interface RankedBlockId {
@@ -50,6 +64,105 @@ export interface RankedBlockId {
   score: number;
   /** True, если блок добавлен 1-hop graph-расширением (а не самим retrieval). */
   fromGraph: boolean;
+}
+
+/**
+ * Query Understanding Волна 1 (Ф3) — аргументы для построения структурных
+ * предикатов recall-safe фильтра. Все значения регистрируются через
+ * `pushParam` (никогда не интерполируем напрямую).
+ */
+export interface StructuralFilterArgs {
+  /** `$N`-ссылка уже зарегистрированного параметра tenantId — для подзапроса
+   *  themeBranch (Theme.tenantId). */
+  tenantParamRef: string;
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
+  signalTypes?: string[];
+  entityIds?: string[];
+  themeBranches?: string[];
+  bitemporalActiveOnly?: boolean;
+}
+
+/**
+ * Строит массив SQL-предикатов структурного фильтра (recall-safe).
+ *
+ * Каждый параметр регистрируется через `pushParam` (возвращает `$N`).
+ * Предикаты добавляются в фиксированном порядке: bitemporalActiveOnly →
+ * signalTypes → entityIds → date → themeBranches. Пустые/отсутствующие оси
+ * не дают предиката. Возвращаемый массив склеивается в общий WHERE через
+ * `join(' AND ')`.
+ *
+ * Донор предикатов — `search.service.ts` `runHybridQuery` (:203-240), плюс
+ * новый themeBranch через `ThemeIdeaBlock` + `Theme.branch`. Алиас блока — `b`.
+ */
+export function buildStructuralPredicates(
+  args: StructuralFilterArgs,
+  pushParam: (v: unknown) => string,
+): string[] {
+  const predicates: string[] = [];
+
+  // bi-temporal «активные сейчас» — учитывает legacy-блоки (validUntil NULL =
+  // действующий факт). Параметра не требует.
+  if (args.bitemporalActiveOnly) {
+    predicates.push('b."validUntil" IS NULL');
+  }
+
+  // тип сигнала — по одному pushParam на значение.
+  if (args.signalTypes && args.signalTypes.length > 0) {
+    const placeholders = args.signalTypes.map((s) => pushParam(s)).join(',');
+    predicates.push(`b."signalType"::text IN (${placeholders})`);
+  }
+
+  // сущности — EXISTS по IdeaBlockEntity.
+  if (args.entityIds && args.entityIds.length > 0) {
+    const placeholders = args.entityIds.map((e) => pushParam(e)).join(',');
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "IdeaBlockEntity" be WHERE be."blockId" = b.id AND be."entityId" IN (${placeholders}))`,
+    );
+  }
+
+  // дата (Р5) — по IdeaBlockEvidence.sourceTimestamp; хотя бы одна граница
+  // присутствует, когда этот предикат строится.
+  if (args.dateFrom || args.dateTo) {
+    const parts: string[] = [];
+    if (args.dateFrom) {
+      parts.push(`ev."sourceTimestamp" >= ${pushParam(args.dateFrom)}`);
+    }
+    if (args.dateTo) {
+      parts.push(`ev."sourceTimestamp" <= ${pushParam(args.dateTo)}`);
+    }
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "IdeaBlockEvidence" ev WHERE ev."blockId" = b.id AND ${parts.join(' AND ')})`,
+    );
+  }
+
+  // тема/отдел (НОВОЕ) — через ThemeIdeaBlock + Theme.branch, в рамках tenant.
+  if (args.themeBranches && args.themeBranches.length > 0) {
+    const placeholders = args.themeBranches.map((t) => pushParam(t)).join(',');
+    predicates.push(
+      `EXISTS (SELECT 1 FROM "ThemeIdeaBlock" tib JOIN "Theme" t ON t.id = tib."themeId" ` +
+        `WHERE tib."blockId" = b.id AND t."tenantId" = ${args.tenantParamRef} ` +
+        `AND t."branch"::text IN (${placeholders}))`,
+    );
+  }
+
+  return predicates;
+}
+
+/**
+ * Query Understanding Волна 1 (Ф3) — есть ли хотя бы один структурный фильтр.
+ * true → ветка `rankByStructuralFilter` (recall-safe полный скан);
+ * false → текущий `rankByCosineOrRecency` без регрессии (R9).
+ */
+export function hasStructuralFilter(input: RetrievalInput): boolean {
+  return (
+    !!input.dateFrom ||
+    !!input.dateTo ||
+    (input.signalTypes?.length ?? 0) > 0 ||
+    (input.entityIds?.length ?? 0) > 0 ||
+    (input.themeBranches?.length ?? 0) > 0 ||
+    !!input.bitemporalActiveOnly
+  );
 }
 
 /**
@@ -148,19 +261,45 @@ export class ChatV2RetrievalService {
       if (poolBlockIds.length === 0) return [];
     }
 
-    // 2) Ранжируем по cosine (если есть qvec) или возвращаем top по recency.
-    const ranked = await this.rankByCosineOrRecency({
-      tenantId: input.tenantId,
-      blockIds: poolBlockIds,
-      qvec,
-      query: input.query,
-      limit: input.limit,
-    });
+    // 2) Ранжируем.
+    const structural = hasStructuralFilter(input);
+    let ranked: RankedBlockId[];
+    if (structural) {
+      // Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив:
+      // точный полный скан по WHERE-фильтрованному множеству, combined-score
+      // ORDER BY (НЕ HNSW `ORDER BY embedding <=> qvec LIMIT`). Жёсткий
+      // pre-filter на HNSW роняет recall — полный скан нет.
+      ranked = await this.rankByStructuralFilter({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        filters: {
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          signalTypes: input.signalTypes,
+          entityIds: input.entityIds,
+          themeBranches: input.themeBranches,
+          bitemporalActiveOnly: input.bitemporalActiveOnly,
+        },
+        limit: input.limit,
+      });
+    } else {
+      ranked = await this.rankByCosineOrRecency({
+        tenantId: input.tenantId,
+        blockIds: poolBlockIds,
+        qvec,
+        query: input.query,
+        limit: input.limit,
+      });
+    }
     if (ranked.length === 0) return [];
 
     // 3) 1-hop graph expansion (по IdeaBlockLink, status='active').
+    // При структурном фильтре граф ПРОПУСКАЕМ: фильтр задаёт точное множество
+    // ответа, а 1-hop-соседи вне фильтра вернули бы тихие типовые/временные
+    // ошибки (совпавшие соседи и так уже в pool).
     const graphAdded =
-      input.graphHops > 0
+      !structural && input.graphHops > 0
         ? await this.expandViaGraph({
             tenantId: input.tenantId,
             seedBlockIds: ranked.map((r) => r.blockId),
@@ -168,6 +307,7 @@ export class ChatV2RetrievalService {
             extraLimit: input.graphHops * 5,
             validAt: input.validAt ?? null,
             accessWhere: input.accessWhere,
+            contourGroupId: input.contourGroupId,
           })
         : [];
 
@@ -202,11 +342,24 @@ export class ChatV2RetrievalService {
   private async collectPool(input: RetrievalInput): Promise<string[]> {
     const { tenantId, scope, scopeId } = input;
     const accessWhere = input.accessWhere;
+    // Support-desk Ф2 (R-INV-1) — позитивный pre-filter закрытого контура.
+    // БЕЗУСЛОВНЫЙ: не зависит от accessWhere/KNOWLEDGE_ACCESS_ENFORCEMENT.
+    // `buildAccessWhere` возвращает форму `{ AND: [...] }` (верхний ключ `AND`),
+    // а здесь верхний ключ `blockAccess` — коллизии нет, оба спредятся рядом.
+    // contourGroupId не задан → `{}` (поведение byte-identical сегодняшнему).
+    const contourWhere: Record<string, unknown> = input.contourGroupId
+      ? { blockAccess: { some: { groupId: input.contourGroupId } } }
+      : {};
     if (scope === 'org') {
       // Для org pool — все canonical-блоки тенанта. Дальше rankByCosineOrRecency
       // обрежет до limit'а через ORDER BY embedding<->qvec.
       const rows = await this.prisma.ideaBlock.findMany({
-        where: { tenantId, status: 'canonical', ...(accessWhere ?? {}) },
+        where: {
+          tenantId,
+          status: 'canonical',
+          ...(accessWhere ?? {}),
+          ...contourWhere,
+        },
         select: { id: true },
         // Лимит pool'а: 5000 — защита от org с десятками тысяч блоков.
         // Дальнейший ранжирующий SQL уже идёт по этому подмножеству.
@@ -224,16 +377,16 @@ export class ChatV2RetrievalService {
     }
 
     if (scope === 'meeting') {
-      return this.poolByMeeting(tenantId, scopeId, accessWhere);
+      return this.poolByMeeting(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'card') {
-      return this.poolByCard(tenantId, scopeId, accessWhere);
+      return this.poolByCard(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'theme') {
-      return this.poolByTheme(tenantId, scopeId, accessWhere);
+      return this.poolByTheme(tenantId, scopeId, accessWhere, contourWhere);
     }
     if (scope === 'entity') {
-      return this.poolByEntity(tenantId, scopeId, accessWhere);
+      return this.poolByEntity(tenantId, scopeId, accessWhere, contourWhere);
     }
     const _exhaustive: never = scope;
     throw new Error(`chat-v2 retrieval: unknown scope ${String(_exhaustive)}`);
@@ -248,6 +401,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     meetingId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: {
@@ -261,7 +415,12 @@ export class ChatV2RetrievalService {
     const evRows = await this.prisma.ideaBlockEvidence.findMany({
       where: {
         rawEventId: { in: rawEvents.map((r) => r.id) },
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -280,6 +439,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     cardId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const card = await this.prisma.card.findUnique({
       where: { id: cardId },
@@ -312,7 +472,12 @@ export class ChatV2RetrievalService {
             sourceType: 'meeting',
             sourceExternalId: { in: meetingIds },
           },
-          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+          block: {
+            status: 'canonical',
+            tenantId,
+            ...(accessWhere ?? {}),
+            ...(contourWhere ?? {}),
+          },
         },
         select: { blockId: true },
         take: 1000,
@@ -328,7 +493,12 @@ export class ChatV2RetrievalService {
       const entRows = await this.prisma.ideaBlockEntity.findMany({
         where: {
           entityId: { in: candidateEntityIds },
-          block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+          block: {
+            status: 'canonical',
+            tenantId,
+            ...(accessWhere ?? {}),
+            ...(contourWhere ?? {}),
+          },
         },
         select: { blockId: true },
         take: 1000,
@@ -347,12 +517,18 @@ export class ChatV2RetrievalService {
     tenantId: string,
     themeId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     const rows = await this.prisma.themeIdeaBlock.findMany({
       where: {
         themeId,
         theme: { tenantId, status: 'active' },
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -368,6 +544,7 @@ export class ChatV2RetrievalService {
     tenantId: string,
     entityId: string,
     accessWhere?: Record<string, unknown>,
+    contourWhere?: Record<string, unknown>,
   ): Promise<string[]> {
     // Проверим, что Entity принадлежит тенанту.
     const ent = await this.prisma.entity.findUnique({
@@ -379,7 +556,12 @@ export class ChatV2RetrievalService {
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         entityId,
-        block: { status: 'canonical', tenantId, ...(accessWhere ?? {}) },
+        block: {
+          status: 'canonical',
+          tenantId,
+          ...(accessWhere ?? {}),
+          ...(contourWhere ?? {}),
+        },
       },
       select: { blockId: true },
       take: 1000,
@@ -453,6 +635,96 @@ export class ChatV2RetrievalService {
     }));
   }
 
+  /**
+   * Query Understanding Волна 1 (Ф3) — recall-safe фильтрованный ретрив.
+   *
+   * Ранжирует WHERE-фильтрованное множество полным сканом с combined-score в
+   * `ORDER BY` (вычисляемый алиас, НЕ `ORDER BY embedding <=> qvec LIMIT`).
+   * Вычисляемое выражение в ORDER BY не использует HNSW-индекс → точный
+   * полный скан по уже узкому pool (capped 5000) → фильтр не роняет recall.
+   *
+   * Предикаты строятся `buildStructuralPredicates` (донор — `runHybridQuery`).
+   * tenantId есть во всех ветках (pTenant). Без qvec — recency-fallback с теми
+   * же структурными предикатами.
+   */
+  private async rankByStructuralFilter(args: {
+    tenantId: string;
+    blockIds: string[];
+    qvec: number[] | null;
+    filters: Omit<StructuralFilterArgs, 'tenantParamRef'>;
+    limit: number;
+  }): Promise<RankedBlockId[]> {
+    const { tenantId, blockIds, qvec, filters, limit } = args;
+    if (blockIds.length === 0) return [];
+
+    const params: unknown[] = [];
+    const pushParam = (v: unknown): string => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+
+    // tenant ПЕРВЫМ — его `$N` переиспользуется предикатом themeBranch.
+    const pTenant = pushParam(tenantId);
+    const pIds = pushParam(blockIds);
+
+    if (qvec) {
+      const pVec = pushParam(toVectorLiteral(qvec));
+      const predicates = buildStructuralPredicates(
+        { ...filters, tenantParamRef: pTenant },
+        pushParam,
+      );
+      const pLimit = pushParam(limit);
+      const whereExtra =
+        predicates.length > 0 ? `\n          AND ${predicates.join('\n          AND ')}` : '';
+      // ORDER BY score DESC (вычисляемый алиас) — recall-safe, НЕ HNSW LIMIT.
+      const sql = `
+        SELECT b.id,
+               (1 - (b.embedding <=> ${pVec}::vector(1536))) AS score
+        FROM "IdeaBlock" b
+        WHERE b."tenantId" = ${pTenant}
+          AND b.status = 'canonical'
+          AND b.id = ANY(${pIds}::text[])
+          AND b.embedding IS NOT NULL${whereExtra}
+        ORDER BY score DESC
+        LIMIT ${pLimit}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(
+        sql,
+        ...params,
+      );
+      return rows.map((r) => ({
+        blockId: r.id,
+        score: toFiniteNumber(r.score) ?? 0,
+        fromGraph: false,
+      }));
+    }
+
+    // qvec нет (embedding упал) — recency-fallback с теми же структурными
+    // предикатами; score=0.
+    const predicates = buildStructuralPredicates(
+      { ...filters, tenantParamRef: pTenant },
+      pushParam,
+    );
+    const pLimit = pushParam(limit);
+    const whereExtra =
+      predicates.length > 0 ? `\n          AND ${predicates.join('\n          AND ')}` : '';
+    const sql = `
+      SELECT b.id
+      FROM "IdeaBlock" b
+      WHERE b."tenantId" = ${pTenant}
+        AND b.status = 'canonical'
+        AND b.id = ANY(${pIds}::text[])${whereExtra}
+      ORDER BY b."updatedAt" DESC
+      LIMIT ${pLimit}
+    `;
+    const rows = await this.prisma.$queryRawUnsafe<RankedRow[]>(sql, ...params);
+    return rows.map((r) => ({
+      blockId: r.id,
+      score: toFiniteNumber(r.score) ?? 0,
+      fromGraph: false,
+    }));
+  }
+
   // ─────────────────────────── graph expansion ───────────────────────────
 
   /**
@@ -467,6 +739,9 @@ export class ChatV2RetrievalService {
     extraLimit: number;
     validAt: Date | null;
     accessWhere?: Record<string, unknown>;
+    /** Support-desk Ф2 (R-INV-1) — закрытый контур: 1-hop-соседи тоже обязаны
+     *  быть в контуре, иначе граф-расширение «протечёт» наружу. Безусловный. */
+    contourGroupId?: string;
   }): Promise<RankedBlockId[]> {
     const { tenantId, seedBlockIds, knownIds, extraLimit, validAt } = args;
     if (seedBlockIds.length === 0 || extraLimit <= 0) return [];
@@ -547,6 +822,10 @@ export class ChatV2RetrievalService {
         status: 'canonical',
         ...(validAt ? { createdAt: { lte: validAt } } : {}),
         ...(args.accessWhere ?? {}),
+        // R-INV-1 — закрытый контур применяется и к граф-соседям (безусловно).
+        ...(args.contourGroupId
+          ? { blockAccess: { some: { groupId: args.contourGroupId } } }
+          : {}),
       },
       select: { id: true },
     });

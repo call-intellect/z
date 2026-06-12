@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { PreferenceDatasetClient } from './PreferenceDatasetClient';
 
 export const metadata: Metadata = {
-  title: 'Preference dataset — Z-Admin',
+  title: 'Preference dataset',
 };
 
 /**

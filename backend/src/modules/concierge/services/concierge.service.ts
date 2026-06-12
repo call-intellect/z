@@ -9,7 +9,15 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
+import {
+  LlmRouterService,
+  type LlmCallResult,
+} from '../../ai/services/llm-router.service';
 import {
   DialogService,
   type DialogProcessResult,
@@ -58,8 +66,38 @@ export interface ProcessInput {
   pageContext?: PageContextDto | null;
   userId: string;
   tenantId: string;
-  baseUrl: string;
+  /**
+   * Базовый URL backend'а для loopback tool-вызовов. Обязателен в
+   * cookie-режиме (web-чат, берётся из HTTP-запроса); в service-режиме
+   * (Ф5 assistant-channels: Telegram/MAX без HTTP-запроса) опционален —
+   * ToolRouter сам резолвит `cfg.concierge.loopbackBaseUrl`.
+   */
+  baseUrl?: string;
   authCookie?: string;
+  /**
+   * Ф5 assistant-channels (2026-06-11) — режим аутентификации loopback
+   * tool-вызовов (см. ToolRouterService Ф4). Default `'cookie'` — прежнее
+   * поведение web-чата (passthrough authCookie). `'service'` — каналы
+   * Telegram/MAX: ToolRouter минтит короткоживущую session-JWT по userId.
+   */
+  authMode?: 'cookie' | 'service';
+  /**
+   * Ф6 assistant-channels (2026-06-11) — канальный whitelist инструментов.
+   * Если задан — помощник ВИДИТ (native tools / legacy toolFragment) и может
+   * ИСПОЛНЯТЬ только перечисленные инструменты; выбор вне списка не
+   * исполняется (в toolMessages кладётся отказ, модель переформулирует).
+   * `undefined` — все инструменты (web-чат, поведение не меняется).
+   * RBAC-гейт ToolRouter'а остаётся в силе — это двойная защита.
+   */
+  toolWhitelist?: string[];
+  /**
+   * Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций
+   * (zero-button, В6). `true` (каналы Telegram/MAX): мутирующий инструмент
+   * без `undoableVia` НЕ исполняется — генератор отдаёт событие
+   * `confirm_required` (+`done`) и завершается; подтверждение разруливает
+   * мост (AssistantChannelBridge). Default `false` — web-SSE путь прежний.
+   */
+  confirmHold?: boolean;
 }
 
 /**
@@ -68,30 +106,54 @@ export interface ProcessInput {
  * Экспортируется отдельно от класса, чтобы покрыть unit-тестами без
  * необходимости поднимать NestJS DI / PrismaService.
  *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10): предварительные
+ * результаты поиска (`preHits`) переехали сюда из SYSTEM — это переменные
+ * данные на каждый запрос, а SYSTEM должен оставаться стабильным
+ * (см. `buildSystemPrompt`).
+ *
  * Структура output (в порядке появления):
  *   1. `КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:` + summary (если задан)
  *   2. `История диалога:` + последние N сообщений (если есть)
  *   3. `Результаты последних tool вызовов:` (если есть)
- *   4. `Новый запрос пользователя: <userMessage>`
+ *   4. `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` + preHits (если есть)
+ *   5. `Новый запрос пользователя: <userMessage>`
  */
 /**
- * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает системный промпт.
+ * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает СИСТЕМНЫЙ промпт.
  *
  * Вынесен из метода класса, чтобы покрыть snapshot-тестами без поднятия
  * NestJS DI. `toolFragment` передаётся параметром (раньше брался через
  * `this.serviceMap.buildToolUsePromptFragment()`).
  *
+ * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8):
+ * предварительные результаты поиска (`preHits`) — это ПЕРЕМЕННЫЕ данные на
+ * каждый запрос, поэтому они БОЛЬШЕ НЕ в SYSTEM. SYSTEM держим стабильным
+ * (контекст пользователя + tool-fragment + принципы), а preHits переехали в
+ * user-сообщение (`composeUserMessageForIteration`, блок
+ * `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===`). Это держит SYSTEM-префикс
+ * стабильным → prompt-cache hit ≈99% (см. feedback
+ * `LLM-промпты — обязательно cache-friendly`).
+ *
  * Структура output (в порядке появления):
  *   1. Преамбула (роль ассистента).
  *   2. `=== КОНТЕКСТ ===` + contextBlock (или fallback).
- *   3. (опц.) `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` если `preHits.length > 0`.
- *   4. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment.
- *   5. Принципы.
+ *   3. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment
+ *      (только при `nativeTools !== true` — legacy regex-эмуляция); при
+ *      native function-calling (Ф3 assistant-channels, 2026-06-11) вместо
+ *      него — две стабильные строки про инструменты (tools уходят провайдеру
+ *      через `LlmCallParams.tools`, SYSTEM остаётся cache-friendly).
+ *   4. Принципы.
  */
 export function buildSystemPrompt(args: {
   contextBlock: string;
   toolFragment: string;
-  preHits: Array<{ query: string; result: unknown }>;
+  /**
+   * Ф3 assistant-channels (2026-06-11) — native function-calling. При `true`
+   * SYSTEM собирается БЕЗ JSON-инструкции `{"tool_call"}` и БЕЗ списка
+   * инструментов (`toolFragment` игнорируется): tools передаются провайдеру
+   * нативно. Опционально — legacy-вызовы без поля работают как раньше.
+   */
+  nativeTools?: boolean;
 }): string {
   const parts: string[] = [
     'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
@@ -101,26 +163,27 @@ export function buildSystemPrompt(args: {
     args.contextBlock || '(контекст недоступен)',
     '',
   ];
-  // ТЗ 2026-05-27 Фаза 3: блок предварительных результатов pre-retrieval.
-  if (args.preHits.length > 0) {
-    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+  if (args.nativeTools === true) {
     parts.push(
-      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
+      'Тебе доступны инструменты через function-calling.',
+      'Вызывай инструмент, когда запрос требует действия или данных; иначе отвечай текстом.',
+      '',
     );
-    parts.push('');
-    parts.push(JSON.stringify(args.preHits, null, 2));
-    parts.push('');
+  } else {
+    parts.push(
+      '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
+      'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
+      '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
+      'Если действие не требуется — верни просто текст ответа без JSON.',
+      'Имя инструмента ДОЛЖНО быть из списка ниже:',
+      args.toolFragment,
+      '',
+    );
   }
   parts.push(
-    '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
-    'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
-    '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
-    'Если действие не требуется — верни просто текст ответа без JSON.',
-    'Имя инструмента ДОЛЖНО быть из списка ниже:',
-    args.toolFragment,
-    '',
     'Принципы:',
     '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
+    '- Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.',
     '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
     '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
   );
@@ -132,6 +195,12 @@ export function composeUserMessageForIteration(args: {
   toolMessages: Array<{ role: 'tool'; content: string }>;
   history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
   summary: string | null;
+  /**
+   * F1 cache-friendly — предварительные результаты поиска (pre-retrieval).
+   * Переехали из SYSTEM в user (см. `buildSystemPrompt`). Опционально:
+   * legacy-вызовы без preHits продолжают работать (старые snapshot-тесты).
+   */
+  preHits?: Array<{ query: string; result: unknown }>;
 }): string {
   const parts: string[] = [];
   if (args.summary != null && args.summary.trim() !== '') {
@@ -157,6 +226,17 @@ export function composeUserMessageForIteration(args: {
     for (const tm of args.toolMessages) {
       parts.push(`- ${tm.content}`);
     }
+    parts.push('');
+  }
+  // ТЗ 2026-05-27 Фаза 3 (pre-retrieval) + F1 cache-friendly (2026-06-10):
+  // блок предварительных результатов теперь в user, не в SYSTEM.
+  if (args.preHits != null && args.preHits.length > 0) {
+    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
+    parts.push(
+      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
+    );
+    parts.push('');
+    parts.push(JSON.stringify(args.preHits, null, 2));
     parts.push('');
   }
   parts.push(`Новый запрос пользователя: ${args.userMessage}`);
@@ -187,6 +267,20 @@ export type ConciergeStreamEvent =
        */
       data?: unknown;
     }
+  | {
+      /**
+       * Ф6 assistant-channels (2026-06-11) — текстовое подтверждение мутаций.
+       * Эмитится ТОЛЬКО при `ProcessInput.confirmHold=true`: выбранный
+       * инструмент мутирующий и без `undoableVia` — исполнение отложено до
+       * явного «да» пользователя (разруливает мост канала). После этого
+       * события генератор отдаёт `done` и завершается.
+       */
+      type: 'confirm_required';
+      toolName: string;
+      params: Record<string, unknown>;
+      /** Человекочитаемое превью: русское название действия + ключевые параметры. */
+      preview: string;
+    }
   | { type: 'message'; text: string }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
@@ -203,6 +297,23 @@ export type ConciergeStreamEvent =
  * Нужно фронту для интерактивных карточек (например, превью схемы таблицы).
  */
 const RICH_PREVIEW_TOOLS = new Set<string>(['infer_table_schema']);
+
+/**
+ * Ф6 assistant-channels (2026-06-11) — русские названия инструментов для
+ * человекочитаемого превью в текстовом подтверждении («Подтвердите действие:
+ * …»). Покрывает мутирующие инструменты реестра; неизвестное имя — fallback
+ * на сам toolName. Только русский текст в превью (UI-правило проекта).
+ */
+const CONFIRM_TOOL_RU_NAMES: Record<string, string> = {
+  create_meeting: 'создать встречу',
+  cancel_meeting: 'отменить встречу',
+  create_event: 'создать событие в календаре',
+  delete_event: 'отменить событие в календаре',
+  ask_chat_v2: 'задать вопрос AI-чату компании',
+  ask_role_clone: 'спросить клон должности',
+  find_free_slot: 'найти общий свободный слот',
+  infer_table_schema: 'предложить схему новой таблицы',
+};
 
 @Injectable()
 export class ConciergeService {
@@ -396,7 +507,8 @@ export class ConciergeService {
           intent: dialogResult!.intent,
           userId: input.userId,
           tenantId: input.tenantId,
-          baseUrl: input.baseUrl,
+          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+          ...(input.authMode ? { authMode: input.authMode } : {}),
           ...(input.authCookie ? { authCookie: input.authCookie } : {}),
         })
       : [];
@@ -446,7 +558,40 @@ export class ConciergeService {
       pageContext: input.pageContext ?? null,
     });
 
-    const systemPrompt = this.buildSystemPrompt(contextBlock, preHits);
+    // Ф3 assistant-channels (2026-06-11) — kill-switch native function-calling.
+    // Читаем ОДИН раз на запрос: ON — tools уходят провайдеру нативно
+    // (`LlmCallParams.tools`), SYSTEM без JSON-инструкции; OFF — прежняя
+    // regex-эмуляция через tryParseToolCall (поведение без изменений).
+    const nativeTools = this.isNativeToolsEnabled();
+    // Ф6 — канальный whitelist: если задан, провайдер видит только сужённый
+    // набор (native) / сужённый toolFragment (legacy). undefined → все tools.
+    const llmTools = nativeTools
+      ? this.serviceMap.toLlmTools(input.toolWhitelist)
+      : [];
+
+    // F1 cache-friendly — SYSTEM стабилен (без preHits); preHits едут в user.
+    const rawSystemPrompt = this.buildSystemPrompt(
+      contextBlock,
+      nativeTools,
+      input.toolWhitelist,
+    );
+
+    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
+    // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
+    // в маркерах данных, а system — с INJECTION_GUARD_NOTE. Обёртку system
+    // делаем ОДИН раз (cache-friendly: стабильный суффикс, не на каждой
+    // итерации), user-блок оборачиваем внутри loop. Observability — sanitize по
+    // самому запросу пользователя (source='chat'), без отклонения промта.
+    const guardOn = this.isPromptInjectionGuardEnabled();
+    if (guardOn) {
+      const sanitized = sanitizeCustomPrompt(effectiveQuestion);
+      for (const pattern of sanitized.reasons) {
+        this.metrics.incPromptInjectionAttempt?.({ source: 'chat', pattern });
+      }
+    }
+    const systemPrompt = guardOn
+      ? withInjectionGuard(rawSystemPrompt)
+      : rawSystemPrompt;
     const history = await this.loadRecentHistory(conversation.id, K_RECENT_MESSAGES);
 
     // Tool-use loop (эмулируется через JSON в ответе LLM).
@@ -454,14 +599,27 @@ export class ConciergeService {
     let finalText = '';
 
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
-      const userBlock = composeUserMessageForIteration({
+      const rawUserBlock = composeUserMessageForIteration({
         userMessage: effectiveQuestion,
         toolMessages,
         history,
         summary: conversation.summary,
+        // F1 cache-friendly — pre-retrieval результаты теперь в user-блоке
+        // (раньше вшивались в SYSTEM на каждый запрос, ломая prompt-cache).
+        preHits,
       });
+      // E2 — обернуть весь user-блок в маркеры данных (идемпотентно, system
+      // уже несёт INJECTION_GUARD_NOTE; см. systemPrompt выше).
+      const userBlock = guardOn ? wrapUserData(rawUserBlock) : rawUserBlock;
 
-      let llmText: string;
+      // Ф3 — единая точка: `parsed` заполняется из двух источников —
+      // native function-calling (out.toolCalls) или legacy regex-эмуляции
+      // (tryParseToolCall по тексту). Дальше оба пути идут по ОДНОМУ
+      // существующему конвейеру (requiresConfirm → ToolRouter.execute →
+      // undo-log → SSE tool_call/tool_result → toolMessages).
+      let parsed:
+        | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
+        | { kind: 'final'; text: string };
       try {
         const out = await this.llm.call({
           taskType: 'concierge-respond',
@@ -470,8 +628,13 @@ export class ConciergeService {
           tenantId: input.tenantId,
           userId: input.userId,
           maxTokens: 1500,
+          // Ф3 — native: tools уходят провайдеру (tool_choice='auto'
+          // ставится адаптером автоматически, см. LlmCallParams.tools).
+          ...(nativeTools ? { tools: llmTools } : {}),
         });
-        llmText = out.text;
+        parsed = nativeTools
+          ? this.toolCallFromNativeOutput(out)
+          : this.tryParseToolCall(out.text);
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
         this.logger.error({ err: m }, 'concierge LLM call failed');
@@ -483,7 +646,6 @@ export class ConciergeService {
         return;
       }
 
-      const parsed = this.tryParseToolCall(llmText);
       if (parsed.kind === 'final') {
         finalText = parsed.text;
         yield { type: 'thinking', text: 'Готовлю ответ…' };
@@ -493,11 +655,65 @@ export class ConciergeService {
       // tool_call path
       const toolName = parsed.toolName;
       const params = parsed.params;
+
+      // Ф6 — защита исполнения по канальному whitelist'у: даже если модель
+      // выбрала инструмент вне сужённого списка (галлюцинация / инъекция),
+      // НЕ исполняем. Кладём отказ в toolMessages и идём на следующую
+      // итерацию — модель переформулирует. RBAC-гейт ToolRouter ниже
+      // остаётся как был (двойная защита).
+      if (input.toolWhitelist && !input.toolWhitelist.includes(toolName)) {
+        this.logger.warn(
+          { toolName, conversationId: conversation.id },
+          'concierge: tool вне канального whitelist — исполнение отклонено',
+        );
+        toolMessages = [
+          ...toolMessages,
+          {
+            role: 'tool',
+            content: `Результат tool ${toolName}: ok=false status=403. Инструмент недоступен в этом канале — выбери другой инструмент из списка или ответь текстом.`,
+          },
+        ];
+        continue;
+      }
+
       const tool = this.serviceMap.findTool(toolName);
+      // readOnly — семантически безопасный POST (чистый расчёт / «задать
+      // вопрос»): confirm не нужен, см. ToolSchema.readOnly.
       const requiresConfirm =
         !!tool &&
         tool.method !== 'GET' &&
+        !tool.readOnly &&
         !tool.undoableVia;
+
+      // Ф6 — текстовое подтверждение мутаций (zero-button, В6): в канальном
+      // режиме (confirmHold=true) мутирующий инструмент без undoableVia НЕ
+      // исполняется. Отдаём confirm_required (мост сохранит состояние в Redis
+      // и спросит «да»/«нет»), пишем assistant-сообщение с вопросом (история
+      // диалога остаётся связной) и корректно завершаем поток через done.
+      if (input.confirmHold === true && requiresConfirm) {
+        const confirmPreview = this.buildConfirmPreview(toolName, params);
+        yield {
+          type: 'confirm_required',
+          toolName,
+          params,
+          preview: confirmPreview,
+        };
+        const holdMsg = await this.appendMessage({
+          conversationId: conversation.id,
+          role: 'assistant',
+          content: `Подтвердите действие: ${confirmPreview}`,
+          toolCalls: [
+            { id: `confirm_${i}`, name: toolName, arguments: params, held: true },
+          ],
+        });
+        yield { type: 'done', messageId: holdMsg.id };
+        // Bump lastMessageAt — как в основном финале (С24: updateMany+tenantId).
+        await this.prisma.conciergeConversation.updateMany({
+          where: { id: conversation.id, tenantId: input.tenantId },
+          data: { lastMessageAt: new Date() },
+        });
+        return;
+      }
 
       yield {
         type: 'tool_call',
@@ -521,18 +737,21 @@ export class ConciergeService {
         preHits,
       });
 
-      // Execute через ToolRouter.
+      // Execute через ToolRouter. Ф5: authMode/baseUrl опциональны —
+      // service-режим (каналы) резолвит baseUrl внутри ToolRouter.
       const execResult = await this.toolRouter.execute({
         toolName,
         args: params,
         userId: input.userId,
         tenantId: input.tenantId,
-        baseUrl: input.baseUrl,
+        ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+        ...(input.authMode ? { authMode: input.authMode } : {}),
         ...(input.authCookie ? { authCookie: input.authCookie } : {}),
       });
 
       let undoLogId: string | undefined;
-      if (execResult.ok && tool && tool.method !== 'GET') {
+      // readOnly-инструменты в undo-log не пишутся — откатывать нечего.
+      if (execResult.ok && tool && tool.method !== 'GET' && !tool.readOnly) {
         try {
           const log = await this.undoLog.record({
             tenantId: input.tenantId,
@@ -665,6 +884,21 @@ export class ConciergeService {
     }
   }
 
+  /**
+   * E2 (мастер-ТЗ Волна 1, Кластер A) — мастер-флаг защиты от
+   * prompt-injection. Concierge выполняет МУТИРУЮЩИЕ tools на основе
+   * пользовательского сообщения, поэтому user-блок обязан идти в LLM
+   * обёрнутым в маркеры данных. Defensive try/catch — в старых unit-тестах
+   * cfg может быть mock без `aiFeatures`. Default — true (как в env.schema).
+   */
+  private isPromptInjectionGuardEnabled(): boolean {
+    try {
+      return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
+    } catch {
+      return true;
+    }
+  }
+
   private async loadOrCreateConversation(
     input: ProcessInput,
   ): Promise<ConciergeConversation> {
@@ -722,16 +956,114 @@ export class ConciergeService {
    * ТЗ 2026-05-27 Фаза 5: делегирует pure-функции `buildSystemPrompt`
    * (module-level export). Имена совпадают — вызов через `this.` снимает
    * неоднозначность, локальный shadow не возникает.
+   *
+   * F1 cache-friendly (2026-06-10): SYSTEM больше не зависит от preHits —
+   * предварительные результаты поиска подмешиваются в user-сообщение
+   * (`composeUserMessageForIteration`), чтобы SYSTEM-префикс был стабилен
+   * и кэшировался провайдером.
+   *
+   * Ф3 assistant-channels (2026-06-11): при `nativeTools=true` SYSTEM
+   * собирается без JSON-инструкции и без toolFragment (tools уходят
+   * провайдеру нативно через `LlmCallParams.tools`).
+   *
+   * Ф6 assistant-channels (2026-06-11): опц. `toolWhitelist` сужает legacy
+   * toolFragment до канального списка (native-путь сужается отдельно через
+   * `toLlmTools(names)`). Для web-чата whitelist не задан — SYSTEM прежний
+   * и стабильный (cache-friendly).
    */
   private buildSystemPrompt(
     contextBlock: string,
-    preHits: Array<{ query: string; result: unknown }> = [],
+    nativeTools: boolean,
+    toolWhitelist?: string[],
   ): string {
     return buildSystemPrompt({
       contextBlock,
-      toolFragment: this.serviceMap.buildToolUsePromptFragment(),
-      preHits,
+      toolFragment: nativeTools
+        ? ''
+        : this.serviceMap.buildToolUsePromptFragment(toolWhitelist),
+      nativeTools,
     });
+  }
+
+  /**
+   * Ф6 — человекочитаемое превью отложенного действия для текстового
+   * подтверждения: русское название инструмента + до 3 ключевых параметров.
+   * Используется в событии `confirm_required` и в assistant-сообщении
+   * «Подтвердите действие: …».
+   */
+  private buildConfirmPreview(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): string {
+    const ruName = CONFIRM_TOOL_RU_NAMES[toolName] ?? toolName;
+    const keyParams = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .slice(0, 3)
+      .map(([k, v]) => {
+        let s: string;
+        if (typeof v === 'string') {
+          s = v;
+        } else {
+          try {
+            s = JSON.stringify(v);
+          } catch {
+            s = String(v);
+          }
+        }
+        return `${k}: ${s.slice(0, 80)}`;
+      });
+    return keyParams.length > 0
+      ? `${ruName} (${keyParams.join(', ')})`
+      : ruName;
+  }
+
+  /**
+   * Ф3 assistant-channels (2026-06-11) — kill-switch native function-calling.
+   * Default true (Ship-On) живёт в `TypedConfigService.concierge` (ENV
+   * `CONCIERGE_NATIVE_TOOLS_ENABLED`, пустое значение → true). Здесь —
+   * строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
+   * остаются на legacy regex-пути; defensive try/catch — по образцу
+   * `isDialogLayerEnabled` (cfg может сломаться в проде).
+   */
+  private isNativeToolsEnabled(): boolean {
+    try {
+      return this.cfg.concierge.nativeToolsEnabled === true;
+    } catch (err) {
+      this.metrics.incConciergeConfigError?.({ reason: 'other' });
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'concierge: не удалось прочитать cfg.concierge.nativeToolsEnabled — fallback=false (regex-эмуляция)',
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Ф3 — приводит native tool_calls из ответа LLM к внутреннему формату
+   * tool-loop'а (та же форма, что у `tryParseToolCall`). Берём ПЕРВЫЙ
+   * tool_call — sequential: RU-провайдеры (DeepSeek/прокси/Ollama) не
+   * гарантируют корректный parallel tool-use; остальные вызовы модель
+   * перезапросит на следующей итерации по tool-результату. Если toolCalls
+   * пуст — `out.text` это финальный ответ (как в legacy-пути).
+   */
+  private toolCallFromNativeOutput(
+    out: Pick<LlmCallResult, 'text' | 'toolCalls'>,
+  ):
+    | { kind: 'tool_call'; toolName: string; params: Record<string, unknown> }
+    | { kind: 'final'; text: string } {
+    const first = out.toolCalls?.[0];
+    if (!first) {
+      return { kind: 'final', text: out.text.trim() };
+    }
+    // `input` приходит уже распарсенным объектом (см. LlmToolCall), но
+    // defensively отбрасываем не-объекты (строка/массив/null) → {}.
+    const params =
+      typeof first.input === 'object' &&
+      first.input !== null &&
+      !Array.isArray(first.input)
+        ? (first.input as Record<string, unknown>)
+        : {};
+    return { kind: 'tool_call', toolName: first.name, params };
   }
 
   /**
@@ -792,7 +1124,9 @@ export class ConciergeService {
     intent: DialogIntent;
     userId: string;
     tenantId: string;
-    baseUrl: string;
+    /** Ф5: опционален — в service-режиме ToolRouter резолвит loopbackBaseUrl. */
+    baseUrl?: string;
+    authMode?: 'cookie' | 'service';
     authCookie?: string;
   }): Promise<Array<{ query: string; result: unknown }>> {
     if (!['factual', 'exploratory', 'analytical'].includes(args.intent)) {
@@ -811,7 +1145,8 @@ export class ConciergeService {
           args: { q },
           userId: args.userId,
           tenantId: args.tenantId,
-          baseUrl: args.baseUrl,
+          ...(args.baseUrl ? { baseUrl: args.baseUrl } : {}),
+          ...(args.authMode ? { authMode: args.authMode } : {}),
           ...(args.authCookie ? { authCookie: args.authCookie } : {}),
         });
         const timeout = new Promise<null>((resolve) =>

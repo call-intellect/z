@@ -37,16 +37,6 @@ const CARD_ROLLUP_JOB_OPTIONS: JobsOptions = {
 };
 
 /**
- * Фаза C — quality-score. 3 ретрая по sub-TZ C §6.4.
- */
-const QUALITY_SCORE_JOB_OPTIONS: JobsOptions = {
-  attempts: 3,
-  backoff: { type: 'exponential', delay: 10_000 },
-  removeOnComplete: { age: 86400, count: 500 },
-  removeOnFail: false,
-};
-
-/**
  * Фаза E — custom-report. 3 попытки с экспоненциальным backoff (ТЗ §5.3).
  */
 const CUSTOM_REPORT_JOB_OPTIONS: JobsOptions = {
@@ -92,8 +82,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
         opts = CLIP_RENDER_JOB_OPTIONS;
       } else if (name === QUEUE_NAMES.CARD_ROLLUP) {
         opts = CARD_ROLLUP_JOB_OPTIONS;
-      } else if (name === QUEUE_NAMES.QUALITY_SCORE) {
-        opts = QUALITY_SCORE_JOB_OPTIONS;
       } else if (name === QUEUE_NAMES.CUSTOM_REPORT) {
         opts = CUSTOM_REPORT_JOB_OPTIONS;
       } else if (name === QUEUE_NAMES.RECORDING_FASTSTART) {
@@ -145,14 +133,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
     return this.enqueue(QUEUE_NAMES.NOTIFY, meetingId, attempt);
   }
 
-  enqueueChapters(meetingId: string, attempt = 1): Promise<void> {
-    return this.enqueue(QUEUE_NAMES.CHAPTERS, meetingId, attempt);
-  }
-
-  enqueueTasksExtract(meetingId: string, attempt = 1): Promise<void> {
-    return this.enqueue(QUEUE_NAMES.TASKS, meetingId, attempt);
-  }
-
   enqueueTranscriptIndex(meetingId: string, attempt = 1): Promise<void> {
     return this.enqueue(QUEUE_NAMES.EMBEDDINGS, meetingId, attempt);
   }
@@ -164,26 +144,6 @@ export class AiQueueService implements OnModuleInit, OnModuleDestroy {
    */
   enqueueBehaviorMetrics(meetingId: string, attempt = 1): Promise<void> {
     return this.enqueue(QUEUE_NAMES.BEHAVIOR_METRICS, meetingId, attempt);
-  }
-
-  /**
-   * Фаза C — постановка расчёта quality-score. jobId — фиксированный по
-   * meetingId без attempt'а (`quality:<meetingId>`), чтобы повторная постановка
-   * в течение жизни той же job'ы в Redis игнорировалась (idempotency).
-   * См. sub-TZ C §6.
-   */
-  async enqueueQualityScore(meetingId: string): Promise<void> {
-    const map = this.queues;
-    if (!map) {
-      throw new Error('AiQueueService: попытка enqueue до onModuleInit');
-    }
-    const q = map.get(QUEUE_NAMES.QUALITY_SCORE);
-    if (!q) throw new Error('AiQueueService: ai.quality-score не инициализирован');
-    // BullMQ 5.x: jobId с ':' допустим только при ровно 3 частях — используем '_'.
-    const jobId = `quality_${meetingId}`;
-    const payload: AiJobData = { meetingId, attempt: 1 };
-    await q.add('quality-score', payload, { jobId });
-    this.logger.debug(`enqueue ai.quality-score meeting=${meetingId}`);
   }
 
   /**

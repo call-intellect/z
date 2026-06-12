@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 
+import { SECTION_LABELS } from '@/lib/section-labels';
+
 import { RegulationsListClient } from './RegulationsListClient';
 
 export const metadata: Metadata = {
-  title: 'Регламенты',
+  title: SECTION_LABELS.regulations,
 };
 
 /**

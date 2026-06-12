@@ -121,6 +121,18 @@ LiveKit чистит атрибуты автоматически при disconne
     читает `Meeting+Transcript+Participants+merged.json`, lazy-upsert
     дефолтного `Source(type=meeting, name='Встречи Z')`, payload =
     `{meetingId, type, title, participants, transcript.turns, roomChat}`.
+  - `adapters/report.adapter.ts` — `ReportIngestAdapter.ingestReport(meetingId)`
+    (отчёт→граф, 2026-06-11, коммит `13a6ac69`): читает `Meeting+AiResult.structuredData+fast-блок`,
+    через `report-fact-mapper.ts` раскладывает структурные выводы по типу
+    встречи в гранулярные факты, lazy-upsert `Source(type='meeting_report',
+    name='Отчёты встреч Z')`, создаёт **отдельный** `RawEvent(sourceType='meeting_report')`
+    (`sourceExternalId='report_'+meetingId`, `occurredAt=meeting.endedAt`).
+    Клиентский протокол `client_protocol_md` в граф НЕ попадает (whitelist, D6).
+    Подробно — [[../02_architecture/knowledge-core]] §«Отчёт встречи → граф».
+  - `listeners/report-ingest.listener.ts` — `ReportIngestListener`
+    (`@OnEvent('meeting.report-fast-ready')`): по готовности быстрого отчёта
+    (status `ready`/`partial`) вызывает `ReportIngestAdapter.ingestReport`.
+    Kill-switch `REPORT_INGEST_ENABLED` (Ship-On, default ON).
   - `guards/ingest-token.guard.ts` — Bearer-токен из ENV `INGEST_INTERNAL_TOKEN`,
     timingSafeEqual.
   - `ingest.controller.ts` — `POST /api/v1/ingest` (под `IngestTokenGuard`,
@@ -176,10 +188,22 @@ LiveKit чистит атрибуты автоматически при disconne
     `GET /api/v1/knowledge/entities/:id`.
   - `prompts/block-ingest.prompt.ts` — JSON Schema, helpers, ENTITY/SIGNAL
     enum'ы.
+  - `services/structured-document-compiler.service.ts` (мастер-ТЗ промптов,
+    Волна 6 A7, 2026-06-10) — единый владелец сборки `contentMd` орг-документа
+    (regulation / process / policy / instruction). `compile()` через router
+    (taskType `compile-org-document`); вызывается из `specialist-3-1-regulations`
+    после `regulation-dedupe` на вердиктах merge/extension. Kill-switch
+    `aiFeatures.docCompilerEnabled`. См. [[../01_projects/ai-jobs]] §«Мастер-ТЗ промптов».
+  - `services/owner-resolver.service.ts` (autonomy W2, 2026-06-12) —
+    `OwnerResolver`: «лестница владельца» поля карточки (родитель →
+    единственный держатель роли → автор → кандидаты → none). AUTO-заполнение
+    только прямых полей Regulation/Process/Policy/Experiment; Card и шаги
+    процессов — только probe-выбор. Метрика `z_owner_resolution_total`.
 
 - **`backend/src/modules/rbac/policies/policy.csv`** — добавлены ресурсы
   `block` и `entity` (read/write/delete для owner/admin, read для всех
-  member'ов Org).
+  member'ов Org). **Мастер-ТЗ промптов (2026-06-10):** `RESOURCE_TYPES` +=
+  `instruction` (зеркалит `process`), строки в policy.csv.
 
 - **`backend/scripts/postgres-init.sql`** — pgvector HNSW индексы +
   generated `IdeaBlock.search_tsv` + GIN. Применяется через
@@ -410,6 +434,7 @@ Frontend:
 - `services/conflict.service.ts` — `ConflictService.report(input)` (идемпотентный) + `resolve / dismiss / list / getById`. Resolution `evolving` требует `evolvingMeta.{existingValidUntil, newValidFrom}`.
 - `services/curator-routing.service.ts` — выбор кандидатов-кураторов по `CuratorAssignment` (точное → universal level=null → wildcard `*` → fallback owner/admin Org).
 - `workers/card-stale-detector.cron.ts` — ежедневный (4:00) проход по `CardVersion`: версии старше N мес. → CurationItem(level='light', triageReason.reason='stale') + probe владельцу через `ConversationalService.sendNotification` (eventType='system.message'). Решение №13.2 — отдельный cron (не в reframing).
+- `workers/conflict-arbiter.cron.ts` (autonomy W1, 2026-06-12) — `ConflictArbiterCron`, ночной (`@Cron('0 2 * * *')`) LLM-арбитр open-конфликтов: дебаты `debate-conflict-arbiter` → авто-резолв `keep_old`/`accept_new`/`merge` при консенсусе и confidence ≥ 0.7 (актор — владелец Org, post-hoc `system.message`); `evolving`/`escalate` — человеку. Kill-switch `knowledge.curationConflictArbiterEnabled` (ON). Метрика `z_conflict_arbiter_total`.
 - `curation.controller.ts` — REST API `/api/v1/curation/queue|items/:id|items/:id/decide|conflicts|conflicts/:id|conflicts/:id/resolve|conflicts/:id/dismiss` + `/api/v1/settings/curation` (GET/PATCH).
 
 **Probe через ConversationalService:**
@@ -655,6 +680,7 @@ AI-чат компании поверх knowledge-core, с conversation history 
 - `POST /api/v1/regulations/:id/supersede` (owner/admin only) — пометить старую `deprecated`, новая получает `supersedesId`.
 - `POST /api/v1/regulations/:id/confirm` — `lastConfirmedAt = now()`.
 - Z-DTO через `nestjs-zod`, RBAC через existing `regulation`/`process`/`policy` ResourceType. Все ошибки на русском.
+- **Мастер-ТЗ промптов (2026-06-10):** `RegulationKindSchema` += `instruction`. При `kind=instruction` list/get/confirm читают **`prisma.instruction`** (мапперы `instruction → ListItem/Detail`, поле `extractionStatus`); controller RBAC-роутинг на ResourceType `instruction`. Та же `/regulations` поверхность обслуживает 4-ю сущность без отдельного API.
 
 **Frontend:**
 - `frontend/src/api/regulations.api.ts` — API-клиент (list/get/history/supersede/confirm).
@@ -1964,6 +1990,8 @@ mail-inbound/
 
 Legacy путь при `CONCIERGE_DIALOG_LAYER_ENABLED=false` — без dialog-layer, без pre-retrieval, summary не читается.
 
+- `services/assistant-channel.bridge.ts` (Ф5 assistant-channels, 2026-06-12) — `AssistantChannelBridge`: мост каналов к единому мозгу. Подписан на inbound `assistant_turn` (свободный текст/голос из Telegram/MAX) → `ConciergeService`; память диалога per-binding в Redis (`concierge:channel-conv:<bindingId>`, TTL 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций (`confirm_required`, Redis TTL 300с, judge `assistant-confirm-classify`); ответ одним сообщением `chat.answer` в канал-источник. Kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON). Метрика `z_assistant_turn_total`. См. [[../01_projects/conversational-channels]] §«Единый мозг помощника».
+
 ### Зависимости (импорты)
 
 - `backend/src/modules/dialog-layer/` — `DialogService` (5-step preprocessor + AnswerCache в Redis).
@@ -2350,5 +2378,38 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 ### AdminSettings (kill-switch / крутилки)
 
 Новые ключи в `admin-setting-schema-registry.ts`: `dashboard.main_rework.enabled`, `operations.dashboard_rework.enabled`, `operations.per_person_self_view.enabled`, `me.daily_value_widgets.enabled`, `operations.portfolio_health.enabled` + `portfolio.health.{threshold_healthy,threshold_warning,weight_*}`, `documents.ai_attribution.enabled`, `documents.{maxSizeMb,maxFilesPerUpload,acceptedFormats,maxZipSizeMb}`, `billing.meetingUploadsPerMonth`, `meeting_upload.enabled`. ENV: `MEETING_UPLOAD_ENABLED` (kill-switch, default true). Сиды — 6 `seed-admin-setting-*` в `apply-prod-deploy.ts` STEPS. См. [[../01_projects/admin-settings]].
+
+[[../index|← index]]
+
+## support — служба поддержки + закрытый контур + клон (2026-06-09)
+
+**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4; Ф5 авто-отправка / Ф6 тон-адаптер отложены). Профильная заметка — [[../01_projects/support-desk]]; модели — [[data-model]] §«Служба поддержки»; taskType — [[../01_projects/ai-jobs]]; cron'ы — [[../01_projects/workers-queues]]; эндпоинты — [[../01_projects/api-layer]]; страницы — [[../01_projects/frontend-pages]].
+
+Вендорская служба поддержки на существующих кирпичах (трекер `Issue`, граф `KnowledgeGroup`, клон `clone-respond`, каналы `Notification`). Новое — ровно закрытый контур памяти, обучающая петля «черновик→правка», support-слой над трекером, клиентский виджет.
+
+### Новый модуль `backend/src/modules/support/`
+
+- **Сервисы (`services/`):** `support-access` (членство в группе-контуре = «галочка сотрудника поддержки»), `support-intake` (cross-tenant приём обращения клиента в вендор-Org), `support-desk` (reply/note/assign/transition по тикету), `support-sla` (таймеры/эскалация), `support-contour` (галочка add/remove + ручной засев Q&A), `support-clone` (генерация черновика RAG из контура + few-shot), `support-answer-critic` (groundedness-проверка черновика, R-INV-5), `support-edit-classify` (классификация типа правки factual|tone|policy|empty), `support-learning` (accept/reject/edit → `SupportDraftOutcome` + `LlmPreferenceSample` + CSAT-гейт промоута в контур), `support-curator` (ночной куратор контура).
+- **Контроллеры (`controllers/`):** `support-client.controller.ts` (`/support/tickets`, `/support/my-tickets`, `/support/me`), `support-desk.controller.ts` (`/support/desk/*`), `support-admin.controller.ts` (`/support/admin/agents`, `/support/admin/contour/seed`).
+- **Guards (`guards/`):** `SupportAccessGuard` (член группы-контура, иначе `SUPPORT_NOT_AGENT`), `SupportAdminGuard` (owner вендор-Org / super_admin).
+- **Crons (`crons/`):** `support-sla.cron.ts` (`@Cron('*/5 * * * *')` → `slaBreachedAt` просроченным), `support-curator.cron.ts` (`@Cron('0 3 * * *')` → soft-archive/fix/merge за debate-гейтом `MultiAgentDebateService`).
+- **Изоляция контура (R-INV-1):** позитивный pre-retrieval фильтр `contourGroupId` в `ChatV2RetrievalService.collectPool` (все ветки пула + `expandViaGraph`) — **безусловный**, не зависит от `KNOWLEDGE_ACCESS_ENFORCEMENT`. CI-негатив-тест `contour-isolation.spec.ts`.
+- **4 taskType:** `support-clone-draft`/`support-contour-curate` (DeepSeek V4 Pro), `support-answer-critic`/`support-edit-classify` (`deepseek-v4-flash`, Б9). Сид `seed-llm-task-routes-support.ts`.
+- **Флаги:** `SUPPORT_DESK_ENABLED` (kill-switch ON), `SUPPORT_CURATOR_ENABLED` (kill-switch ON), `feature.support_desk` (entitlement-решение владельца, вендор-эксклюзив), AdminSetting `support.vendor_org_id` (параметр владельца — без него seed'ы no-op), `support_critic_min_groundedness` (0.6), `support_promote_min_csat` (4).
+
+[[../index|← index]]
+
+## Консолидация отчёта встречи + отчёт→граф (2026-06-11)
+
+**Источник:** ТЗ [`plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md`](../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) (Фазы 1/3) + суб-ТЗ [`plans/tz/2026-06-11-report-to-graph-phase2.md`](../../plans/tz/2026-06-11-report-to-graph-phase2.md) (Фаза 2). Коммиты `2501d72b` (Ф1), `13a6ac69` (Ф2), `e4fded3c` (Ф3). Граф/гарды — [[knowledge-core]] §«Отчёт встречи → граф»; jobs/очереди — [[../01_projects/ai-jobs]], [[../01_projects/workers-queues]].
+
+### Удалённые модули (Фаза 1 — единое ядро отчёта = `meeting-report-fast`)
+- **Воркеры:** `ai/workers/chapters.worker.ts`, `ai/workers/tasks-extract.worker.ts`, `ai/workers/quality-score.worker.ts` — **удалены** (дублировали главы/задачи/качество, которые fast уже делает одним вызовом).
+- **Сервис/промпты:** `ai/services/chapter-extraction.service.ts`, `ai/services/prompts/chapters`, `ai/services/prompts/meeting-quality-score` — удалены. **Отклонение:** `task-extraction.service` + `prompts/tasks-structured` **НЕ удалены** — их использует `chatbox-analyze.worker`.
+- **Очереди:** из `QUEUE_NAMES` убраны `ai.chapters`/`ai.tasks`/`ai.quality-score`; из `AiQueueService` — `enqueueChapters`/`enqueueTasksExtract`/`enqueueQualityScore`.
+- `LlmTaskType` `chapters`/`tasks`/`meeting-quality-score` оставлены в union мёртвыми (как мёртвые колонки). `meeting-report-fast.worker.writeQualityScore` теперь пишет каноничную `MeetingQualityScore` + `Meeting.qualityScoreStatus='ready'`; regenerate глав/качества/полного отчёта → `CoreQueueService.enqueueMeetingReportFast`.
+
+### Новые модули (Фаза 2 — отчёт→граф)
+- `ingest/adapters/report.adapter.ts` (`ReportIngestAdapter`), `ingest/report-fact-mapper.ts` (per-type раскладка), `listeners/report-ingest.listener.ts` (`ReportIngestListener` `@OnEvent('meeting.report-fast-ready')`), ветка `payload.kind==='meeting_report'` в `segment-builder.service.ts`. Гарды A/B в `block-ingest.worker`/`block-merge.service`/`block-distill.worker`. Подробно — [[knowledge-core]].
 
 [[../index|← index]]

@@ -4,6 +4,8 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { readOrchestratorLimits } from '../orchestrator.config';
 import {
   ALL_ORCHESTRATOR_AGENT_TYPES,
+  ORCHESTRATOR_PLAN_JSON_SCHEMA,
+  ORCHESTRATOR_PLAN_SCHEMA_NAME,
   type OrchestratorAgentType,
   type OrchestratorPlan,
   type OrchestratorPlanStep,
@@ -51,15 +53,11 @@ export class PlanningService {
       '  - каждый шаг изолирован: contextSlice.focus — короткая формулировка задачи subagent-а.',
       '  - subagent НЕ видит общую историю; только свой contextSlice.',
       '  - seedHints[] — имена сущностей/ключевые слова/blockId-ы (если применимы).',
-      '  - params — параметры стратегии (для comparison: { subjects: [...], dimensions: [...] }).',
+      '  - params — параметры стратегии (для comparison: { subjects: [...], dimensions: [...] }; иначе пустой объект {}).',
       '',
-      'Верни строго JSON, без markdown:',
-      '{',
-      '  "rationale": "<1-2 предложения, почему такой план>",',
-      '  "steps": [',
-      '    { "agentType": "<one of whitelist>", "description": "<short, ru>", "contextSlice": { "focus": "...", "seedHints": [...], "params": {...} } }',
-      '  ]',
-      '}',
+      `Верни строго JSON по схеме ${ORCHESTRATOR_PLAN_SCHEMA_NAME}: объект с полями`,
+      '  "rationale" (1-2 предложения, почему такой план) и',
+      '  "steps" (массив шагов, у каждого agentType из whitelist, description, contextSlice{focus, seedHints, params}).',
     ].join('\n');
 
     let text: string;
@@ -71,7 +69,16 @@ export class PlanningService {
         tenantId: args.tenantId,
         userId: args.userId,
         maxTokens: 1500,
-        responseFormat: { type: 'json_object' },
+        // A9 (I11) — native json_schema strict вместо json_object (снижает
+        // долю битого JSON). gpt-4o (primary) — нативно; deepseek (secondary) —
+        // через tool-путь; ollama (tertiary) — LlmFormatNotSupportedError →
+        // роутер перейдёт к следующему провайдеру.
+        responseFormat: {
+          type: 'json_schema',
+          name: ORCHESTRATOR_PLAN_SCHEMA_NAME,
+          schema: ORCHESTRATOR_PLAN_JSON_SCHEMA,
+          strict: true,
+        },
       });
       text = out.text;
     } catch (err) {

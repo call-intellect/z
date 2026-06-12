@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   departmentsApi,
   rolesDomainApi,
@@ -72,7 +72,7 @@ export function Step2Client() {
       .catch((e) => {
         if (cancelled) return;
         const msg =
-          e instanceof ApiError ? e.message : 'Не удалось загрузить отделы.';
+          humanizeApiError(e, 'Не удалось загрузить отделы.');
         setDepartmentsError(msg);
         setDepartments([]);
       });
@@ -122,7 +122,7 @@ export function Step2Client() {
       router.push(NEXT_HREF);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось сохранить должности.';
+        humanizeApiError(e, 'Не удалось сохранить должности.');
       toast.error(msg);
     } finally {
       setSubmitting(false);

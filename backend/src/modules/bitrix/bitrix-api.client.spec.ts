@@ -54,7 +54,7 @@ describe('BitrixApiClient', () => {
 
     expect(tokens.access_token).toBe('AT');
     expect(tokens.member_id).toBe('M1');
-    const url = String(fetchMock.mock.calls[0][0]);
+    const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain('grant_type=authorization_code');
     expect(url).toContain('code=code123');
     expect(url).toContain('client_secret=secret');
@@ -75,7 +75,7 @@ describe('BitrixApiClient', () => {
     const tokens = await client.refresh('RTold');
 
     expect(tokens.access_token).toBe('AT2');
-    const url = String(fetchMock.mock.calls[0][0]);
+    const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain('grant_type=refresh_token');
     expect(url).toContain('refresh_token=RTold');
   });
@@ -131,7 +131,7 @@ describe('BitrixApiClient', () => {
     );
 
     expect(res.ID).toBe(7);
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
     expect(body.auth).toBe('AT');
   });
 });

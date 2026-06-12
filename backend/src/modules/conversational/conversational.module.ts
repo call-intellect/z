@@ -82,6 +82,38 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
       );
       // Не пробрасываем дальше: ConversationalService.dispatchInbound сам ловит
       // exceptions, чтобы один кривой handler не валил весь pipeline.
+      // Ack НЕ шлём — заметка НЕ сохранена, подтверждать нечего.
+      return;
+    }
+
+    // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — best-effort
+    // подтверждение приёма заметки. Раньше free_note молча проглатывался:
+    // человек писал боту и не понимал, услышала ли его Кора. Если
+    // originChannelBindingId валиден — ack уходит адресно в канал-источник;
+    // иначе — по дефолтной policy 'note.ack' (in_app fallback). Ошибка ack
+    // НЕ ломает ingest — заметка уже сохранена.
+    try {
+      const preferredKinds = await this.conversational.resolveOriginChannelKinds({
+        originChannelBindingId: msg.originChannelBindingId,
+        userId: msg.userId,
+        tenantId: msg.tenantId,
+      });
+      await this.conversational.sendNotification({
+        tenantId: msg.tenantId,
+        recipientUserId: msg.userId,
+        eventType: 'note.ack',
+        payload: { text: 'Записал в память Коры 🧠' },
+        dataClass: 'internal',
+        ...(preferredKinds.length > 0
+          ? { preferredChannelKinds: preferredKinds }
+          : {}),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        { userId: msg.userId, tenantId: msg.tenantId, err: message },
+        'free_note ack не отправлен (заметка сохранена) — продолжаю',
+      );
     }
   }
 }

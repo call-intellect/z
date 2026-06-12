@@ -9,7 +9,7 @@ import type { AiParticipantContext } from './prompts/participant-context';
  * идентификации (ТЗ 2026-05-25 `hard-participant-identification`).
  *
  * Не пишет в БД, не зависит от LLM-провайдеров. Используется
- * `tasks-extract.worker`, `meeting-analyze-v2.worker` и любым другим
+ * `tasks-extract.worker`, `meeting-report-fast.worker` и любым другим
  * caller'ом, которому нужно передать список участников в промпт.
  */
 @Injectable()

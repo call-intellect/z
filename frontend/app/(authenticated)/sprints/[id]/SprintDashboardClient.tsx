@@ -24,8 +24,11 @@ import {
   Video,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
+import { meetingStatusLabel } from '@/domain/meeting';
+import { meetingTypeLabel } from '@/domain/admin-prompt-template';
+import type { MeetingTypeApi } from '@/api/admin-prompt-templates.api';
 import { Button } from '@/ui/shadcn/button';
 import { Progress } from '@/ui/shadcn/progress';
 import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
@@ -90,7 +93,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
         toast.error('Выбранная цель не найдена');
       } else {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось привязать цель',
+          humanizeApiError(e, 'Не удалось привязать цель'),
         );
       }
       throw e;
@@ -387,7 +390,8 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
                           {m.title || 'Встреча'}
                         </div>
                         <div className="text-[11px] text-fg-tertiary">
-                          {m.type} · {m.status}
+                          {meetingTypeLabel(m.type as MeetingTypeApi) ?? m.type} ·{' '}
+                          {meetingStatusLabel(m.status)}
                         </div>
                       </div>
                       <ChevronRight size={14} className="shrink-0 text-fg-tertiary" />

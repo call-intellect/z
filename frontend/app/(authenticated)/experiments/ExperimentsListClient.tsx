@@ -42,7 +42,7 @@ export function ExperimentsListClient() {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -169,7 +169,7 @@ function ExperimentsListContent() {
     return (
       <AdminForbidden
         title="Нет прав на просмотр экспериментов"
-        description="Попросите owner или admin Org выдать вам право `experiment:read`."
+        description="Попросите владельца или администратора организации выдать вам право `experiment:read`."
       />
     );
   }

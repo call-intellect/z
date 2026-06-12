@@ -96,19 +96,11 @@ export type AdminMeetingDetailsApi = {
     tasks: unknown;
     modelUsed: string;
     createdAt: string;
-    summaryV2: string | null;
-    summaryV2Model: string | null;
-    summaryV2GeneratedAt: string | null;
     summaryFast: string | null;
     summaryFastModel: string | null;
     summaryFastGeneratedAt: string | null;
   } | null;
   reportStatuses: {
-    analyzeV2: {
-      status: string | null;
-      error: string | null;
-      generatedAt: string | null;
-    };
     reportFast: {
       status: string | null;
       error: string | null;

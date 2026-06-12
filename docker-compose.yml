@@ -99,6 +99,16 @@ services:
     build: *backend-build
     container_name: z-migrate
     env_file: [.env]
+    environment:
+      # HTTP_PROXY/HTTPS_PROXY/NO_PROXY используются ТОЛЬКО для скачивания
+      # пакетов во время СБОРКИ образа (см. x-backend-build.args выше).
+      # В runtime они НЕ должны попадать в процессы — иначе `node`/`bun`
+      # автоматически проксируют ВСЕ исходящие HTTP-запросы, включая
+      # loopback (127.0.0.1:3000) и S3-аплоады, что ломает webhook'и и egress.
+      # env_file имеет более низкий приоритет, чем environment — зануляем здесь.
+      HTTP_PROXY: ''
+      HTTPS_PROXY: ''
+      NO_PROXY: ''
     # Полный выкат одной командой: авто-бэкап (pg_dump → z-backups) → dedupe →
     # prisma db push --accept-data-loss → apply-postgres-init → seed/patch/backfill.
     # --no-fail-on-steps: сбой схемы (бэкап/push) валит migrate и блокирует backend
@@ -141,6 +151,13 @@ services:
         NO_PROXY: ${NO_PROXY:-}
     container_name: z-gepa
     env_file: [.env]
+    environment:
+      # См. комментарий у `migrate` выше — HTTP(S)_PROXY/NO_PROXY зануляем
+      # в runtime, чтобы LLM-запросы внутри gepa шли напрямую (или через
+      # переменные типа OPENAI_PROXY_URL, если такие нужны).
+      HTTP_PROXY: ''
+      HTTPS_PROXY: ''
+      NO_PROXY: ''
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8000/health']
@@ -158,6 +175,12 @@ services:
     environment:
       # PORT берётся из .env; дублируем дефолт на случай отсутствия.
       PORT: ${PORT:-3000}
+      # HTTP_PROXY/HTTPS_PROXY/NO_PROXY — build-time only (см. x-backend-build.args).
+      # В runtime зануляем, иначе `node`/Bun проксирует loopback (127.0.0.1:3000) и
+      # webhook'и от LiveKit SFU к бэку не доходят (через squid ERR_CONNECT_FAIL).
+      HTTP_PROXY: ''
+      HTTPS_PROXY: ''
+      NO_PROXY: ''
     ports:
       - '127.0.0.1:${BACKEND_HOST_PORT:-3000}:${PORT:-3000}'
     depends_on:

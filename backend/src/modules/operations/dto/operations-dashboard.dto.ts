@@ -136,6 +136,15 @@ export interface OperationsDashboardOverviewDto {
    * (CompanyProfile.maturityScore + топ/слабые FunctionalDomain'ы).
    */
   maturity: MaturitySnapshotDto;
+  /**
+   * Недельный инфлоу за 12 недель, old→new. null = неделя без данных
+   * (конвенция как sparkline12w). blockers — из BlockerSynthesis.createdAt;
+   * frictions — из EntityLink(relationType='conflicted_with').createdAt.
+   */
+  weeklyInflow: {
+    blockers: Array<number | null>;
+    frictions: Array<number | null>;
+  };
 }
 
 /**

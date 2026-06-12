@@ -1,9 +1,18 @@
 'use client';
 
+import { Gauge } from 'lucide-react';
 import Link from 'next/link';
 
 import { getCompanyStageLabel } from '@/lib/cause-category-presentation';
 import type { MaturitySnapshotDomain } from '@/domain/operations-dashboard';
+import {
+  BarTrend,
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+  RadarCard,
+} from '@/ui/components/dashboard/modern';
 
 /**
  * SBA β-8.3 Wave 3 — виджет «Зрелость компании» на COO-дашборде.
@@ -24,35 +33,56 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
 
   if (maturity.score === null) {
     return (
-      <section className="rounded border border-border-subtle bg-bg-surface p-4">
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-fg-primary">
+      <GlassCard>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle icon={<Gauge size={16} />} grad={GRAD.teal}>
             Зрелость компании
-          </h2>
+          </CardTitle>
           <Link
             href="/maturity"
-            className="text-xs text-accent hover:underline"
+            className="text-xs hover:underline"
+            style={{ color: CHART.cyan }}
           >
             Подробнее →
           </Link>
         </div>
-        <p className="rounded border border-border-subtle bg-bg-overlay p-3 text-sm text-fg-secondary">
+        <p
+          className="rounded-xl p-3 text-sm"
+          style={{ background: 'oklch(1 0 0 / 0.04)', color: CHART.dim }}
+        >
           Расчёт зрелости — каждое утро в 05:00 UTC. Проверьте позже.
         </p>
-      </section>
+      </GlassCard>
     );
   }
 
   const percent = maturity.scorePercent ?? 0;
   const stageLabel = getCompanyStageLabel(maturity.stage);
 
+  // Оси для лепестковой диаграммы: объединяем слабые и сильные домены,
+  // дедуплицируем по slug. Подпись по completenessPercent.
+  const domainAxes = (() => {
+    const seen = new Set<string>();
+    const axes: { k: string; v: number }[] = [];
+    for (const d of [...maturity.weakestDomains, ...maturity.topDomains]) {
+      if (seen.has(d.slug)) continue;
+      seen.add(d.slug);
+      axes.push({ k: d.name, v: d.completenessPercent });
+    }
+    return axes;
+  })();
+
   return (
-    <section className="rounded border border-border-subtle bg-bg-surface p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-fg-primary">
+    <GlassCard>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <CardTitle icon={<Gauge size={16} />} grad={GRAD.teal}>
           Зрелость компании
-        </h2>
-        <Link href="/maturity" className="text-xs text-accent hover:underline">
+        </CardTitle>
+        <Link
+          href="/maturity"
+          className="text-xs hover:underline"
+          style={{ color: CHART.cyan }}
+        >
           Подробнее →
         </Link>
       </div>
@@ -60,14 +90,17 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
         <div className="flex flex-col items-center justify-center">
           <ScoreRing percent={percent} />
           <div className="mt-2 text-center">
-            <div className="text-xs uppercase tracking-wide text-fg-tertiary">
+            <div
+              className="text-xs uppercase tracking-wide"
+              style={{ color: CHART.faint }}
+            >
               Стадия
             </div>
-            <div className="text-sm font-medium text-fg-primary">
+            <div className="text-sm font-medium" style={{ color: CHART.text }}>
               {stageLabel}
             </div>
             {maturity.lastCalcAt ? (
-              <div className="mt-1 text-[10px] text-fg-tertiary">
+              <div className="mt-1 text-[10px]" style={{ color: CHART.faint }}>
                 обновлено{' '}
                 {maturity.lastCalcAt.toLocaleString('ru-RU', {
                   day: '2-digit',
@@ -78,20 +111,40 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
             ) : null}
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <DomainList
-            title="Слабые места"
-            items={maturity.weakestDomains}
-            tone="danger"
+        {/* Зрелость по доменам: ≥3 осей — лепестковая диаграмма, иначе
+            столбчатая (radar на 1–2 осях вырождается). */}
+        {domainAxes.length === 0 ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <DomainList
+              title="Слабые места"
+              items={maturity.weakestDomains}
+              tone="danger"
+            />
+            <DomainList
+              title="Сильные стороны"
+              items={maturity.topDomains}
+              tone="success"
+            />
+          </div>
+        ) : domainAxes.length >= 3 ? (
+          <RadarCard
+            title="Зрелость по доменам"
+            icon={<Gauge size={16} />}
+            grad={GRAD.violet}
+            data={domainAxes}
           />
-          <DomainList
-            title="Сильные стороны"
-            items={maturity.topDomains}
-            tone="success"
+        ) : (
+          <BarTrend
+            title="Зрелость по доменам"
+            icon={<Gauge size={16} />}
+            grad={GRAD.violet}
+            data={domainAxes}
+            xKey="k"
+            dataKey="v"
           />
-        </div>
+        )}
       </div>
-    </section>
+    </GlassCard>
   );
 }
 
@@ -115,8 +168,7 @@ function ScoreRing({ percent }: { percent: number }) {
         cx={size / 2}
         cy={size / 2}
         r={radius}
-        stroke="currentColor"
-        className="text-bg-overlay"
+        stroke="oklch(1 0 0 / 0.1)"
         strokeWidth={stroke}
         fill="none"
       />
@@ -124,7 +176,7 @@ function ScoreRing({ percent }: { percent: number }) {
         cx={size / 2}
         cy={size / 2}
         r={radius}
-        stroke="#5EEAD4"
+        stroke={CHART.mint}
         strokeWidth={stroke}
         fill="none"
         strokeLinecap="round"
@@ -137,7 +189,8 @@ function ScoreRing({ percent }: { percent: number }) {
         y="50%"
         dominantBaseline="middle"
         textAnchor="middle"
-        className="fill-fg-primary text-xl font-bold"
+        fill={CHART.text}
+        className="text-xl font-bold"
       >
         {clamped}%
       </text>
@@ -150,17 +203,19 @@ function DomainList(props: {
   items: Array<{ slug: string; name: string; completenessPercent: number }>;
   tone: 'danger' | 'success';
 }) {
-  const dotClass =
-    props.tone === 'danger'
-      ? 'bg-rose-500'
-      : 'bg-emerald-500';
+  const dotColor = props.tone === 'danger' ? CHART.red : CHART.mint;
   return (
     <div>
-      <h3 className="mb-2 text-xs uppercase tracking-wide text-fg-tertiary">
+      <h3
+        className="mb-2 text-xs uppercase tracking-wide"
+        style={{ color: CHART.faint }}
+      >
         {props.title}
       </h3>
       {props.items.length === 0 ? (
-        <p className="text-xs text-fg-tertiary">Нет данных</p>
+        <p className="text-xs" style={{ color: CHART.faint }}>
+          Нет данных
+        </p>
       ) : (
         <ul className="space-y-1.5">
           {props.items.slice(0, 3).map((d) => (
@@ -170,12 +225,18 @@ function DomainList(props: {
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
-                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${dotClass}`}
+                  className="inline-block h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: dotColor }}
                   aria-hidden
                 />
-                <span className="truncate text-fg-primary">{d.name}</span>
+                <span className="truncate" style={{ color: CHART.text }}>
+                  {d.name}
+                </span>
               </span>
-              <span className="shrink-0 tabular-nums text-xs text-fg-tertiary">
+              <span
+                className="shrink-0 tabular-nums text-xs"
+                style={{ color: CHART.faint }}
+              >
                 {d.completenessPercent}%
               </span>
             </li>

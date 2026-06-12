@@ -25,7 +25,7 @@ import {
 import { toast } from 'sonner';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   goalsApi,
   type CreateKeyResultRequest,
@@ -129,7 +129,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
     return (
       <div className="mx-auto w-full max-w-3xl px-6 py-8">
         <div className="rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
-          {error instanceof ApiError ? error.message : 'Цель не найдена или у вас нет доступа.'}
+          {humanizeApiError(error, 'Цель не найдена или у вас нет доступа.')}
         </div>
         <Button asChild variant="ghost" className="mt-3">
           <Link href="/goals">
@@ -178,7 +178,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       if (err instanceof ApiError && err.code === 'quota_exceeded') {
         toast.error('Quota exceeded — попробуйте завтра');
       } else {
-        const msg = err instanceof ApiError ? err.message : 'Не удалось запустить';
+        const msg = humanizeApiError(err, 'Не удалось запустить');
         toast.error(msg);
       }
     } finally {
@@ -201,7 +201,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       toast.success('Цель архивирована');
       void mutate();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось архивировать';
+      const msg = humanizeApiError(err, 'Не удалось архивировать');
       toast.error(msg);
     } finally {
       setArchiving(false);
@@ -215,7 +215,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       toast.success('Тема отвязана');
       void mutate();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось отвязать';
+      const msg = humanizeApiError(err, 'Не удалось отвязать');
       toast.error(msg);
     }
   }
@@ -228,7 +228,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       toast.success('Цель принята');
       void mutate();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось принять цель';
+      const msg = humanizeApiError(err, 'Не удалось принять цель');
       toast.error(msg);
     } finally {
       setAccepting(false);
@@ -249,7 +249,7 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       toast.success('Ключевой результат удалён');
       void mutate();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось удалить';
+      const msg = humanizeApiError(err, 'Не удалось удалить');
       toast.error(msg);
     }
   }
@@ -827,7 +827,7 @@ function KeyResultDialog({
       }
       onSaved();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось сохранить';
+      const msg = humanizeApiError(err, 'Не удалось сохранить');
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -988,7 +988,7 @@ function ReparentGoalDialog({
         } else if (err.code === 'parent_goal_not_found') {
           toast.error('Выбранная родительская цель не найдена');
         } else {
-          toast.error(err.message);
+          toast.error(humanizeApiError(err));
         }
       } else {
         toast.error('Не удалось перепривязать цель');
@@ -1109,7 +1109,7 @@ function SupersedeGoalDialog({
       toast.success('Цель заменена — прежняя версия сохранена в истории');
       onSuperseded(created.id);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось заменить цель';
+      const msg = humanizeApiError(err, 'Не удалось заменить цель');
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -1534,7 +1534,7 @@ function AddThemesDialog({
       setSearch('');
       onAdded();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'Не удалось добавить';
+      const msg = humanizeApiError(err, 'Не удалось добавить');
       toast.error(msg);
     } finally {
       setSubmitting(false);

@@ -63,6 +63,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/ui/shadcn/toggle-group';
 
 import { AdminError, AdminForbidden, AdminLoading } from '../AdminStateViews';
 import { useAdminQuery } from '../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const PAGE_SIZE = 50;
 const ALL = '__all__';
@@ -245,7 +246,7 @@ export function LogsClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Логи' },
       ]}
       title="Технические логи"

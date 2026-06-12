@@ -51,7 +51,7 @@ export interface SearchResultTaskItem {
   id: string;
   title: string;
   status: string;
-  meetingId: string;
+  meetingId: string | null;
 }
 
 export interface UnifiedSearchResult {

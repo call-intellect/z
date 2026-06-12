@@ -76,7 +76,14 @@ export type FeatureKey =
    * установка портала + жизненный цикл OAuth-токена. Core-фича памяти
    * компании, включена на всех тарифах.
    */
-  | 'feature.bitrix';
+  | 'feature.bitrix'
+  /**
+   * ТЗ 2026-06-09-support-desk-clone (Р-3) — вендор-эксклюзивная встроенная
+   * служба поддержки. НЕ продаётся через тариф: `false` во ВСЕХ тирах;
+   * включается только per-Org для нашей вендор-Org через
+   * `OrgEntitlement.featureOverrides`. «Решение владельца» (Ship-On §8б).
+   */
+  | 'feature.support_desk';
 
 /** Все quota-ключи.
  *
@@ -131,6 +138,8 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.memory_entities_for_members',
   'feature.chatbox',
   'feature.bitrix',
+  // ТЗ 2026-06-09 support-desk — вендор-эксклюзив, false во всех тирах.
+  'feature.support_desk',
 ] as const;
 
 /** Полный список квот. */
@@ -238,6 +247,10 @@ const BASIC_FEATURES: Record<FeatureKey, boolean> = {
   // пока admin Org явно не откроет через `/api/v1/admin/org/memory-access`.
   'feature.memory_regulations_for_members': false,
   'feature.memory_entities_for_members': false,
+  // ТЗ 2026-06-09 support-desk (Р-3) — вендор-эксклюзив. false во всех тирах
+  // (включая spread в PRO/ENTERPRISE/STANDARD); вендор-Org включается через
+  // OrgEntitlement.featureOverrides, не тарифом.
+  'feature.support_desk': false,
 };
 
 const PRO_FEATURES: Record<FeatureKey, boolean> = {

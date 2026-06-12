@@ -486,6 +486,44 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
         },
         'transcribeOneTrack: Vox транскрипция получена',
       );
+
+      // #74 — пустой результат (нет слов и текста). Различаем тишину
+      // (size>0, dur>0) от битого/недогруженного аудио (size≈0 / dur≈0). При
+      // подозрении на битое аудио делаем ОДИН ре-submit свежей задачи.
+      const firstEmpty =
+        (voxResult.words?.length ?? 0) === 0 &&
+        voxResult.transcriptText.trim().length === 0;
+      if (firstEmpty) {
+        const minAudioBytes = await this.cfg.getDynamic<number>(
+          'transcribe.minAudioBytes',
+          undefined,
+          1024,
+        );
+        const looksBroken =
+          audio.byteLength < minAudioBytes ||
+          (voxResult.durationSeconds ?? 0) <= 0;
+        if (looksBroken) {
+          this.logger.warn(
+            {
+              meetingId, trackId: track.id, identity: track.livekitIdentity,
+              audioSizeBytes: audio.byteLength,
+              durationSeconds: voxResult.durationSeconds ?? 0,
+              minAudioBytes,
+            },
+            'transcribeOneTrack: пустой результат + малое/нулевое аудио — один ре-submit свежей задачи',
+          );
+          await this.prisma.audioTrack.update({
+            where: { id: track.id },
+            data: { voxTaskId: null },
+          });
+          const resub = await this.vox.submit(audio, {});
+          await this.prisma.audioTrack.update({
+            where: { id: track.id },
+            data: { voxTaskId: resub.taskId },
+          });
+          voxResult = await this.vox.poll(resub.taskId, pollOpts);
+        }
+      }
       success = true;
     } catch (err) {
       errorText = err instanceof Error ? err.message : String(err);
@@ -510,6 +548,30 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       throw new Error('transcribe: voxResult пуст');
     }
 
+    // #74 — финальный результат всё ещё пуст: делаем дорожку ЗАМЕТНОЙ в логах
+    // (иначе спикер молча исчезает из ленты). Различаем причину: битое/нулевое
+    // аудио vs тишина (есть аудио и длительность, но речи нет).
+    const finalEmpty =
+      (voxResult.words?.length ?? 0) === 0 &&
+      voxResult.transcriptText.trim().length === 0;
+    if (finalEmpty) {
+      const durSec = voxResult.durationSeconds ?? 0;
+      const reason =
+        audio.byteLength < 1024 || durSec <= 0
+          ? 'битое/недогруженное аудио (size≈0 или dur≈0)'
+          : 'вероятно тишина (есть аудио и длительность, но речи нет)';
+      this.logger.warn(
+        {
+          meetingId, trackId: track.id, identity: track.livekitIdentity,
+          speakerName: track.participantName,
+          audioSizeBytes: audio.byteLength,
+          durationSeconds: durSec,
+          reason,
+        },
+        'transcribeOneTrack: дорожка расшифровалась ПУСТОЙ — спикер исчезнет из ленты',
+      );
+    }
+
     // 3. Сохраняем в БД (TranscriptTrack). upsert per-track — идемпотентно по
     // (transcriptId, livekitIdentity): повтор не создаёт дублей.
     this.logger.debug(
@@ -524,6 +586,14 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       transcriptText: voxResult.transcriptText,
       durationSeconds: voxResult.durationSeconds,
       words: (voxResult.words ?? []) as unknown as Prisma.InputJsonValue,
+      // Посегментные тайминги (slim-форма Б2): спикер известен по дорожке,
+      // поэтому speaker/speaker_id не храним. Источник — Vox
+      // extendedResult.segments (приходят и при diarizationEnabled:false).
+      segments: (voxResult.segments ?? []).map((s) => ({
+        startSec: s.startSec,
+        endSec: s.endSec,
+        text: s.text,
+      })) as unknown as Prisma.InputJsonValue,
     };
     await this.prisma.transcriptTrack.upsert({
       where: {

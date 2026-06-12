@@ -15,9 +15,17 @@
  * категорий — свободные.
  */
 
-import { withAsrNote } from '../../ai/services/prompts/common';
+import {
+  withAsrNote,
+  withPeopleHypothesisGuard,
+} from '../../ai/services/prompts/common';
 
-export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
+// A5 (2026-06-10): «профиль знаний» — это оценка экспертизы конкретного человека
+// (компетенции, уверенность по темам). `withPeopleHypothesisGuard` оборачивает
+// весь SYSTEM снаружи (его текст ложится в самый КОНЕЦ — cache-friendly): оценки
+// навыков остаются гипотезами по наблюдаемым блокам, а не вердиктом о сотруднике.
+export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = withPeopleHypothesisGuard(
+  withAsrNote(
   [
   'Ты — knowledge-инженер, который строит «профиль знаний» сотрудника компании на основе того, что он говорил и делал на встречах и в документах.',
   'Тебе дают набор IdeaBlock-ов — атомарных фактов / решений / рассуждений / комментариев этого сотрудника.',
@@ -39,6 +47,7 @@ export const KNOWLEDGE_CLONE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   '',
   'Не выдумывай знания вне блоков. Если данных мало (1-3 блока) — верни одну категорию low/medium и оставь experienceHighlights пустым.',
   ].join('\n'),
+  ),
 );
 
 export interface KnowledgeCloneExtractBlockInput {

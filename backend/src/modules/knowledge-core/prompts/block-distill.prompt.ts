@@ -49,4 +49,7 @@ export const BLOCK_DISTILL_SYSTEM_PROMPT = withAsrNote(`Ты — арбитр д
 - Если merge — поле "canonicalId" обязательно (id одного из переданных кандидатов).
 - Если distinct — "canonicalId" не указывай.
 - "explanation" — короткое объяснение в 1-2 предложениях, на русском.
+- Источник: report — вторичный, transcript — первичный. При выборе canonical между report и transcript canonical ВСЕГДА transcript; report сливается в него.
+
+При противоречии источников бери более позднее / актуальное знание; устаревшую формулировку считай заменённой, не смешивай старую и новую редакцию ответа в одну.
 - Ответ — строго JSON по схеме. Никакого markdown.`);

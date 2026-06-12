@@ -45,6 +45,7 @@ import { Button } from '@/ui/shadcn/button';
 
 import { AdminEmpty } from '../../../AdminStateViews';
 import { TaskTypeDetailsClient } from '../../../ai-models/[taskType]/TaskTypeDetailsClient';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 interface Props {
   taskType: string;
@@ -61,7 +62,7 @@ export function RoutingDetailClient({ taskType }: Props) {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'AI и модели' },
         { label: 'Роутинг моделей', href: '/admin/ai/routing' },
         { label: taskType },

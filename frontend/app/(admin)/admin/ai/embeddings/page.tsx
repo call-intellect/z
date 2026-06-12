@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { EmbeddingsSettingsClient } from './EmbeddingsSettingsClient';
 
 export const metadata: Metadata = {
-  title: 'Эмбеддинги — Z-Admin',
+  title: 'Эмбеддинги',
 };
 
 /**

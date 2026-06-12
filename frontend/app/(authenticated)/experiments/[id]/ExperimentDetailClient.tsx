@@ -93,7 +93,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -101,7 +101,7 @@ export function ExperimentDetailClient({ id }: { id: string }) {
     return (
       <AdminForbidden
         title="Нет прав на просмотр эксперимента"
-        description="Попросите owner или admin Org выдать вам право experiment:read."
+        description="Попросите владельца или администратора организации выдать вам право experiment:read."
       />
     );
   }
@@ -130,14 +130,6 @@ export function ExperimentDetailClient({ id }: { id: string }) {
             {EXPERIMENT_STATUS_LABEL[detail.status]}
           </span>
         </div>
-        <p className="text-xs text-fg-secondary">
-          ID: <code className="font-mono">{detail.id}</code>
-          {detail.entityId ? (
-            <>
-              {' · '}entityId: <code className="font-mono">{detail.entityId}</code>
-            </>
-          ) : null}
-        </p>
       </header>
 
       <section className="rounded-md border border-border-subtle bg-bg-card p-4">

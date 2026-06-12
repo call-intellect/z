@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Flag, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -98,7 +98,7 @@ export function CardCorrectionActions({
     } catch (e) {
       if (e instanceof Error && e.message === 'no-changes') throw e;
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось сохранить правку',
+        humanizeApiError(e, 'Не удалось сохранить правку'),
       );
       throw e;
     }
@@ -112,7 +112,7 @@ export function CardCorrectionActions({
       onDone?.();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось отправить карточку',
+        humanizeApiError(e, 'Не удалось отправить карточку'),
       );
       throw e;
     }

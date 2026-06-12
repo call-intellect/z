@@ -37,6 +37,8 @@ import {
 } from '@/ui/shadcn/dialog';
 import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
+import { entityTypeLabel } from '@/domain/entity';
+import { ReadablePayload } from '@/ui/readable-payload';
 
 import {
   AdminError,
@@ -68,7 +70,7 @@ export function EntityGraphClient({ entityId }: { entityId: string }) {
     return (
       <AdminForbidden
         title="Нет организации"
-        description="Вы не состоите ни в одной Org."
+        description="Вы не состоите ни в одной организации."
       />
     );
   }
@@ -401,7 +403,7 @@ function EdgeDetailsPanel({
         <div>
           <p className="text-muted-foreground">Тип связи</p>
           <p className="mt-0.5 font-medium text-foreground">
-            {edge.relationType}
+            {edge.relationLabel}
           </p>
         </div>
         <div className="col-span-2">
@@ -418,10 +420,8 @@ function EdgeDetailsPanel({
         </div>
         {edge.attributes && Object.keys(edge.attributes).length > 0 && (
           <div className="col-span-2">
-            <p className="text-muted-foreground">Атрибуты</p>
-            <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap break-words text-[11px] text-foreground/90">
-              {JSON.stringify(edge.attributes, null, 2)}
-            </pre>
+            <p className="mb-1 text-muted-foreground">Атрибуты</p>
+            <ReadablePayload value={edge.attributes} />
           </div>
         )}
       </div>
@@ -502,7 +502,9 @@ function NodeDetailsPanel({
       <div className="rounded-lg border border-border-subtle bg-bg-overlay p-3 text-xs">
         <p>
           <span className="text-muted-foreground">Тип: </span>
-          <span className="font-medium text-foreground">{node.entityType}</span>
+          <span className="font-medium text-foreground">
+            {entityTypeLabel(String(node.entityType).toLowerCase())}
+          </span>
         </p>
         <p className="mt-1">
           <span className="text-muted-foreground">Глубина от центра: </span>

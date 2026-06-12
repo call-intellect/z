@@ -573,6 +573,62 @@ export class IssuesService {
     return { total, unread: total };
   }
 
+  /**
+   * ТЗ 2026-06-10 §2 Ф5 — лёгкий листинг ОТКРЫТЫХ задач исполнителя для
+   * Telegram-читалки «мои задачи». Открытые = `IssueState.category` НЕ
+   * `completed`/`cancelled` (либо задача без статуса). Фильтр по
+   * `tenantId` + `assignees.userId` (есть `@@index([userId])` на
+   * IssueAssignee). Сортировка: с дедлайном раньше (NULLS LAST по умолчанию
+   * Postgres для ASC), затем новые. Возвращает только поля для рендера.
+   */
+  async listOpenForAssignee(args: {
+    tenantId: string;
+    userId: string;
+    limit: number;
+  }): Promise<{
+    items: Array<{
+      identifier: string;
+      title: string;
+      stateName: string | null;
+      dueDate: Date | null;
+    }>;
+    total: number;
+  }> {
+    const where: Prisma.IssueWhereInput = {
+      tenantId: args.tenantId,
+      deletedAt: null,
+      archivedAt: null,
+      assignees: { some: { userId: args.userId } },
+      OR: [
+        { state: { category: { notIn: ['completed', 'cancelled'] } } },
+        { stateId: null },
+      ],
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.issue.findMany({
+        where,
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+        take: args.limit,
+        select: {
+          identifier: true,
+          title: true,
+          dueDate: true,
+          state: { select: { name: true } },
+        },
+      }),
+      this.prisma.issue.count({ where }),
+    ]);
+    return {
+      items: rows.map((r) => ({
+        identifier: r.identifier,
+        title: r.title,
+        stateName: r.state?.name ?? null,
+        dueDate: r.dueDate,
+      })),
+      total,
+    };
+  }
+
   /** Найти задачу по id (глобальный id) + проверка tenant. */
   async findById(id: string, tenantId: string): Promise<IssueResponseDto> {
     return this.assemble(id, tenantId);

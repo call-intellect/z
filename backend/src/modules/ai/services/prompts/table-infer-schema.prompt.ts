@@ -16,7 +16,7 @@
  *     properties: [{ name, type, isPrimary, config? }] }
  */
 
-import { withInjectionGuard } from './common';
+import { withInjectionGuard, wrapUserData } from './common';
 
 /**
  * Каталог допустимых типов колонок. Должен совпадать с `TablePropTypeSchema`
@@ -133,7 +133,10 @@ export function buildTableInferSchemaPrompt(
     `Доступные типы привязки к графу (entitySync): ${args.availableSyncTypes.join(', ') || '(нет)'}.`,
     '',
     'Запрос пользователя:',
-    args.userPrompt.trim(),
+    // Сырой пользовательский ввод (NL-описание таблицы или данные из файла) —
+    // оборачиваем в маркеры данных (anti-injection). SYSTEM держит
+    // INJECTION_GUARD_NOTE через withInjectionGuard выше.
+    wrapUserData(args.userPrompt.trim()),
     '',
     'Верни JSON-объект схемы таблицы по правилам из системного сообщения.',
   ].join('\n');

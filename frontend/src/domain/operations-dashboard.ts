@@ -68,6 +68,8 @@ export interface OperationsOverviewDomain {
   frictionsResolvedCount: number;
   /** ТЗ-2 Ф2 — kill-switch инфо-перекомпоновки (default true). */
   reworkEnabled: boolean;
+  /** Недельный инфлоу за 12 недель (old→new, null=нет данных). */
+  weeklyInflow: { blockers: Array<number | null>; frictions: Array<number | null> };
 }
 
 function toPercent(v: number | null | undefined): number | null {
@@ -121,6 +123,7 @@ export function fromOperationsOverviewApi(
     blockersResolvedCount: api.blockersResolvedCount ?? 0,
     frictionsResolvedCount: api.frictionsResolvedCount ?? 0,
     reworkEnabled: api.reworkEnabled ?? true,
+    weeklyInflow: api.weeklyInflow ?? { blockers: [], frictions: [] },
   };
 }
 

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { FeatureFlagsClient } from './FeatureFlagsClient';
 
 export const metadata: Metadata = {
-  title: 'Feature flags — Z-Admin',
+  title: 'Feature flags',
 };
 
 /**

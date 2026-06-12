@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import { withPeopleHypothesisGuard } from '../../ai/services/prompts/common';
 
 /**
  * Pulse Wave 3 §3.5 — Reflection-Quality-Scorer cron.
@@ -28,7 +29,11 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
  * выход), включаем сразу. Если потребуется отключение — добавим
  * `pulse.reflection_quality.enabled` через `cfg.getDynamic` в next iteration.
  */
-const REFLECTION_QUALITY_SYSTEM_PROMPT = `Ты — оценщик качества рефлексии в чек-ине сотрудника. Оцени чек-ин по 3 осям 0..1:
+// A5 (2026-06-10): оценка рефлексии сотрудника — это оценка человека (качество
+// его чек-ина). `withPeopleHypothesisGuard` дописывается в КОНЕЦ SYSTEM
+// (cache-friendly): оценка остаётся гипотезой по наблюдаемому тексту, а не
+// вердиктом о сотруднике (скор приватен, не показывается человеку как приговор).
+const REFLECTION_QUALITY_SYSTEM_PROMPT = withPeopleHypothesisGuard(`Ты — оценщик качества рефлексии в чек-ине сотрудника. Оцени чек-ин по 3 осям 0..1:
 
 1. depth — глубина (сколько содержательных слов, конкретики, контекста)
 2. concreteness — конкретность (есть ли action items, цифры, имена, сроки)
@@ -37,7 +42,7 @@ const REFLECTION_QUALITY_SYSTEM_PROMPT = `Ты — оценщик качеств
 Жёсткие правила:
 - Верни строго JSON: { depth: 0.X, concreteness: 0.X, variety: 0.X }.
 - Числа от 0 до 1.
-- Без объяснений в JSON, без markdown.`;
+- Без объяснений в JSON, без markdown.`);
 
 const REFLECTION_QUALITY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

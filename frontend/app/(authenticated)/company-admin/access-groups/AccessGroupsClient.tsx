@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { ChevronDown, Loader2, ShieldCheck, UserPlus, X } from 'lucide-react';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { knowledgeAccessApi } from '@/api/knowledge-access.api';
 import { personsDomainApi, type PersonDomainApi } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -221,7 +221,7 @@ function DepartmentVisibilityRow({
       toast.success(`Сохранено: «${subject.name}» видит ${draft.size} отделов`);
       onSaved();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
     } finally {
       setSaving(false);
     }
@@ -389,7 +389,7 @@ function GroupMembers({
         toast.success(res.added ? 'Человек добавлен' : 'Уже в группе');
         refresh();
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось добавить');
+        toast.error(humanizeApiError(e, 'Не удалось добавить'));
       } finally {
         setBusyPersonId(null);
       }
@@ -405,7 +405,7 @@ function GroupMembers({
         toast.success('Человек убран из группы');
         refresh();
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : 'Не удалось убрать');
+        toast.error(humanizeApiError(e, 'Не удалось убрать'));
       } finally {
         setBusyPersonId(null);
       }
@@ -538,7 +538,7 @@ function AddMemberPicker({
     return all
       .filter((p: PersonDomainApi) => !excludeIds.has(p.id))
       .filter((p: PersonDomainApi) =>
-        q.length === 0 ? false : p.fullName.toLowerCase().includes(q),
+        q.length === 0 ? false : (p.fullName?.toLowerCase().includes(q) ?? false),
       )
       .slice(0, 8);
   }, [personsSwr.data, excludeIds, query]);

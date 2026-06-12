@@ -58,6 +58,7 @@ import {
   AdminLoading,
 } from '../../AdminStateViews';
 import { useAdminQuery } from '../../useAdminQuery';
+import { adminRootCrumb } from '@/ui/components/admin/brand';
 
 const MIN_REASON_LENGTH = 10;
 const MAX_EXTRA_SEATS = 1000;
@@ -146,7 +147,7 @@ export function PlansClient() {
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Z-Admin', href: '/admin' },
+        adminRootCrumb(),
         { label: 'Тенанты' },
         { label: 'Тариф' },
       ]}

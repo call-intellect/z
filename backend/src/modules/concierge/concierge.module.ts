@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ConciergeController } from './concierge.controller';
+import { AssistantChannelBridge } from './services/assistant-channel.bridge';
 import { ConciergeContextBuilderService } from './services/concierge-context-builder.service';
 import { ConciergeQuotaService } from './services/concierge-quota.service';
 import { ConciergeUndoLogService } from './services/concierge-undo-log.service';
@@ -36,6 +37,11 @@ import { ConciergeQuotaResetCron } from './workers/concierge-quota-reset.cron';
     ConciergeStepScorerService,
     ConciergeQuotaResetCron,
     ConciergeConversationSummarizerCron,
+    // Ф5 assistant-channels (2026-06-11) — мост «Telegram/MAX → помощник»:
+    // подписка на inbound assistant_turn в onModuleInit (паттерн
+    // ChatV2OmnichannelBridge). ConversationalService и RedisService — из
+    // @Global модулей, импорт не нужен (циклической зависимости нет).
+    AssistantChannelBridge,
   ],
   exports: [
     ConciergeService,

@@ -21,6 +21,7 @@ import {
   Filter,
   ListChecks,
   LogIn,
+  MoreVertical,
   Plus,
   Search,
   Sparkles,
@@ -36,7 +37,7 @@ import {
 import { meetingsApi } from '@/api/meetings.api';
 import { tagsApi } from '@/api/tags.api';
 import { exportsApi } from '@/api/exports.api';
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   meetingSummaryFromApi,
   meetingDurationSeconds,
@@ -249,7 +250,38 @@ export function MeetingsJournalReal() {
       setChecked(new Set());
       void mutate();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка удаления';
+      const msg = humanizeApiError(e, 'Ошибка удаления');
+      toast.error(msg);
+    }
+  };
+
+  const onDeleteOne = async (id: string) => {
+    const ok = await ask({
+      title: 'Удалить встречу?',
+      description:
+        'Встреча и её запись исчезнут из списка. Восстановить её самостоятельно нельзя.',
+      confirmLabel: 'Удалить',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await meetingsApi.softDelete(id);
+      toast.success('Встреча удалена');
+      setChecked((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      // Если удалили встречу, открытую в detail-панели — сбрасываем выбор.
+      if (selectedId === id) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('selected');
+        const qs = params.toString();
+        router.replace(`/meetings${qs ? `?${qs}` : ''}`);
+      }
+      void mutate();
+    } catch (e) {
+      const msg = humanizeApiError(e, 'Ошибка удаления');
       toast.error(msg);
     }
   };
@@ -264,7 +296,7 @@ export function MeetingsJournalReal() {
       toast.success(`Теги обновлены у ${ids.length}`);
       setChecked(new Set());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка';
+      const msg = humanizeApiError(e, 'Ошибка');
       toast.error(msg);
     }
   };
@@ -283,7 +315,7 @@ export function MeetingsJournalReal() {
       toast.success('Экспорт запущен. Готовый ZIP появится в /settings/exports.');
       setChecked(new Set());
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Ошибка экспорта';
+      const msg = humanizeApiError(e, 'Ошибка экспорта');
       toast.error(msg);
     }
   };
@@ -422,6 +454,7 @@ export function MeetingsJournalReal() {
                             });
                           }}
                           onClick={() => onSelect(m.id)}
+                          onDelete={() => void onDeleteOne(m.id)}
                         />
                       </li>
                     ))}
@@ -465,12 +498,14 @@ function MeetingRowCard({
   checked,
   onToggleCheck,
   onClick,
+  onDelete,
 }: {
   item: ReturnType<typeof meetingSummaryFromApi>;
   active: boolean;
   checked: boolean;
   onToggleCheck: () => void;
   onClick: () => void;
+  onDelete: () => void;
 }) {
   const durSec = meetingDurationSeconds(item);
   const durMs = durSec ? durSec * 1000 : null;
@@ -541,6 +576,36 @@ function MeetingRowCard({
             className="mt-1 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-warning"
           />
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Действия со встречей"
+              className="-mr-1 -mt-0.5 shrink-0 rounded p-1 text-fg-tertiary opacity-100 transition-colors hover:bg-bg-overlay hover:text-fg-primary focus-visible:opacity-100 data-[state=open]:bg-bg-overlay data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+            >
+              <MoreVertical size={14} strokeWidth={1.75} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-48"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuItem onSelect={() => void copyMeetingLink(item.id)}>
+              <Copy size={14} />
+              Скопировать ссылку
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onDelete()}
+              className="text-danger focus:text-danger"
+            >
+              <Trash2 size={14} />
+              Удалить
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-6 text-xs text-fg-tertiary">
         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -998,7 +1063,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
   const participants = data.participants ?? [];
   const recording = data.recording;
   const aiResult = data.aiResult;
-  // Р6: единый селектор канонической сводки (summaryFast ?? summaryV2 ?? summary),
+  // Р6: единый селектор канонической сводки (summaryFast ?? summary),
   // чтобы превью журнала совпадало со страницей результата (конец «дубля сводок»).
   const summary = pickPrimarySummary(aiResult)?.markdown ?? null;
   // S6-03: задачи из таблицы Task (тот же источник, что страница результата),
@@ -1092,7 +1157,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
             <div className="flex flex-col gap-6">
               {summary ? (
                 <section>
-                  <SectionHeader icon={<Sparkles size={14} />} title="Summary" />
+                  <SectionHeader icon={<Sparkles size={14} />} title="Краткое содержание" />
                   <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
                     <p className="m-0 text-sm leading-relaxed text-fg-primary">
                       {summary}
@@ -1120,7 +1185,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                         {p.name}
                         {p.role === 'host' && (
                           <span className="ml-1 rounded bg-accent-muted px-1 text-[10px] text-accent">
-                            host
+                            ведущий
                           </span>
                         )}
                       </span>
@@ -1133,7 +1198,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
               <section>
                 <SectionHeader
                   icon={<ListChecks size={14} />}
-                  title="Action items"
+                  title="Задачи"
                   right={
                     <span className="text-xs text-fg-tertiary">
                       {tasks.length} всего

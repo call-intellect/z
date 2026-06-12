@@ -94,3 +94,28 @@ export const STATUS_TONE: Record<'ok' | 'warning' | 'risk', { c: string; bg: str
   warning: { c: CHART.amber, bg: 'oklch(0.84 0.16 80 / 0.14)' },
   risk: { c: CHART.red, bg: 'oklch(0.66 0.22 25 / 0.16)' },
 };
+
+/* ------------------------------------------------------------------ */
+/* Цвет тона KPI по порогу (порт KpiHero.thresholdTone)               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Цвет тона для KPI по порогу (порт KpiHero.thresholdTone).
+ * normal: value>=green→mint, >=yellow→amber, иначе red.
+ * inverted (меньше=лучше): value<=green→mint, <=yellow→amber, иначе red.
+ * threshold отсутствует → нейтральный CHART.dim.
+ */
+export function kpiTone(
+  value: number,
+  threshold?: { green: number; yellow: number; inverted?: boolean },
+): string {
+  if (!threshold) return CHART.dim;
+  if (threshold.inverted) {
+    if (value <= threshold.green) return CHART.mint;
+    if (value <= threshold.yellow) return CHART.amber;
+    return CHART.red;
+  }
+  if (value >= threshold.green) return CHART.mint;
+  if (value >= threshold.yellow) return CHART.amber;
+  return CHART.red;
+}

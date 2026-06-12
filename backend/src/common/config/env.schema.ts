@@ -126,6 +126,14 @@ const LlmRouterSchema = z.object({
     .int()
     .positive()
     .default(300_000),
+  /**
+   * retest3 Ф5 #51/Р3 — основной провайдер ГЛАВНОГО отчёта встречи
+   * (`LlmFallbackService`, потребитель — `analyze.worker`). `deepseek` (Ship-On:
+   * фича готова → включена; работает кэш DeepSeek + per-agent pro-модель) с
+   * каскадом DeepSeek→MiniMax→OpenAI. `minimax` оставлен как kill-switch-откат
+   * (дословно прежний каскад MiniMax→OpenAI).
+   */
+  LLM_MAIN_REPORT_PRIMARY: z.enum(['minimax', 'deepseek']).default('deepseek'),
 });
 
 const VoxSchema = z.object({
@@ -149,11 +157,12 @@ const DeepSeekSchema = z.object({
   DEEPSEEK_DEFAULT_MODEL: z.string().min(1).default('deepseek-v4-flash'),
   // ТЗ-3 Фаза 3 — форсить вызов synthetic-tool (`tool_choice:{type:function}`)
   // вместо 'auto' при autoConvert (json_schema → tool) для НЕ-thinking
-  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу. ДЕФОЛТ OFF:
-  // forced tool_choice — внешне-наблюдаемое поведение LLM-API, требует прод-пробу
-  // agent-lia; включает владелец после пробы. При OFF поведение = текущее ('auto').
-  // Guard в deepseek.service сам откатывает на 'auto' при format-400 от прокси.
-  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(false),
+  // deepseek-моделей, чтобы flash отдавал структуру, а не прозу.
+  // ДЕФОЛТ ON (Ship-On, retest3 #56/Р2): фича готова — выкатываем включённой.
+  // Это kill-switch: при инциденте можно выставить false, действий владельца не
+  // требует. Guard в deepseek.service сам откатывает на 'auto' при format-400
+  // от прокси (и не форсит thinking-модели — они 400'ят на forced tool_choice).
+  LLM_DEEPSEEK_FORCE_TOOL_CHOICE_ENABLED: zBool(true),
 });
 
 const OllamaSchema = z.object({
@@ -398,6 +407,52 @@ const AiFeatureFlagsSchema = z.object({
    * выставить `false` — `−1` LLM-вызов MiniMax (ops-решение).
    */
   SUMMARY_AGENT_ENABLED: zBool(true),
+  /**
+   * Волна 4 B0 (2026-06-10) — kill-switch агента `client-meeting-split`
+   * (нейтральный ПРОТОКОЛ встречи наружу для клиента, free-text). При `true`
+   * (default) для клиентских типов встреч (sales/customer_success/partner/
+   * custdev) `analyze.worker` дополнительно генерит протокол и мержит его в
+   * `AiResult.structuredData.client_protocol_md`. При `false` — пропуск (не
+   * валит основной отчёт). Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  CLIENT_PROTOCOL_ENABLED: zBool(true),
+  /**
+   * Волна 6 Стадия C, A7 (2026-06-10) — kill-switch агента-компилятора
+   * орг-документа (`compile-org-document`). При `true` (default) на verdict
+   * merge/extension от regulation-dedupe специалист 3.1 собирает структурный
+   * `contentMd` через компилятор (вместо plain-update поля). При `false` —
+   * legacy plain-update (фича не валит dedupe-путь). Аварийный рубильник: фича
+   * готова и выкатывается ON.
+   */
+  DOC_COMPILER_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 prompts-finalization A1.2 — kill-switch строгого гейта
+   * `isOrgNorm` для regulation-экстракторов. При `true` (default ON) фрагменты
+   * с `isOrgNorm=false` (чужая практика / гипотетика / разовое поручение / голое
+   * упоминание) НЕ создают карточку-документ. При `false` — старое поведение
+   * «создавать всегда» (recall-страховка при ложных срабатываниях гейта).
+   * Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  REGULATION_GATE_STRICT_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 chatbox-tasks Ф5 — kill-switch извлечения задач из переписки
+   * Чат-бокса. При `true` (default ON) закрытая сессия чата после моста в
+   * knowledge-core порождает `Task(sourceType='chatbox')` тем же разборщиком,
+   * что и встреча. При `false` — задачи из переписки не создаются (память/граф
+   * не трогаются). Аварийный рубильник: фича готова и выкатывается ON.
+   * AdminSetting-ключ `chatbox.taskExtraction.enabled` (ENV — fallback).
+   */
+  CHATBOX_TASK_EXTRACTION_ENABLED: zBool(true),
+  /**
+   * ТЗ 2026-06-11 chatbox-tasks Ф6 — kill-switch единого межисточникового
+   * дедупа задач. При `true` (default ON) кандидат-задача, совпавшая с уже
+   * открытой задачей tenant (из ЛЮБОГО источника), НЕ создаётся повторно —
+   * переписка привязывается к существующей задаче через `TaskSource`. При
+   * `false` — дедуп выключен, кандидаты создаются как новые задачи (non-lossy).
+   * Неотделим от Ф5 (Р-4). AdminSetting-ключ `tasks.crossSourceDedupe.enabled`
+   * (ENV — fallback). Аварийный рубильник: фича готова и выкатывается ON.
+   */
+  TASKS_CROSS_SOURCE_DEDUPE_ENABLED: zBool(true),
 });
 
 /** Daily-rotated salt для anti-cheat подсчёта view (ipHash) — на проде хранится в secret-storage. */
@@ -630,30 +685,16 @@ const KnowledgeCoreSchema = z.object({
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 
-  // ── Фаза 5: meeting-analyze-v2 (Tasks-2.0/Chapters-2.0/Summary-2.0) ──
-  /**
-   * Master-флаг v2-агентов. По умолчанию `false`, чтобы legacy
-   * `tasks-extract.worker`/`chapters.worker` остались единственным источником
-   * данных в UI. При `true` — `meeting-analyze-v2.cron` начинает enqueue'ить
-   * jobs, которые пишут в `Task.evidenceBlockIds`/`MeetingChapter.evidenceBlockIds`/
-   * `AiResult.summaryV2` — параллельно legacy.
-   *
-   * Включается на проде вручную для A/B-сравнения. Удалить legacy — отдельная
-   * фаза после ручного решения владельца продукта (см. decisions-log).
-   */
+  // ── DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2 + extractor-v2) удалён ──
+  // Воркер/cron/очередь/extractor-сервисы снесены как мёртвый код (прод никогда
+  // не включал `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`). ENV-ключи оставлены инертными,
+  // чтобы не трогать env-валидацию/admin-registry; ничего больше их не читает.
+  // Колонки `AiResult.summaryV2*`/`Meeting.analyzeV2*` тоже остались в БД (без миграции).
+  /** @deprecated инертный флаг снятого v2-стека — больше не влияет ни на что. */
   KNOWLEDGE_CORE_V2_AGENTS_ENABLED: zBool(false),
-  /**
-   * Cron-расписание `meeting-analyze-v2.cron` — каждые 10 минут по умолчанию.
-   * Cron-выражение в декораторе литералом, ENV-значение для логов и для
-   * будущей перерегистрации через `SchedulerRegistry`.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_CRON: z.string().min(1).default('*/10 * * * *'),
-  /**
-   * Дебаунс enqueue в `core.meeting-analyze-v2`: после `meeting.status='ai_ready'`
-   * мы ждём 2 минуты, чтобы block-ingest/distill успели стабилизироваться
-   * (canonical-блоки могут «доезжать» спустя несколько секунд после ai_ready).
-   * Несколько событий по одной встрече за окно складываются в один job.
-   */
+  /** @deprecated инертная ENV снятого v2-стека. */
   MEETING_ANALYZE_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(120_000),
 
   // ── ТЗ 2026-05-25: meeting-report-fast (объединённый отчёт по сырому транскрипту) ──
@@ -667,11 +708,20 @@ const KnowledgeCoreSchema = z.object({
    *
    * Default `true` — на dev включаем сразу; на prod выключать через ENV
    * до явного подтверждения качества (kill-switch).
-   *
-   * Старая цепочка `meeting-analyze-v2` НЕ переключается этим флагом —
-   * она имеет собственный `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`.
    */
   MEETING_REPORT_FAST_ENABLED: zBool(true),
+
+  /**
+   * Kill-switch вторичного пути «отчёт встречи → граф» (ТЗ
+   * plans/tz/2026-06-11-report-to-graph-phase2.md §4). Ship-On: дефолт ON.
+   * При `true` после готовности fast-отчёта (`reportFastStatus∈{ready,partial}`)
+   * `ReportIngestListener` заносит готовый отчёт (summaryFast + структурные
+   * выводы по типу встречи) в граф знаний как ВТОРИЧНЫЙ источник
+   * (`Source(type=meeting_report)`, `IdeaBlock.primarySource='report'`).
+   * Тип флага — аварийный рубильник: нужен только для экстренного отключения
+   * при инциденте, действий владельца не требует.
+   */
+  REPORT_INGEST_ENABLED: zBool(true),
 
   // ── Фаза 6: единый AI-чат поверх IdeaBlock'ов (5 scope: org/meeting/card/theme/entity) ──
   /**
@@ -717,6 +767,15 @@ const KnowledgeCoreSchema = z.object({
    * clone_style не реализован — fallback на synthetic.
    */
   CHAT_V2_DEFAULT_MODE: z.enum(['factual', 'synthetic', 'clone_style']).default('synthetic'),
+  /**
+   * §4 Ф1 (2026-06-11) — kill-switch стриминга стадий прогресса AI-чата
+   * (SSE-эндпоинт `POST /api/v1/chat-v2/messages/stream`). ON по умолчанию
+   * (Ship-On): эндпоинт шлёт стадии «Понимаю вопрос → Ищу в памяти → Пишу
+   * ответ» через Server-Sent Events. При OFF — эндпоинт возвращает 503, фронт
+   * откатывается на синхронный `POST /api/v1/chat-v2/messages` (он неизменен).
+   * Это аварийный рубильник, действий владельца не требует.
+   */
+  CHAT_V2_STREAMING_ENABLED: zBool(true),
 
   // ── KC-Temporal (2026-05-25) W1.1 Bitemporal fields ──────────────────
   /**
@@ -1015,6 +1074,12 @@ const MaxBotChannelSchema = z.object({
   BOT_VOICE_ENABLED: zBool(true),
   BOT_DOCUMENT_ENABLED: zBool(true),
   BOT_INTENT_CLASSIFIER_ENABLED: zBool(true),
+  // Ф5 assistant-channels (2026-06-11) — kill-switch единого помощника в
+  // каналах: ON (default, Ship-On) — свободный текст/голос из Telegram/MAX
+  // (chat_query/task/show_tasks/free_note) идёт AI-помощнику (ConciergeService,
+  // inbound-тип assistant_turn); чек-ин (план/отчёт) не трогается. OFF —
+  // прежний узкий роутер бит-в-бит (аварийный откат).
+  ASSISTANT_CHANNEL_ROUTING_ENABLED: zBool(true),
   // ChatBox integration (ТЗ 2026-06-05) — базовый URL Public API ChatBox
   // (app.agent-lia.ru / «Call Intellect: Чаты»). Per-tenant токен лежит в
   // ChatboxIntegration.tokenEnc (encrypted), не в ENV. Логически независим
@@ -1160,6 +1225,14 @@ const ProbeSchema = z.object({
    */
   PROBE_RESPONSE_CLASSIFY_ENABLED: zBool(true),
   /**
+   * Cabinet-leftovers §3 (2026-06-11) — само-подтверждение probe субъектом.
+   * При `true` probe «про сотрудника X» (skill/expertise) идёт ПЕРВЫМ самому X
+   * (само-подтверждение), затем главе его отдела, затем owner/admin как
+   * последний fallback. При `false` — старое поведение (глава-only / admin,
+   * субъекту probe НЕ шлётся). Kill-switch, дефолт ON (Ship-On).
+   */
+  PROBE_SUBJECT_ADDRESSING_ENABLED: zBool(true),
+  /**
    * Master-флаг приёма голосовых ответов на probe (Фаза 0.3).
    * Зарезервирован сейчас, чтобы не плодить отдельные ENV-патчи позже.
    * Используется в волне 0.3 (telegram-bot + ASR).
@@ -1211,6 +1284,76 @@ const SkillSchema = z.object({
    * программный отказ ДО вызова модели (анти-deepfake). Default 2.
    */
   CLONE_TOPIC_MIN_BLOCKS: z.coerce.number().int().positive().default(2),
+  // ── TZ clone-method Э0.1 (2026-06-12) — пост-LLM grounding-гейт ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) пост-LLM grounding-гейта
+   * clone-respond: если ответ модели не содержит ни одной валидной
+   * цитаты-опоры (`[BLOCK:id]` / `[DECISION:id]` из subgraph) — ответ
+   * считается ungrounded и заменяется программным отказом
+   * (анти-галлюцинация). Выкл → поведение как до Э0.1 (ответ без опоры
+   * уходит пользователю как есть).
+   */
+  CLONE_RESPOND_GROUNDING_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.2 (2026-06-12) — Reflection-слой принципов роли ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) ночного синтеза принципов
+   * процесса должности (`RolePrincipleSynthesisCron`, 05:30): из
+   * reasoning-блоков носителей роли LLM извлекает обобщённые
+   * `RolePrinciple` с grounding-ссылками. Выкл → принципы роли не
+   * синтезируются, persona продолжает работать без секции принципов.
+   * Пороги (minObservations/dedupThreshold) — НЕ здесь, а в AdminSetting
+   * (`knowledge.rolePrincipleMinObservations` / `…DedupThreshold`).
+   */
+  ROLE_PRINCIPLE_SYNTHESIS_ENABLED: zBool(true),
+  // ── TZ clone-method Э1.3 (2026-06-12) — детектор ценностей/мотивации ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора ценностей/мотивации
+   * (revealed preferences): второй проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет явный trade-off («выбрал одно В УЩЕРБ другому»)
+   * и пишет SkillTrait layer='value' (что ставит выше при конфликте
+   * приоритетов) / layer='motivation' (что драйвит). Выкл → профиль
+   * наполняется только layer='skill' чертами (как до Э1.3).
+   */
+  VALUE_MOTIVATION_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э2.1 (2026-06-12) — детектор маркеров процесса ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) детектора конструктивных
+   * маркеров процесса: третий проход rebuild 3.7 по тем же группам
+   * reasoning-цитат ищет повторяемый ПРИЁМ проработки решений
+   * («перечисляет критерии перед выбором», «перепроверяет оценки
+   * данными») и пишет SkillTrait layer='process_marker'. Оценочные оси
+   * («избегает решений», «не решает сам») запрещены промптом и
+   * код-гардом. Выкл → профиль без process_marker-черт (как до Э2.1).
+   */
+  PROCESS_MARKER_DETECT_ENABLED: zBool(true),
+  // ── TZ clone-method Э3.1 (2026-06-12) — CDM-интервью носителя через probe ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) CDM-интервью носителя роли:
+   * Кора по свежим reasoning-кейсам сама задаёт носителю до 5 не наводящих
+   * вопросов ретроспективного разбора (Critical Decision Method — «почему
+   * выбрали этот вариант», «какие альтернативы отвергли») через
+   * probe-систему; ответ попадает в граф как high-priority reasoning
+   * (signalTypeHint='reasoning'). Выкл → новые CDM-вопросы не задаются;
+   * ответы на уже заданные продолжают обрабатываться. Лимиты — НЕ здесь,
+   * а в AdminSetting (`knowledge.cdmInterviewMaxQuestions`, default 5 /
+   * `knowledge.cdmInterviewCooldownDays`, default 7).
+   */
+  CDM_INTERVIEW_ENABLED: zBool(true),
+  // ── TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona ──
+  /**
+   * Аварийный рубильник (kill-switch, ON) еженедельной поведенческой
+   * валидации persona (`PersonaLayerValidationCron`, вс 07:00 — после
+   * persona-build 06:00 SUN): на реальных кейсах роли (свежие
+   * reasoning-блоки с trustedAnswer) сравнивает ответы клона с persona v1
+   * (baseline «только черты», deprecated v1-промпт) и v2 (все слои метода)
+   * через LLM-judge `persona-behavior-judge`. Результат — только метрика
+   * `clone_persona_layer_score{variant}` + лог: ничего не блокирует и не
+   * меняет (persona v2 уже активна по Ship-On; R10 — без
+   * human-approval-гейтов). Выкл → еженедельная оценка не запускается;
+   * на работу клона не влияет. Число кейсов на роль — НЕ здесь, а в
+   * AdminSetting (`knowledge.personaValidationCasesPerRole`, default 3).
+   */
+  PERSONA_LAYER_VALIDATION_ENABLED: zBool(true),
   // ── ТЗ 2026-05-25 clone-reliability-hardening, Фаза 5 (реактивный rebuild) ──
   /**
    * Сколько новых/замещённых SkillTrait за последние 24ч триггерит
@@ -1331,6 +1474,11 @@ const DialogLayerSchema = z.object({
   CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
   SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
   MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
+  // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — kill-switch извлечения
+  // плана запроса (QueryPlanExtractorService). ON: chat-v2 понимает структуру
+  // вопроса (период/типы/темы/сущности/«я»). Аварийный рубильник — OFF при
+  // инциденте отключает извлечение, retrieval работает как раньше.
+  QUERY_PLAN_EXTRACTION_ENABLED: zBool(true),
   DIALOG_SUMMARIZER_CRON: z.string().min(1).default('*/30 * * * *'),
   DIALOG_SUMMARIZER_KEEP_LAST: z.coerce.number().int().positive().default(6),
   DIALOG_SUMMARIZER_STALENESS_HOURS: z.coerce.number().int().positive().default(12),
@@ -1436,6 +1584,19 @@ const PersonaSchema = z.object({
   //   CONCIERGE_PRM_ENABLED (default false — для Фазы C/D)
   //   CONCIERGE_PRM_SHADOW_SAMPLE_RATE (default 1.0)
   // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
+  //
+  // Ф3 assistant-channels (2026-06-11) — native function-calling в Concierge.
+  // Тем же путём (process.env, см. TypedConfigService.concierge):
+  //   CONCIERGE_NATIVE_TOOLS_ENABLED (default true — kill-switch; ON = tools
+  //   уходят провайдеру нативно через LlmCallParams.tools, SYSTEM без
+  //   JSON-инструкции; OFF = прежняя regex-эмуляция tool_call в тексте)
+  // См. plans/tz/2026-06-11-assistant-channels-telegram-max.md Ф3.
+  //
+  // Ф4 assistant-channels (2026-06-11) — service-режим ToolRouter (каналы
+  // Telegram/MAX без HTTP-cookie). Тем же путём (process.env):
+  //   CONCIERGE_LOOPBACK_BASE_URL (default http://127.0.0.1:3000 — базовый
+  //   URL backend'а для loopback tool-вызовов, когда нет req с baseUrl)
+  // См. plans/tz/2026-06-11-assistant-channels-telegram-max.md Ф4.
 
 });
 
@@ -1484,6 +1645,10 @@ const BetaOpsSchema = z.object({
   //   - COO_WEEKLY_DIGEST_LOCAL_DAY — день недели (0=воскресенье,
   //     1=понедельник, default 1).
   COO_SENTIMENT_ENABLED: zBool(true),
+  // ТЗ 2026-06-10-daily-checkin-to-graph-bridge — kill-switch моста чек-ин →
+  // knowledge-core (CheckinIngestService). ON по умолчанию (Ship-On, Р-B5);
+  // рубильник на случай инцидента в block-ingest, действий владельца не требует.
+  CHECKIN_GRAPH_INGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_ENABLED: zBool(true),
   COO_WEEKLY_DIGEST_LOCAL_HOUR: z.coerce
     .number()
@@ -1674,6 +1839,21 @@ const BudgetSchema = z.object({
 const TrackerSchema = z.object({
   WEBHOOK_HMAC_PREFIX: z.string().min(1).default('kora_wh_'),
   TRACKER_INGEST_QUEUE: z.string().min(1).default('core.raw-events'),
+  // ── Support desk (TZ 2026-06-09 support-desk-clone Ф1) ───────────────
+  // Аварийный kill-switch вендорской службы поддержки. Дефолт ON (Ship-On):
+  // при false `POST /support/tickets` отдаёт 503 SUPPORT_DESK_DISABLED, а
+  // SLA-cron — no-op. Складка в TrackerSchema, чтобы не удлинять `.merge`
+  // цепочку EnvSchema (TS2589). Читается через `cfg.supportDesk.enabled`
+  // (resolveSync: AdminSetting `support_desk.enabled` → ENV → default).
+  SUPPORT_DESK_ENABLED: zBool(true),
+  // Аварийный kill-switch ночного куратора контура поддержки (TZ Ф4). Дефолт ON
+  // (Ship-On): при false `SupportCuratorCron` — no-op. Читается через
+  // `cfg.supportDesk.curatorEnabled` (resolveSync: AdminSetting
+  // `support_desk.curator_enabled` → ENV → default).
+  SUPPORT_CURATOR_ENABLED: zBool(true),
+  // ТЗ 2026-06-10 meeting-visibility — kill-switch «Кому видно». true=действует (Ship-On),
+  // false=аварийный откат к legacy owner-only на всех READ-поверхностях встречи.
+  MEETING_VISIBILITY_ENABLED: zBool(true),
   IDEMPOTENCY_KEY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   TRACKER_WEBHOOK_MAX_RETRIES: z.coerce.number().int().positive().default(5),
   TRACKER_WEBHOOK_RETRY_BACKOFF_INITIAL_MS: z.coerce
@@ -1774,8 +1954,12 @@ const TrackerSchema = z.object({
   // Сложены сюда, в TrackerSchema, чтобы не удлинять `.merge` цепочку EnvSchema
   // (TS2589 — см. NB перед EnvSchema). Логически независимы — `cfg.practiceSkills`.
   //
-  //   - PRACTICE_SKILLS_ENABLED — мастер-флаг retrieval'а в clone-respond.
-  //     Default false — включаем после ручной валидации extraction на одной Org.
+  //   - PRACTICE_SKILLS_ENABLED — аварийный рубильник (kill-switch, тип A)
+  //     retrieval'а PracticeSkill в clone-respond. Фича ВКЛ (default true):
+  //     retrieval подмешивает активные процедуры в ответы клона. Выкл →
+  //     retrieval перестаёт подмешивать процедуры, extraction/evaluator
+  //     продолжают копить shadow (они этим флагом не гейтятся).
+  //     (ТЗ clone-persona-method-layer Э2.1 — Ship-On активация)
   //   - PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT — минимум активных SkillTrait
   //     внутри concept'а, ниже которого extractor пропускает concept.
   //   - PRACTICE_SKILLS_SHADOW_TRAFFIC — стартовый trafficShare для status='shadow'.
@@ -1788,7 +1972,7 @@ const TrackerSchema = z.object({
   //     превышать baseline, чтобы promote из shadow в active.
   //   - PRACTICE_SKILLS_EVAL_ARCHIVE_DELTA — на сколько composite score должен
   //     быть ХУЖЕ baseline, чтобы archive скилл.
-  PRACTICE_SKILLS_ENABLED: zBool(false),
+  PRACTICE_SKILLS_ENABLED: zBool(true),
   PRACTICE_SKILLS_MIN_TRAITS_FOR_EXTRACT: z.coerce.number().int().positive().default(5),
   PRACTICE_SKILLS_SHADOW_TRAFFIC: z.coerce.number().min(0).max(1).default(0.1),
   PRACTICE_SKILLS_KNN_RETRIEVAL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.78),

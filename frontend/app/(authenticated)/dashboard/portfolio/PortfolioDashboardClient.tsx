@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import useSWR, { useSWRConfig } from 'swr';
 
-import { ApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from '@/api/api-error';
 import { goalsApi } from '@/api/goals.api';
 import { portfolioHealthApi } from '@/api/portfolio-health.api';
 import { useAuth } from '@/contexts/auth-context';
@@ -151,7 +151,7 @@ function PortfolioBody({
       await mutate(swrKey);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось изменить приоритет.';
+        humanizeApiError(e, 'Не удалось изменить приоритет.');
       toast.error(msg);
       // Откат: ревалидация вернёт серверное состояние.
       await mutate(swrKey);

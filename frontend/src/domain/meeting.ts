@@ -59,6 +59,12 @@ export type MeetingDomain = {
   durationMs: number | null;
   /** Привязка к CRM-карточке. null если встреча не в карточке. */
   cardId: string | null;
+  /**
+   * Режим видимости знаний встречи (ТЗ Ф4 «Кому видно»):
+   * 'owner_only' | 'participants' | 'custom' | 'org'. backward-compat — может
+   * отсутствовать на старых записях, тогда трактуем как 'participants'.
+   */
+  visibilityScope: string | null;
 };
 
 export type ParticipantDomain = {
@@ -109,6 +115,8 @@ export type MeetingApi = {
   embeddingsStatus?: ProcessingStageStatus | null;
   durationMs?: number | null;
   cardId?: string | null;
+  /** ТЗ Ф4 «Кому видно» — режим видимости знаний встречи. */
+  visibilityScope?: string | null;
 };
 
 export type MeetingSummaryApi = {
@@ -168,6 +176,7 @@ export function meetingFromApi(api: MeetingApi): MeetingDomain {
     embeddingsStatus: api.embeddingsStatus ?? null,
     durationMs: typeof api.durationMs === 'number' ? api.durationMs : null,
     cardId: api.cardId ?? null,
+    visibilityScope: api.visibilityScope ?? null,
   };
 }
 
@@ -188,6 +197,7 @@ export function meetingSummaryFromApi(api: MeetingSummaryApi): MeetingDomain {
     embeddingsStatus: api.embeddingsStatus ?? null,
     durationMs: typeof api.durationMs === 'number' ? api.durationMs : null,
     cardId: null,
+    visibilityScope: null,
   };
 }
 
@@ -228,6 +238,98 @@ export function meetingDurationSeconds(m: MeetingDomain): number | null {
   const ms = m.endedAt.getTime() - m.startedAt.getTime();
   if (ms <= 0) return null;
   return Math.round(ms / 1000);
+}
+
+// ─────────────── Видимость встречи «Кому видно» (ТЗ Ф4) ───────────────
+
+/** Режим видимости знаний встречи. */
+export type VisibilityScope =
+  | 'owner_only'
+  | 'participants'
+  | 'custom'
+  | 'org';
+
+/** Все режимы видимости с русскими подписями и пояснением (для селектора). */
+export const VISIBILITY_SCOPE_OPTIONS: ReadonlyArray<{
+  value: VisibilityScope;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: 'owner_only',
+    label: 'Только мне',
+    hint: 'Знания встречи видите только вы.',
+  },
+  {
+    value: 'participants',
+    label: 'Участникам',
+    hint: 'Видят те, кто был на встрече (по умолчанию).',
+  },
+  {
+    value: 'custom',
+    label: 'Выбрать людей и группы',
+    hint: 'Доступ только у выбранных людей и групп.',
+  },
+  {
+    value: 'org',
+    label: 'Всей компании',
+    hint: 'Знания встречи открыты всей компании.',
+  },
+];
+
+/** Безопасно привести строку-режим с бэка к известному `VisibilityScope`. */
+export function normalizeVisibilityScope(
+  scope: string | null | undefined,
+): VisibilityScope {
+  if (
+    scope === 'owner_only' ||
+    scope === 'participants' ||
+    scope === 'custom' ||
+    scope === 'org'
+  ) {
+    return scope;
+  }
+  // backward-compat: пусто/неизвестно трактуем как дефолт «Участникам».
+  return 'participants';
+}
+
+/** Русский лейбл режима видимости (для карточки «Кому видно: …»). */
+export function visibilityScopeLabel(scope: string | null | undefined): string {
+  const value = normalizeVisibilityScope(scope);
+  return (
+    VISIBILITY_SCOPE_OPTIONS.find((o) => o.value === value)?.label ?? 'Участникам'
+  );
+}
+
+/** Тип адресата гранта (человек или группа доступа). */
+export type GranteeType = 'person' | 'group';
+
+/** Доменная модель одного гранта видимости (custom-режим). */
+export type VisibilityGrantDomain = {
+  granteeType: GranteeType;
+  granteeId: string;
+  name: string;
+};
+
+/** Доменная модель текущей видимости встречи. */
+export type MeetingVisibilityDomain = {
+  scope: VisibilityScope;
+  grants: VisibilityGrantDomain[];
+};
+
+/** Маппер ApiDto ответа GET visibility → DomainModel. */
+export function meetingVisibilityFromApi(api: {
+  scope: string;
+  grants: { granteeType: string; granteeId: string; name: string }[];
+}): MeetingVisibilityDomain {
+  return {
+    scope: normalizeVisibilityScope(api.scope),
+    grants: (api.grants ?? []).map((g) => ({
+      granteeType: g.granteeType === 'group' ? 'group' : 'person',
+      granteeId: g.granteeId,
+      name: g.name,
+    })),
+  };
 }
 
 // ─────────────── статус встречи — центральный маппер ───────────────
@@ -305,6 +407,21 @@ export function isJoinableStatus(status: MeetingStatus): boolean {
 /** Список всех статусов с их представлением — для фильтров/легенд. */
 export const MEETING_STATUS_VIEWS: ReadonlyArray<{ status: MeetingStatus } & MeetingStatusView> =
   MEETING_STATUSES.map((status) => ({ status, ...meetingStatusView(status) }));
+
+/**
+ * Лейбл статуса встречи по сырому строковому коду (когда статус приходит как
+ * `string` из API-DTO, а не как типизированный `MeetingStatus`).
+ *
+ * Делегирует единственному источнику правды `meetingStatusView`. Для
+ * неизвестного кода (бэк добавил статус раньше фронта) — человеческий фолбэк
+ * `code.replaceAll('_', ' ')`, чтобы латиница не протекала в UI.
+ */
+export function meetingStatusLabel(status: string): string {
+  if ((MEETING_STATUSES as readonly string[]).includes(status)) {
+    return meetingStatusView(status as MeetingStatus).label;
+  }
+  return status.replaceAll('_', ' ');
+}
 
 // ─────────────── Говорящие загруженной записи (ТЗ-5 Ф5) ───────────────
 

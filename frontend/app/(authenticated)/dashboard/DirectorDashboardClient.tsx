@@ -588,11 +588,15 @@ function RequiresAnchorCard({
     <div
       className="relative flex h-full flex-col overflow-hidden rounded-[22px] p-5"
       style={{
+        // Акцентная амбер-карточка-якорь «Требует вас»: тема-зависимый
+        // предупреждающий тон (chip-warning flip по теме) поверх стеклянной
+        // поверхности + амбер-рамка из chip-fg — смысл «внимание» сохранён.
         background:
-          'linear-gradient(180deg, oklch(0.32 0.06 55 / 0.5), oklch(0.22 0.04 50 / 0.5))',
-        border: '1px solid oklch(0.84 0.16 80 / 0.25)',
-        backdropFilter: 'blur(14px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
+          'linear-gradient(180deg, var(--chip-warning-bg), transparent), var(--glass-surface)',
+        border: '1px solid var(--chip-warning-fg)',
+        backdropFilter: 'var(--glass-blur)',
+        WebkitBackdropFilter: 'var(--glass-blur)',
+        boxShadow: 'var(--glass-shadow)',
       }}
     >
       <div
@@ -850,13 +854,7 @@ function ProbeUnansweredPill({ count }: { count: number }) {
     <Link
       href="/actions"
       className="flex h-full flex-col justify-center gap-1.5 rounded-[22px] p-5 transition-transform hover:translate-y-[-1px]"
-      style={{
-        background:
-          'linear-gradient(180deg, oklch(0.3 0.035 280 / 0.55), oklch(0.22 0.03 278 / 0.5))',
-        border: '1px solid oklch(1 0 0 / 0.08)',
-        backdropFilter: 'blur(14px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
-      }}
+      style={glass({ borderRadius: 22 })}
     >
       <div className="flex items-center gap-2 text-xs uppercase tracking-widest" style={{ color: CHART.faint }}>
         <MessageCircle size={13} aria-hidden />

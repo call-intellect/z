@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Activity, AlertTriangle, CheckCircle2, Users } from 'lucide-react';
 
-import { CHART, ModernPageShell } from '@/ui/components/dashboard/modern';
+import { CHART, glass, ModernPageShell } from '@/ui/components/dashboard/modern';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 
 import { OperationsDashboardClient } from '../dashboard/operations/OperationsDashboardClient';
@@ -158,13 +158,7 @@ function WeekVerdictBar({ weekStart }: { weekStart: string }) {
   return (
     <div
       className="flex items-center gap-3 rounded-2xl p-4"
-      style={{
-        background:
-          'linear-gradient(180deg, oklch(0.3 0.035 280 / 0.55), oklch(0.22 0.03 278 / 0.5))',
-        border: '1px solid oklch(1 0 0 / 0.08)',
-        backdropFilter: 'blur(14px) saturate(1.3)',
-        WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
-      }}
+      style={glass({ borderRadius: 16 })}
       role="status"
     >
       <span

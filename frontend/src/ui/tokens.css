@@ -124,6 +124,11 @@
   );
   --glass-border: oklch(1 0 0 / 0.08);
   --glass-blur: blur(14px) saturate(1.3);
+  /* Тень стеклянной карточки (зеркало старого инлайна glass()): блик + объём + контакт. */
+  --glass-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.06) inset,
+    0 18px 40px -18px oklch(0.05 0.05 280 / 0.9),
+    0 2px 8px oklch(0.05 0.05 280 / 0.4);
 
   color-scheme: dark;
 }
@@ -190,12 +195,26 @@
   --shadow-elevated: var(--shadow-card-raised);
   --shadow-glow-mint: 0 0 24px oklch(0.62 0.07 155 / 0.22);
 
-  /* Modern dashboard language — placeholders для светлой темы (калибровка
-     светлой версии — отдельная фаза; здесь просто не-ломающие значения). */
-  --modern-page-bg: linear-gradient(180deg, oklch(0.985 0.005 85), oklch(0.96 0.006 85));
-  --glass-surface: oklch(1 0 0 / 0.7);
-  --glass-border: oklch(0.22 0.01 60 / 0.08);
-  --glass-blur: blur(14px) saturate(1.1);
+  /* Modern dashboard language — СВЕТЛАЯ тема (редизайн 2026-06-13, Ф10).
+     Контраст «не светлое-на-светлом»: карточка — почти непрозрачная белая
+     (читается на тонированном светлом фоне), рамка — тёмный hairline (НЕ белый,
+     иначе невидим), мягкая цветная тень для объёма. Фон страницы — светлый с
+     приглушёнными фиолет/синими блобами (тон сохранён, но светлый). */
+  --modern-page-bg:
+    radial-gradient(1200px 600px at 12% -8%, oklch(0.93 0.045 290 / 0.55), transparent 60%),
+    radial-gradient(1000px 700px at 100% 0%, oklch(0.94 0.04 235 / 0.5), transparent 55%),
+    linear-gradient(180deg, oklch(0.985 0.006 85), oklch(0.955 0.008 250));
+  --glass-surface: linear-gradient(
+    180deg,
+    oklch(1 0 0 / 0.94),
+    oklch(0.992 0.004 250 / 0.88)
+  );
+  --glass-border: oklch(0.42 0.02 250 / 0.18);
+  --glass-blur: blur(14px) saturate(1.05);
+  --glass-shadow:
+    0 1px 0 0 oklch(1 0 0 / 0.7) inset,
+    0 10px 30px -12px oklch(0.32 0.04 250 / 0.18),
+    0 2px 8px oklch(0.32 0.04 250 / 0.08);
 
   color-scheme: light;
 }

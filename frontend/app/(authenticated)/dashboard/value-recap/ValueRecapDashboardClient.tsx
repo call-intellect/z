@@ -438,9 +438,12 @@ function DecisionsBlock({ domain }: { domain: ValueRecapDomain }) {
         glow
         className="flex flex-col items-center justify-center text-center"
         style={{
+          // Акцентная бирюзовая итог-карточка дисциплины доведения:
+          // тема-зависимый «успех/бирюза» тон (chip-success flip по теме) поверх
+          // стеклянной поверхности GlassCard + бирюз-рамка из chip-fg.
           background:
-            'linear-gradient(180deg, oklch(0.32 0.06 200 / 0.45), oklch(0.22 0.04 250 / 0.45))',
-          borderColor: 'oklch(0.82 0.13 178 / 0.22)',
+            'linear-gradient(180deg, var(--chip-success-bg), transparent), var(--glass-surface)',
+          borderColor: 'var(--chip-success-fg)',
         }}
       >
         <div className="text-xs" style={{ color: CHART.faint }}>

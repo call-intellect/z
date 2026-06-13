@@ -25,6 +25,11 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import {
+  CheckinDisciplineQuerySchema,
+  type CheckinDisciplineDto,
+  type CheckinDisciplineQuery,
+} from '../dto/checkin-discipline.dto';
+import {
   OpenCommitmentsQuerySchema,
   type OpenCommitmentsQuery,
   type OpenCommitmentsListDto,
@@ -226,6 +231,33 @@ export class OperationsDashboardController {
     const target =
       date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.todayMsk();
     return this.svc.getMissingCheckIns({ tenantId: tenantId!, date: target });
+  }
+
+  /**
+   * ТЗ Ф8.7 (cabinet-redesign-rhythms) — Дисциплина чек-инов за окно
+   * `?from=&to=` (default — текущая неделя: понедельник..сегодня МСК).
+   *
+   * Агрегат «ожидаемо / сдано / пропущено» по утренним и вечерним чек-инам —
+   * суммарно и по людям. `enabled=false` (флаг `DAILY_CHECKIN_ENABLED` OFF) →
+   * totals по нулям, причина «нет данных» на фронте. Доступ — owner/admin/coo.
+   */
+  @Get('checkin-discipline')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — дисциплина чек-инов (ожидаемо/сдано/пропущено, суммарно и по людям)',
+  })
+  async checkinDiscipline(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(CheckinDisciplineQuerySchema))
+    q: CheckinDisciplineQuery,
+  ): Promise<CheckinDisciplineDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const from = q.from ?? this.mondayOfCurrentWeekMsk();
+    const to = q.to ?? this.todayMsk();
+    return this.svc.getCheckinDiscipline({ tenantId: tenantId!, from, to });
   }
 
   /**
@@ -727,6 +759,21 @@ export class OperationsDashboardController {
     const now = new Date();
     const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
     return msk.toISOString().slice(0, 10);
+  }
+
+  /**
+   * ТЗ Ф8.7 — понедельник текущей недели в МСК (UTC+3), формат YYYY-MM-DD.
+   * Default `from` для виджета дисциплины чек-инов. Неделя начинается с
+   * понедельника (ISO). Не зависит от системной таймзоны контейнера.
+   */
+  private mondayOfCurrentWeekMsk(): string {
+    const now = new Date();
+    const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    // getUTCDay: 0=вс..6=сб. Сдвиг до понедельника (вс → −6, иначе → 1−day).
+    const day = msk.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(msk.getTime() + diff * 24 * 60 * 60 * 1000);
+    return monday.toISOString().slice(0, 10);
   }
 
   private requireUser(req: Request): string {

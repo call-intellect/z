@@ -5,118 +5,97 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import useSWR from 'swr';
 import {
-  Activity,
   AlertCircle,
+  AlertTriangle,
   ArrowRight,
-  Brain,
-  Clock,
-  Handshake,
-  HelpCircle,
-  LayoutDashboard,
+  Calendar,
+  CheckCircle2,
+  ClipboardCheck,
   Loader2,
   MessageCircle,
   RefreshCcw,
-  Smile,
   Sparkles,
   Target,
-  TrendingUp,
-  Users,
 } from 'lucide-react';
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
+import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
+import { operationsDashboardApi } from '@/api/operations-dashboard.api';
 import { orgsApi } from '@/api/orgs.api';
 import { useAuth } from '@/contexts/auth-context';
 import { useSubscription } from '@/contexts/subscription-context';
-import { useDashboardTab } from '@/hooks/useDashboardTab';
 import { useMemberships } from '@/hooks/useMemberships';
 import {
   pulsePatternsFromApi,
   type PulsePatternsDomain,
 } from '@/domain/pulse-patterns';
 import {
-  THEME_BRANCH_LABELS,
-  type ThemeBranch,
-} from '@/domain/theme';
+  fromCheckinDisciplineApi,
+  localDateString,
+  type CheckinDisciplineDomain,
+} from '@/domain/checkin-discipline';
+import { fromDailyDigestApi, type DailyDigestDomain } from '@/domain/operations-daily-digest';
 import {
-  SIGNAL_COUNTERS_BUCKET_COLORS,
-  SIGNAL_COUNTERS_BUCKET_LABELS,
-  SIGNAL_COUNTERS_BUCKET_ORDER,
   directorDashboardFromApi,
-  entityTypeLabel,
-  goalTreeNodeToRenderNode,
   signalTypeLabel,
   type DirectorDashboardDomain,
-  type DirectorDashboardEntityDomain,
-  type DirectorDashboardOpenQuestionDomain,
   type DirectorDashboardPeriod,
-  type DirectorDashboardSignalCountersDomain,
   type DirectorDashboardSignalDomain,
-  type DirectorDashboardThemeDomain,
 } from '@/domain/director-dashboard';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
 import { cn } from '@/ui/shadcn/lib/utils';
-import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
-import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
-// Pulse Wave 6 — 7 виджетов паттернов на главной директора.
-import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
-import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
 import { CompassWidget } from '@/ui/components/dashboard/CompassWidget';
-import { DashboardTabs } from '@/ui/components/dashboard/DashboardTabs';
-import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
-import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
-import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
-import { PeopleAtRiskWidget } from '@/ui/components/dashboard/PeopleAtRiskWidget';
-import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
+import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
 import { RequiresActionTile } from '@/ui/components/dashboard/RequiresActionTile';
-import { TabEmptyState } from '@/ui/components/dashboard/TabEmptyState';
-import { TeamHealthGrid } from '@/ui/components/dashboard/TeamHealthGrid';
-import { TopRiskCard } from '@/ui/components/dashboard/TopRiskCard';
-import { KpiHero } from '@/ui/components/shared/KpiHero';
 import {
   CardTitle as ModernCardTitle,
   CHART,
   GlassCard,
   GRAD,
   MODERN_PAGE_BG,
-  StatCard,
   glass,
-  kpiTone,
 } from '@/ui/components/dashboard/modern';
-import { GoalsTreeView } from '../goals/GoalsTreeView';
-import { ChatUsageWidget } from './widgets/ChatUsageWidget';
-import { GoalVectorVerdictWidget } from './widgets/GoalVectorVerdictWidget';
-import { IdeasTopWidget } from './widgets/IdeasTopWidget';
-import { InsightsTopWidget } from './widgets/InsightsTopWidget';
-import { IntroWizardWidget } from './widgets/IntroWizardWidget';
-import { QualityScoreWidget } from './widgets/QualityScoreWidget';
-import { StructureSummaryWidget } from './widgets/StructureSummaryWidget';
 import { ValueStripWidget } from './widgets/ValueStripWidget';
-import { WhatWeLearnedWidget } from './widgets/WhatWeLearnedWidget';
+import { VerdictBar } from './widgets/VerdictBar';
 
 /**
- * Дашборд директора (knowledge-core, Фаза 8).
+ * Экран «Сегодня» (бывшая «Главная»), редизайн Ф1 cabinet-redesign-rhythms.
  *
- * Источник правды: `GET /api/v1/dashboard/director?period=week|month`
- * (см. `backend/src/modules/dashboard/`).
+ * Источник правды раскладки/тона — прототип
+ * `plans/analysis/2026-06-13-cabinet-redesign-prototypes/_parts/part-today.html`.
  *
- * Доступ: owner / admin / super_admin. Splitting роли на manager-вид и
- * директорский вид делается выше — в `dashboard/page.tsx`.
+ * Тезис: первый экран отвечает за 30 секунд на 3 вопроса — что случилось /
+ * что буксует и требует решения / куда движемся. ≤7 величин на первом экране.
  *
- * Структура:
- *   - Header с приветствием, переключателем периода и «Обновить».
- *   - Опциональная narrativeSummary (LLM-сводка «Главное за период»).
- *   - 5 виджетов на сетке: новые темы+сигналы, счётчики сигналов,
- *     активные темы, главные сущности, открытые вопросы.
- *   - Org-chat вынесен из главной в AssistantSidebar (Б.4 ТЗ tabs-restructure).
- *   - Зарезервировано место для виджета «Согласованность стратегии» (Phase 9).
+ * Состав (сверху вниз):
+ *   1. Строка-вердикт (VerdictBar) — «молчит при норме».
+ *   2. Грид: «Что было вчера» (daily-digest.shortSummary) + «Требует вас» (якорь).
+ *   3. «Польза за неделю» (valueStrip, 5 stat).
+ *   4. Грид: «Вектор к цели» (CompassWidget ← pulse.goalVector) + «Сводка Коры».
+ *   5. «Самое острое» (радар топ-3 ← newSignals, затухание по свежести).
+ *   6. «Лента дня» (свёрнуто, топ-5 ← daily-digest.eventsToday) + плашка
+ *      «Вопросов Коры без ответа: N».
+ *   7. «Дисциплина чек-инов сегодня» (checkin-discipline, from=to=сегодня).
+ *
+ * Онбординг (IncompleteSetupBanner) рендерится один раз в DashboardRouter —
+ * здесь НЕ дублируем (исчезает после 6/6 сам).
+ *
+ * Источники данных:
+ *   - `GET /dashboard/director?period` → directorDashboardFromApi (requiresAction,
+ *     valueStrip, narrativeSummary, newSignals, isEmpty);
+ *   - `GET /dashboard/pulse-patterns?period` → pulsePatternsFromApi (goalVector);
+ *   - `GET /dashboard/operations/daily-digest?date` → fromDailyDigestApi
+ *     (shortSummary, eventsToday, deliveredAt);
+ *   - `GET /dashboard/operations/checkin-discipline?from=&to=` →
+ *     fromCheckinDisciplineApi (totals.morningMissed/eveningMissed, enabled).
+ *
+ * Б-6: у каждого виджета три состояния — данные / нет данных (`—` + причина +
+ * CTA) / сбой (плашка «чиним», без чисел). Дашборд молчит при норме.
  */
 export function DirectorDashboardClient() {
   const { user, currentOrgId, currentOrgRole } = useAuth();
-  const { activeTab, setActiveTab } = useDashboardTab(user?.id ?? null);
   const { memberships } = useMemberships();
   const { status: subscriptionStatus, loading: subscriptionLoading, showPaywallModal } =
     useSubscription();
@@ -125,8 +104,7 @@ export function DirectorDashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Pulse Wave 6 — паттерны (7 виджетов) грузим параллельно с основным DTO.
-  // Ошибка в любом из запросов не валит другой.
+  // Pulse-паттерны — для блока «Вектор к цели». Ошибка не валит основной экран.
   const [pulse, setPulse] = useState<PulsePatternsDomain | null>(null);
   const [pulseLoading, setPulseLoading] = useState(true);
   const [pulseError, setPulseError] = useState<string | null>(null);
@@ -140,9 +118,7 @@ export function DirectorDashboardClient() {
         const res = await dashboardApi.getDirectorView(currentOrgId, nextPeriod);
         setData(directorDashboardFromApi(res));
       } catch (e) {
-        const message =
-          humanizeApiError(e, 'Не удалось загрузить дашборд');
-        setError(message);
+        setError(humanizeApiError(e, 'Не удалось загрузить дашборд'));
       } finally {
         setLoading(false);
       }
@@ -159,11 +135,7 @@ export function DirectorDashboardClient() {
         const res = await dashboardApi.getPulsePatterns(currentOrgId, nextPeriod);
         setPulse(pulsePatternsFromApi(res));
       } catch (e) {
-        const message =
-          e instanceof ApiError
-            ? e.message
-            : 'Не удалось загрузить паттерны';
-        setPulseError(message);
+        setPulseError(humanizeApiError(e, 'Не удалось загрузить вектор движения'));
       } finally {
         setPulseLoading(false);
       }
@@ -177,25 +149,48 @@ export function DirectorDashboardClient() {
     void loadPulse(period);
   }, [period, load, loadPulse, currentOrgId]);
 
+  // Сегодняшняя дата (МСК-приближение локальной датой; backend сам нормализует).
+  const today = useMemo(() => localDateString(), []);
+
+  // «Что было вчера» + «Лента дня» — последний дайджест (latest, чтобы не
+  // упереться в «сегодня ещё не сгенерирован»). null = ещё нет ни одного.
+  const digestSwr = useSWR<DailyDigestDomain | null>(
+    currentOrgId ? ['today-daily-digest', currentOrgId] : null,
+    async () => {
+      const res = await operationsDailyDigestApi.getLatest();
+      return res ? fromDailyDigestApi(res) : null;
+    },
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
+  // Дисциплина чек-инов за сегодня (from=to=сегодня).
+  const checkinSwr = useSWR<CheckinDisciplineDomain | null>(
+    currentOrgId ? ['today-checkin-discipline', currentOrgId, today] : null,
+    async () => {
+      const res = await operationsDashboardApi.getCheckinDiscipline(
+        currentOrgId!,
+        today,
+        today,
+      );
+      return fromCheckinDisciplineApi(res);
+    },
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
   const greetingName = useMemo(() => {
     return user?.name?.trim() || user?.email?.split('@')[0] || 'друг';
   }, [user]);
 
   const periodLabel = period === 'week' ? 'неделю' : 'месяц';
 
-  // ─── Матрица 6 состояний (Шаг В.1+В.2+В.3 зонтика ─────────────────────────
-  // `2026-06-01-main-screen-umbrella.md`).
-  // Org.isReferenceDemo + currentOrgRole + subscriptionStatus + data.isEmpty.
+  // ─── Матрица empty-state (сохраняем из прежней главной) ──────────────────
   const currentMembership = useMemo(
     () => memberships.find((m) => m.id === currentOrgId) ?? null,
     [memberships, currentOrgId],
   );
-  // Если memberships ещё не загружены — считаем что своя Org (консервативный
-  // дефолт, чтобы не показать MainEmptyState вместо эталонного flow).
   const isOwnOrg = currentMembership ? !currentMembership.isReferenceDemo : true;
   const isOwnerOrAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
 
-  // Состояние 3 матрицы: своя Org, DEMO-подписка, owner/admin, нет данных.
   const isPageEmpty =
     isOwnOrg &&
     subscriptionStatus === 'DEMO' &&
@@ -204,7 +199,6 @@ export function DirectorDashboardClient() {
     !subscriptionLoading &&
     (data?.isEmpty === true || data === null);
 
-  // Есть ли эталон в memberships → можно ли предложить «Вернуться в демо».
   const referenceMembership = useMemo(
     () => memberships.find((m) => m.isReferenceDemo) ?? null,
     [memberships],
@@ -212,15 +206,10 @@ export function DirectorDashboardClient() {
   const canReturnToDemo = !!referenceMembership;
   const handleReturnToDemo = useCallback(() => {
     if (typeof window === 'undefined' || !referenceMembership) return;
-    // OrgSwitcher fallback использует тот же ключ — после reload активная Org
-    // подхватится из cookie/localStorage.
     window.localStorage.setItem('z.activeOrgId', referenceMembership.id);
     window.location.href = '/dashboard';
   }, [referenceMembership]);
 
-  // Прогресс настройки компании — только для owner/admin (Шаг В.3 + правило 5
-  // матрицы: онбординг скрыт для member). Дублируем countCompleted из
-  // IntroWizardWidget, чтобы не плодить cross-import — это 6 строк.
   const orgSwr = useSWR(
     isPageEmpty && isOwnerOrAdmin && currentOrgId
       ? ['main-empty-org', currentOrgId]
@@ -252,661 +241,222 @@ export function DirectorDashboardClient() {
     return { completed: n, total: 6 };
   }, [orgSwr.data, isOwnerOrAdmin]);
 
-  // Static smoke матрицы 6 состояний (Шаг В.6 зонтика main-screen-umbrella):
-  // 1. Эталон + demo_observer → isOwnOrg=false → !isPageEmpty → Hero+Tabs.
-  //    isReadOnlyDemo=true (TopRiskCard prop) → CTA «Открыть» + «+ ещё N»
-  //    рендерятся как <button onClick={showPaywallModal}>, не <Link>.
-  // 2. Эталон + super_admin → isReferenceDemo=true, но role не demo_observer →
-  //    Hero+Tabs полные, CTA активны (DemoObserverGuard bypass на backend).
-  // 3. Своя + owner/admin + DEMO + isEmpty → isPageEmpty=true → MainEmptyState
-  //    замещает Hero+Tabs (см. ниже).
-  // 4. Своя + owner/admin + ACTIVE → status≠'DEMO' → !isPageEmpty → Hero+Tabs.
-  //    Per-таб empty-state из TabEmptyState (Фаза Б.6).
-  // 5. Своя + member + ACTIVE → isOwnerOrAdmin=false → !isPageEmpty →
-  //    Hero+Tabs. IntroWizardWidget сам себя скрывает (member-check внутри).
-  // 6. Своя + owner + ACTIVE без demo_observer → как №4.
-  //
-  // Ранний return: MainEmptyState замещает Hero+Tabs целиком.
   if (isPageEmpty) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-        <MainEmptyState
-          canReturnToDemo={canReturnToDemo}
-          onReturnToDemo={handleReturnToDemo}
-          setupProgress={setupProgress}
-        />
+      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+          <MainEmptyState
+            canReturnToDemo={canReturnToDemo}
+            onReturnToDemo={handleReturnToDemo}
+            setupProgress={setupProgress}
+          />
+        </div>
       </div>
     );
   }
 
-  // Stagger-делей для enter-анимации секций. Cap 400ms (см. §4.6 ТЗ).
-  // Анимация выполняется один раз на mount через `animate-in` + `fill-mode: backwards`.
-  let staggerStep = 0;
-  const nextStagger = () => {
-    const ms = Math.min(staggerStep * 60, 400);
-    staggerStep += 1;
-    return ms;
-  };
+  // ─── Вердикт: сбор данных не работает? (Б-6 сбой) ────────────────────────
+  // degraded из directorView ИЛИ полный сбой загрузки (error при отсутствии data).
+  const collectorDown = !!error && data === null;
+  const digest = digestSwr.data ?? null;
+  const checkin = checkinSwr.data ?? null;
+
+  const requiresTotal = data?.requiresAction?.total ?? 0;
+  const probeUnanswered = data?.requiresAction?.bySource.probe ?? 0;
+
+  // Топ-3 самых острых сигнала — по свежести (createdAt нет, поэтому по порядку
+  // newSignals: backend отдаёт свежие первыми) + затухание по индексу.
+  const sharpSignals = (data?.newSignals ?? []).slice(0, 3);
 
   return (
-    // Современный фон страницы (одобренный редизайн) — применяется всегда,
-    // независимо от флага `mainReworkEnabled`.
     <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-      {/* Б.8 — снят sticky, чтобы не конфликтовать с sticky Hero (top-0 z-20).
-          Header теперь обычный, скроллится за Hero. */}
-      <header className="-mx-4 mb-6 flex flex-col gap-3 border-b border-border-subtle/50 px-4 py-3 md:-mx-6 md:flex-row md:items-center md:justify-between md:px-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-            Привет, {greetingName}
-          </h1>
-          <p className="mt-1 text-sm text-fg-secondary">
-            Срез знаний компании за {periodLabel}.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* §5.5 — Pill-ссылка на операционную сводку. */}
-          <Link
-            href="/dashboard/operations"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
-            aria-label="Открыть операционную сводку"
-          >
-            <Activity size={14} strokeWidth={1.75} className="shrink-0" />
-            <span>Операционная сводка</span>
-          </Link>
-          {/* ТЗ-2 Ф6 — pill-ссылки на портфель целей и витрину «Что сделала Кора». */}
-          <Link
-            href="/dashboard/portfolio"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
-            aria-label="Открыть портфель целей"
-          >
-            <Target size={14} strokeWidth={1.75} className="shrink-0" />
-            <span>Портфель целей</span>
-          </Link>
-          <Link
-            href="/dashboard/value-recap"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-bg-overlay/60 px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-bg-overlay hover:text-fg-primary"
-            aria-label="Открыть витрину «Что сделала Кора»"
-          >
-            <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
-            <span>Что сделала Кора</span>
-          </Link>
-          <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load(period)}
-            disabled={loading}
-            aria-label="Обновить"
-          >
-            {loading ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <RefreshCcw size={14} />
-            )}
-            <span className="ml-1.5">Обновить</span>
-          </Button>
-        </div>
-      </header>
-
-      {error && (
-        <div className="mb-6 flex items-center gap-2 rounded-xl bg-chip-danger-bg p-3 text-sm text-chip-danger-fg shadow-card-soft">
-          <AlertCircle size={16} />
-          {error}
-        </div>
-      )}
-
-      {/* Action Center B2 — «Требует вашего подтверждения». Призыв к действию
-          вверху главной; при total=0 компонент сам себя скрывает. */}
-      {data?.requiresAction && (
-        <div className="mb-4">
-          <RequiresActionTile data={data.requiresAction} loading={loading} />
-        </div>
-      )}
-
-      {data?.mainReworkEnabled === false ? (
-        <>
-          {/* === LEGACY STICKY HERO (kill-switch rollback target) ===
-              3 зоны: 3 KPI · AI-сводка · Топ-1 риск + отдельный Компас.
-              Фаза Б.2 ТЗ `2026-06-01-dashboard-main-tabs-restructure.md`. */}
-          <div className="sticky top-0 z-20 -mx-4 mb-4 bg-gradient-to-br from-bg-base via-bg-base to-accent/5 px-4 pb-3 pt-3 backdrop-blur md:pt-4">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              {/* Зона 1: 3 KPI с MiniSparkline. */}
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:col-span-1">
-                <KpiHero
-                  label="Настроение"
-                  value={data?.kpiSentimentIndex?.value ?? 0}
-                  numericValue={data?.kpiSentimentIndex?.value ?? 0}
-                  sparkline={data?.kpiSentimentIndex?.sparkline}
-                  trend={data?.kpiSentimentIndex?.trend}
-                  threshold={{ green: 30, yellow: 0 }}
-                  href="/dashboard/operations"
-                />
-                <KpiHero
-                  label="Обещания"
-                  value={`${data?.kpiCommitmentReliability?.value ?? 0}%`}
-                  numericValue={data?.kpiCommitmentReliability?.value ?? 0}
-                  format={(n) => `${Math.round(n)}%`}
-                  sparkline={data?.kpiCommitmentReliability?.sparkline}
-                  delta={data?.kpiCommitmentReliability?.delta}
-                  deltaLabel="за 14 дней"
-                  threshold={{ green: 80, yellow: 60 }}
-                  href="/me?tab=promises"
-                />
-                <KpiHero
-                  label="Висящие решения"
-                  value={data?.kpiHangingDecisions?.value ?? 0}
-                  numericValue={data?.kpiHangingDecisions?.value ?? 0}
-                  sparkline={data?.kpiHangingDecisions?.sparkline}
-                  threshold={{ green: 2, yellow: 5, inverted: true }}
-                  href="/decisions?status=hanging"
-                />
-              </div>
-
-              {/* Зона 2: AI-сводка. */}
-              <div className="rounded-2xl border border-accent/20 bg-bg-card p-4 shadow-lg shadow-accent/15">
-                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest text-accent-fg">
-                  <Sparkles size={12} aria-hidden />
-                  <span>Сводка Коры</span>
-                </div>
-                {data?.narrativeSummary ? (
-                  <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
-                ) : (
-                  <p className="text-xs text-fg-tertiary">Сводка Коры появится после первой встречи или анализа знаний.</p>
-                )}
-              </div>
-
-              {/* Зона 3: Топ-1 риск. */}
-              <TopRiskCard
-                risk={
-                  pulse?.irreversibleDecisions?.decisions?.[0]
-                    ? {
-                        id: pulse.irreversibleDecisions.decisions[0].decisionId,
-                        title: pulse.irreversibleDecisions.decisions[0].statement,
-                        subtitle: null,
-                      }
-                    : null
-                }
-                totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
-                isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
-                onPaywallTrigger={showPaywallModal}
-              />
-            </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        {/* Header — приветствие + период + обновить + pill-ссылки. */}
+        <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: CHART.text }}>
+              Сегодня — {greetingName}
+            </h1>
+            <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
+              Что случилось, что буксует, куда движемся — за 30 секунд.
+            </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/week"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              aria-label="Открыть Неделю"
+            >
+              <Calendar size={14} strokeWidth={1.75} className="shrink-0" />
+              <span>Неделя</span>
+            </Link>
+            <Link
+              href="/month"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
+              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              aria-label="Открыть Итоги месяца"
+            >
+              <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
+              <span>Итоги месяца</span>
+            </Link>
+            <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void load(period);
+                void loadPulse(period);
+                void digestSwr.mutate();
+                void checkinSwr.mutate();
+              }}
+              disabled={loading}
+              aria-label="Обновить"
+            >
+              {loading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCcw size={14} />
+              )}
+              <span className="ml-1.5">Обновить</span>
+            </Button>
+          </div>
+        </header>
 
-          {/* === ТЗ-B: Компас «Вектор движения» — под Hero, выше Структуры (R9) === */}
-          <div className="mb-6">
+        {/* Сбой загрузки основного DTO (помимо вердикта — явная плашка). */}
+        {error && data === null && (
+          <div
+            className="mb-6 flex items-center gap-2 rounded-xl p-3 text-sm"
+            style={{ background: 'oklch(0.66 0.22 25 / 0.16)', color: CHART.red }}
+          >
+            <AlertCircle size={16} />
+            {error}
+          </div>
+        )}
+
+        {/* ── 1. Строка-вердикт ────────────────────────────────────────── */}
+        <div className="mb-6">
+          <VerdictBar
+            requiresCount={requiresTotal}
+            down={collectorDown}
+            subtitle={
+              collectorDown
+                ? 'Показатели ниже могут быть неполными — чиним сбор'
+                : digest
+                  ? `Последний отчёт за ${digest.dateLocal}`
+                  : 'Сбор данных работает'
+            }
+          />
+        </div>
+
+        {/* ── 2. Грид: «Что было вчера» + «Требует вас» (якорь) ────────── */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+          {/* Что было вчера — daily-digest.shortSummary. */}
+          <YesterdayCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+
+          {/* Требует вас — карточка-якорь (амбер-glow). */}
+          <RequiresAnchorCard
+            total={requiresTotal}
+            bySource={data?.requiresAction?.bySource ?? null}
+            loading={loading && data === null}
+          />
+        </div>
+
+        {/* ── 3. Польза за неделю (5 кликабельных stat) ────────────────── */}
+        <div className="mb-6">
+          <ValueStripWidget
+            data={
+              data?.valueStrip ?? {
+                meetingsProtocoled: 0,
+                tasksExtracted: 0,
+                decisionsExtracted: 0,
+                questionsAnsweredByMemory: 0,
+                commitmentsKept: 0,
+              }
+            }
+          />
+        </div>
+
+        {/* ── 4. Грид: «Вектор к цели» + «Сводка Коры» (span2) ─────────── */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-1">
             <CompassWidget
               data={pulse?.goalVector ?? null}
               loading={pulseLoading}
               error={pulseError}
             />
           </div>
-        </>
-      ) : (
-        <>
-          {/* FIRST-SCREEN-7: Польза · Настроение · Обещания · Висящие решения · Компас · AI-сводка · Top-1 риск */}
-          <div className="mb-6 space-y-4">
-            {/* 1. Польза — ValueStrip + ChatUsage (единая величина «Польза»).
-                data может быть null до первой загрузки — фолбэк до нулей. */}
-            <ValueStripWidget
-              data={
-                data?.valueStrip ?? {
-                  meetingsProtocoled: 0,
-                  tasksExtracted: 0,
-                  decisionsExtracted: 0,
-                  questionsAnsweredByMemory: 0,
-                  commitmentsKept: 0,
-                }
-              }
-            />
-            <ChatUsageWidget />
-
-            {/* 2–4. Настроение · Обещания · Висящие решения (StatCard нового
-                визуального языка). */}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              {(() => {
-                const sentiment = data?.kpiSentimentIndex?.value ?? 0;
-                return (
-                  <StatCard
-                    icon={<Smile size={20} />}
-                    grad={GRAD.teal}
-                    label="Настроение"
-                    value={String(sentiment)}
-                    tone={kpiTone(sentiment, { green: 30, yellow: 0 })}
-                    spark={(data?.kpiSentimentIndex?.sparkline ?? []).map((v, i) => ({
-                      i,
-                      v: v ?? 0,
-                    }))}
-                    href="/dashboard/operations"
+          <div className="lg:col-span-2">
+            <GlassCard glow className="h-full p-5">
+              <div
+                className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest"
+                style={{ color: CHART.violet }}
+              >
+                <Sparkles size={12} aria-hidden />
+                <span>Сводка Коры за {periodLabel}</span>
+              </div>
+              {loading && data === null ? (
+                <p className="text-xs" style={{ color: CHART.faint }}>
+                  Собираем сводку…
+                </p>
+              ) : data?.narrativeSummary ? (
+                <>
+                  <AiNarrativeWithSources
+                    data={data.narrativeSummary}
+                    periodLabel={periodLabel}
                   />
-                );
-              })()}
-              {(() => {
-                const reliability = data?.kpiCommitmentReliability?.value ?? 0;
-                const d = data?.kpiCommitmentReliability?.delta;
-                const deltaStr =
-                  d != null
-                    ? `${d >= 0 ? '+' : ''}${Math.round(d)}`
-                    : undefined;
-                return (
-                  <StatCard
-                    icon={<Handshake size={20} />}
-                    grad={GRAD.blue}
-                    label="Обещания"
-                    value={`${reliability}%`}
-                    tone={kpiTone(reliability, { green: 80, yellow: 60 })}
-                    delta={deltaStr}
-                    up={d != null ? d >= 0 : undefined}
-                    spark={(data?.kpiCommitmentReliability?.sparkline ?? []).map(
-                      (v, i) => ({ i, v: v ?? 0 }),
-                    )}
-                    href="/me?tab=promises"
-                  />
-                );
-              })()}
-              {(() => {
-                const hanging = data?.kpiHangingDecisions?.value ?? 0;
-                return (
-                  <StatCard
-                    icon={<Clock size={20} />}
-                    grad={GRAD.amber}
-                    label="Висящие решения"
-                    value={String(hanging)}
-                    tone={kpiTone(hanging, { green: 2, yellow: 5, inverted: true })}
-                    spark={(data?.kpiHangingDecisions?.sparkline ?? []).map(
-                      (v, i) => ({ i, v: v ?? 0 }),
-                    )}
-                    href="/decisions?status=hanging"
-                  />
-                );
-              })()}
-            </div>
-
-            {/* 5–7. Компас (факт) · AI-сводка · Top-1 риск. */}
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              {/* 5. Компас (факт) — единый вердикт вектора к цели. */}
-              <GoalVectorVerdictWidget
-                goalsTree={data?.goalsTree ?? null}
-                strategicAlignment={data?.strategicAlignment ?? null}
-                goalsPulse={data?.goalsPulse ?? null}
-              />
-
-              {/* 6. AI-сводка. Богатый AiNarrativeWithSources (источники,
-                  кликабельные блоки) не помещается в AiCard (text:string), поэтому
-                  используем GlassCard glow со свечением — тот же визуальный язык. */}
-              <GlassCard glow className="p-4">
-                <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-widest" style={{ color: CHART.violet }}>
-                  <Sparkles size={12} aria-hidden />
-                  <span>Сводка Коры</span>
-                </div>
-                {data?.narrativeSummary ? (
-                  <AiNarrativeWithSources data={data.narrativeSummary} periodLabel={periodLabel} />
-                ) : (
-                  <p className="text-xs" style={{ color: CHART.faint }}>
+                  <Link
+                    href="/week"
+                    className="mt-1 inline-flex items-center gap-1 text-sm font-medium transition-transform hover:translate-x-0.5"
+                    style={{ color: CHART.cyan }}
+                  >
+                    Открыть полный разбор
+                    <ArrowRight size={14} />
+                  </Link>
+                </>
+              ) : (
+                // Б-6: нет данных → причина + CTA.
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm" style={{ color: CHART.dim }}>
                     Сводка Коры появится после первой встречи или анализа знаний.
                   </p>
-                )}
-              </GlassCard>
-
-              {/* 7. Top-1 риск. */}
-              <TopRiskCard
-                risk={
-                  pulse?.irreversibleDecisions?.decisions?.[0]
-                    ? {
-                        id: pulse.irreversibleDecisions.decisions[0].decisionId,
-                        title: pulse.irreversibleDecisions.decisions[0].statement,
-                        subtitle: null,
-                      }
-                    : null
-                }
-                totalCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
-                isReadOnlyDemo={(currentOrgRole as string | null) === 'demo_observer'}
-                onPaywallTrigger={showPaywallModal}
-              />
-            </div>
+                  <Link
+                    href="/meetings"
+                    className="text-sm font-medium hover:underline"
+                    style={{ color: CHART.cyan }}
+                  >
+                    К встречам →
+                  </Link>
+                </div>
+              )}
+            </GlassCard>
           </div>
-        </>
-      )}
-
-      {/* === Узкая sticky-полоса под Hero: структура + «Спросите Кору» === */}
-      <div className="sticky top-[var(--hero-h,200px)] z-10 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-3 bg-bg-base/95 px-4 py-2 backdrop-blur">
-        <div className="min-w-0 flex-1">
-          <StructureSummaryWidget />
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            // TODO Б.4: открыть AssistantSidebar на табе «Спросить».
-            // Пока заглушка — для Б.2 достаточно UI-плейсхолдера.
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('assistant-sidebar:open-ask'));
-            }
-          }}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/15 px-3.5 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <MessageCircle size={14} strokeWidth={1.75} />
-          Спросите Кору
-        </button>
-      </div>
 
-      {/* Онбординг-блок (Б.5 — рефактор логики; пока оставляем как есть). */}
-      <StaggerSection delayMs={nextStagger()}>
+        {/* ── 5. Самое острое — радар топ-3 ────────────────────────────── */}
         <div className="mb-6">
-          <IntroWizardWidget />
+          <SharpRadarCard
+            signals={sharpSignals}
+            loading={loading && data === null}
+          />
         </div>
-      </StaggerSection>
 
-      {/* === Sticky tabs под Hero === */}
-      <div className="sticky top-[var(--hero-tabs-top,260px)] z-10 -mx-4 mb-4 bg-bg-base/95 px-4 pt-1 backdrop-blur">
-        <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
-      </div>
+        {/* ── 6. Лента дня (свёрнуто) + плашка «Вопросов Коры без ответа» ─ */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+          <DayFeedCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+          <ProbeUnansweredPill count={probeUnanswered} />
+        </div>
 
-      {/* === Контент активного таба === */}
-      <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
-        {activeTab === 'overview' && (
-          <OverviewTab
-            data={data}
-            pulse={pulse}
-            loading={loading}
-            pulseLoading={pulseLoading}
-            pulseError={pulseError}
-            periodLabel={periodLabel}
+        {/* ── 7. Дисциплина чек-инов сегодня ───────────────────────────── */}
+        <div className="mb-2">
+          <CheckinDisciplineTodayPill
+            data={checkin}
+            loading={checkinSwr.isLoading}
+            error={!!checkinSwr.error}
           />
-        )}
-        {activeTab === 'team' && (
-          <TeamTab
-            data={data}
-            pulse={pulse}
-            loading={loading}
-            pulseLoading={pulseLoading}
-            pulseError={pulseError}
-          />
-        )}
-        {activeTab === 'knowledge' && (
-          <KnowledgeTab
-            data={data}
-            pulse={pulse}
-            loading={loading}
-            pulseLoading={pulseLoading}
-            pulseError={pulseError}
-            periodLabel={periodLabel}
-          />
-        )}
-        {activeTab === 'goals' && (
-          <GoalsTab
-            pulse={pulse}
-            data={data}
-            loading={loading}
-            pulseLoading={pulseLoading}
-            pulseError={pulseError}
-          />
-        )}
+        </div>
       </div>
     </div>
-    </div>
-  );
-}
-
-// ─── §4.6 StaggerSection — обёртка для enter-анимации виджетов. ──────────────
-// `motion-safe:` уважает prefers-reduced-motion. fill-mode: backwards через
-// tailwindcss-animate гарантирует один прогон на mount без повторов.
-
-function StaggerSection({
-  children,
-  delayMs,
-}: {
-  children: ReactNode;
-  delayMs: number;
-}) {
-  return (
-    <div
-      className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards"
-      style={{ animationDelay: `${delayMs}ms` }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ─── Tab contents (Фаза 3 ТЗ 2026-06-01-dashboard-main-tabs-restructure) ────
-
-type TabContentProps = {
-  data: DirectorDashboardDomain | null;
-  pulse: PulsePatternsDomain | null;
-  loading: boolean;
-  pulseLoading: boolean;
-  pulseError: string | null;
-  periodLabel?: string;
-};
-
-function OverviewTab({ data, pulse, loading, pulseLoading }: TabContentProps) {
-  const themes = data?.newThemes ?? [];
-  const signals = data?.newSignals ?? [];
-  const decisions = (pulse?.irreversibleDecisions?.decisions ?? []).slice(0, 3);
-  const allEmpty =
-    !loading &&
-    !pulseLoading &&
-    themes.length === 0 &&
-    signals.length === 0 &&
-    decisions.length === 0;
-  if (allEmpty) {
-    return (
-      <TabEmptyState
-        tabLabel="Обзор"
-        icon={LayoutDashboard}
-        hint="Дайджест недели заполнится после первой встречи или появления тем."
-      />
-    );
-  }
-  return (
-    <StaggerSection delayMs={0}>
-      <div className="mb-6">
-        <WhatWeLearnedWidget
-          themes={data?.newThemes ?? []}
-          signals={data?.newSignals ?? []}
-          decisions={
-            pulse?.irreversibleDecisions.decisions.map((d) => ({
-              id: d.decisionId,
-              statement: d.statement,
-              decidedAt: d.decidedAt,
-            })) ?? []
-          }
-        />
-      </div>
-      <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
-    </StaggerSection>
-  );
-}
-
-function TeamTab({ pulse, pulseLoading, pulseError }: TabContentProps) {
-  return (
-    <StaggerSection delayMs={0}>
-      <div className="mb-6">
-        <TeamHealthGrid />
-      </div>
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <BusFactorWidget
-            data={pulse?.busFactor ?? null}
-            loading={pulseLoading}
-            error={pulseError}
-          />
-        </div>
-        <div className="lg:col-span-2">
-          <ActivityFeedWidget
-            feedTypes={['probe_question']}
-            scope="company"
-            pageSize={5}
-            liveUpdate
-            drillDownHref="/me/notifications"
-            title="Вопросы Коры команде"
-            emptyHint="Пока активных вопросов нет — Кора задаст их по мере появления данных."
-          />
-        </div>
-      </div>
-      {/* PeopleAtRiskWidget — Топ-3 сотрудника с низким Pulse. Endpoint
-          /dashboard/people-at-risk реализован (ТЗ-G Ф1) — виджет тянет данные
-          сам (self-fetch через SWR + currentOrgId), проп items не нужен. */}
-      <div className="mb-6">
-        <PeopleAtRiskWidget />
-      </div>
-      <TabBottomLink href="/teams" label="Открыть /teams →" />
-    </StaggerSection>
-  );
-}
-
-function KnowledgeTab({
-  data,
-  pulse,
-  loading,
-  pulseLoading,
-  pulseError,
-}: TabContentProps) {
-  const themes = data?.newThemes ?? [];
-  const entities = data?.hotEntities ?? [];
-  const questions = data?.openQuestions ?? [];
-  const allEmpty =
-    !loading &&
-    !pulseLoading &&
-    !pulse?.recurringTopics &&
-    !pulse?.bottlenecks &&
-    themes.length === 0 &&
-    entities.length === 0 &&
-    questions.length === 0;
-  if (allEmpty) {
-    return (
-      <TabEmptyState
-        tabLabel="Знания"
-        icon={Brain}
-        hint="Раздел заполнится после первой встречи или загрузки документов — Кора извлечёт темы и сущности."
-      />
-    );
-  }
-  return (
-    <StaggerSection delayMs={0}>
-      {/* Видимое ядро: повторяющиеся темы · открытые вопросы · скорость знаний. */}
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <RecurringTopicsWidget
-          data={pulse?.recurringTopics ?? null}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-        <OpenQuestionsWidget
-          loading={loading}
-          questions={data?.openQuestions ?? []}
-        />
-        <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
-      </div>
-
-      {/* Drill-down: остальные срезы знаний свёрнуты по умолчанию. */}
-      <details className="group mb-6 overflow-hidden" style={glass()}>
-        <summary
-          className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 text-sm font-medium transition-colors"
-          style={{ color: CHART.dim }}
-        >
-          <span>Подробнее: сигналы, темы, сущности, идеи</span>
-          <ArrowRight
-            size={16}
-            className="shrink-0 transition-transform group-open:rotate-90"
-            aria-hidden
-          />
-        </summary>
-        <div className="grid grid-cols-1 gap-4 p-4 pt-0 lg:grid-cols-2">
-          <BottleneckHeatmapWidget
-            data={pulse?.bottlenecks ?? null}
-            loading={pulseLoading}
-            error={pulseError}
-          />
-          <SignalCountersWidget
-            loading={loading}
-            counters={data?.signalCounters ?? null}
-          />
-          <ActiveThemesWidget loading={loading} themes={data?.activeThemes ?? []} />
-          <HotEntitiesWidget loading={loading} entities={data?.hotEntities ?? []} />
-          <InsightsTopWidget />
-          <IdeasTopWidget />
-        </div>
-      </details>
-
-      <TabBottomLink href="/themes" label="Открыть полный раздел «Память компании» →" />
-    </StaggerSection>
-  );
-}
-
-function GoalsTab({
-  data,
-  pulse,
-  loading,
-  pulseLoading,
-  pulseError,
-}: TabContentProps) {
-  const meetingsCount = pulse?.lowRoiMeetings?.meetings?.length ?? 0;
-  const decisionsCount = pulse?.irreversibleDecisions?.decisions?.length ?? 0;
-  const allEmpty =
-    !loading &&
-    !pulseLoading &&
-    !pulse?.goalVector &&
-    meetingsCount === 0 &&
-    decisionsCount === 0;
-  if (allEmpty) {
-    return (
-      <TabEmptyState
-        tabLabel="Цели и встречи"
-        icon={Target}
-        hint="Цели и решения появятся после фиксации первой стратегической встречи."
-      />
-    );
-  }
-  return (
-    <StaggerSection delayMs={0}>
-      {/* «Вектор к цели» теперь на первом экране главной (Р2 — объединён в
-          GoalVectorVerdictWidget). Здесь остаются встречи и решения. */}
-      <div className="mb-6">
-        <LowRoiMeetingsWidget
-          meetings={pulse?.lowRoiMeetings.meetings ?? []}
-          loading={pulseLoading}
-          error={pulseError}
-        />
-      </div>
-      <div className="mb-6">
-        <IrreversibleDecisionsAlert
-          decisions={pulse?.irreversibleDecisions?.decisions ?? []}
-          alertCount={pulse?.irreversibleDecisions?.alertCount ?? 0}
-        />
-      </div>
-      <div className="mb-6">
-        <QualityScoreWidget />
-      </div>
-      {data?.goalsTree && data.goalsTree.length > 0 && (
-        <div className="mb-6 rounded-2xl border border-border-subtle/60 bg-bg-card p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Target size={16} className="text-accent" />
-            <h3 className="text-base font-medium text-fg-primary">
-              Дерево целей
-            </h3>
-          </div>
-          <GoalsTreeView
-            nodes={data.goalsTree.map(goalTreeNodeToRenderNode)}
-          />
-        </div>
-      )}
-      <div className="flex flex-wrap gap-4">
-        <TabBottomLink href="/goals" label="Открыть /goals →" />
-        <TabBottomLink href="/meetings" label="Открыть /meetings →" />
-      </div>
-    </StaggerSection>
-  );
-}
-
-function TabBottomLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center text-sm font-medium text-accent-fg transition-colors hover:underline"
-    >
-      {label}
-    </Link>
   );
 }
 
@@ -922,7 +472,10 @@ function PeriodSwitch({
   disabled?: boolean;
 }) {
   return (
-    <div className="inline-flex items-center rounded-md border border-border-subtle bg-bg-card p-0.5 text-sm">
+    <div
+      className="inline-flex items-center rounded-md p-0.5 text-sm"
+      style={{ background: 'oklch(1 0 0 / 0.06)' }}
+    >
       {(['week', 'month'] as const).map((p) => (
         <button
           key={p}
@@ -931,11 +484,13 @@ function PeriodSwitch({
           onClick={() => onChange(p)}
           className={cn(
             'rounded-sm px-3 py-1 transition-colors',
-            value === p
-              ? 'bg-accent text-accent-fg'
-              : 'text-fg-secondary hover:text-fg-primary',
             disabled && 'opacity-50',
           )}
+          style={
+            value === p
+              ? { background: GRAD.violet, color: CHART.text }
+              : { color: CHART.dim }
+          }
         >
           {p === 'week' ? 'Неделя' : 'Месяц'}
         </button>
@@ -944,284 +499,517 @@ function PeriodSwitch({
   );
 }
 
-// ─── Widget: «Сигналы клиентов» ─────────────────────────────────────────────
+// ─── «Что было вчера» (daily-digest.shortSummary) ────────────────────────────
 
-function SignalCountersWidget({
+function YesterdayCard({
+  digest,
   loading,
-  counters,
+  error,
 }: {
+  digest: DailyDigestDomain | null;
   loading: boolean;
-  counters: DirectorDashboardSignalCountersDomain | null;
+  error: boolean;
 }) {
-  const max = useMemo(() => {
-    if (!counters) return 0;
-    return SIGNAL_COUNTERS_BUCKET_ORDER.reduce(
-      (acc, key) => Math.max(acc, counters[key] ?? 0),
-      0,
-    );
-  }, [counters]);
-
-  const total = useMemo(() => {
-    if (!counters) return 0;
-    return SIGNAL_COUNTERS_BUCKET_ORDER.reduce(
-      (acc, key) => acc + (counters[key] ?? 0),
-      0,
-    );
-  }, [counters]);
-
   return (
-    <GlassCard className="p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <ModernCardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
-          Сигналы клиентов
+    <GlassCard glow className="p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <ModernCardTitle icon={<Calendar size={16} />} grad={GRAD.violet}>
+          Что было вчера
         </ModernCardTitle>
-        {!loading && counters && (
+        {digest?.deliveredAt && (
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
+            style={{ background: 'oklch(0.7 0.16 245 / 0.14)', color: CHART.blue }}
           >
-            {total}
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: CHART.blue }}
+            />
+            доставлено в Telegram
           </span>
         )}
       </div>
-      {loading && <SkeletonList />}
-      {!loading && counters && total === 0 && (
-        <EmptyHint text="Сигналов от клиентов за период не зафиксировано." />
+      {error ? (
+        <FixingNote />
+      ) : loading ? (
+        <p className="text-sm" style={{ color: CHART.faint }}>
+          Собираем дайджест…
+        </p>
+      ) : digest?.shortSummary ? (
+        <p
+          className="text-sm leading-relaxed"
+          style={{ color: CHART.dim, whiteSpace: 'pre-wrap' }}
+        >
+          {digest.shortSummary}
+        </p>
+      ) : (
+        <EmptyHint
+          text="Дайджест дня появится после первой встречи или чек-инов команды."
+          ctaHref="/meetings"
+          ctaLabel="К встречам →"
+        />
       )}
-      {!loading && counters && total > 0 && (
-        <ul className="space-y-2">
-          {SIGNAL_COUNTERS_BUCKET_ORDER.map((key) => {
-            const v = counters[key] ?? 0;
-            const pct = max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 0;
+    </GlassCard>
+  );
+}
+
+// ─── «Требует вас» — карточка-якорь (амбер-glow) ─────────────────────────────
+
+const REQUIRES_SOURCE_ORDER = ['conflict', 'curation', 'intake', 'probe'] as const;
+const REQUIRES_SOURCE_LABEL: Record<
+  (typeof REQUIRES_SOURCE_ORDER)[number],
+  string
+> = {
+  conflict: 'конфликт',
+  curation: 'карточка знания',
+  intake: 'задача из встречи',
+  probe: 'вопрос Коры',
+};
+
+function RequiresAnchorCard({
+  total,
+  bySource,
+  loading,
+}: {
+  total: number;
+  bySource: {
+    curation: number;
+    conflict: number;
+    intake: number;
+    probe: number;
+  } | null;
+  loading: boolean;
+}) {
+  const topItems = bySource
+    ? REQUIRES_SOURCE_ORDER.filter((s) => bySource[s] > 0).slice(0, 3)
+    : [];
+
+  return (
+    <div
+      className="relative flex h-full flex-col overflow-hidden rounded-[22px] p-5"
+      style={{
+        background:
+          'linear-gradient(180deg, oklch(0.32 0.06 55 / 0.5), oklch(0.22 0.04 50 / 0.5))',
+        border: '1px solid oklch(0.84 0.16 80 / 0.25)',
+        backdropFilter: 'blur(14px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
+      }}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full blur-3xl"
+        style={{ background: 'oklch(0.84 0.16 80 / 0.4)' }}
+      />
+      <ModernCardTitle icon={<CheckCircle2 size={16} />} grad={GRAD.amber}>
+        Требует вас
+      </ModernCardTitle>
+
+      {loading ? (
+        <p className="mt-4 text-sm" style={{ color: CHART.faint }}>
+          Загружаем очередь…
+        </p>
+      ) : total > 0 ? (
+        <>
+          <div
+            className="mt-4 text-[44px] font-semibold leading-none tabular-nums"
+            style={{ color: CHART.amber, textShadow: '0 0 24px oklch(0.84 0.16 80 / 0.45)' }}
+          >
+            {total}
+          </div>
+          <div className="mb-3 mt-1.5 text-xs" style={{ color: CHART.faint }}>
+            решений в очереди
+          </div>
+          {topItems.length > 0 && (
+            <ul className="space-y-1.5">
+              {topItems.map((s) => (
+                <li key={s} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+                  >
+                    {REQUIRES_SOURCE_LABEL[s]}
+                  </span>
+                  <span className="tabular-nums" style={{ color: CHART.text }}>
+                    {bySource![s]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link
+            href="/actions"
+            className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium transition-transform hover:translate-y-[-1px]"
+            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.text }}
+          >
+            Открыть очередь
+            <ArrowRight size={15} />
+          </Link>
+        </>
+      ) : (
+        // Б-6: N=0 — спокойно, без тревоги (управление-по-исключению).
+        <div className="mt-4 flex flex-1 flex-col items-start justify-center gap-1.5">
+          <span style={{ color: CHART.mint }}>
+            <CheckCircle2 size={28} />
+          </span>
+          <p className="text-sm font-medium" style={{ color: CHART.text }}>
+            Ничего не ждёт вашего решения
+          </p>
+          <p className="text-xs" style={{ color: CHART.faint }}>
+            Кора сама разобрала очередь.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── «Самое острое» — радар топ-3 (затухание по свежести) ────────────────────
+
+/** Тон сигнала по типу: риск/боль → красный, возражение/конкурент → амбер, иначе синий. */
+function signalTone(signalType: string): { dot: string; chipBg: string } {
+  if (
+    signalType === 'churn_risk' ||
+    signalType === 'risk' ||
+    signalType === 'pain'
+  ) {
+    return { dot: CHART.red, chipBg: 'oklch(0.66 0.22 25 / 0.16)' };
+  }
+  if (
+    signalType === 'objection' ||
+    signalType === 'competitor_move' ||
+    signalType === 'drift'
+  ) {
+    return { dot: CHART.amber, chipBg: 'oklch(0.84 0.16 80 / 0.14)' };
+  }
+  return { dot: CHART.blue, chipBg: 'oklch(0.7 0.16 245 / 0.14)' };
+}
+
+function SharpRadarCard({
+  signals,
+  loading,
+}: {
+  signals: DirectorDashboardSignalDomain[];
+  loading: boolean;
+}) {
+  return (
+    <GlassCard className="p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <ModernCardTitle icon={<AlertTriangle size={16} />} grad={GRAD.amber}>
+          Самое острое — радар сигналов
+        </ModernCardTitle>
+        <Link
+          href="/insights"
+          className="ml-auto inline-flex items-center gap-1 text-xs font-medium hover:underline"
+          style={{ color: CHART.cyan }}
+        >
+          Открыть радар
+          <ArrowRight size={13} />
+        </Link>
+      </div>
+      {loading ? (
+        <p className="text-sm" style={{ color: CHART.faint }}>
+          Загружаем сигналы…
+        </p>
+      ) : signals.length === 0 ? (
+        <EmptyHint text="Острых сигналов за период не зафиксировано — это хорошо." />
+      ) : (
+        <ul className="space-y-1">
+          {signals.map((s, i) => {
+            const tone = signalTone(s.signalType);
+            // Затухание по свежести: свежие (i=0) ярче, дальше — мягче.
+            const opacity = 1 - i * 0.18;
+            const href = s.reasonSourceRef?.meetingId
+              ? `/meetings/${encodeURIComponent(s.reasonSourceRef.meetingId)}`
+              : s.reasonSourceRef?.decisionId
+                ? `/decisions/${encodeURIComponent(s.reasonSourceRef.decisionId)}`
+                : s.evidenceMeetingId
+                  ? `/meetings/${encodeURIComponent(s.evidenceMeetingId)}`
+                  : '/insights';
             return (
-              <li key={key} className="flex items-center gap-3 text-sm">
-                <div className="w-32 shrink-0 truncate" style={{ color: CHART.dim }}>
-                  {SIGNAL_COUNTERS_BUCKET_LABELS[key]}
-                </div>
-                <div
-                  className="relative flex-1 overflow-hidden rounded-full"
-                  style={{ background: 'oklch(1 0 0 / 0.06)' }}
+              <li key={s.id} style={{ opacity }}>
+                <Link
+                  href={href}
+                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
                 >
-                  <div
-                    className={cn('h-2 rounded-full', SIGNAL_COUNTERS_BUCKET_COLORS[key])}
-                    style={{ width: v > 0 ? `${pct}%` : '0%' }}
-                  />
-                </div>
-                <div
-                  className="w-8 shrink-0 text-right text-xs tabular-nums"
-                  style={{ color: CHART.dim }}
-                >
-                  {v}
-                </div>
+                  <span
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+                    style={{ background: tone.chipBg }}
+                    aria-hidden
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: tone.dot, boxShadow: `0 0 8px ${tone.dot}` }}
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm" style={{ color: CHART.text }}>
+                      {s.name}
+                    </div>
+                    <div className="text-xs" style={{ color: CHART.faint }}>
+                      {signalTypeLabel(s.signalType)}
+                      {Number.isFinite(s.confidence) && s.confidence > 0
+                        ? ` · уверенность ${Math.round(s.confidence * 100)}%`
+                        : ''}
+                    </div>
+                  </div>
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: tone.chipBg, color: tone.dot }}
+                  >
+                    {signalTypeLabel(s.signalType)}
+                  </span>
+                </Link>
               </li>
             );
           })}
         </ul>
       )}
-      {!loading && counters && total > 0 && (
-        <p
-          className="mt-3 text-xs"
-          style={{ color: CHART.faint }}
-          title="Открытие подборки по типу сигнала появится в следующих версиях"
-        >
-          Подборка по типу сигнала — vNext.
-        </p>
-      )}
     </GlassCard>
   );
 }
 
-// ─── Widget: «Активные темы» ────────────────────────────────────────────────
+// ─── «Лента дня» (свёрнуто, топ-5 eventsToday) ───────────────────────────────
 
-function ActiveThemesWidget({
+const EVENT_KIND_LABEL: Record<string, string> = {
+  meeting: 'встреча',
+  decision: 'решение',
+  signal: 'сигнал',
+};
+
+function DayFeedCard({
+  digest,
   loading,
-  themes,
+  error,
 }: {
+  digest: DailyDigestDomain | null;
   loading: boolean;
-  themes: DirectorDashboardThemeDomain[];
+  error: boolean;
 }) {
+  const events = (digest?.eventsToday ?? []).slice(0, 5);
   return (
-    <GlassCard className="p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <ModernCardTitle icon={<TrendingUp size={16} />} grad={GRAD.teal}>
-          Активные темы
-        </ModernCardTitle>
-        {!loading && (
+    <details className="group overflow-hidden" style={glass({ borderRadius: 22 })}>
+      <summary
+        className="flex cursor-pointer list-none items-center justify-between gap-2 p-5 text-sm font-medium"
+        style={{ color: CHART.dim }}
+      >
+        <span className="flex items-center gap-2.5">
           <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+            className="grid h-8 w-8 place-items-center rounded-xl"
+            style={{ background: GRAD.teal, color: CHART.text }}
           >
-            {themes.length}
+            <ClipboardCheck size={16} />
           </span>
-        )}
-      </div>
-      <div className="space-y-1">
-        {loading && <SkeletonList />}
-        {!loading && themes.length === 0 && (
-          <EmptyHint text="Растущих тем сейчас нет." />
-        )}
-        {!loading &&
-          themes.slice(0, 10).map((t) => (
-            <Link
-              key={t.id}
-              href={`/themes/${encodeURIComponent(t.id)}`}
-              className="block rounded-lg p-2 text-sm transition-colors hover:bg-[oklch(1_0_0_/_0.06)]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium" style={{ color: CHART.text }}>
-                  {t.name}
-                </span>
-                {t.dynamic === 'growing' && (
-                  <span aria-label="растёт" title="Растёт">
-                    📈
+          Лента дня{events.length > 0 ? ` · ${events.length}` : ''}
+        </span>
+        <ArrowRight
+          size={16}
+          className="shrink-0 transition-transform group-open:rotate-90"
+          aria-hidden
+        />
+      </summary>
+      <div className="px-5 pb-5">
+        {error ? (
+          <FixingNote />
+        ) : loading ? (
+          <p className="text-sm" style={{ color: CHART.faint }}>
+            Загружаем события дня…
+          </p>
+        ) : events.length === 0 ? (
+          <EmptyHint text="Событий за день пока нет — появятся после встреч и решений." />
+        ) : (
+          <ul className="space-y-1">
+            {events.map((e) => (
+              <li key={`${e.kind}:${e.id}`}>
+                <Link
+                  href={e.link || '/meetings'}
+                  className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                >
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.faint }}
+                  >
+                    {EVENT_KIND_LABEL[e.kind] ?? e.kind}
                   </span>
-                )}
-              </div>
-              <div
-                className="mt-0.5 flex items-center gap-2 text-xs"
-                style={{ color: CHART.faint }}
-              >
-                {t.branch && (
-                  <span>{THEME_BRANCH_LABELS[t.branch as ThemeBranch]}</span>
-                )}
-                <span>· {t.blocksCount} блоков</span>
-              </div>
-            </Link>
-          ))}
-        {!loading && themes.length > 0 && (
-          <Link
-            href="/themes"
-            className="mt-1 flex items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition-colors hover:bg-[oklch(1_0_0_/_0.06)]"
-            style={{ color: CHART.dim }}
-          >
-            Все темы
-            <ArrowRight size={14} />
-          </Link>
+                  <span className="truncate text-sm" style={{ color: CHART.text }}>
+                    {e.title}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
-    </GlassCard>
+    </details>
   );
 }
 
-// ─── Widget: «Главные сущности» ─────────────────────────────────────────────
+// ─── Плашка «Вопросов Коры без ответа: N» ────────────────────────────────────
 
-function HotEntitiesWidget({
-  loading,
-  entities,
-}: {
-  loading: boolean;
-  entities: DirectorDashboardEntityDomain[];
-}) {
+function ProbeUnansweredPill({ count }: { count: number }) {
   return (
-    <GlassCard className="p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <ModernCardTitle icon={<Users size={16} />} grad={GRAD.violet}>
-          Главные сущности
-        </ModernCardTitle>
-        {!loading && (
-          <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
-          >
-            {entities.length}
-          </span>
-        )}
+    <Link
+      href="/actions"
+      className="flex h-full flex-col justify-center gap-1.5 rounded-[22px] p-5 transition-transform hover:translate-y-[-1px]"
+      style={{
+        background:
+          'linear-gradient(180deg, oklch(0.3 0.035 280 / 0.55), oklch(0.22 0.03 278 / 0.5))',
+        border: '1px solid oklch(1 0 0 / 0.08)',
+        backdropFilter: 'blur(14px) saturate(1.3)',
+        WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
+      }}
+    >
+      <div className="flex items-center gap-2 text-xs uppercase tracking-widest" style={{ color: CHART.faint }}>
+        <MessageCircle size={13} aria-hidden />
+        Вопросы Коры
       </div>
-      <div className="space-y-1">
-        {loading && <SkeletonList />}
-        {!loading && entities.length === 0 && (
-          <EmptyHint text="Сущностей с заметным ростом упоминаний за период нет." />
-        )}
-        {!loading &&
-          entities.slice(0, 10).map((e) => (
-            <div
-              key={e.id}
-              className="flex items-center justify-between gap-2 rounded-lg p-2 text-sm"
-              title="Страница сущности — vNext"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-medium" style={{ color: CHART.text }}>
-                  {e.canonicalName}
-                </span>
-                <Badge variant="outline" className="text-[10px]">
-                  {entityTypeLabel(e.type)}
-                </Badge>
-              </div>
-              <span className="shrink-0 text-xs" style={{ color: CHART.faint }}>
-                {e.recentMentions} упом.
+      <div
+        className="text-[34px] font-semibold leading-none tabular-nums"
+        style={{ color: count > 0 ? CHART.amber : CHART.mint }}
+      >
+        {count}
+      </div>
+      <div className="text-xs" style={{ color: CHART.dim }}>
+        {count > 0 ? 'без ответа — Кора ждёт вашего слова' : 'все вопросы закрыты'}
+      </div>
+    </Link>
+  );
+}
+
+// ─── Плашка «Дисциплина чек-инов сегодня» ────────────────────────────────────
+
+function CheckinDisciplineTodayPill({
+  data,
+  loading,
+  error,
+}: {
+  data: CheckinDisciplineDomain | null;
+  loading: boolean;
+  error: boolean;
+}) {
+  if (error) {
+    return (
+      <div
+        className="rounded-[22px] p-4"
+        style={glass({ borderRadius: 22 })}
+      >
+        <FixingNote />
+      </div>
+    );
+  }
+  if (loading || !data) {
+    return (
+      <div className="rounded-[22px] p-4" style={glass({ borderRadius: 22 })}>
+        <p className="text-sm" style={{ color: CHART.faint }}>
+          Загружаем дисциплину чек-инов…
+        </p>
+      </div>
+    );
+  }
+  // Б-6: чек-ины выключены → причина + CTA.
+  if (!data.enabled) {
+    return (
+      <div className="rounded-[22px] p-4" style={glass({ borderRadius: 22 })}>
+        <div className="flex items-center gap-2.5">
+          <span
+            className="grid h-8 w-8 place-items-center rounded-xl"
+            style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.faint }}
+          >
+            <ClipboardCheck size={16} />
+          </span>
+          <div>
+            <div className="text-sm font-medium" style={{ color: CHART.dim }}>
+              Дисциплина чек-инов — нет данных
+            </div>
+            <div className="text-xs" style={{ color: CHART.faint }}>
+              Чек-ины выключены. Включите их в настройках, чтобы видеть ритм команды.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { morningMissed, eveningMissed } = data.totals;
+  const allDone = morningMissed === 0 && eveningMissed === 0;
+
+  return (
+    <Link
+      href="/structure"
+      className="flex items-center gap-3 rounded-[22px] p-4 transition-transform hover:translate-y-[-1px]"
+      style={glass({ borderRadius: 22 })}
+    >
+      <span
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
+        style={{ background: GRAD.teal, color: CHART.text }}
+        aria-hidden
+      >
+        <ClipboardCheck size={18} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium" style={{ color: CHART.text }}>
+          Чек-ины сегодня
+        </div>
+        <div className="text-xs" style={{ color: allDone ? CHART.mint : CHART.dim }}>
+          {allDone ? (
+            'Все сдали — команда в ритме.'
+          ) : (
+            <>
+              Не сдали: утром{' '}
+              <span className="font-semibold tabular-nums" style={{ color: CHART.amber }}>
+                {morningMissed}
+              </span>{' '}
+              · вечером{' '}
+              <span className="font-semibold tabular-nums" style={{ color: CHART.amber }}>
+                {eveningMissed}
               </span>
-            </div>
-          ))}
+              {' '}— стоит мягко вернуть в ритм.
+            </>
+          )}
+        </div>
       </div>
-    </GlassCard>
+      <ArrowRight size={15} className="shrink-0" style={{ color: CHART.faint }} />
+    </Link>
   );
 }
 
-// ─── Widget: «Открытые вопросы» ─────────────────────────────────────────────
+// ─── Б-6 helpers ─────────────────────────────────────────────────────────────
 
-function OpenQuestionsWidget({
-  loading,
-  questions,
+function EmptyHint({
+  text,
+  ctaHref,
+  ctaLabel,
 }: {
-  loading: boolean;
-  questions: DirectorDashboardOpenQuestionDomain[];
+  text: string;
+  ctaHref?: string;
+  ctaLabel?: string;
 }) {
   return (
-    <GlassCard className="p-5 lg:col-span-2">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <ModernCardTitle icon={<HelpCircle size={16} />} grad={GRAD.amber}>
-          Открытые вопросы
-        </ModernCardTitle>
-        {!loading && (
-          <span
-            className="rounded-full px-2 py-0.5 text-xs font-medium"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
-          >
-            {questions.length}
-          </span>
-        )}
-      </div>
-      <div className="space-y-2">
-        {loading && <SkeletonList />}
-        {!loading && questions.length === 0 && (
-          <EmptyHint text="Открытых вопросов (knowledge_gap) пока нет." />
-        )}
-        {!loading &&
-          questions.slice(0, 10).map((q) => (
-            <div
-              key={q.id}
-              className="rounded-xl p-3 text-sm"
-              style={{ background: 'oklch(1 0 0 / 0.04)', border: '1px solid oklch(1 0 0 / 0.08)' }}
-            >
-              <p className="font-medium" style={{ color: CHART.text }}>
-                {q.criticalQuestion || q.name}
-              </p>
-              <p className="mt-1 text-xs" style={{ color: CHART.faint }}>
-                Зафиксировано{' '}
-                {q.createdAt.toLocaleDateString('ru', {
-                  day: '2-digit',
-                  month: 'short',
-                })}
-              </p>
-            </div>
-          ))}
-      </div>
-    </GlassCard>
-  );
-}
-
-// ─── Skeleton helpers ───────────────────────────────────────────────────────
-
-function SkeletonList() {
-  return (
-    <div className="space-y-2">
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-8 w-3/4" />
+    <div className="flex flex-col items-start gap-2">
+      <p className="text-sm" style={{ color: CHART.dim }}>
+        — {text}
+      </p>
+      {ctaHref && ctaLabel && (
+        <Link
+          href={ctaHref}
+          className="text-sm font-medium hover:underline"
+          style={{ color: CHART.cyan }}
+        >
+          {ctaLabel}
+        </Link>
+      )}
     </div>
   );
 }
 
-function EmptyHint({ text }: { text: string }) {
-  return <p className="text-sm text-fg-tertiary">{text}</p>;
+/** Плашка «чиним» при сбое виджета — без чисел (Б-6 сбой). */
+function FixingNote() {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-xl p-3 text-sm"
+      style={{ background: 'oklch(0.84 0.16 80 / 0.12)', color: CHART.amber }}
+    >
+      <AlertTriangle size={15} className="shrink-0" />
+      <span>Не удалось загрузить — чиним. Загляните чуть позже.</span>
+    </div>
+  );
 }

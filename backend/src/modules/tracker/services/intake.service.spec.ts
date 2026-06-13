@@ -130,9 +130,10 @@ function makePrismaMock(opts: {
 }
 
 function makeService(prisma: PrismaService): IntakeService {
-  // issues / events / webhooks не задействованы в findAll — пустые заглушки.
+  // issues / events / webhooks / cfg не задействованы в findAll — заглушки.
   return new IntakeService(
     prisma,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { ConversationalService } from '../../conversational/conversational.service';
+import type { ConflictService } from '../../curation/services/conflict.service';
 import type { CurationService } from '../../curation/services/curation.service';
+import type { IntakeService } from '../../tracker/services/intake.service';
 import type { ConflictPendingProvider } from '../providers/conflict.provider';
 import type { CurationPendingProvider } from '../providers/curation.provider';
 import type { IntakePendingProvider } from '../providers/intake.provider';
@@ -49,8 +52,14 @@ describe('PendingActionsService (B0)', () => {
   let intake: IntakePendingProvider;
   let probe: ProbePendingProvider;
   let curationService: CurationService;
+  let conflictService: ConflictService;
+  let intakeService: IntakeService;
+  let conversational: ConversationalService;
   let curationItemFindUnique: ReturnType<typeof vi.fn>;
   let decide: ReturnType<typeof vi.fn>;
+  let resolveConflict: ReturnType<typeof vi.fn>;
+  let triage: ReturnType<typeof vi.fn>;
+  let respondToProbe: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     membershipFindUnique = vi.fn().mockResolvedValue({ role: 'owner' });
@@ -65,6 +74,14 @@ describe('PendingActionsService (B0)', () => {
 
     decide = vi.fn().mockResolvedValue({ id: 'ci-1', status: 'decided' });
     curationService = { decide } as unknown as CurationService;
+    resolveConflict = vi.fn().mockResolvedValue({ id: 'cf-1', status: 'resolved' });
+    conflictService = { resolve: resolveConflict } as unknown as ConflictService;
+    triage = vi.fn().mockResolvedValue({ intake: { id: 'ii-1' }, createdIssue: null });
+    intakeService = { triage } as unknown as IntakeService;
+    respondToProbe = vi.fn().mockResolvedValue({ id: 'nt-1', responseStatus: 'answered' });
+    conversational = {
+      respondToProbe,
+    } as unknown as ConversationalService;
 
     curation = {
       source: 'curation',
@@ -94,6 +111,9 @@ describe('PendingActionsService (B0)', () => {
       intake,
       probe,
       curationService,
+      conflictService,
+      intakeService,
+      conversational,
     );
   });
 
@@ -216,21 +236,22 @@ describe('PendingActionsService (B0)', () => {
     expect(snoozeUpsert).not.toHaveBeenCalled();
   });
 
-  // ──────────────────────────── confirm (B4) ──────────────────────
+  // ──────────────────── confirm (Ф4 — сквозной резолв) ────────────
 
-  it('confirm: light curation pending → decide(approve) вызван', async () => {
+  it('confirm curation: light pending → decide(approve) вызван', async () => {
     curationItemFindUnique.mockResolvedValue({
       id: 'ci-1',
       tenantId: 't-1',
       status: 'pending',
       level: 'light',
     });
-    await svc.confirm({
+    const res = await svc.confirm({
       tenantId: 't-1',
       userId: 'u-1',
       source: 'curation',
       resourceId: 'ci-1',
     });
+    expect(res).toEqual({ ok: true });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(decide.mock.calls[0]![0]).toEqual({
       tenantId: 't-1',
@@ -240,19 +261,125 @@ describe('PendingActionsService (B0)', () => {
     });
   });
 
-  it('confirm: не-curation source → BadRequest, decide не вызван', async () => {
+  it('confirm curation: resolution=reject → decide(reject)', async () => {
+    curationItemFindUnique.mockResolvedValue({
+      id: 'ci-r',
+      tenantId: 't-1',
+      status: 'pending',
+      level: 'light',
+    });
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'curation',
+      resourceId: 'ci-r',
+      resolution: 'reject',
+    });
+    expect(decide.mock.calls[0]![0].decisionType).toBe('reject');
+  });
+
+  it('confirm conflict: keep_old → ConflictService.resolve(keep_old)', async () => {
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'conflict',
+      resourceId: 'cf-1',
+      resolution: 'keep_old',
+    });
+    expect(resolveConflict).toHaveBeenCalledTimes(1);
+    expect(resolveConflict.mock.calls[0]![0]).toEqual({
+      tenantId: 't-1',
+      conflictId: 'cf-1',
+      reviewerUserId: 'u-1',
+      resolution: 'keep_old',
+    });
+  });
+
+  it('confirm conflict: без resolution → BadRequest, resolve не вызван', async () => {
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'conflict',
+        resourceId: 'cf-2',
+      }),
+    ).rejects.toThrow();
+    expect(resolveConflict).not.toHaveBeenCalled();
+  });
+
+  it('confirm intake: accept → IntakeService.triage(accept) c targetProjectId', async () => {
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'intake',
+      resourceId: 'ii-1',
+      resolution: 'accept',
+      targetProjectId: 'proj-1',
+    });
+    expect(triage).toHaveBeenCalledTimes(1);
+    const [id, dto, tenantId, userId] = triage.mock.calls[0]!;
+    expect(id).toBe('ii-1');
+    expect(dto).toEqual({ decision: 'accept', targetProjectId: 'proj-1' });
+    expect(tenantId).toBe('t-1');
+    expect(userId).toBe('u-1');
+  });
+
+  it('confirm intake: reject → triage(reject), targetProjectId=null', async () => {
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'intake',
+      resourceId: 'ii-2',
+      resolution: 'reject',
+    });
+    expect(triage.mock.calls[0]![1]).toEqual({
+      decision: 'reject',
+      targetProjectId: null,
+    });
+  });
+
+  it('confirm intake: невалидный resolution → BadRequest, triage не вызван', async () => {
+    await expect(
+      svc.confirm({
+        tenantId: 't-1',
+        userId: 'u-1',
+        source: 'intake',
+        resourceId: 'ii-3',
+        resolution: 'merge',
+      }),
+    ).rejects.toThrow();
+    expect(triage).not.toHaveBeenCalled();
+  });
+
+  it('confirm probe: answerText → respondToProbe({text})', async () => {
+    await svc.confirm({
+      tenantId: 't-1',
+      userId: 'u-1',
+      source: 'probe',
+      resourceId: 'nt-1',
+      answerText: '  Да, согласен  ',
+    });
+    expect(respondToProbe).toHaveBeenCalledTimes(1);
+    expect(respondToProbe.mock.calls[0]![0]).toEqual({
+      notificationId: 'nt-1',
+      userId: 'u-1',
+      payload: { text: 'Да, согласен' },
+    });
+  });
+
+  it('confirm probe: без answerText → BadRequest, respondToProbe не вызван', async () => {
     await expect(
       svc.confirm({
         tenantId: 't-1',
         userId: 'u-1',
         source: 'probe',
-        resourceId: 'r',
+        resourceId: 'nt-2',
       }),
     ).rejects.toThrow();
-    expect(decide).not.toHaveBeenCalled();
+    expect(respondToProbe).not.toHaveBeenCalled();
   });
 
-  it('confirm: не-light уровень → BadRequest, decide не вызван', async () => {
+  it('confirm curation: не-light уровень → BadRequest, decide не вызван', async () => {
     curationItemFindUnique.mockResolvedValue({
       id: 'ci-2',
       tenantId: 't-1',

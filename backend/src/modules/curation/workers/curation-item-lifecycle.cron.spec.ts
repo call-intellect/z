@@ -26,6 +26,8 @@ describe('CurationItemLifecycleCron (B5)', () => {
   let orgFindManyMock: ReturnType<typeof vi.fn>;
   let itemFindManyMock: ReturnType<typeof vi.fn>;
   let itemUpdateManyMock: ReturnType<typeof vi.fn>;
+  let conflictUpdateManyMock: ReturnType<typeof vi.fn>;
+  let intakeUpdateManyMock: ReturnType<typeof vi.fn>;
   let membershipFindManyMock: ReturnType<typeof vi.fn>;
   let incExpiredMock: ReturnType<typeof vi.fn>;
   let incItemMock: ReturnType<typeof vi.fn>;
@@ -36,6 +38,8 @@ describe('CurationItemLifecycleCron (B5)', () => {
     orgFindManyMock = vi.fn();
     itemFindManyMock = vi.fn();
     itemUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 });
+    conflictUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 });
+    intakeUpdateManyMock = vi.fn().mockResolvedValue({ count: 0 });
     membershipFindManyMock = vi.fn().mockResolvedValue([]);
     incExpiredMock = vi.fn();
     incItemMock = vi.fn();
@@ -48,6 +52,8 @@ describe('CurationItemLifecycleCron (B5)', () => {
         findMany: itemFindManyMock,
         updateMany: itemUpdateManyMock,
       },
+      conflictItem: { updateMany: conflictUpdateManyMock },
+      intakeIssue: { updateMany: intakeUpdateManyMock },
       membership: { findMany: membershipFindManyMock },
     } as unknown as PrismaService;
 
@@ -169,5 +175,70 @@ describe('CurationItemLifecycleCron (B5)', () => {
     expect(summary.expiredTotal).toBe(1);
     expect(itemUpdateManyMock).toHaveBeenCalledTimes(1);
     expect(summary.notificationsSent).toBe(0);
+  });
+
+  // ──────────────── Редизайн Ф4 — sweep конфликтов/intake ────────────────
+
+  it('Ф4: протухшие ConflictItem(open) → dismissed, IntakeIssue(pending) → rejected', async () => {
+    orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
+    itemFindManyMock.mockResolvedValue([]); // нет протухших curation-items
+    conflictUpdateManyMock.mockResolvedValue({ count: 2 });
+    intakeUpdateManyMock.mockResolvedValue({ count: 3 });
+
+    const summary = await cron.runForAllOrgs();
+
+    expect(summary.conflictsDismissed).toBe(2);
+    expect(summary.intakesRejected).toBe(3);
+
+    // ConflictItem: open + expiresAt<now → dismissed + reasoning + resolvedAt.
+    const cWhere = conflictUpdateManyMock.mock.calls[0]![0].where;
+    expect(cWhere.status).toBe('open');
+    expect(cWhere.expiresAt.not).toBeNull();
+    expect(cWhere.expiresAt.lt).toBeInstanceOf(Date);
+    const cData = conflictUpdateManyMock.mock.calls[0]![0].data;
+    expect(cData.status).toBe('dismissed');
+    expect(cData.reasoning).toBe(CurationItemLifecycleCron.AUTO_EXPIRE_REASON);
+    expect(cData.resolvedAt).toBeInstanceOf(Date);
+
+    // IntakeIssue: pending + expiresAt<now → rejected + rejectedReason + triagedAt.
+    const iWhere = intakeUpdateManyMock.mock.calls[0]![0].where;
+    expect(iWhere.status).toBe('pending');
+    expect(iWhere.expiresAt.not).toBeNull();
+    const iData = intakeUpdateManyMock.mock.calls[0]![0].data;
+    expect(iData.status).toBe('rejected');
+    expect(iData.rejectedReason).toBe(
+      CurationItemLifecycleCron.AUTO_EXPIRE_REASON,
+    );
+    expect(iData.triagedAt).toBeInstanceOf(Date);
+  });
+
+  it('Ф4: свежие (count=0) не трогаются — sweep вызван, но summary нули', async () => {
+    orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
+    itemFindManyMock.mockResolvedValue([]);
+    // updateMany по фильтру не находит свежих → count 0 (дефолт mock).
+
+    const summary = await cron.runForAllOrgs();
+
+    expect(conflictUpdateManyMock).toHaveBeenCalledTimes(1);
+    expect(intakeUpdateManyMock).toHaveBeenCalledTimes(1);
+    expect(summary.conflictsDismissed).toBe(0);
+    expect(summary.intakesRejected).toBe(0);
+  });
+
+  it('Ф4: повторный прогон — no-op (updateMany по фильтру не находит уже закрытых)', async () => {
+    orgFindManyMock.mockResolvedValue([{ id: 'org-1' }]);
+    itemFindManyMock.mockResolvedValue([]);
+    // Первый прогон закрыл 1 конфликт, второй — уже ничего (count=0).
+    conflictUpdateManyMock
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    const first = await cron.runForAllOrgs();
+    const second = await cron.runForAllOrgs();
+
+    expect(first.conflictsDismissed).toBe(1);
+    expect(second.conflictsDismissed).toBe(0);
+    // Идемпотентность: фильтр одинаковый, повторный прогон безопасен.
+    expect(conflictUpdateManyMock).toHaveBeenCalledTimes(2);
   });
 });

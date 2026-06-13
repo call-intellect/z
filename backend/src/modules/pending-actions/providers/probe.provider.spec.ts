@@ -74,7 +74,7 @@ describe('ProbePendingProvider (B0)', () => {
 
   it('list: без expiry → normal', async () => {
     findManyMock.mockResolvedValue([
-      { id: 'nt-10', expiresAt: null, createdAt: new Date() },
+      { id: 'nt-10', expiresAt: null, createdAt: new Date(), payload: null },
     ]);
     const items = await provider.listForUser({
       tenantId: 't-1',
@@ -84,5 +84,51 @@ describe('ProbePendingProvider (B0)', () => {
       snoozedResourceIds: new Set(),
     });
     expect(items[0]!.severity).toBe('normal');
+  });
+
+  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
+
+  it('Ф4: title = текст вопроса из payload; detail.kind=probe с question/context/notificationId', async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: 'nt-11',
+        expiresAt: null,
+        createdAt: new Date(),
+        payload: {
+          question: 'Кто отвечает за релиз?',
+          askedBy: 'specialist-3-3',
+          context: 'На встрече не назначили ответственного',
+        },
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'member',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe('Кто отвечает за релиз?');
+    expect(items[0]!.detail).toEqual({
+      kind: 'probe',
+      question: 'Кто отвечает за релиз?',
+      context: 'На встрече не назначили ответственного',
+      notificationId: 'nt-11',
+    });
+  });
+
+  it('Ф4: payload без question → мягкий fallback в title (не падаем)', async () => {
+    findManyMock.mockResolvedValue([
+      { id: 'nt-12', expiresAt: null, createdAt: new Date(), payload: {} },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'member',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe('Уточняющий вопрос ждёт вашего ответа');
+    expect(items[0]!.detail?.kind).toBe('probe');
   });
 });

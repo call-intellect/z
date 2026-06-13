@@ -8,7 +8,9 @@ import {
 } from '@nestjs/common';
 import { Prisma, type IntakeIssue } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import type {
   CreateIntakeDto,
   ListIntakeQuery,
@@ -101,6 +103,8 @@ export class IntakeService {
     private readonly events: TrackerEventsService,
     @Inject(WebhookDispatcher)
     private readonly webhooks: WebhookDispatcher,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
     // Wave 3 / Tracker Phase 3 part B — best-effort enqueue auto-triage.
     // @Optional, чтобы существующие unit-тесты IntakeService не упали
     // (там DI без Redis). В рантайме провайдер инжектится через TrackerModule.
@@ -135,6 +139,10 @@ export class IntakeService {
           dto.confidence != null
             ? new Prisma.Decimal(dto.confidence)
             : null,
+        // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
+        // pending-intake после TTL (cfg.pendingActions.intakeTtlDays). TODO:
+        // крутилка позже уедет в AdminSetting UI.
+        expiresAt: computeExpiresAt(this.cfg.pendingActions.intakeTtlDays),
       },
     });
     const response = this.toResponse(created);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
@@ -177,12 +178,17 @@ function mkService(opts?: {
   };
   const queue = { enqueue: vi.fn().mockResolvedValue(undefined) };
 
+  const cfg = {
+    pendingActions: { intakeTtlDays: 30 },
+  };
+
   const service = new MeetingExtractActionsService(
     prisma as unknown as PrismaService,
     llm as unknown as LlmRouterService,
     participantContext as unknown as ParticipantContextService,
     orgContext as unknown as OrgContextService,
     assigneeResolver as unknown as TaskAssigneeResolverService,
+    cfg as unknown as TypedConfigService,
     metrics as unknown as BusinessMetricsService,
     queue as unknown as IntakeAutoTriageQueueService,
   );

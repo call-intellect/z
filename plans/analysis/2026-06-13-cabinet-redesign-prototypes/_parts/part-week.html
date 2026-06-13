@@ -1,0 +1,377 @@
+<!-- ============================ НЕДЕЛЯ ============================ -->
+      <section class="screen" id="screen-week">
+
+        <!-- Вкладки -->
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
+          <div class="pill-group">
+            <button class="pill active">Сводка</button>
+            <button class="pill">Пульс сейчас</button>
+            <button class="pill">Кто держит слово</button>
+          </div>
+          <span class="faint" style="font-size:12.5px;">Понедельничный разбор · обновлено сегодня 08:30</span>
+        </div>
+
+        <!-- 1. Вердикт недели -->
+        <div class="verdict-bar">
+          <span class="led-lg"></span>
+          <div style="flex:1">
+            <div style="font-weight:600; font-size:14px;">Неделя 9–15 июня. Команда держит темп, 2 зоны риска.</div>
+            <div class="faint" style="font-size:12px; margin-top:2px;">12 встреч разобрано · настроение стабильно · 2 повторяющиеся проблемы требуют решения</div>
+          </div>
+          <button class="btn primary">Открыть разбор →</button>
+        </div>
+
+        <!-- 2. КТО ДЕРЖИТ СЛОВО (поднято наверх) -->
+        <div class="grid g2">
+          <!-- Топ надёжных -->
+          <div class="glass float">
+            <span class="glow teal"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-mint)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+              </span>
+              <h3>Кто держит слово</h3>
+              <span class="chip ok" style="margin-left:auto"><span class="led"></span>опора недели</span>
+            </div>
+            <table class="mtable">
+              <thead>
+                <tr><th>Сотрудник</th><th>Направление</th><th class="r">Сдержал обещаний</th><th class="r">Статус</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-mint)">АН</span>Анна Носова</div></td>
+                  <td class="muted">Продажи</td>
+                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">7 из 7</span><span class="progress" style="width:64px"><span style="width:100%"></span></span></div></td>
+                  <td class="r"><span class="chip ok"><span class="led"></span>100%</span></td>
+                </tr>
+                <tr>
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-teal)">ДК</span>Дмитрий Карпов</div></td>
+                  <td class="muted">Разработка</td>
+                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">8 из 9</span><span class="progress" style="width:64px"><span style="width:89%"></span></span></div></td>
+                  <td class="r"><span class="chip ok"><span class="led"></span>89%</span></td>
+                </tr>
+                <tr>
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-blue)">СГ</span>Сергей Глебов</div></td>
+                  <td class="muted">Поддержка</td>
+                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">5 из 6</span><span class="progress" style="width:64px"><span style="width:83%"></span></span></div></td>
+                  <td class="r"><span class="chip ok"><span class="led"></span>83%</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="faint" style="font-size:12px; margin-top:12px;">показано 3 из 4 · <span style="color:var(--cyan); cursor:pointer">показать всех →</span></div>
+          </div>
+
+          <!-- Зона риска -->
+          <div class="glass float">
+            <span class="glow amber"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-amber)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              </span>
+              <h3>Кому нужна помощь</h3>
+              <span class="chip warn" style="margin-left:auto"><span class="led"></span>зона внимания</span>
+            </div>
+            <table class="mtable">
+              <thead>
+                <tr><th>Сотрудник</th><th>Направление</th><th class="r">Сдержал обещаний</th><th class="r">Чем помочь</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ИВ</span>Игорь Власов</div></td>
+                  <td class="muted">Внедрение</td>
+                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">2 из 5</span><span class="progress warn" style="width:64px"><span style="width:40%"></span></span></div></td>
+                  <td class="r"><span class="chip warn"><span class="led"></span>снять блокер</span></td>
+                </tr>
+                <tr>
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">МР</span>Марина Рыжова</div></td>
+                  <td class="muted">Маркетинг</td>
+                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">3 из 5</span><span class="progress warn" style="width:64px"><span style="width:60%"></span></span></div></td>
+                  <td class="r"><span class="chip info"><span class="led"></span>разгрузить</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="faint" style="font-size:12px; margin-top:12px; line-height:1.5;">Не оценка людей, а подсказка где разблокировать. У Игоря 3 обещания сорвались из-за задержки оплаты коннекторов — это блокер, не он.</div>
+          </div>
+        </div>
+
+        <!-- 3. KPI недели с дельтами и sparkline -->
+        <div class="section-h mt">Пульс недели в цифрах</div>
+        <div class="grid g4">
+          <div class="stat">
+            <div class="stat-top">
+              <span class="stat-icon" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 13a4 4 0 0 0 8 0"/><circle cx="9" cy="9" r="1"/><circle cx="15" cy="9" r="1"/><circle cx="12" cy="12" r="9"/></svg></span>
+              <svg class="spark" width="62" height="26" viewBox="0 0 62 26"><defs><linearGradient id="sp1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.78 0.20 350 / 0.5)"/><stop offset="1" stop-color="oklch(0.78 0.20 350 / 0)"/></linearGradient></defs><path d="M0 18 L12 16 L24 19 L36 12 L48 13 L62 8 L62 26 L0 26 Z" fill="url(#sp1)"/><polyline points="0,18 12,16 24,19 36,12 48,13 62,8" fill="none" stroke="oklch(0.78 0.20 350)" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="stat-label">Настроение команды</div>
+            <div class="stat-value">Спокойное</div>
+            <div class="stat-foot"><span class="delta up">↑ выше</span><span class="stat-sub">к прошлой неделе</span></div>
+          </div>
+
+          <div class="stat">
+            <div class="stat-top">
+              <span class="stat-icon" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+              <svg class="spark" width="62" height="26" viewBox="0 0 62 26"><defs><linearGradient id="sp2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.85 0.15 165 / 0.5)"/><stop offset="1" stop-color="oklch(0.85 0.15 165 / 0)"/></linearGradient></defs><path d="M0 20 L12 17 L24 18 L36 11 L48 9 L62 6 L62 26 L0 26 Z" fill="url(#sp2)"/><polyline points="0,20 12,17 24,18 36,11 48,9 62,6" fill="none" stroke="oklch(0.85 0.15 165)" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="stat-label">Надёжность обещаний</div>
+            <div class="stat-value">78<span style="font-size:18px; color:var(--dim)">%</span></div>
+            <div class="stat-foot"><span class="delta up">↑ 11</span><span class="stat-sub">к прошлой</span></div>
+          </div>
+
+          <div class="stat">
+            <div class="stat-top">
+              <span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+              <svg class="spark" width="62" height="26" viewBox="0 0 62 26"><defs><linearGradient id="sp3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.86 0.15 168 / 0.5)"/><stop offset="1" stop-color="oklch(0.86 0.15 168 / 0)"/></linearGradient></defs><path d="M0 12 L12 14 L24 10 L36 13 L48 7 L62 9 L62 26 L0 26 Z" fill="url(#sp3)"/><polyline points="0,12 12,14 24,10 36,13 48,7 62,9" fill="none" stroke="oklch(0.86 0.15 168)" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="stat-label">Закрыто блокеров</div>
+            <div class="stat-value">5</div>
+            <div class="stat-foot"><span class="delta up">↑ 2</span><span class="stat-sub">осталось 3</span></div>
+          </div>
+
+          <div class="stat">
+            <div class="stat-top">
+              <span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+              <svg class="spark" width="62" height="26" viewBox="0 0 62 26"><defs><linearGradient id="sp4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.70 0.16 245 / 0.5)"/><stop offset="1" stop-color="oklch(0.70 0.16 245 / 0)"/></linearGradient></defs><path d="M0 16 L12 14 L24 15 L36 10 L48 11 L62 7 L62 26 L0 26 Z" fill="url(#sp4)"/><polyline points="0,16 12,14 24,15 36,10 48,11 62,7" fill="none" stroke="oklch(0.70 0.16 245)" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="stat-label">Доведено решений</div>
+            <div class="stat-value">9<span style="font-size:18px; color:var(--dim)"> из 14</span></div>
+            <div class="stat-foot"><span class="delta up">↑ 4</span><span class="stat-sub">к прошлой</span></div>
+          </div>
+        </div>
+
+        <!-- 4. ПУЛЬС СЕЙЧАС — 3 зоны -->
+        <div class="section-h mt">Пульс сейчас</div>
+        <div class="grid g3">
+          <!-- Люди -->
+          <div class="glass float">
+            <span class="glow"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+              <h3>Люди</h3>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+              <span class="hero-num glow-text" style="color:var(--violet)">4</span>
+              <span class="faint" style="font-size:12px;">в команде · все активны</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:9px;">
+              <span class="chip ok" style="align-self:flex-start"><span class="led"></span>3 на подъёме настроения</span>
+              <span class="chip warn" style="align-self:flex-start"><span class="led"></span>1 с признаками перегрузки</span>
+              <span class="chip info" style="align-self:flex-start"><span class="led"></span>0 давно не выходили на связь</span>
+            </div>
+          </div>
+
+          <!-- Исполнение -->
+          <div class="glass float">
+            <span class="glow teal"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+              <h3>Исполнение</h3>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+              <span class="hero-num glow-text" style="color:var(--mint)">23</span>
+              <span class="faint" style="font-size:12px;">обещания в работе</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:9px;">
+              <span class="chip ok" style="align-self:flex-start"><span class="led"></span>18 в срок</span>
+              <span class="chip warn" style="align-self:flex-start"><span class="led"></span>3 на грани срока</span>
+              <span class="chip risk" style="align-self:flex-start"><span class="led"></span>2 просрочено</span>
+            </div>
+          </div>
+
+          <!-- Сигналы -->
+          <div class="glass float">
+            <span class="glow amber"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h3l3 8 4-16 3 8h5"/></svg></span>
+              <h3>Сигналы</h3>
+            </div>
+            <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px;">
+              <span class="hero-num glow-text" style="color:var(--amber)">6</span>
+              <span class="faint" style="font-size:12px;">сигналов с радара</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:9px;">
+              <span class="chip risk" style="align-self:flex-start"><span class="led"></span>1 риск ухода клиента</span>
+              <span class="chip warn" style="align-self:flex-start"><span class="led"></span>3 повторяющиеся боли</span>
+              <span class="chip info" style="align-self:flex-start"><span class="led"></span>2 новых за неделю</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Карта причин недели -->
+        <div class="glass mt">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-red)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg></span>
+            <h3>Что повторялось всю неделю</h3>
+            <span class="more">смотреть источники →</span>
+          </div>
+          <div class="row-list">
+            <div class="list-row">
+              <span class="lead" style="background:var(--risk-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--red);box-shadow:0 0 8px var(--red)"></span></span>
+              <div class="body"><div class="ttl">Клиенты «Орбита» и «Вектор» жалуются на молчание поддержки</div><div class="meta">упомянуто на 4 встречах · растёт · риск ухода</div></div>
+              <span class="chip risk">4 раза</span>
+            </div>
+            <div class="list-row">
+              <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
+              <div class="body"><div class="ttl">Задержка оплаты коннекторов тормозит внедрение у клиентов</div><div class="meta">упомянуто на 3 встречах · блокирует Игоря</div></div>
+              <span class="chip warn">3 раза</span>
+            </div>
+            <div class="list-row">
+              <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
+              <div class="body"><div class="ttl">Нет единого регламента передачи сделки из продаж во внедрение</div><div class="meta">упомянуто на 3 встречах · две версии у команды</div></div>
+              <span class="chip warn">3 раза</span>
+            </div>
+            <div class="list-row">
+              <span class="lead" style="background:var(--info-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--blue);box-shadow:0 0 8px var(--blue)"></span></span>
+              <div class="body"><div class="ttl">Маркетинг перегружен — один человек ведёт три направления сразу</div><div class="meta">упомянуто на 2 встречах · просьба о помощи</div></div>
+              <span class="chip info">2 раза</span>
+            </div>
+            <div class="list-row">
+              <span class="lead" style="background:var(--info-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--blue);box-shadow:0 0 8px var(--blue)"></span></span>
+              <div class="body"><div class="ttl">Вопрос по тарифной сетке всплывает у разных клиентов</div><div class="meta">упомянуто на 2 встречах · новое</div></div>
+              <span class="chip info">2 раза</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Температура команды — heatmap -->
+        <div class="glass mt">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/></svg></span>
+            <h3>Температура команды</h3>
+            <div class="pill-group" style="margin-left:auto">
+              <button class="pill active">Общая</button>
+              <button class="pill">По людям</button>
+            </div>
+          </div>
+          <div class="heat">
+            <div class="heat-row">
+              <span class="heat-label"></span>
+              <span class="heat-label" style="text-align:center">Пн</span>
+              <span class="heat-label" style="text-align:center">Вт</span>
+              <span class="heat-label" style="text-align:center">Ср</span>
+              <span class="heat-label" style="text-align:center">Чт</span>
+              <span class="heat-label" style="text-align:center">Пт</span>
+            </div>
+            <div class="heat-row">
+              <span class="heat-label">Энергия</span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.55)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.40)"></span>
+              <span class="heat-cell" style="background:oklch(0.84 0.16 80 / 0.45)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.50)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.65)"></span>
+            </div>
+            <div class="heat-row">
+              <span class="heat-label">Темп</span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.45)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.55)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.50)"></span>
+              <span class="heat-cell" style="background:oklch(0.84 0.16 80 / 0.40)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.60)"></span>
+            </div>
+            <div class="heat-row">
+              <span class="heat-label">Напряжение</span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.30)"></span>
+              <span class="heat-cell" style="background:oklch(0.84 0.16 80 / 0.45)"></span>
+              <span class="heat-cell" style="background:oklch(0.66 0.22 25 / 0.45)"></span>
+              <span class="heat-cell" style="background:oklch(0.84 0.16 80 / 0.40)"></span>
+              <span class="heat-cell" style="background:oklch(0.85 0.15 165 / 0.30)"></span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:18px; margin-top:16px; flex-wrap:wrap;">
+            <span class="chip ok"><span class="led"></span>хорошо</span>
+            <span class="chip warn"><span class="led"></span>под нагрузкой</span>
+            <span class="chip risk"><span class="led"></span>пик напряжения</span>
+            <span class="faint" style="font-size:12px; margin-left:auto;">Среда — пик напряжения: совпало со срывом сроков по внедрению</span>
+          </div>
+        </div>
+
+        <!-- 6. Вектор целей + здоровье портфеля -->
+        <div class="grid g2 mt">
+          <!-- Gauge здоровья портфеля -->
+          <div class="glass float">
+            <span class="glow teal"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12A10 10 0 1 1 12 2"/><path d="M12 12l5-3"/></svg></span>
+              <h3>Здоровье портфеля целей</h3>
+            </div>
+            <div style="display:flex; justify-content:center; padding:6px 0 4px;">
+              <svg width="240" height="150" viewBox="0 0 240 150">
+                <defs>
+                  <linearGradient id="gaugeFill" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="oklch(0.84 0.16 80)"/>
+                    <stop offset="0.6" stop-color="oklch(0.86 0.15 168)"/>
+                    <stop offset="1" stop-color="oklch(0.85 0.15 165)"/>
+                  </linearGradient>
+                </defs>
+                <!-- фон-дуга -->
+                <path d="M30 130 A90 90 0 0 1 210 130" fill="none" stroke="oklch(1 0 0 / 0.07)" stroke-width="16" stroke-linecap="round"/>
+                <!-- заполнение 72% -->
+                <path d="M30 130 A90 90 0 0 1 210 130" fill="none" stroke="url(#gaugeFill)" stroke-width="16" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="79" filter="drop-shadow(0 0 10px oklch(0.85 0.15 165 / 0.6))"/>
+                <text x="120" y="115" fill="var(--text)" font-size="44" font-weight="600" text-anchor="middle" letter-spacing="-1">72</text>
+                <text x="120" y="138" fill="var(--faint)" font-size="12" text-anchor="middle">из 100 · хорошее</text>
+              </svg>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+              <span class="chip ok"><span class="led"></span>2 цели в графике</span>
+              <span class="chip warn"><span class="led"></span>1 отстаёт</span>
+              <span class="chip info"><span class="led"></span>1 без активности</span>
+            </div>
+          </div>
+
+          <!-- Donut статусов целей -->
+          <div class="glass float">
+            <span class="glow"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-6"/></svg></span>
+              <h3>Вектор целей</h3>
+            </div>
+            <div style="display:flex; align-items:center; gap:24px;">
+              <svg width="150" height="150" viewBox="0 0 150 150">
+                <defs>
+                  <linearGradient id="dMint" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.88 0.16 165)"/><stop offset="1" stop-color="oklch(0.78 0.13 195)"/></linearGradient>
+                  <linearGradient id="dAmber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.86 0.16 85)"/><stop offset="1" stop-color="oklch(0.72 0.18 45)"/></linearGradient>
+                  <linearGradient id="dBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.74 0.15 240)"/><stop offset="1" stop-color="oklch(0.62 0.18 270)"/></linearGradient>
+                </defs>
+                <!-- donut: 50% в графике (mint), 25% отстаёт (amber), 25% спит (blue) -->
+                <circle cx="75" cy="75" r="54" fill="none" stroke="oklch(1 0 0 / 0.06)" stroke-width="20"/>
+                <circle cx="75" cy="75" r="54" fill="none" stroke="url(#dMint)" stroke-width="20" stroke-dasharray="169 170" stroke-dashoffset="0" transform="rotate(-90 75 75)" stroke-linecap="butt"/>
+                <circle cx="75" cy="75" r="54" fill="none" stroke="url(#dAmber)" stroke-width="20" stroke-dasharray="85 254" stroke-dashoffset="-169" transform="rotate(-90 75 75)" stroke-linecap="butt"/>
+                <circle cx="75" cy="75" r="54" fill="none" stroke="url(#dBlue)" stroke-width="20" stroke-dasharray="85 254" stroke-dashoffset="-254" transform="rotate(-90 75 75)" stroke-linecap="butt"/>
+                <text x="75" y="72" fill="var(--text)" font-size="26" font-weight="600" text-anchor="middle">4</text>
+                <text x="75" y="90" fill="var(--faint)" font-size="10" text-anchor="middle">цели</text>
+              </svg>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; align-items:center; gap:9px;"><span style="width:10px;height:10px;border-radius:3px;background:var(--grad-mint)"></span><div><div style="font-size:13px; font-weight:500;">25 платящих клиентов</div><div class="faint" style="font-size:11px;">в графике · 14 из 25</div></div></div>
+                <div style="display:flex; align-items:center; gap:9px;"><span style="width:10px;height:10px;border-radius:3px;background:var(--grad-mint)"></span><div><div style="font-size:13px; font-weight:500;">Запуск тарифа «Команда»</div><div class="faint" style="font-size:11px;">в графике · бета идёт</div></div></div>
+                <div style="display:flex; align-items:center; gap:9px;"><span style="width:10px;height:10px;border-radius:3px;background:var(--grad-amber)"></span><div><div style="font-size:13px; font-weight:500;">Снизить отток до 5%</div><div class="faint" style="font-size:11px;">отстаёт · поддержка тормозит</div></div></div>
+                <div style="display:flex; align-items:center; gap:9px;"><span style="width:10px;height:10px;border-radius:3px;background:var(--grad-blue)"></span><div><div style="font-size:13px; font-weight:500;">Выход в Казахстан</div><div class="faint" style="font-size:11px;">без активности 12 дней</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. AI-инсайт: расхождение слов и целей -->
+        <div class="ai-card mt">
+          <div class="ai-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></div>
+          <h3>Расхождение слов и целей</h3>
+          <p>
+            Всю неделю команда обсуждает <b style="color:var(--text)">«25 клиентов»</b> на встречах продаж и планёрках — это звучало 11 раз
+            <span class="cite">встречи 10–14 июня</span>. Но как формальную цель компании её никто не открыл и не ведёт: цель «25 платящих клиентов» висит без назначенного владельца. Слова есть, цель не закреплена — поэтому прогресс считается вручную, а не отслеживается. Стоит вынести закрепление цели на ближайшую планёрку и назначить ответственного.
+          </p>
+          <button class="ai-cta">Закрепить цель и владельца →</button>
+        </div>
+
+        <!-- 8. Прогноз на неделю — нет данных -->
+        <div class="glass mt" style="border-color:oklch(0.70 0.16 245/.18)">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></span>
+            <h3>Прогноз на следующую неделю</h3>
+          </div>
+          <div class="empty">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="1.5" style="margin:0 auto 10px; display:block;"><path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4" stroke-dasharray="3 3"/></svg>
+            <div style="font-size:14px; color:var(--dim); font-weight:500;">Пока недостаточно данных для прогноза</div>
+            <div style="margin-top:6px; max-width:420px; margin-left:auto; margin-right:auto; line-height:1.55;">Чтобы Кора строила прогноз, нужно 3–4 недели истории встреч и обещаний. Сейчас накоплена 1 полная неделя — прогноз появится после 26 июня.</div>
+            <div class="cta"><span class="chip info"><span class="led"></span>собрано 1 из 4 недель</span></div>
+          </div>
+        </div>
+
+      </section>

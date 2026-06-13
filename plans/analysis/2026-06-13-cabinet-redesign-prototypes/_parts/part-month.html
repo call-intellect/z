@@ -1,0 +1,302 @@
+<!-- ============================ ИТОГИ МЕСЯЦА ============================ -->
+<section class="screen" id="screen-month">
+
+  <!-- Шапка: период + действия -->
+  <div class="topbar" style="margin-bottom:18px">
+    <div class="topbar-left">
+      <h1>Итоги месяца</h1>
+      <span class="topbar-sub">ООО «Луа» · отчёт для владельца и совета</span>
+    </div>
+    <div class="topbar-right">
+      <div class="pill-group">
+        <button class="pill active">Май</button>
+        <button class="pill">Апрель</button>
+        <button class="pill">Март</button>
+      </div>
+      <button class="btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Скачать слайды
+      </button>
+      <button class="btn primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:6px"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+        Печать (PDF)
+      </button>
+    </div>
+  </div>
+
+  <!-- пометка про последний месяц с данными -->
+  <div class="verdict-bar" style="margin-bottom:22px">
+    <span class="led-lg"></span>
+    <div style="flex:1">
+      <div style="font-weight:600; font-size:14px;">Май — последний завершённый месяц с данными.</div>
+      <div class="faint" style="font-size:12px; margin-top:2px;">Собрано 38 встреч · 4 сотрудника · отчёт сформирован Корой автоматически 1 июня</div>
+    </div>
+    <span class="chip info"><span class="led"></span>готов к показу совету</span>
+  </div>
+
+  <!-- 1. AI-сводка месяца (крупный нарратив) -->
+  <div class="ai-card">
+    <span class="glow"></span>
+    <div class="ai-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></div>
+    <h3>Сводка месяца от Коры</h3>
+    <p style="font-size:14.5px; line-height:1.62; max-width:760px;">
+      Май — месяц набора темпа. Команда продвинулась к цели <b style="color:var(--text)">«25 платящих клиентов»</b>: подключили клиента
+      <span class="cite">«Орбита» · встреча 14.05 [08:12]</span> и довели до договора <span class="cite">«Вектор» · встреча 27.05 [21:40]</span> — теперь
+      <b style="color:var(--text)">19 платящих</b> против 16 в апреле. Фокус месяца сместился с разработки на продажи: доля встреч по продажам выросла с 28% до 41%.
+      Главный риск, который Кора держала на радаре весь месяц, — молчание поддержки: три клиента упоминали задержку ответов
+      <span class="cite">радар · 5 сигналов</span>; по итогам принято решение выделить дежурного. За месяц зафиксировано <b style="color:var(--text)">20 решений</b>,
+      из них <b style="color:var(--text)">14 доведено до внедрения</b> — это лучший показатель доведения с начала наблюдений.
+    </p>
+    <button class="ai-cta">Открыть полный разбор месяца →</button>
+  </div>
+
+  <!-- 2. СНЯТАЯ РУТИНА — 7 счётчиков -->
+  <div class="section-h mt" style="margin-top:24px">Снятая рутина — что Кора сделала за вас в мае</div>
+  <div class="grid g4" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span></div>
+      <div class="stat-label">Встреч запротоколировано</div>
+      <div class="stat-value">38</div>
+      <div class="stat-foot"><span class="delta up">↑ 9</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/></svg></span></div>
+      <div class="stat-label">Задач извлечено</div>
+      <div class="stat-value">112</div>
+      <div class="stat-foot"><span class="delta up">↑ 31</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span></div>
+      <div class="stat-label">Решений зафиксировано</div>
+      <div class="stat-value">20</div>
+      <div class="stat-foot"><span class="delta up">↑ 5</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+      <div class="stat-label">Обещаний собрано</div>
+      <div class="stat-value">47</div>
+      <div class="stat-foot"><span class="delta up">↑ 12</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat" style="margin-top:20px">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span></div>
+      <div class="stat-label">Статусов собрано</div>
+      <div class="stat-value">84</div>
+      <div class="stat-foot"><span class="delta up">↑ 18</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat" style="margin-top:20px">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+      <div class="stat-label">Вопросов отвечено с цитатой</div>
+      <div class="stat-value">203</div>
+      <div class="stat-foot"><span class="delta up">↑ 54</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <div class="stat" style="margin-top:20px">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7zM9 21h6"/></svg></span></div>
+      <div class="stat-label">Идей доведено до дела</div>
+      <div class="stat-value">11</div>
+      <div class="stat-foot"><span class="delta up">↑ 4</span><span class="stat-sub">к апрелю</span></div>
+    </div>
+    <!-- акцент-плашка в 4-й слот второго ряда -->
+    <div class="glass float" style="margin-top:20px; padding:20px; display:flex; flex-direction:column; justify-content:center; background:linear-gradient(180deg, oklch(0.34 0.07 200/.45), oklch(0.22 0.04 230/.45)); border-color:oklch(0.82 0.13 178/.22)">
+      <span class="glow teal"></span>
+      <div class="faint" style="font-size:11.5px; margin-bottom:6px;">Кора сэкономила команде в мае</div>
+      <div class="hero-num glow-text" style="color:var(--teal); font-size:34px">≈ 600</div>
+      <div class="muted" style="font-size:12.5px; margin-top:4px;">ручных пунктов протоколов и статусов, которые иначе писали бы люди</div>
+    </div>
+  </div>
+
+  <!-- 3. КОМАНДА ЛУЧШЕ (soft, «оценка») — 3 гейджа -->
+  <div class="section-h mt" style="margin-top:24px">
+    Команда лучше
+    <span class="chip warn" style="margin-left:8px; vertical-align:1px"><span class="led"></span>оценка Коры, не точная метрика</span>
+  </div>
+  <div class="grid g3">
+
+    <!-- Надёжность обещаний -->
+    <div class="glass float" style="text-align:center">
+      <span class="glow teal"></span>
+      <div class="card-title" style="justify-content:center">
+        <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <h3>Надёжность обещаний</h3>
+      </div>
+      <div style="display:flex; justify-content:center; padding:6px 0 4px;">
+        <svg width="180" height="108" viewBox="0 0 180 108">
+          <defs><linearGradient id="g-rel" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.86 0.15 168)"/><stop offset="1" stop-color="oklch(0.74 0.13 205)"/></linearGradient></defs>
+          <path d="M16 96 A74 74 0 0 1 164 96" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="13" stroke-linecap="round"/>
+          <path d="M16 96 A74 74 0 0 1 152 56" fill="none" stroke="url(#g-rel)" stroke-width="13" stroke-linecap="round" filter="drop-shadow(0 0 10px oklch(0.82 0.13 178 / 0.7))"/>
+          <text x="90" y="84" text-anchor="middle" fill="var(--text)" font-size="34" font-weight="600" letter-spacing="-0.02em">79%</text>
+        </svg>
+      </div>
+      <div class="muted" style="font-size:12.5px;">обещаний выполнено в срок</div>
+      <div class="faint" style="font-size:11.5px; margin-top:4px;">37 из 47 · в апреле было 71%</div>
+    </div>
+
+    <!-- Чат помог -->
+    <div class="glass float" style="text-align:center">
+      <span class="glow"></span>
+      <div class="card-title" style="justify-content:center">
+        <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+        <h3>Чат помог</h3>
+      </div>
+      <div style="display:flex; justify-content:center; padding:6px 0 4px;">
+        <svg width="180" height="108" viewBox="0 0 180 108">
+          <defs><linearGradient id="g-chat" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.78 0.20 350)"/><stop offset="1" stop-color="oklch(0.66 0.20 300)"/></linearGradient></defs>
+          <path d="M16 96 A74 74 0 0 1 164 96" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="13" stroke-linecap="round"/>
+          <path d="M16 96 A74 74 0 0 1 160 76" fill="none" stroke="url(#g-chat)" stroke-width="13" stroke-linecap="round" filter="drop-shadow(0 0 10px oklch(0.66 0.20 300 / 0.7))"/>
+          <text x="90" y="84" text-anchor="middle" fill="var(--text)" font-size="34" font-weight="600" letter-spacing="-0.02em">88%</text>
+        </svg>
+      </div>
+      <div class="muted" style="font-size:12.5px;">ответов команда отметила полезными</div>
+      <div class="faint" style="font-size:11.5px; margin-top:4px;">179 из 203 ответов · «полезно»</div>
+    </div>
+
+    <!-- % решений доведено -->
+    <div class="glass float" style="text-align:center">
+      <span class="glow amber"></span>
+      <div class="card-title" style="justify-content:center">
+        <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span>
+        <h3>Решения доведены</h3>
+      </div>
+      <div style="display:flex; justify-content:center; padding:6px 0 4px;">
+        <svg width="180" height="108" viewBox="0 0 180 108">
+          <defs><linearGradient id="g-dec" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.86 0.16 85)"/><stop offset="1" stop-color="oklch(0.74 0.18 45)"/></linearGradient></defs>
+          <path d="M16 96 A74 74 0 0 1 164 96" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="13" stroke-linecap="round"/>
+          <path d="M16 96 A74 74 0 0 1 138 41" fill="none" stroke="url(#g-dec)" stroke-width="13" stroke-linecap="round" filter="drop-shadow(0 0 10px oklch(0.84 0.16 80 / 0.7))"/>
+          <text x="90" y="84" text-anchor="middle" fill="var(--text)" font-size="34" font-weight="600" letter-spacing="-0.02em">70%</text>
+        </svg>
+      </div>
+      <div class="muted" style="font-size:12.5px;">решений доведено до внедрения</div>
+      <div class="faint" style="font-size:11.5px; margin-top:4px;">14 из 20 · в апреле было 60%</div>
+    </div>
+  </div>
+
+  <!-- 4. РЕШЕНИЯ МЕСЯЦА -->
+  <div class="grid g-2-1 mt" style="margin-top:24px">
+    <div class="glass float">
+      <span class="glow blue"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+        <h3>Решения месяца</h3>
+        <span class="more">все 20 →</span>
+      </div>
+      <table class="mtable">
+        <thead>
+          <tr>
+            <th>Решение</th>
+            <th>Статус</th>
+            <th class="r">Доведено</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Перевести «Орбиту» на расширенный тариф</td>
+            <td><span class="chip ok"><span class="led"></span>внедрено</span></td>
+            <td class="r" style="width:140px"><div class="progress"><span style="width:100%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Выделить дежурного по поддержке клиентов</td>
+            <td><span class="chip ok"><span class="led"></span>внедрено</span></td>
+            <td class="r"><div class="progress"><span style="width:100%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Заключить договор с клиентом «Вектор»</td>
+            <td><span class="chip ok"><span class="led"></span>внедрено</span></td>
+            <td class="r"><div class="progress"><span style="width:100%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Запустить недельные спринты в команде</td>
+            <td><span class="chip info"><span class="led"></span>принято</span></td>
+            <td class="r"><div class="progress warn"><span style="width:55%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Сменить подрядчика по интеграции коннекторов</td>
+            <td><span class="chip info"><span class="led"></span>принято</span></td>
+            <td class="r"><div class="progress warn"><span style="width:40%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Единый регламент по сделкам в CRM</td>
+            <td><span class="chip warn"><span class="led"></span>застряло</span></td>
+            <td class="r"><div class="progress risk"><span style="width:15%"></span></div></td>
+          </tr>
+          <tr>
+            <td>Нанять второго менеджера по продажам</td>
+            <td><span class="chip warn"><span class="led"></span>застряло</span></td>
+            <td class="r"><div class="progress risk"><span style="width:10%"></span></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- крупный итог доведения -->
+    <div class="glass float" style="display:flex; flex-direction:column; justify-content:center; text-align:center; background:linear-gradient(180deg, oklch(0.32 0.06 200/.45), oklch(0.22 0.04 250/.45)); border-color:oklch(0.82 0.13 178/.22)">
+      <span class="glow teal"></span>
+      <div class="faint" style="font-size:12px; margin-bottom:10px;">Главный итог дисциплины</div>
+      <div class="hero-num glow-text" style="color:var(--teal); font-size:56px">14</div>
+      <div class="muted" style="font-size:14px; margin-top:6px;">из 20 решений доведено до внедрения</div>
+      <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:18px;">
+        <span class="chip ok"><span class="led"></span>9 внедрено</span>
+        <span class="chip info"><span class="led"></span>5 в работе</span>
+        <span class="chip warn"><span class="led"></span>6 застряло</span>
+      </div>
+      <div class="faint" style="font-size:11.5px; margin-top:16px;">В апреле было 9 из 15. Темп доведения растёт.</div>
+    </div>
+  </div>
+
+  <!-- 5. Дельта к прошлому месяцу -->
+  <div class="section-h mt" style="margin-top:24px">Май к апрелю — как изменилась компания</div>
+  <div class="grid g3">
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 11V3H9M21 3l-9 9M11 21H5a2 2 0 0 1-2-2v-6"/></svg></span>
+        <h3>Платящих клиентов</h3>
+      </div>
+      <div style="display:flex; align-items:baseline; gap:12px;">
+        <div class="hero-num glow-text" style="color:var(--mint)">19</div>
+        <span class="delta up" style="font-size:15px">↑ 3</span>
+      </div>
+      <div class="faint" style="font-size:12px; margin-top:8px;">было 16 в апреле · к цели «25» осталось 6</div>
+      <div class="progress" style="margin-top:12px"><span style="width:76%"></span></div>
+    </div>
+
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <h3>Обещаний в срок</h3>
+      </div>
+      <div style="display:flex; align-items:baseline; gap:12px;">
+        <div class="hero-num glow-text" style="color:var(--teal)">79%</div>
+        <span class="delta up" style="font-size:15px">↑ 8 п.п.</span>
+      </div>
+      <div class="faint" style="font-size:12px; margin-top:8px;">было 71% · команда держит слово чаще</div>
+      <div class="progress" style="margin-top:12px"><span style="width:79%"></span></div>
+    </div>
+
+    <div class="glass float">
+      <span class="glow amber"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+        <h3>Открытых рисков</h3>
+      </div>
+      <div style="display:flex; align-items:baseline; gap:12px;">
+        <div class="hero-num glow-text" style="color:var(--amber)">4</div>
+        <span class="delta down" style="font-size:15px">↓ 2</span>
+      </div>
+      <div class="faint" style="font-size:12px; margin-top:8px;">было 6 · закрыли молчание поддержки и оплату коннекторов</div>
+      <div class="progress warn" style="margin-top:12px"><span style="width:33%"></span></div>
+    </div>
+  </div>
+
+  <!-- Сноска для пустого месяца (показывается, когда данных нет) -->
+  <div class="glass mt" style="margin-top:24px; border-color:oklch(0.70 0.16 245/.2); display:none">
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/></svg></span>
+      <h3>Месяц ещё собирается</h3>
+    </div>
+    <div class="empty">
+      Кора начала собирать данные 13 июня. Первый полный отчёт за месяц будет готов 1 июля.
+      <div class="cta"><button class="btn primary">Посмотреть итоги мая →</button></div>
+    </div>
+  </div>
+
+</section>

@@ -1,0 +1,292 @@
+<section class="screen" id="screen-meetings">
+
+  <!-- вкладки: Журнал · Клиенты и сделки -->
+  <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:18px;">
+    <div class="pill-group">
+      <button class="pill active">Журнал</button>
+      <button class="pill">Клиенты и сделки</button>
+    </div>
+    <div class="faint" style="font-size:12px;">28 встреч за месяц · сбор работает · последняя 2 часа назад</div>
+  </div>
+
+  <!-- Поиск по транскриптам + фильтры по типу встречи -->
+  <div class="glass float" style="padding:16px 18px; margin-bottom:20px;">
+    <span class="glow blue"></span>
+    <div class="search-pill" style="width:100%; padding:12px 18px; font-size:14px;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <span>Найти в транскриптах: «тариф Орбиты», «возражение по цене», «кто обещал интеграцию»…</span>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+      <span class="chip info" style="cursor:pointer"><span class="led"></span>Все типы</span>
+      <span class="chip" style="color:var(--dim); background:var(--surface-soft); cursor:pointer">Продажи</span>
+      <span class="chip" style="color:var(--dim); background:var(--surface-soft); cursor:pointer">Планёрка</span>
+      <span class="chip" style="color:var(--dim); background:var(--surface-soft); cursor:pointer">Поддержка</span>
+      <span class="chip" style="color:var(--dim); background:var(--surface-soft); cursor:pointer">Найм</span>
+      <span class="chip" style="color:var(--dim); background:var(--surface-soft); cursor:pointer">Один на один</span>
+    </div>
+  </div>
+
+  <div class="grid g-2-1">
+
+    <!-- ЛЕВО: журнал по группам -->
+    <div>
+
+      <!-- Сегодня -->
+      <div class="section-h">Сегодня</div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-amber); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Демо для «Орбиты» — расширенный тариф</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip warn" style="padding:2px 9px; font-size:11px;"><span class="led"></span>Продажи</span>
+              <span>сегодня 11:30</span>
+              <span>· 47 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-violet); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">МК</span>
+              <span class="avatar" style="background:var(--grad-teal); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">АП</span>
+              <span class="avatar" style="background:var(--grad-blue); border:2px solid oklch(0.18 0.03 280)">ОР</span>
+            </div>
+            <span class="chip ok"><span class="led"></span>отчёт готов</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-violet); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Планёрка продаж — план на неделю</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip info" style="padding:2px 9px; font-size:11px;"><span class="led"></span>Планёрка</span>
+              <span>сегодня 09:15</span>
+              <span>· 28 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-violet); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">МК</span>
+              <span class="avatar" style="background:var(--grad-teal); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">АП</span>
+              <span class="avatar" style="background:var(--grad-pink); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">ИС</span>
+              <span class="avatar" style="background:var(--surface-soft); color:var(--dim); border:2px solid oklch(0.18 0.03 280)">+1</span>
+            </div>
+            <span class="chip ok"><span class="led"></span>отчёт готов</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- На неделе -->
+      <div class="section-h mt">На неделе</div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-red); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Разбор поддержки — три тикета «Вектора»</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip risk" style="padding:2px 9px; font-size:11px;"><span class="led"></span>Поддержка</span>
+              <span>вчера 16:40</span>
+              <span>· 35 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-teal); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">АП</span>
+              <span class="avatar" style="background:var(--grad-amber); border:2px solid oklch(0.18 0.03 280)">ДВ</span>
+            </div>
+            <span class="chip ok"><span class="led"></span>отчёт готов</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-teal); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M16 4l4-2M8 4 4 2"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Собеседование — менеджер по продажам</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip" style="padding:2px 9px; font-size:11px; color:var(--mint); background:var(--ok-bg);"><span class="led"></span>Найм</span>
+              <span>10 июня · 52 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-violet); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">МК</span>
+              <span class="avatar" style="background:var(--surface-soft); color:var(--dim); border:2px solid oklch(0.18 0.03 280)">Г</span>
+            </div>
+            <span class="chip ok"><span class="led"></span>отчёт готов</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ранее -->
+      <div class="section-h mt">Ранее</div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-blue); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Переговоры с «Вектором» — продление договора</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip warn" style="padding:2px 9px; font-size:11px;"><span class="led"></span>Продажи</span>
+              <span>6 июня · 41 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-violet); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">МК</span>
+              <span class="avatar" style="background:var(--grad-mint, var(--grad-teal)); border:2px solid oklch(0.18 0.03 280)">ВК</span>
+            </div>
+            <span class="chip ok"><span class="led"></span>отчёт готов</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <span class="card-ico" style="background:var(--grad-pink); width:38px; height:38px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+          </span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14.5px;">Один на один — Анна, итоги месяца</div>
+            <div class="faint" style="font-size:11.5px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap;">
+              <span class="chip" style="padding:2px 9px; font-size:11px; color:var(--blue); background:var(--info-bg);"><span class="led"></span>Один на один</span>
+              <span>5 июня · 33 мин</span>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="display:flex; margin-right:2px;">
+              <span class="avatar" style="background:var(--grad-violet); margin-right:-9px; border:2px solid oklch(0.18 0.03 280)">МК</span>
+              <span class="avatar" style="background:var(--grad-teal); border:2px solid oklch(0.18 0.03 280)">АП</span>
+            </div>
+            <span class="chip warn"><span class="led"></span>обрабатывается</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="empty" style="margin-top:8px;">Показаны 7 из 28 встреч · <span style="color:var(--cyan); cursor:pointer">показать ещё</span></div>
+
+    </div>
+
+    <!-- ПРАВО: главный артефакт — карточка отчёта продажной встречи -->
+    <div>
+      <div class="section-h">Главный артефакт</div>
+
+      <div class="glass float" style="padding:0; overflow:hidden;">
+        <span class="glow"></span>
+
+        <!-- шапка отчёта с wow-бейджем -->
+        <div style="padding:20px 22px 16px; background:radial-gradient(120% 100% at 50% 0%, oklch(0.40 0.18 295 / 0.40), transparent 70%);">
+          <div style="display:flex; align-items:flex-start; gap:12px;">
+            <span class="card-ico" style="background:var(--grad-violet); width:36px; height:36px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
+            </span>
+            <div style="flex:1; min-width:0;">
+              <h3 style="font-size:15.5px; font-weight:600; margin:0 0 4px; letter-spacing:-0.01em;">Отчёт: Демо для «Орбиты»</h3>
+              <div class="faint" style="font-size:11.5px;">Кора собрала из записи 47 минут · 4 участника</div>
+            </div>
+            <span class="chip" style="background:var(--grad-amber); color:oklch(0.2 0.04 55); font-weight:700; box-shadow:0 6px 16px -6px oklch(0.84 0.16 80 / 0.8);">✨ продаёт сам</span>
+          </div>
+        </div>
+
+        <div style="padding:4px 22px 22px;">
+
+          <!-- стадия сделки -->
+          <div style="display:flex; align-items:center; gap:10px; margin:6px 0 18px;">
+            <span class="faint" style="font-size:12px;">Стадия сделки</span>
+            <span class="chip info"><span class="led"></span>Коммерческое предложение</span>
+            <div class="progress" style="flex:1;"><span style="width:70%"></span></div>
+          </div>
+
+          <!-- боли клиента -->
+          <div class="section-h" style="margin-bottom:10px;">Боли клиента</div>
+          <div class="row-list" style="margin-bottom:18px;">
+            <div class="list-row" style="padding:9px 0;">
+              <span class="lead" style="background:var(--risk-bg); width:30px; height:30px;"><span style="width:7px; height:7px; border-radius:9px; background:var(--red); box-shadow:0 0 8px var(--red)"></span></span>
+              <div class="body"><div class="ttl" style="font-size:13px;">Менеджеры теряют задачи между отделами</div></div>
+            </div>
+            <div class="list-row" style="padding:9px 0;">
+              <span class="lead" style="background:var(--warn-bg); width:30px; height:30px;"><span style="width:7px; height:7px; border-radius:9px; background:var(--amber); box-shadow:0 0 8px var(--amber)"></span></span>
+              <div class="body"><div class="ttl" style="font-size:13px;">Нет единой памяти по клиентам после звонков</div></div>
+            </div>
+          </div>
+
+          <!-- возражения со статусами -->
+          <div class="section-h" style="margin-bottom:10px;">Возражения</div>
+          <div class="row-list" style="margin-bottom:18px;">
+            <div class="list-row" style="padding:9px 0;">
+              <div class="body"><div class="ttl" style="font-size:13px;">«Дорого по сравнению с Битрикс24»</div>
+                <div class="meta">показали экономию времени — <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">[28:14]</span></div>
+              </div>
+              <span class="chip ok"><span class="led"></span>снято</span>
+            </div>
+            <div class="list-row" style="padding:9px 0;">
+              <div class="body"><div class="ttl" style="font-size:13px;">«Сложно перенести базу из старой CRM»</div>
+                <div class="meta">обещали показать импорт на следующей встрече</div>
+              </div>
+              <span class="chip risk"><span class="led"></span>открыто</span>
+            </div>
+            <div class="list-row" style="padding:9px 0;">
+              <div class="body"><div class="ttl" style="font-size:13px;">«Нужно согласовать с финансовым директором»</div>
+                <div class="meta">клиент берёт паузу до пятницы</div>
+              </div>
+              <span class="chip warn"><span class="led"></span>в работе</span>
+            </div>
+          </div>
+
+          <!-- готовое письмо клиенту -->
+          <div class="section-h" style="margin-bottom:10px;">Готовое письмо клиенту</div>
+          <div style="border:1px solid oklch(0.70 0.16 245 / 0.25); border-radius:14px; padding:14px 16px; background:oklch(0.70 0.16 245 / 0.06); margin-bottom:18px;">
+            <div style="font-size:13px; line-height:1.6; color:var(--dim);">
+              <b style="color:var(--text)">Тема:</b> «Орбита» × Кора — следующий шаг<br><br>
+              Денис, спасибо за встречу! Договорились: до пятницы пришлю короткое видео по импорту вашей базы из старой CRM, чтобы снять вопрос переноса. Коммерческое во вложении — на расширенный тариф со скидкой за годовую оплату. Жду решения после согласования с финансовым.
+            </div>
+            <div style="display:flex; gap:8px; margin-top:14px;">
+              <button class="btn primary" style="font-size:12px;">Скопировать</button>
+              <button class="btn ghost" style="font-size:12px;">Отредактировать</button>
+            </div>
+          </div>
+
+          <!-- следующие шаги → задачи -->
+          <div class="section-h" style="margin-bottom:10px;">Следующие шаги → задачи</div>
+          <div class="row-list">
+            <div class="list-row" style="padding:11px 0;">
+              <span class="lead" style="background:var(--grad-teal); width:30px; height:30px; color:oklch(0.18 0.03 280)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l-6-6 6-6"/></svg></span>
+              <div class="body"><div class="ttl" style="font-size:13px;">Записать видео по импорту базы</div><div class="meta">Михаил · до пятницы 16 июня</div></div>
+              <button class="btn ok" style="font-size:11.5px;">В задачи</button>
+            </div>
+            <div class="list-row" style="padding:11px 0;">
+              <span class="lead" style="background:var(--grad-violet); width:30px; height:30px; color:oklch(0.18 0.03 280)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 4h16v12H5.2L4 18z"/></svg></span>
+              <div class="body"><div class="ttl" style="font-size:13px;">Отправить коммерческое со скидкой за год</div><div class="meta">Анна · сегодня до 18:00</div></div>
+              <button class="btn ok" style="font-size:11.5px;">В задачи</button>
+            </div>
+            <div class="list-row" style="padding:11px 0;">
+              <span class="lead" style="background:var(--grad-amber); width:30px; height:30px; color:oklch(0.18 0.03 280)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3v18h18M7 14l4-4 3 3 5-6"/></svg></span>
+              <div class="body"><div class="ttl" style="font-size:13px;">Перезвонить после согласования с финдиректором</div><div class="meta">Михаил · понедельник 16 июня</div></div>
+              <button class="btn ok" style="font-size:11.5px;">В задачи</button>
+            </div>
+          </div>
+
+          <button class="btn primary" style="width:100%; margin-top:16px;">Открыть полный отчёт и запись →</button>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</section>

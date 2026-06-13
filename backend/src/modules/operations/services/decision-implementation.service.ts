@@ -10,7 +10,20 @@ import {
   classifyImplementationStatus,
   computeDecisionThroughput,
   DEFAULT_DECISION_STALE_DAYS,
+  decisionStatusSortRank,
+  decisionThroughputPercentForStatus,
+  type DecisionImplementationStatus,
 } from './decision-implementation.scoring';
+
+/** Одно решение месяца со статусом доведения (для витрины Ф5). */
+export interface MonthDecisionRow {
+  id: string;
+  statement: string;
+  /** Статус внедрения (done/in_progress/stalled/not_started). */
+  status: DecisionImplementationStatus;
+  /** % доведения по статусу (done=100, in_progress=50, иначе 0). */
+  throughputPercent: number;
+}
 
 /**
  * TZ-1 Фаза 3.B (daily-value-engine) — DecisionImplementationService.
@@ -174,6 +187,100 @@ export class DecisionImplementationService {
       }),
     ]);
     return computeDecisionThroughput({ total, doneWithOutcomes });
+  }
+
+  /**
+   * Список решений месяца со статусом доведения (для построчной витрины Ф5).
+   * Окно [from, to] по decidedAt (fallback createdAt), статусы
+   * approved/implemented. Статус доведения берётся из `implementationStatus`
+   * (выставлен контролёром); если NULL — классифицируется на лету теми же
+   * правилами. `throughputPercent` — грубая шкала по статусу (Р7: точный % —
+   * только в агрегате getDecisionThroughput). Сортировка
+   * done→in_progress→stalled→not_started, топ-N (default 10).
+   */
+  async listDecisionsForMonth(args: {
+    tenantId: string;
+    from: Date;
+    to: Date;
+    limit?: number;
+    now?: Date;
+  }): Promise<MonthDecisionRow[]> {
+    const now = args.now ?? new Date();
+    const staleDays = await this.resolveStaleDays();
+    const rows = await this.prisma.decision.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: { in: [...DecisionImplementationService.CONTROLLED_STATUSES] },
+        OR: [
+          { decidedAt: { gte: args.from, lte: args.to } },
+          { decidedAt: null, createdAt: { gte: args.from, lte: args.to } },
+        ],
+      },
+      select: {
+        id: true,
+        statement: true,
+        text: true,
+        decidedAt: true,
+        createdAt: true,
+        linkedTaskCount: true,
+        actualOutcomes: true,
+        implementationStatus: true,
+      },
+      take: 5_000,
+    });
+
+    const mapped: MonthDecisionRow[] = rows.map((d) => {
+      const status = this.resolveMonthDecisionStatus(d, staleDays, now);
+      return {
+        id: d.id,
+        statement: (d.statement || d.text || 'Решение').slice(0, 200),
+        status,
+        throughputPercent: decisionThroughputPercentForStatus(status),
+      };
+    });
+
+    mapped.sort(
+      (a, b) => decisionStatusSortRank(a.status) - decisionStatusSortRank(b.status),
+    );
+
+    const limit = Math.min(Math.max(args.limit ?? 10, 1), 50);
+    return mapped.slice(0, limit);
+  }
+
+  /**
+   * Статус доведения решения для списка месяца: берём `implementationStatus`
+   * если он валиден, иначе классифицируем на лету (контролёр мог ещё не
+   * прогнаться).
+   */
+  private resolveMonthDecisionStatus(
+    d: {
+      decidedAt: Date | null;
+      createdAt: Date;
+      linkedTaskCount: number;
+      actualOutcomes: string | null;
+      implementationStatus: string | null;
+    },
+    staleDays: number,
+    now: Date,
+  ): DecisionImplementationStatus {
+    const stored = d.implementationStatus;
+    if (
+      stored === 'done' ||
+      stored === 'in_progress' ||
+      stored === 'stalled' ||
+      stored === 'not_started'
+    ) {
+      return stored;
+    }
+    const ageDays = this.ageDays(d.decidedAt ?? d.createdAt, now);
+    const hasOutcomes =
+      typeof d.actualOutcomes === 'string' && d.actualOutcomes.trim().length > 0;
+    return classifyImplementationStatus({
+      ageDays,
+      linkedTaskCount: d.linkedTaskCount,
+      hasOutcomes,
+      staleDays,
+    });
   }
 
   /** Решения без движения (`implementationStatus='stalled'`) — для endpoint'а. */

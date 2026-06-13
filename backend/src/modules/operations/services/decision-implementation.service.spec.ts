@@ -157,4 +157,83 @@ describe('DecisionImplementationService', () => {
       expect(tp.throughputPercent).toBe(0);
     });
   });
+
+  describe('listDecisionsForMonth (Ф3 редизайн)', () => {
+    it('маппит статус→% и сортирует done→in_progress→stalled→not_started', async () => {
+      const { svc } = build({
+        decisions: [
+          // stalled: старое, без задач/outcomes, implementationStatus=null.
+          {
+            id: 'd-stalled',
+            statement: 'Сменить CRM',
+            text: null,
+            decidedByPersonIds: [],
+            decidedAt: new Date('2026-04-20T00:00:00Z'),
+            createdAt: new Date('2026-04-20T00:00:00Z'),
+            linkedTaskCount: 0,
+            actualOutcomes: null,
+            implementationStatus: null,
+          },
+          // done: есть outcomes.
+          {
+            id: 'd-done',
+            statement: 'Запустить лендинг',
+            text: null,
+            decidedByPersonIds: [],
+            decidedAt: new Date('2026-05-05T00:00:00Z'),
+            createdAt: new Date('2026-05-05T00:00:00Z'),
+            linkedTaskCount: 2,
+            actualOutcomes: 'Запущено',
+            implementationStatus: 'done',
+          },
+          // in_progress: есть задачи, нет outcomes.
+          {
+            id: 'd-prog',
+            statement: 'Нанять маркетолога',
+            text: null,
+            decidedByPersonIds: [],
+            decidedAt: new Date('2026-05-25T00:00:00Z'),
+            createdAt: new Date('2026-05-25T00:00:00Z'),
+            linkedTaskCount: 1,
+            actualOutcomes: null,
+            implementationStatus: 'in_progress',
+          },
+        ],
+      });
+      const rows = await svc.listDecisionsForMonth({
+        tenantId: 't1',
+        from: new Date('2026-05-01T00:00:00Z'),
+        to: new Date('2026-05-31T23:59:59Z'),
+        now,
+      });
+      expect(rows.map((r) => r.id)).toEqual(['d-done', 'd-prog', 'd-stalled']);
+      expect(rows.find((r) => r.id === 'd-done')!.throughputPercent).toBe(100);
+      expect(rows.find((r) => r.id === 'd-prog')!.throughputPercent).toBe(50);
+      expect(rows.find((r) => r.id === 'd-stalled')!.status).toBe('stalled');
+      expect(rows.find((r) => r.id === 'd-stalled')!.throughputPercent).toBe(0);
+    });
+
+    it('ограничивает топ-N (limit)', async () => {
+      const many = Array.from({ length: 20 }, (_, i) => ({
+        id: `d${i}`,
+        statement: `Решение ${i}`,
+        text: null,
+        decidedByPersonIds: [],
+        decidedAt: new Date('2026-05-10T00:00:00Z'),
+        createdAt: new Date('2026-05-10T00:00:00Z'),
+        linkedTaskCount: 1,
+        actualOutcomes: null,
+        implementationStatus: 'in_progress' as const,
+      }));
+      const { svc } = build({ decisions: many });
+      const rows = await svc.listDecisionsForMonth({
+        tenantId: 't1',
+        from: new Date('2026-05-01T00:00:00Z'),
+        to: new Date('2026-05-31T23:59:59Z'),
+        limit: 10,
+        now,
+      });
+      expect(rows).toHaveLength(10);
+    });
+  });
 });

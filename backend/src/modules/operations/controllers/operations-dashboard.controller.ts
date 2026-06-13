@@ -11,10 +11,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -94,6 +95,7 @@ import {
 } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { buildValueRecapSlides } from '../utils/value-recap-export';
+import { buildValueRecapPptx } from '../utils/value-recap-pptx';
 
 /**
  * SBA β-8 — `GET /api/v1/dashboard/operations/*`.
@@ -594,7 +596,12 @@ export class OperationsDashboardController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
-    const periodYm = q.period ?? this.previousMonth();
+    // Дефолт-период (Ф3 редизайн): последний месяц С ДАННЫМИ, иначе прошлый
+    // календарный. Явный ?period= имеет приоритет и не ломается.
+    const periodYm =
+      q.period ??
+      (await this.valueRecap.getLatestPeriodWithData(tenantId!)) ??
+      this.previousMonth();
 
     const existing = await this.valueRecap.getSnapshot({
       tenantId: tenantId!,
@@ -645,23 +652,25 @@ export class OperationsDashboardController {
   }
 
   /**
-   * TZ-1 Фаза 5 — экспорт витрины. `format=slides` (default) — минимальный
+   * TZ-1 Фаза 5 + Ф3 редизайн — экспорт витрины. `format=slides` (default) —
    * структурный набор печатаемых слайдов (заголовок + буллеты); `format=json`
-   * — сырой payload. Полноценный генератор презентаций НЕ блокирует фичу
-   * (отмечено в реестре не-сделанного). Доступ — owner/admin/coo.
+   * — сырой payload; `format=pptx` — готовая PPTX-презентация поверх slides-JSON
+   * (binary stream). PDF серверно НЕ делаем — фронт печатает браузером.
+   * Доступ — owner/admin/coo.
    */
   @Get('value-recap/:id/export')
   @ApiOperation({
     summary:
-      'COO — экспорт месячной витрины (slides=структурные слайды / json=payload)',
+      'COO — экспорт месячной витрины (slides=слайды / json=payload / pptx=презентация)',
   })
   async valueRecapExport(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
     @Query(new ZodValidationPipe(ValueRecapExportQuerySchema))
     q: ValueRecapExportQuery,
-  ): Promise<ValueRecapExportDto> {
+  ): Promise<ValueRecapExportDto | void> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
@@ -672,6 +681,22 @@ export class OperationsDashboardController {
         error: { code: 'recap_not_found', message: 'Витрина не найдена' },
       });
     }
+
+    if (q.format === 'pptx') {
+      const slides = buildValueRecapSlides(snap.payload);
+      const buffer = await buildValueRecapPptx(slides);
+      res
+        .status(HttpStatus.OK)
+        .set({
+          'Content-Type':
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'Content-Disposition': `attachment; filename="kora-itogi-${snap.periodYm}.pptx"`,
+          'Content-Length': String(buffer.length),
+        })
+        .send(buffer);
+      return;
+    }
+
     if (q.format === 'json') {
       return { format: 'json', periodYm: snap.periodYm, payload: snap.payload };
     }

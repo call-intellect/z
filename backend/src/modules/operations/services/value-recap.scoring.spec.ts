@@ -74,11 +74,17 @@ describe('value-recap.scoring', () => {
         routine,
         team,
         previousRoutine: null,
+        decisions: [
+          { id: 'd1', statement: 'Решение A', status: 'done', throughputPercent: 100 },
+          { id: 'd2', statement: 'Решение B', status: 'stalled', throughputPercent: 0 },
+        ],
         narrative: 'За май система собрала встречи, задачи и решения.',
       });
       expect(payload.isBaseline).toBe(true);
       expect(payload.delta).toBeNull();
-      // КЛЮЧЕВОЙ assert честности: запрещённых наружу метрик в payload НЕТ.
+      expect(payload.decisions).toHaveLength(2);
+      // КЛЮЧЕВОЙ assert честности: запрещённых наружу метрик в payload НЕТ
+      // (вкл. decisions[].throughputPercent — он в allow-list).
       expect(findForbiddenMetricKeys(payload)).toEqual([]);
     });
 
@@ -89,6 +95,7 @@ describe('value-recap.scoring', () => {
         routine,
         team,
         previousRoutine: routine,
+        decisions: [],
         narrative: 'ок',
       });
       expect(payload.team.decisionsTotal).toBe(8);

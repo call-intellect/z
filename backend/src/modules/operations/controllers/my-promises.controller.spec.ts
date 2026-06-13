@@ -25,7 +25,7 @@ function req(userId: string | undefined): Request {
 }
 
 describe('MyPromisesController.list — graceful no_person', () => {
-  it('no_person → {items:[]} (200), listMine не вызывается', async () => {
+  it('no_person → {items:[], openQuestions:[]} (200), listMine не вызывается', async () => {
     const svc = {
       resolveSelfPerson: vi.fn(async () => {
         throw noPersonError();
@@ -36,14 +36,17 @@ describe('MyPromisesController.list — graceful no_person', () => {
 
     const res = await ctrl.list('org-1', req('u-1'), { status: 'open', limit: 50 });
 
-    expect(res).toEqual({ items: [] });
+    expect(res).toEqual({ items: [], openQuestions: [] });
     expect(svc.listMine).not.toHaveBeenCalled();
   });
 
-  it('есть Person → делегирует в listMine', async () => {
+  it('есть Person → делегирует в listMine (items + openQuestions)', async () => {
     const svc = {
       resolveSelfPerson: vi.fn(async () => ({ id: 'p-1' })),
-      listMine: vi.fn(async () => ({ items: [{ id: 'b1' }] })),
+      listMine: vi.fn(async () => ({
+        items: [{ id: 'b1' }],
+        openQuestions: [{ id: 'q1' }],
+      })),
     };
     const ctrl = new MyPromisesController(svc as never);
 
@@ -52,7 +55,7 @@ describe('MyPromisesController.list — graceful no_person', () => {
     expect(svc.listMine).toHaveBeenCalledWith(
       expect.objectContaining({ selfPersonId: 'p-1', tenantId: 'org-1' }),
     );
-    expect(res).toEqual({ items: [{ id: 'b1' }] });
+    expect(res).toEqual({ items: [{ id: 'b1' }], openQuestions: [{ id: 'q1' }] });
   });
 
   it('другой ForbiddenException (не no_person) → пробрасывается', async () => {

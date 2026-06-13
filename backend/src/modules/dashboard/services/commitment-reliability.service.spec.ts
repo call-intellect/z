@@ -291,7 +291,7 @@ describe('CommitmentReliabilityService', () => {
       expect(call.where.commitmentRecipientPersonId).toBeUndefined();
     });
 
-    it('company scope — без фильтров recipient', async () => {
+    it('company scope — без фильтров recipient, но с гейтом полноты', async () => {
       const { service, prisma } = buildService({ rows: [] });
       await service.computeReliability(
         { tenantId: 't-1', scope: 'company' },
@@ -301,6 +301,13 @@ describe('CommitmentReliabilityService', () => {
       const call = prisma.ideaBlock.findMany.mock.calls[0]![0];
       expect(call.where.commitmentRecipient).toBeUndefined();
       expect(call.where.commitmentRecipientPersonId).toBeUndefined();
+      // ТЗ редизайн Ф7б (Б-3) — гейт полноты применён и на company scope:
+      // только обещания с известным автором + (адресат или срок) считаются.
+      expect(call.where.commitmentAuthorPersonId).toEqual({ not: null });
+      expect(call.where.OR).toEqual([
+        { commitmentRecipientPersonId: { not: null } },
+        { commitmentDueDate: { not: null } },
+      ]);
     });
   });
 
@@ -464,7 +471,7 @@ describe('CommitmentReliabilityService', () => {
       expect(where.commitmentRecipientPersonId).toBeUndefined();
     });
 
-    it('buildWhere person без personMode → commitmentRecipientPersonId (обратная совместимость)', () => {
+    it('buildWhere person без personMode → commitmentRecipientPersonId (обратная совместимость) + гейт полноты (автор не null)', () => {
       const { service } = buildService();
       const where = (
         service as unknown as BuildWhereFn
@@ -475,7 +482,9 @@ describe('CommitmentReliabilityService', () => {
       );
 
       expect(where.commitmentRecipientPersonId).toBe('P1');
-      expect(where.commitmentAuthorPersonId).toBeUndefined();
+      // ТЗ редизайн Ф7б (Б-3) — даже в recipient-mode требуется известный автор
+      // (предикат полноты на ВСЕХ scope).
+      expect(where.commitmentAuthorPersonId).toEqual({ not: null });
     });
 
     it('buildCacheKey: author-ключ отличается от recipient/undefined и содержит :author', () => {

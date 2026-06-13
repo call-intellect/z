@@ -27,6 +27,7 @@ describe('CommitmentsService', () => {
       commitmentStatus: string | null;
       commitmentDueDate: Date | null;
       commitmentRecipientPersonId: string | null;
+      commitmentAuthorPersonId?: string | null;
       commitmentAskedAt: Date | null;
       commitmentEscalatedAt: Date | null;
       createdAt: Date;
@@ -75,7 +76,12 @@ describe('CommitmentsService', () => {
     return { svc, prisma };
   }
 
-  /** ТЗ-E — заготовка блока-обещания в форме commitmentSelect(). */
+  /**
+   * ТЗ-E — заготовка блока-обещания в форме commitmentSelect().
+   * ТЗ редизайн Ф7б — по умолчанию ПОЛНОЕ обещание (есть автор + срок), чтобы
+   * derive-source тесты не уезжали в openQuestions. Для проверки неполноты —
+   * переопределяй commitmentAuthorPersonId/commitmentRecipientPersonId/dueDate.
+   */
   function makeBlock(over: Record<string, unknown> = {}) {
     return {
       id: 'b1',
@@ -85,6 +91,7 @@ describe('CommitmentsService', () => {
       commitmentStatus: 'open',
       commitmentDueDate: new Date('2026-06-01T00:00:00Z'),
       commitmentRecipientPersonId: null,
+      commitmentAuthorPersonId: 'p-author',
       commitmentAskedAt: null,
       commitmentEscalatedAt: null,
       createdAt: new Date('2026-05-20T00:00:00Z'),
@@ -387,5 +394,108 @@ describe('CommitmentsService', () => {
 
     expect(res.items[0]!.sourceMeetingId).toBe('mtg-x');
     expect(res.items[0]!.sourceMeetingTitle).toBeNull();
+  });
+
+  // ─────────────── ТЗ редизайн Ф7б (Б-3): split полные vs «открытые вопросы» ───────────────
+
+  it('listMine split: полное обещание → items, неполное → openQuestions', async () => {
+    const { svc } = build({
+      findManyResults: [
+        // Полное: автор + срок (адресата нет — ок, есть срок).
+        makeBlock({
+          id: 'full-1',
+          commitmentAuthorPersonId: 'a1',
+          commitmentRecipientPersonId: null,
+          commitmentDueDate: new Date('2026-06-10T00:00:00Z'),
+        }),
+        // Полное: автор + адресат (срока нет — ок).
+        makeBlock({
+          id: 'full-2',
+          commitmentAuthorPersonId: 'a1',
+          commitmentRecipientPersonId: 'r1',
+          commitmentDueDate: null,
+        }),
+        // Неполное: автор есть, но ни адресата, ни срока.
+        makeBlock({
+          id: 'inc-1',
+          commitmentAuthorPersonId: 'a1',
+          commitmentRecipientPersonId: null,
+          commitmentDueDate: null,
+        }),
+        // Неполное: нет автора.
+        makeBlock({
+          id: 'inc-2',
+          commitmentAuthorPersonId: null,
+          commitmentRecipientPersonId: 'r1',
+          commitmentDueDate: new Date('2026-06-10T00:00:00Z'),
+        }),
+      ],
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'all', limit: 50 },
+    });
+
+    expect(res.items.map((i) => i.id).sort()).toEqual(['full-1', 'full-2']);
+    expect(res.openQuestions.map((q) => q.id).sort()).toEqual(['inc-1', 'inc-2']);
+  });
+
+  it('listMine split: openQuestions содержат reason (RU) — нет ответственного/срока vs нет автора', async () => {
+    const { svc } = build({
+      findManyResults: [
+        makeBlock({
+          id: 'inc-noauthor',
+          commitmentAuthorPersonId: null,
+          commitmentRecipientPersonId: 'r1',
+          commitmentDueDate: new Date('2026-06-10T00:00:00Z'),
+        }),
+        makeBlock({
+          id: 'inc-nodue',
+          commitmentAuthorPersonId: 'a1',
+          commitmentRecipientPersonId: null,
+          commitmentDueDate: null,
+        }),
+      ],
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'all', limit: 50 },
+    });
+
+    const byId = new Map(res.openQuestions.map((q) => [q.id, q]));
+    expect(byId.get('inc-noauthor')!.reason).toBe('не определён автор обещания');
+    expect(byId.get('inc-nodue')!.reason).toBe(
+      'не назначен ответственный и нет срока',
+    );
+    expect(byId.get('inc-noauthor')!.text).toBe('Прислать отчёт');
+  });
+
+  it('listMine split: неполное обещание адресату НЕ показывается как его обещание (items пуст)', async () => {
+    const { svc } = build({
+      findManyResults: [
+        // Этот блок упоминает self как адресата, но автор не разрешён и срока нет
+        // → это «открытый вопрос», а не обещание адресата.
+        makeBlock({
+          id: 'inc-recipient-view',
+          commitmentAuthorPersonId: null,
+          commitmentRecipientPersonId: 'p-self',
+          commitmentDueDate: null,
+        }),
+      ],
+    });
+
+    const res = await svc.listMine({
+      tenantId: 't1',
+      selfPersonId: 'p-self',
+      query: { status: 'all', limit: 50 },
+    });
+
+    expect(res.items).toHaveLength(0);
+    expect(res.openQuestions).toHaveLength(1);
+    expect(res.openQuestions[0]!.reason).toBe('не определён автор обещания');
   });
 });

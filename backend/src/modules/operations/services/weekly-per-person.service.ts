@@ -10,6 +10,7 @@ import type {
   WeeklyPerPersonDto,
   WeeklyPersonRowDto,
 } from '../dto/weekly-per-person.dto';
+import { completeCommitmentWhere } from '../utils/commitment-completeness';
 
 /**
  * ТЗ-D Фаза 4 (2026-06-05) — WeeklyPerPersonService.
@@ -159,8 +160,11 @@ export class WeeklyPerPersonService {
       where: {
         tenantId,
         signalType: 'commitment',
-        commitmentAuthorPersonId: { not: null },
+        // ТЗ редизайн Ф7б (Б-3) — полный предикат полноты вместо частичного
+        // гейта только по автору: учитываем лишь полные обещания (автор + либо
+        // адресат, либо срок). Неполные — «открытые вопросы», в план-факт не идут.
         commitmentDueDate: { gte: weekStartDate, lte: weekEndDate },
+        ...completeCommitmentWhere(),
       },
       select: {
         id: true,

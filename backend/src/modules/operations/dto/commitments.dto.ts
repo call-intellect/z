@@ -99,3 +99,31 @@ export interface OpenCommitmentsListDto {
   items: CommitmentDto[];
   total: number;
 }
+
+/**
+ * ТЗ редизайн Ф7б (Б-3) — «открытый вопрос»: блок signalType='commitment',
+ * упоминающий пользователя, но НЕ являющийся полным обещанием (нет автора,
+ * либо нет ни адресата, ни срока). В надёжность не идёт; адресату НЕ
+ * показывается как «его обещание». Выдаётся отдельным массивом.
+ */
+export interface OpenQuestionDto {
+  id: string;
+  text: string;
+  /** id встречи-источника (как у CommitmentDto). null если не из встречи. */
+  sourceMeetingId: string | null;
+  /** Заголовок встречи-источника. null если не найден. */
+  sourceMeetingTitle: string | null;
+  /** Чего не хватает до полного обещания (человекочитаемо, RU). */
+  reason: string;
+  createdAt: string;
+}
+
+/**
+ * ТЗ редизайн Ф7б (Б-3) — ответ `GET /me/promises`.
+ *   - `items` — ПОЛНЫЕ обещания (учитываются в надёжности);
+ *   - `openQuestions` — неполные блоки-обещания (исключены из надёжности).
+ */
+export interface MyPromisesListDto {
+  items: CommitmentDto[];
+  openQuestions: OpenQuestionDto[];
+}

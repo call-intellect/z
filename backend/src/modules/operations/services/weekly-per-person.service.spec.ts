@@ -360,6 +360,12 @@ describe('WeeklyPerPersonService', () => {
       expect(ibCall.where.tenantId).toBe('t-42');
       expect(ibCall.where.signalType).toBe('commitment');
       expect(ibCall.where.commitmentAuthorPersonId).toEqual({ not: null });
+      // ТЗ редизайн Ф7б (Б-3) — полный предикат полноты (не только автор):
+      // OR(адресат, срок) подмешан через completeCommitmentWhere().
+      expect(ibCall.where.OR).toEqual([
+        { commitmentRecipientPersonId: { not: null } },
+        { commitmentDueDate: { not: null } },
+      ]);
 
       const personCall = prisma.person.findMany.mock.calls[0]![0];
       expect(personCall.where.tenantId).toBe('t-42');

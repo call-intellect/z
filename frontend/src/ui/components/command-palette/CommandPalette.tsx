@@ -1001,9 +1001,9 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
     icon: FolderKanban,
   },
   {
-    href: '/feed',
-    label: 'Лента',
-    subtitle: 'События и сигналы',
+    href: '/memory',
+    label: 'Память',
+    subtitle: 'Спросить, Лента Коры и реестры',
     icon: Network,
   },
   {

@@ -18,6 +18,9 @@ const SESSION_COOKIE = 'z_session';
 
 const PROTECTED_PREFIXES = [
   '/dashboard',
+  // ТЗ 2026-06-13 «Редизайн кабинета», Ф0 — новые верхнеуровневые ритм-роуты.
+  '/week',
+  '/month',
   '/meetings',
   '/tasks',
   '/settings',

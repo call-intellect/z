@@ -1,8 +1,8 @@
 /**
- * Тур №3 «Обзор сайдбара» — 17 шагов + intro.
- * Тексты берутся из NAV_HELP.
+ * Тур №3 «Обзор сайдбара» — обновлён под редизайн кабинета (ТЗ 2026-06-13, Ф0):
+ * новое меню «3 ритма + работа + Я + система». Тексты берутся из NAV_HELP.
  *
- * ТЗ: plans/tz/2026-05-29-onboarding-v2.md §5.8
+ * ТЗ: plans/tz/2026-05-29-onboarding-v2.md §5.8 → переработан 2026-06-13.
  */
 
 import type { TourDefinition } from '../types';
@@ -20,7 +20,7 @@ export const overviewTour: TourDefinition = {
       id: 'intro',
       target: 'center',
       title: 'Покажу за минуту, что где лежит',
-      body: '17 коротких подсказок по разделам. Можно листать кнопкой «Дальше» или закрыть крестиком — все эти подсказки потом всегда доступны при наведении на любой пункт меню.',
+      body: 'Несколько коротких подсказок по разделам. Можно листать кнопкой «Дальше» или закрыть крестиком — все эти подсказки потом всегда доступны при наведении на любой пункт меню.',
       placement: 'center',
       primaryAction: { label: 'Поехали', kind: 'next' },
       secondaryAction: { label: 'Пропустить', kind: 'skip' },
@@ -30,7 +30,7 @@ export const overviewTour: TourDefinition = {
       id: 'logo',
       target: '[data-overview-target="overview.logo"]',
       title: help('/dashboard').title,
-      body: 'Логотип Коры — кликните, чтобы вернуться на главную из любого раздела.',
+      body: 'Логотип Коры — кликните, чтобы вернуться на «Сегодня» из любого раздела.',
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
@@ -43,16 +43,16 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 3 — Создать встречу
+    // 3 — Создать
     {
-      id: 'create-meeting',
-      target: '[data-overview-target="overview.create-meeting"]',
-      title: help('/meetings/create').title,
-      body: help('/meetings/create').body,
+      id: 'create',
+      target: '[data-overview-target="overview.create"]',
+      title: 'Создать',
+      body: 'Один вход для всего: встреча, мысль (быстрая заметка в память), задача, цель.',
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 4 — Главная
+    // 4 — Сегодня (ритм дня)
     {
       id: 'dashboard',
       target: '[data-overview-target="overview.dashboard"]',
@@ -61,7 +61,25 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 5 — Встречи
+    // 5 — Неделя (ритм недели)
+    {
+      id: 'week',
+      target: '[data-overview-target="overview.week"]',
+      title: help('/week').title,
+      body: help('/week').body,
+      placement: 'right',
+      primaryAction: { label: 'Дальше', kind: 'next' },
+    },
+    // 6 — Итоги месяца (ритм месяца)
+    {
+      id: 'month',
+      target: '[data-overview-target="overview.month"]',
+      title: help('/month').title,
+      body: help('/month').body,
+      placement: 'right',
+      primaryAction: { label: 'Дальше', kind: 'next' },
+    },
+    // 7 — Встречи
     {
       id: 'meetings',
       target: '[data-overview-target="overview.meetings"]',
@@ -70,25 +88,7 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 6 — Дамп
-    {
-      id: 'dump',
-      target: '[data-overview-target="overview.dump"]',
-      title: help('/dump').title,
-      body: help('/dump').body,
-      placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-    },
-    // 7 — Карточки
-    {
-      id: 'cards',
-      target: '[data-overview-target="overview.cards"]',
-      title: help('/cards').title,
-      body: help('/cards').body,
-      placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-    },
-    // 8 — Проекты
+    // 8 — Задачи
     {
       id: 'projects',
       target: '[data-overview-target="overview.projects"]',
@@ -97,25 +97,25 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 9 — Входящие
+    // 9 — Память
     {
-      id: 'intake',
-      target: '[data-overview-target="overview.intake"]',
-      title: help('/intake').title,
-      body: help('/intake').body,
+      id: 'memory',
+      target: '[data-overview-target="overview.memory"]',
+      title: help('/memory').title,
+      body: help('/memory').body,
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 10 — Помощник
+    // 10 — Команда
     {
-      id: 'chat',
-      target: '[data-overview-target="overview.chat"]',
-      title: help('/chat').title,
-      body: help('/chat').body,
+      id: 'team',
+      target: '[data-overview-target="overview.team"]',
+      title: help('/structure').title,
+      body: help('/structure').body,
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 11 — Моё пространство
+    // 11 — Я
     {
       id: 'me',
       target: '[data-overview-target="overview.me"]',
@@ -124,34 +124,7 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 12 — Память компании (группа — центр экрана, т.к. нет единого target)
-    {
-      id: 'memory',
-      target: 'center',
-      title: help('/memory').title,
-      body: help('/memory').body,
-      placement: 'center',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-    },
-    // 13 — Управление
-    {
-      id: 'operations',
-      target: '[data-overview-target="overview.operations"]',
-      title: help('/dashboard/operations').title,
-      body: help('/dashboard/operations').body,
-      placement: 'right',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-    },
-    // 14 — Справочник (раскрываем группу)
-    {
-      id: 'reference',
-      target: 'center',
-      title: help('/company').title,
-      body: 'Справочник — структура и метаданные компании: отделы, должности, сотрудники, документы. Группа свёрнута по умолчанию.',
-      placement: 'center',
-      primaryAction: { label: 'Дальше', kind: 'next' },
-    },
-    // 15 — Настройки
+    // 12 — Настройки
     {
       id: 'settings',
       target: '[data-overview-target="overview.settings"]',
@@ -160,7 +133,7 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 16 — Админка
+    // 13 — Админка
     {
       id: 'admin',
       target: '[data-overview-target="overview.admin"]',
@@ -169,7 +142,7 @@ export const overviewTour: TourDefinition = {
       placement: 'right',
       primaryAction: { label: 'Дальше', kind: 'next' },
     },
-    // 17 — Помощник компании
+    // 14 — Помощник компании (плавающая кнопка)
     {
       id: 'concierge',
       target: '[data-tour-target="welcome.concierge"]',

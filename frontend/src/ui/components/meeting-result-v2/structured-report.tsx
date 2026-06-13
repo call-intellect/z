@@ -67,7 +67,7 @@ export function isEmptyStructuredValue(v: unknown): boolean {
  * Главный текст из объекта-задачи: title/text/name/description/value/item/what
  * (item → not_done{item}, what → responsibilities{what}), иначе первое строковое поле.
  */
-function objectMainText(o: Record<string, unknown>): string {
+export function objectMainText(o: Record<string, unknown>): string {
   for (const k of ['title', 'text', 'name', 'description', 'value', 'item', 'what']) {
     const val = o[k];
     if (typeof val === 'string' && val.trim()) return val;

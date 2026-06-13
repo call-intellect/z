@@ -128,6 +128,11 @@ import {
   StructuredFieldValue,
 } from './structured-report';
 import { ReportActions } from './ReportActions';
+import {
+  NextStepsSection,
+  collectNextSteps,
+  NEXT_STEP_KEYS,
+} from './NextStepsSection';
 
 type TabKey =
   | 'overview'
@@ -955,13 +960,21 @@ function OverviewTab({
   tasksCount: number;
   highlightsCount: number;
 }) {
-  void meeting;
   const stats: Array<{ label: string; value: string | number }> = [
     { label: 'Главы', value: chaptersCount },
     { label: 'Задачи', value: tasksCount },
     { label: 'Клипы', value: highlightsCount },
     { label: 'Длительность', value: fmtDurationCompact(durationMs) },
   ];
+
+  /**
+   * Ф5а — «следующие шаги» отчёта выносим отдельной секцией с кнопкой «В задачу»
+   * (вместо generic-грида StructuredDataCard, где они исключены NEXT_STEP_KEYS).
+   */
+  const nextSteps = useMemo(
+    () => collectNextSteps(structuredData),
+    [structuredData],
+  );
 
   /**
    * Волна 4, B1.4 — клиентский протокол. Backend кладёт нейтральный текст для
@@ -1000,6 +1013,9 @@ function OverviewTab({
         </Card>
       )}
       {clientProtocolMd ? <ClientProtocolCard markdown={clientProtocolMd} /> : null}
+      {nextSteps.length > 0 ? (
+        <NextStepsSection meetingId={meeting.id} steps={nextSteps} />
+      ) : null}
       {structuredData ? <StructuredDataCard data={structuredData} /> : null}
       {customMd && (
         <Card>
@@ -1053,6 +1069,10 @@ const STRUCTURED_SPECIAL_KEYS = new Set([
   // «Протокол для клиента» (ClientProtocolCard) над StructuredDataCard, поэтому
   // из общего generic-грида он исключён, чтобы не дублироваться.
   'client_protocol_md',
+  // Ф5а — «следующие шаги» рендерятся отдельной секцией NextStepsSection с
+  // кнопкой «В задачу» (над StructuredDataCard), поэтому из generic-грида
+  // исключены, чтобы не дублироваться.
+  ...NEXT_STEP_KEYS,
 ]);
 
 /**

@@ -11,6 +11,8 @@ import {
   Table2,
 } from 'lucide-react';
 
+import { MemorySearch } from '@/ui/components/memory/MemorySearch';
+
 export const metadata: Metadata = {
   title: 'Память',
 };
@@ -56,6 +58,14 @@ export default function MemoryHubPage() {
         </p>
       </header>
 
+      {/* Поиск по памяти — поверх POST /api/v1/knowledge/search (Ф5б). */}
+      <div className="mb-8">
+        <MemorySearch />
+      </div>
+
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
+        Спросить и читать
+      </h2>
       <div className="grid gap-3 sm:grid-cols-2">
         {ENTRIES.map((e) => {
           const Icon = e.icon;

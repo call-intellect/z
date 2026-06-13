@@ -60,6 +60,7 @@ export class DecisionImplementationService {
     now: Date;
   }): Promise<{
     checked: number;
+    autoImplemented: number;
     stalled: Array<{
       id: string;
       statement: string;
@@ -77,6 +78,7 @@ export class DecisionImplementationService {
         id: true,
         statement: true,
         text: true,
+        status: true,
         decidedByPersonIds: true,
         decidedAt: true,
         createdAt: true,
@@ -93,6 +95,7 @@ export class DecisionImplementationService {
       decidedByPersonIds: string[];
     }> = [];
     let checked = 0;
+    let autoImplemented = 0;
 
     for (const d of decisions) {
       const ageDays = this.ageDays(d.decidedAt ?? d.createdAt, args.now);
@@ -104,6 +107,34 @@ export class DecisionImplementationService {
         hasOutcomes,
         staleDays,
       });
+
+      // Редизайн Ф8.1 — детерминированная петля решений: approved-решение,
+      // доведённое до результата (есть actualOutcomes) ИЛИ под которым ВСЕ
+      // связанные задачи закрыты → авто-перевод в статус 'implemented'.
+      // Идемпотентно: после перехода status='implemented' условие (===approved)
+      // не сработает повторно. Mention-based «сделали/внедрили» по транскриптам
+      // НЕ делаем (LLM-эвристика) — закрывает основной кейс детерминированно.
+      if (d.status === 'approved') {
+        const doneByLoop =
+          hasOutcomes ||
+          (await this.allLinkedTasksCompleted({
+            tenantId: args.tenantId,
+            decisionId: d.id,
+            linkedTaskCount: d.linkedTaskCount,
+          }));
+        if (doneByLoop) {
+          await this.prisma.decision.update({
+            where: { id: d.id },
+            data: { status: 'implemented' },
+          });
+          autoImplemented++;
+          this.metrics.incDecisionAutoImplemented();
+          this.logger.log(
+            { tenantId: args.tenantId, decisionId: d.id, reason: hasOutcomes ? 'outcomes' : 'all_tasks_done' },
+            'decision-implementation: авто-переход approved→implemented',
+          );
+        }
+      }
 
       // Апдейтим только при изменении (идемпотентность, меньше записей).
       if (status !== d.implementationStatus) {
@@ -155,7 +186,30 @@ export class DecisionImplementationService {
       );
     }
 
-    return { checked, stalled };
+    return { checked, autoImplemented, stalled };
+  }
+
+  /**
+   * Редизайн Ф8.1 — все ли связанные с решением задачи закрыты
+   * (`Issue.completedAt != null`). Признак доведения для авто-перехода
+   * approved→implemented. Требует ≥1 связанной задачи: решение без задач и
+   * без outcomes доводить нельзя (иначе любое «голое» решение автозакроется).
+   * `completedAt` — канон завершённости задачи (см. IssueOverdueDetectorCron),
+   * не зависит от справочника IssueState.
+   */
+  private async allLinkedTasksCompleted(args: {
+    tenantId: string;
+    decisionId: string;
+    linkedTaskCount: number;
+  }): Promise<boolean> {
+    if (args.linkedTaskCount <= 0) return false;
+    const links = await this.prisma.decisionTaskLink.findMany({
+      where: { decisionId: args.decisionId },
+      select: { issue: { select: { completedAt: true } } },
+      take: 1_000,
+    });
+    if (links.length === 0) return false;
+    return links.every((l) => l.issue?.completedAt != null);
   }
 
   // ──────────────────────────── read (endpoints / Ф5) ─────────────────

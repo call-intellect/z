@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
-import type { CurationItem } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { ConversationalService } from '../../conversational/conversational.service';
+import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { IntakeService } from '../../tracker/services/intake.service';
 import { ConflictPendingProvider } from '../providers/conflict.provider';
 import { CurationPendingProvider } from '../providers/curation.provider';
 import { IntakePendingProvider } from '../providers/intake.provider';
@@ -32,11 +34,26 @@ export interface SnoozeInput {
   hours: number;
 }
 
+/** Стратегия резолва (зависит от source). См. DTO ConfirmResolutionSchema. */
+export type ConfirmResolution =
+  | 'approve'
+  | 'reject'
+  | 'keep_old'
+  | 'accept_new'
+  | 'merge'
+  | 'accept';
+
 export interface ConfirmInput {
   tenantId: string;
   userId: string;
   source: PendingActionSource;
   resourceId: string;
+  /// Стратегия резолва (curation опц.; conflict/intake обязательна; probe — нет).
+  resolution?: ConfirmResolution;
+  /// Свободный ответ на probe-вопрос (только source='probe').
+  answerText?: string;
+  /// Целевой проект для intake accept.
+  targetProjectId?: string;
 }
 
 const SNOOZE_MIN_HOURS = 1;
@@ -70,6 +87,13 @@ export class PendingActionsService {
     // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
+    // Редизайн Ф4 — делегаты сквозного резолва остальных источников.
+    @Inject(ConflictService)
+    private readonly conflictService: ConflictService,
+    @Inject(IntakeService)
+    private readonly intakeService: IntakeService,
+    @Inject(ConversationalService)
+    private readonly conversational: ConversationalService,
   ) {
     // Порядок фиксирован — детерминизм для bySource/тестов.
     this.providers = [this.curation, this.conflict, this.intake, this.probe];
@@ -194,30 +218,52 @@ export class PendingActionsService {
     return { ok: true, snoozedUntil: snoozedUntil.toISOString() };
   }
 
-  // ──────────────────────────── confirm (B4) ──────────────────────
+  // ──────────────────────── confirm (Ф4 — сквозной резолв) ────────
 
   /**
-   * Action Center B4 «быстрый путь подтверждения» (2026-06-02).
+   * Сквозной резолв item'а единой очереди решений (редизайн Ф4, 2026-06-13).
+   * Диспетчер по `source` → профильный сервис-резолвер. Все источники
+   * валидируют tenantId-владение и status внутри своих сервисов; ошибки
+   * (BadRequest/Forbidden/NotFound) пробрасываются наружу. Повторный резолв
+   * уже резолвнутого ресурса — понятная ошибка/no-op, не 500.
    *
-   * One-tap подтверждение item'а прямо из feed'а. Поддерживается ТОЛЬКО
-   * `source==='curation'` для light-уровня — делегирует
-   * `CurationService.decide({ decisionType: 'approve' })`. RBAC, проверка
-   * status==='pending' и наличие reasoning-окна — внутри `decide`
-   * (ForbiddenException/NotFound/BadRequest пробрасываются наружу).
-   *
-   * Критические / deep-карточки НЕ подтверждаются здесь — только на странице
-   * карточки (где куратор обязан оставить обоснование).
+   * Возвращает `{ ok: true }` — детали резолва берутся из профильных API.
    */
-  async confirm(input: ConfirmInput): Promise<CurationItem> {
-    if (input.source !== 'curation') {
-      throw new BadRequestException({
-        ok: false,
-        error: {
-          code: 'quick_confirm_unsupported_source',
-          message: 'Быстрое подтверждение доступно только для источника curation',
-        },
-      });
+  async confirm(input: ConfirmInput): Promise<{ ok: true }> {
+    switch (input.source) {
+      case 'curation':
+        await this.confirmCuration(input);
+        return { ok: true };
+      case 'conflict':
+        await this.confirmConflict(input);
+        return { ok: true };
+      case 'intake':
+        await this.confirmIntake(input);
+        return { ok: true };
+      case 'probe':
+        await this.confirmProbe(input);
+        return { ok: true };
+      default: {
+        // exhaustive — на случай расширения source без обновления switch.
+        const _never: never = input.source;
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'confirm_unsupported_source',
+            message: `Источник '${String(_never)}' не поддерживается`,
+          },
+        });
+      }
     }
+  }
+
+  /**
+   * curation: light-карточка → approve (one-tap, B4) либо reject. RBAC,
+   * status==='pending' и reasoning-окно — внутри `decide`.
+   */
+  private async confirmCuration(input: ConfirmInput): Promise<void> {
+    const decision: 'approve' | 'reject' =
+      input.resolution === 'reject' ? 'reject' : 'approve';
 
     const item = await this.prisma.curationItem.findUnique({
       where: { id: input.resourceId },
@@ -233,6 +279,7 @@ export class PendingActionsService {
       });
     }
     if (item.status !== 'pending') {
+      // Идемпотентность: уже резолвнут — понятная ошибка, не 500.
       throw new BadRequestException({
         ok: false,
         error: {
@@ -253,24 +300,109 @@ export class PendingActionsService {
     }
 
     // decide сам проверяет RBAC (reviewer ∈ candidateCuratorIds | owner/admin),
-    // повторно валидирует status==='pending' и для light+approve НЕ требует
-    // reasoning. ForbiddenException из decide пробрасывается наружу как 403.
-    const decided = await this.curationService.decide({
+    // повторно валидирует status==='pending'. ForbiddenException → 403 наружу.
+    await this.curationService.decide({
       tenantId: input.tenantId,
       curationItemId: input.resourceId,
       reviewerUserId: input.userId,
-      decisionType: 'approve',
+      decisionType: decision,
     });
-
     this.logger.log(
-      {
-        tenantId: input.tenantId,
-        userId: input.userId,
-        curationItemId: input.resourceId,
-      },
-      'pending-actions.confirm: light-карточка подтверждена (approve)',
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId, decision },
+      'pending-actions.confirm: curation резолвнут',
     );
-    return decided;
+  }
+
+  /**
+   * conflict: keep_old | accept_new | merge → ConflictService.resolve.
+   * `evolving` через быстрый резолв не поддерживаем (нужны даты evolvingMeta —
+   * только на странице конфликта). tenantId-владение и status==='open' —
+   * внутри resolve (повторный → BadRequest 'conflict_not_open', не 500).
+   */
+  private async confirmConflict(input: ConfirmInput): Promise<void> {
+    const allowed = ['keep_old', 'accept_new', 'merge'] as const;
+    if (
+      !input.resolution ||
+      !(allowed as readonly string[]).includes(input.resolution)
+    ) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'conflict_resolution_required',
+          message:
+            "Для конфликта нужен resolution ∈ keep_old | accept_new | merge",
+        },
+      });
+    }
+    await this.conflictService.resolve({
+      tenantId: input.tenantId,
+      conflictId: input.resourceId,
+      reviewerUserId: input.userId,
+      resolution: input.resolution as 'keep_old' | 'accept_new' | 'merge',
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId, resolution: input.resolution },
+      'pending-actions.confirm: conflict резолвнут',
+    );
+  }
+
+  /**
+   * intake: accept | reject → IntakeService.triage. Для accept проект берётся
+   * из targetProjectId / привязки / suggested (логика внутри triage). Если
+   * проекта нет — triage кидает BadRequest 'target_project_required' (наружу,
+   * не 500). Повторный триаж → BadRequest 'intake_already_triaged'.
+   */
+  private async confirmIntake(input: ConfirmInput): Promise<void> {
+    const decision = input.resolution;
+    if (decision !== 'accept' && decision !== 'reject') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'intake_resolution_required',
+          message: 'Для входящей задачи нужен resolution ∈ accept | reject',
+        },
+      });
+    }
+    await this.intakeService.triage(
+      input.resourceId,
+      {
+        decision,
+        targetProjectId: input.targetProjectId ?? null,
+      } as never,
+      input.tenantId,
+      input.userId,
+    );
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId, decision },
+      'pending-actions.confirm: intake резолвнут',
+    );
+  }
+
+  /**
+   * probe: свободный ответ текстом → ConversationalService.respondToProbe.
+   * Владение (recipientUserId), идемпотентность (answered → no-op) и срок
+   * (expiresAt) — внутри respondToProbe (Forbidden/BadRequest наружу).
+   */
+  private async confirmProbe(input: ConfirmInput): Promise<void> {
+    const text = input.answerText?.trim();
+    if (!text) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'probe_answer_required',
+          message: 'Для ответа на вопрос нужен непустой answerText',
+        },
+      });
+    }
+    await this.conversational.respondToProbe({
+      notificationId: input.resourceId,
+      userId: input.userId,
+      payload: { text },
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId },
+      'pending-actions.confirm: probe отвечен',
+    );
   }
 
   // ──────────────────────────── helpers ───────────────────────────

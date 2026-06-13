@@ -11,9 +11,11 @@ import {
   Prisma,
 } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
+import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import { resolutionRu, resourceTypeRu } from '../../pending-actions/resource-type-ru';
 import type {
   ConflictItemDto,
@@ -73,6 +75,7 @@ export class ConflictService {
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
     @Inject(CurationService) private readonly curation: CurationService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async report(input: ConflictReportInput): Promise<ConflictItem> {
@@ -128,6 +131,11 @@ export class ConflictService {
         evidence: input.evidence as Prisma.InputJsonValue,
         relationType: input.relationType,
         detectedBy: input.detectedBy,
+        // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
+        // открытый конфликт после TTL (cfg.pendingActions.conflictTtlDays).
+        // TODO: крутилка живёт в TypedConfigService.pendingActions, позже
+        // уедет в AdminSetting UI (наравне с urgentAgeDays).
+        expiresAt: computeExpiresAt(this.cfg.pendingActions.conflictTtlDays),
       },
     });
 

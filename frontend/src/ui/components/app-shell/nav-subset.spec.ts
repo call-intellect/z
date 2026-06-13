@@ -15,7 +15,7 @@ import {
   DESKTOP_NAV_HREFS,
   getDesktopNavRefs,
   isDesktopNavReachable,
-} from './Sidebar';
+} from './nav-config';
 
 describe('навигация — mobile ⊆ desktop (Ф6)', () => {
   it('каждый href нижнего навбара достижим в десктоп-сайдбаре', () => {
@@ -26,10 +26,12 @@ describe('навигация — mobile ⊆ desktop (Ф6)', () => {
   });
 
   it('конкретные ежедневные пункты покрыты десктопом (exact или matchPrefix)', () => {
-    // exact-совпадения
+    // exact-совпадения (новое меню Ф0: ритмы + работа)
     expect(DESKTOP_NAV_HREFS).toContain('/projects');
-    expect(DESKTOP_NAV_HREFS).toContain('/feed');
+    expect(DESKTOP_NAV_HREFS).toContain('/week');
     expect(DESKTOP_NAV_HREFS).toContain('/me');
+    // /actions достижим через топ-бар «Требует вас»
+    expect(isDesktopNavReachable('/actions')).toBe(true);
     // покрытие через matchPrefix '/me'
     expect(isDesktopNavReachable('/me/inbox')).toBe(true);
     expect(isDesktopNavReachable('/me/check-ins')).toBe(true);

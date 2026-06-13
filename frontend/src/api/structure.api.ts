@@ -50,6 +50,20 @@ export interface SetDepartmentHeadRequest {
   headPersonId: string | null;
 }
 
+/**
+ * ТЗ редизайн Ф7а — ответ `POST /api/v1/departments/:id/merge`.
+ * `target` — отдел, в который влили; `moved` — счётчики перенесённого.
+ */
+export interface MergeDepartmentResponse {
+  ok: boolean;
+  target: DepartmentApi;
+  moved: {
+    roles: number;
+    persons: number;
+    [key: string]: number;
+  };
+}
+
 // ─── Role (бизнес-должность) ────────────────────────────────────────────────
 
 export interface RoleDomainApi {
@@ -236,6 +250,20 @@ export const departmentsApi = {
     apiClient.patch<DepartmentApi>(
       `/api/v1/departments/${encodeURIComponent(id)}/head`,
       body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * ТЗ редизайн Ф7а — слияние отделов. Переносит должности и сотрудников из
+   * `sourceId` в `intoId` (target) и soft-delete'ит source. Используется
+   * мастером «Наведём порядок в отделах» для дедупа похожих отделов.
+   * Backend: `POST /api/v1/departments/:id/merge` body `{ intoId }`
+   * (commit 201b16e8).
+   */
+  merge: (orgId: string, sourceId: string, intoId: string) =>
+    apiClient.post<MergeDepartmentResponse>(
+      `/api/v1/departments/${encodeURIComponent(sourceId)}/merge`,
+      { intoId },
       { headers: orgHeaders(orgId) },
     ),
 };

@@ -58,8 +58,16 @@ import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
  * Без Recharts (пакет не подключён к проекту) — простой grid из «карточек».
  * Для визуализации severity используем CSS-плашки. Когда Recharts добавят
  * в `package.json` — переделаем на BarChart / PieChart.
+ *
+ * Встроенный режим (`embedded`, ТЗ редизайн кабинета Ф2): на экране `/week`
+ * (вкладка «Пульс сейчас») клиент живёт внутри общего `ModernPageShell` +
+ * вкладок, поэтому не рендерит собственный `ModernPageShell` / `OperationsTabs`.
  */
-export function OperationsDashboardClient() {
+export function OperationsDashboardClient({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const { currentOrgId } = useAuth();
 
   // R2 — overview и open-commitments через SWR (раньше императивная загрузка
@@ -152,14 +160,8 @@ export function OperationsDashboardClient() {
     inflowBlockers.some((v) => v != null) ||
     inflowFrictions.some((v) => v != null);
 
-  return (
-    <ModernPageShell
-      title="Операции — пульс компании"
-      subtitle={`Обновлено ${data.generatedAt.toLocaleString('ru-RU')}`}
-    >
-      {/* §5.1 — Общая навигация по операционному разделу. */}
-      <OperationsTabs />
-
+  const body = (
+    <>
       {/* Action Center B2 — баннер «Требует подтверждения». Скрыт при total=0. */}
       <div className="mb-4">
         <RequiresActionBanner orgId={currentOrgId} />
@@ -419,6 +421,21 @@ export function OperationsDashboardClient() {
           </div>
         </GlassCard>
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return body;
+  }
+
+  return (
+    <ModernPageShell
+      title="Операции — пульс компании"
+      subtitle={`Обновлено ${data.generatedAt.toLocaleString('ru-RU')}`}
+    >
+      {/* §5.1 — Общая навигация по операционному разделу. */}
+      <OperationsTabs />
+      {body}
     </ModernPageShell>
   );
 }

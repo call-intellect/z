@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  Param,
   Query,
   Req,
   UseGuards,
@@ -18,8 +19,11 @@ import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import {
   WeeklyPerPersonQuerySchema,
+  WeeklyPersonItemsQuerySchema,
   type WeeklyPerPersonDto,
   type WeeklyPerPersonQuery,
+  type WeeklyPersonItemsDto,
+  type WeeklyPersonItemsQuery,
 } from '../dto/weekly-per-person.dto';
 import { WeeklyPerPersonService } from '../services/weekly-per-person.service';
 
@@ -66,6 +70,31 @@ export class WeeklyPerPersonController {
         offset: q.offset,
         sort: q.sort,
       },
+      new Date(),
+    );
+  }
+
+  /**
+   * ТЗ редизайн Ф8.5 — drill-down: построчный план-факт по человеку за неделю
+   * (что планировал / что сделал / что мешало) из обещаний/задач/чек-инов.
+   * Доступ: тот же operations-dashboard RBAC.
+   */
+  @Get(':personId/items')
+  @ApiOperation({
+    summary: 'Построчный план-факт по человеку за неделю (drill-down)',
+  })
+  async getItems(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Param('personId') personId: string,
+    @Query(new ZodValidationPipe(WeeklyPersonItemsQuerySchema))
+    q: WeeklyPersonItemsQuery,
+  ): Promise<WeeklyPersonItemsDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireReadAccess(uid, tenantId!);
+    return this.svc.getPersonWeekItems(
+      { tenantId: tenantId!, personId, weekStart: q.weekStart },
       new Date(),
     );
   }

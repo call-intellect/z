@@ -250,4 +250,62 @@ describe('CurationPendingProvider (B0)', () => {
     });
     expect(items[0]!.severity).toBe('normal');
   });
+
+  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
+
+  it('Ф4: title содержит название карточки из proposedPayload; detail.kind=curation', async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ci-d1',
+        resourceType: 'regulation',
+        resourceId: 'reg-1',
+        level: 'deep',
+        proposedPayload: {
+          name: 'Регламент онбординга',
+          statement: 'Новый сотрудник проходит вводный курс за 3 дня',
+        },
+        expiresAt: null,
+        createdAt: new Date(),
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe('Требует проверки: Регламент онбординга');
+    expect(items[0]!.detail).toEqual({
+      kind: 'curation',
+      cardTitle: 'Регламент онбординга',
+      preview: 'Новый сотрудник проходит вводный курс за 3 дня',
+    });
+  });
+
+  it('Ф4: пустой proposedPayload → fallback на тип ресурса, preview undefined', async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ci-d2',
+        resourceType: 'decision',
+        resourceId: 'dec-1',
+        level: 'light',
+        proposedPayload: {},
+        expiresAt: null,
+        createdAt: new Date(),
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-1',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.detail).toEqual({
+      kind: 'curation',
+      cardTitle: 'решение',
+      preview: undefined,
+    });
+  });
 });

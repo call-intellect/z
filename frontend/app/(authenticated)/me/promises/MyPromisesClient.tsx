@@ -9,6 +9,7 @@ import {
   type CommitmentApi,
   type CommitmentStatusApi,
 } from '@/api/promises.api';
+import { openQuestionFromApi, type OpenQuestion } from '@/domain/promises';
 import { toast } from 'sonner';
 
 /**
@@ -21,11 +22,17 @@ import { toast } from 'sonner';
  * - Кнопки «Сделано», «Не сделано», «Перенести срок» — закрывают / двигают
  *   обещание через POST /:blockId/mark и PATCH /:blockId/reschedule.
  *
+ * Редизайн Ф7б — под таблицей обещаний отдельная секция «Открытые вопросы»:
+ * блоки-обещания, которым не хватает данных до полноценного обещания (нет
+ * автора / нет ответственного и срока). Это НЕ обещания — по ним нужно
+ * договориться, поэтому они вынесены отдельно и не считаются обещаниями.
+ *
  * Видны ТОЛЬКО свои обещания — backend изолирует список через
  * `Person.userId === currentUserId`.
  */
 export function MyPromisesClient() {
   const [items, setItems] = useState<CommitmentApi[]>([]);
+  const [openQuestions, setOpenQuestions] = useState<OpenQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'open' | 'asked' | 'all'>('open');
@@ -40,6 +47,7 @@ export function MyPromisesClient() {
       .list({ status: filter, limit: 100 })
       .then((res) => {
         setItems(res.items);
+        setOpenQuestions((res.openQuestions ?? []).map(openQuestionFromApi));
         setError(null);
       })
       .catch((err: unknown) => {
@@ -153,14 +161,20 @@ export function MyPromisesClient() {
         <p className="rounded border border-chip-danger-bg bg-chip-danger-bg p-3 text-sm text-chip-danger-fg">
           {error}
         </p>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && openQuestions.length === 0 ? (
         <p className="text-sm text-fg-secondary">
-          {filter === 'open'
-            ? 'Открытых обещаний нет — отлично!'
-            : 'Здесь пусто.'}
+          Пока нет обещаний — Кора добавит их из встреч.
         </p>
       ) : (
         <>
+          {items.length === 0 ? (
+            <p className="text-sm text-fg-secondary">
+              {filter === 'open'
+                ? 'Открытых обещаний нет — отлично!'
+                : 'Здесь пусто.'}
+            </p>
+          ) : (
+            <>
           {/* Desktop — таблица (≥ sm). */}
           <table className="hidden w-full divide-y rounded border bg-bg-card text-sm sm:table">
             <thead className="bg-bg-subtle text-xs text-fg-secondary">
@@ -299,9 +313,89 @@ export function MyPromisesClient() {
               </div>
             ))}
           </div>
+            </>
+          )}
+
+          {/* Редизайн Ф7б — открытые вопросы (НЕ обещания), отдельной секцией. */}
+          {openQuestions.length > 0 && (
+            <section className="mt-8">
+              <h2 className="mb-1 text-sm font-semibold text-fg-primary">
+                Открытые вопросы
+              </h2>
+              <p className="mb-3 text-xs text-fg-secondary">
+                Это не обещания, по ним нужно договориться.
+              </p>
+              <ul className="flex flex-col gap-2">
+                {openQuestions.map((q) => (
+                  <li
+                    key={q.id}
+                    className="flex items-start gap-3 rounded-lg border border-border bg-bg-card p-3"
+                  >
+                    <span className="mt-0.5 flex size-7 flex-none items-center justify-center rounded-full bg-chip-info-bg text-chip-info-fg">
+                      <QuestionIcon />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-fg-primary">
+                        {q.text}
+                      </div>
+                      <div className="mt-0.5 text-xs text-fg-secondary">
+                        <OpenQuestionMeta question={q} />
+                      </div>
+                    </div>
+                    <span className="flex-none rounded bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg">
+                      открытый вопрос
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Мета открытого вопроса: где упомянуто (ссылка на встречу-источник, если есть)
+ * + причина, почему это пока не обещание (RU-текст с бэка).
+ */
+function OpenQuestionMeta({ question }: { question: OpenQuestion }) {
+  return (
+    <>
+      {question.meetingId ? (
+        <>
+          <span>упомянуто на встрече </span>
+          <Link
+            href={`/meetings/${encodeURIComponent(question.meetingId)}/result`}
+            className="text-chip-info-fg underline-offset-2 hover:underline"
+          >
+            {question.meetingTitle ?? 'встреча'}
+          </Link>
+          <span> · {question.reason}</span>
+        </>
+      ) : (
+        <span>{question.reason}</span>
+      )}
+    </>
+  );
+}
+
+/** Иконка «вопрос» для строки открытого вопроса. */
+function QuestionIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden="true"
+    >
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </svg>
   );
 }
 

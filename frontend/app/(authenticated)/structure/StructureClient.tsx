@@ -11,6 +11,7 @@ import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
 import { DepartmentsTab } from './DepartmentsTab';
 import { RolesTab } from './RolesTab';
 import { PersonsTab } from './PersonsTab';
+import { StructureWidgets } from './StructureWidgets';
 
 type TabKey = 'departments' | 'roles' | 'persons';
 
@@ -29,6 +30,12 @@ export function StructureClient() {
 
   const tab = readTab(sp);
   const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  // Виджеты «здоровье/пульс» — только руководителю (как dashboard-эндпоинты:
+  // team-health / people-at-risk отдают 403 для manager).
+  const canViewWidgets =
+    currentOrgRole === 'owner' ||
+    currentOrgRole === 'admin' ||
+    currentOrgRole === 'coo';
 
   const setTab = useCallback(
     (next: string) => {
@@ -86,6 +93,8 @@ export function StructureClient() {
           <PersonsTab orgId={currentOrgId} canEdit={canEdit} />
         </TabsContent>
       </Tabs>
+
+      {canViewWidgets && <StructureWidgets orgId={currentOrgId} />}
     </div>
   );
 }

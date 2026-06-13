@@ -63,6 +63,21 @@ export const SetDepartmentHeadSchema = z.object({
 });
 export type SetDepartmentHeadDto = z.infer<typeof SetDepartmentHeadSchema>;
 
+/**
+ * Редизайн кабинета Ф7а — слияние отделов. `:id` (source) вливается в `intoId`
+ * (target): все ссылки (Role, Appointment, Project, Person.primaryDepartment,
+ * дочерние Department, domain-связи) переносятся source→target, после чего
+ * source soft-удаляется. Запрещено: source===target и слияние родителя в
+ * собственного потомка (цикл).
+ */
+export const MergeDepartmentSchema = z.object({
+  intoId: z
+    .string({ error: 'Не указан отдел-приёмник' })
+    .trim()
+    .min(1, 'Не указан отдел-приёмник'),
+});
+export type MergeDepartmentDto = z.infer<typeof MergeDepartmentSchema>;
+
 // ─────────────────────────── Response DTO ────────────────────────────
 
 export interface DepartmentListItemDto {
@@ -79,3 +94,22 @@ export interface DepartmentListItemDto {
 }
 
 export type DepartmentDto = DepartmentListItemDto;
+
+/**
+ * Результат слияния отделов: обновлённый target плюс счётчики перенесённых
+ * сущностей (для UI-уведомления «перенесено N должностей, M сотрудников…»).
+ */
+export interface MergeDepartmentResultDto {
+  ok: true;
+  /** Обновлённый отдел-приёмник (target). */
+  target: DepartmentDto;
+  /** Счётчики перенесённого из source. */
+  moved: {
+    roles: number;
+    appointments: number;
+    projects: number;
+    persons: number;
+    childDepartments: number;
+    domainLinks: number;
+  };
+}

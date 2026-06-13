@@ -31,6 +31,11 @@ import { humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import { directorDashboardFromApi } from '@/domain/director-dashboard';
 import { fromOperationsOverviewApi } from '@/domain/operations-dashboard';
+import {
+  fromCheckinDisciplineApi,
+  localDateString,
+  type CheckinDisciplineDomain,
+} from '@/domain/checkin-discipline';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 import { EnableMorningRemindersButton } from '@/ui/pwa/EnableMorningRemindersButton';
 import { ZoneTile } from '@/ui/mobile/shared/ZoneTile';
@@ -66,8 +71,24 @@ export function MobileOverviewClient() {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
+  // Дисциплина чек-инов за сегодня (быстрый взгляд: «не сдали утром/вечером»).
+  const todayDate = localDateString();
+  const checkinSwr = useSWR<CheckinDisciplineDomain | null>(
+    currentOrgId ? ['mobile-checkin-discipline', currentOrgId, todayDate] : null,
+    async () => {
+      const res = await operationsDashboardApi.getCheckinDiscipline(
+        currentOrgId!,
+        todayDate,
+        todayDate,
+      );
+      return fromCheckinDisciplineApi(res);
+    },
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
   const director = directorSwr.data ?? null;
   const operations = operationsSwr.data ?? null;
+  const checkin = checkinSwr.data ?? null;
 
   // Loading: ждём директорский (первичный источник раскладки).
   const loading = !!currentOrgId && directorSwr.isLoading && !director;
@@ -162,6 +183,9 @@ export function MobileOverviewClient() {
               </div>
             </div>
           )}
+
+          {/* Дисциплина чек-инов сегодня — плашка быстрого взгляда. */}
+          <CheckinPill checkin={checkin} />
         </>
       )}
 
@@ -189,6 +213,41 @@ function ValueStat({ n, label }: { n: number; label: string }) {
     <div className="flex flex-col">
       <span className="text-lg font-semibold tabular-nums text-fg-primary">{n}</span>
       <span className="text-xs text-fg-tertiary">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Плашка «Чек-ины сегодня» (Ф8.7). Б-6: выключены/нет данных → причина без
+ * чисел; все сдали → спокойный текст; есть пропуски → «не сдали утром/вечером».
+ * Тон «вернуть в ритм», не наказание.
+ */
+function CheckinPill({ checkin }: { checkin: CheckinDisciplineDomain | null }) {
+  if (!checkin) return null;
+  if (!checkin.enabled) {
+    return (
+      <div className="mt-3 rounded-2xl border border-border-subtle bg-bg-card p-3 text-xs text-fg-tertiary">
+        Чек-ины выключены — нет данных о дисциплине.
+      </div>
+    );
+  }
+  const { morningMissed, eveningMissed } = checkin.totals;
+  const allDone = morningMissed === 0 && eveningMissed === 0;
+  return (
+    <div
+      className={
+        allDone
+          ? 'mt-3 rounded-2xl bg-chip-success-bg px-4 py-3 text-sm font-medium text-chip-success-fg'
+          : 'mt-3 rounded-2xl bg-chip-warning-bg px-4 py-3 text-sm font-medium text-chip-warning-fg'
+      }
+    >
+      {allDone ? (
+        <span>Чек-ины сегодня: все сдали</span>
+      ) : (
+        <span>
+          Чек-ины сегодня: не сдали утром {morningMissed} · вечером {eveningMissed}
+        </span>
+      )}
     </div>
   );
 }

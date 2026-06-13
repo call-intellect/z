@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { completeCommitmentWhere } from '../../operations/utils/commitment-completeness';
 
 /**
  * DTO для KPI «Надёжность обещаний» (Commitment Reliability).
@@ -273,10 +274,14 @@ export class CommitmentReliabilityService {
     horizonStart: Date,
     now: Date,
   ): Prisma.IdeaBlockWhereInput {
+    // ТЗ редизайн Ф7б (Б-3) — гейт ПОЛНОТЫ применяется на ВСЕХ scope
+    // (company/team/person). Неполные обещания (нет автора, либо нет ни
+    // адресата, ни срока) в надёжность не идут — это «открытые вопросы».
     const base: Prisma.IdeaBlockWhereInput = {
       tenantId: args.tenantId,
       signalType: 'commitment',
       commitmentDueDate: { gte: horizonStart, lte: now },
+      ...completeCommitmentWhere(),
     };
 
     if (args.scope === 'person') {

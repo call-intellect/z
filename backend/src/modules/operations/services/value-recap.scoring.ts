@@ -55,6 +55,20 @@ export interface ValueRecapTeam {
   estimate: true;
 }
 
+/**
+ * Одно решение месяца со статусом доведения (Ф3 редизайн — список решений в
+ * витрине). count месяца идёт В ПАРЕ с team.decisionsThroughputPercent (Р7);
+ * построчный `throughputPercent` — грубая шкала по статусу.
+ */
+export interface ValueRecapDecision {
+  id: string;
+  statement: string;
+  /** Статус внедрения: done/in_progress/stalled/not_started. */
+  status: string;
+  /** % доведения по статусу (done=100, in_progress=50, иначе 0). */
+  throughputPercent: number;
+}
+
 /** Дельта к прошлому месяцу по ведущим счётчикам (null — нет baseline). */
 export interface ValueRecapDelta {
   meetingsAutoProtocoled: number | null;
@@ -79,6 +93,11 @@ export interface ValueRecapPayload {
   routine: ValueRecapRoutine;
   team: ValueRecapTeam;
   delta: ValueRecapDelta | null;
+  /**
+   * Топ-N решений месяца со статусом доведения (Ф3 редизайн). Пустой массив —
+   * если решений нет. count в team.decisionsTotal + % в decisionsThroughputPercent.
+   */
+  decisions: ValueRecapDecision[];
   /** Человекочитаемая сводка (LLM или детерминированный fallback). */
   narrative: string;
 }
@@ -226,6 +245,7 @@ export function assembleValueRecapPayload(args: {
   routine: ValueRecapRoutine;
   team: ValueRecapTeam;
   previousRoutine: ValueRecapRoutine | null;
+  decisions: ValueRecapDecision[];
   narrative: string;
 }): ValueRecapPayload {
   const isBaseline = args.previousRoutine === null;
@@ -236,6 +256,7 @@ export function assembleValueRecapPayload(args: {
     routine: args.routine,
     team: args.team,
     delta: buildDelta(args.routine, args.previousRoutine),
+    decisions: args.decisions ?? [],
     narrative: args.narrative,
   };
   assertNoForbiddenMetricKeys(payload);

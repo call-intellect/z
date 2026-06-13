@@ -10,7 +10,7 @@ export interface PendingActionItem {
   source: 'curation' | 'conflict' | 'intake' | 'probe';
   resourceType: string;
   resourceId: string;
-  /// Готовый к показу заголовок (RU).
+  /// Готовый к показу заголовок (RU) — РЕАЛЬНАЯ суть item'а, а не шаблон.
   title: string;
   severity: 'normal' | 'urgent';
   ageDays: number;
@@ -18,6 +18,65 @@ export interface PendingActionItem {
   actionUrl: string;
   /// true — можно подтвердить «в один клик» (lightweight curation light-item).
   canQuickConfirm: boolean;
+  /// Редизайн Ф4 (2026-06-13) — структурный контекст для inline-карточки в
+  /// очереди решений. Дискриминируется `kind` (= source). Опционально —
+  /// обратная совместимость; недоступное поле остаётся `undefined`.
+  detail?: PendingActionDetail;
+}
+
+/// Структурный detail item'а — дискриминированный union по `kind` (= source).
+export type PendingActionDetail =
+  | ProbePendingDetail
+  | ConflictPendingDetail
+  | IntakePendingDetail
+  | CurationPendingDetail;
+
+/// probe: сам вопрос + контекст для ответа.
+export interface ProbePendingDetail {
+  kind: 'probe';
+  /// Текст уточняющего вопроса (Notification.payload.question).
+  question: string;
+  /// Контекст/повод вопроса (Notification.payload.context), если есть.
+  context?: string;
+  /// Название встречи-источника (если probe привязан к встрече).
+  meetingTitle?: string;
+  /// Короткая ссылка-цитата на источник (если есть).
+  cite?: string;
+  /// id Notification (для ответа через respond).
+  notificationId: string;
+}
+
+/// conflict: суть конфликта + обе версии.
+export interface ConflictPendingDetail {
+  kind: 'conflict';
+  /// Краткая суть конфликта (из evidence: explanation/reason).
+  summary: string;
+  oldVersion: { text: string; date?: string; cite?: string };
+  newVersion: { text: string; date?: string; cite?: string };
+}
+
+/// intake: что за входящая задача.
+export interface IntakePendingDetail {
+  kind: 'intake';
+  title: string;
+  description?: string;
+  /// Имя предлагаемого исполнителя (резолв userId → Person.name).
+  assigneeName?: string;
+  /// Человекочитаемый срок (ISO suggestedDueDate).
+  dueLabel?: string;
+  /// Уверенность извлечения (0..1), если посчитана.
+  confidence?: number;
+  cite?: string;
+}
+
+/// curation: что за карточка требует проверки.
+export interface CurationPendingDetail {
+  kind: 'curation';
+  /// Название карточки (из proposedPayload: name/title/statement).
+  cardTitle: string;
+  /// Короткий предпросмотр сути.
+  preview?: string;
+  cite?: string;
 }
 
 export interface PendingActionsProviderArgs {

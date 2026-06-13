@@ -13,9 +13,16 @@ import type {
   CommitmentStatus,
   ListMyPromisesQuery,
   MarkPromiseBody,
+  MyPromisesListDto,
   OpenCommitmentsListDto,
+  OpenQuestionDto,
   ReschedulePromiseBody,
 } from '../dto/commitments.dto';
+import {
+  incompleteCommitmentReason,
+  incompleteCommitmentReasonText,
+  isCompleteCommitment,
+} from '../utils/commitment-completeness';
 
 /**
  * SBA β-8.2 — CommitmentsService.
@@ -74,12 +81,18 @@ export class CommitmentsService {
    *
    * Через JOIN IdeaBlockEntity → Entity → Person, чтобы фильтр шёл по
    * `Person.userId = currentUserId`.
+   *
+   * ТЗ редизайн Ф7б (Б-3) — выдача РАЗДЕЛЕНА предикатом полноты:
+   *   - `items` — ПОЛНЫЕ обещания (есть автор + либо адресат, либо срок).
+   *     Только они учитываются в надёжности и показываются как «обещание».
+   *   - `openQuestions` — неполные блоки-обещания (нет автора, либо нет ни
+   *     адресата, ни срока). Адресату НЕ показываются как «его обещание».
    */
   async listMine(args: {
     tenantId: string;
     selfPersonId: string;
     query: ListMyPromisesQuery;
-  }): Promise<{ items: CommitmentDto[] }> {
+  }): Promise<MyPromisesListDto> {
     const statusFilter: { commitmentStatus?: CommitmentStatus | { in: CommitmentStatus[] } } = {};
     if (args.query.status === 'open') {
       statusFilter.commitmentStatus = 'open';
@@ -120,7 +133,48 @@ export class CommitmentsService {
       blocks,
     );
 
-    return { items: blocks.map((b) => this.toDto(b, null, meetingTitles)) };
+    // ТЗ редизайн Ф7б (Б-3) — split по предикату полноты. Полные обещания —
+    // в items; неполные блоки-обещания — в openQuestions («открытые вопросы»),
+    // адресату НЕ показываются как «его обещание».
+    const items: CommitmentDto[] = [];
+    const openQuestions: OpenQuestionDto[] = [];
+    for (const b of blocks) {
+      if (isCompleteCommitment(b)) {
+        items.push(this.toDto(b, null, meetingTitles));
+      } else {
+        openQuestions.push(this.toOpenQuestion(b, meetingTitles));
+      }
+    }
+
+    return { items, openQuestions };
+  }
+
+  /** ТЗ редизайн Ф7б (Б-3) — неполный блок-обещание → DTO «открытого вопроса». */
+  private toOpenQuestion(
+    block: {
+      id: string;
+      criticalQuestion: string;
+      commitmentAuthorPersonId: string | null;
+      commitmentRecipientPersonId: string | null;
+      commitmentDueDate: Date | null;
+      createdAt: Date;
+      evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }> | null;
+    },
+    meetingTitles: Map<string, string>,
+  ): OpenQuestionDto {
+    const reason = incompleteCommitmentReason(block);
+    const sourceMeetingId = this.extractSourceMeetingId(block);
+    return {
+      id: block.id,
+      text: block.criticalQuestion,
+      sourceMeetingId,
+      sourceMeetingTitle: sourceMeetingId
+        ? meetingTitles.get(sourceMeetingId) ?? null
+        : null,
+      // reason всегда не-null здесь: блок прошёл ветку !isCompleteCommitment.
+      reason: incompleteCommitmentReasonText(reason ?? 'no_recipient_and_due'),
+      createdAt: block.createdAt.toISOString(),
+    };
   }
 
   /**
@@ -385,6 +439,9 @@ export class CommitmentsService {
       commitmentStatus: true,
       commitmentDueDate: true,
       commitmentRecipientPersonId: true,
+      // ТЗ редизайн Ф7б (Б-3) — нужен для предиката полноты (split на полные
+      // обещания vs «открытые вопросы»). Детерминированный автор обещания.
+      commitmentAuthorPersonId: true,
       commitmentAskedAt: true,
       commitmentEscalatedAt: true,
       createdAt: true,

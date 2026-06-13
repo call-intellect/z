@@ -23,6 +23,7 @@ import type {
   ReactBody,
 } from '../dto/activity-feed.dto';
 import type { ActivityFeedService } from '../services/activity-feed.service';
+import type { CoraFeedService } from '../services/cora-feed.service';
 
 import { FeedController } from './feed.controller';
 
@@ -96,8 +97,16 @@ function build(opts: { canRead?: boolean } = {}) {
     },
   } as unknown as PrismaService;
 
-  const ctrl = new FeedController(svc, rbac, prisma);
-  return { ctrl, svc, rbac, prisma };
+  const cora = {
+    getFeed: vi.fn(async () => ({ items: [], counters: {}, unreadCount: 0 })),
+    markCoraSeen: vi.fn(async () => ({
+      ok: true,
+      lastSeenAt: '2026-06-13T00:00:00.000Z',
+    })),
+  } as unknown as CoraFeedService;
+
+  const ctrl = new FeedController(svc, cora, rbac, prisma);
+  return { ctrl, svc, cora, rbac, prisma };
 }
 
 const baseQuery: ListFeedQuery = {

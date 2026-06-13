@@ -3,11 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { resourceTypeRu } from '../resource-type-ru';
 
 import {
   ageDaysFrom,
+  type ConflictPendingDetail,
   isPrivileged,
   type PendingActionItem,
   type PendingActionsProvider,
@@ -59,16 +59,48 @@ export class ConflictPendingProvider implements PendingActionsProvider {
       where: this.buildWhere(a),
       orderBy: [{ createdAt: 'asc' }],
       take: a.limit,
-      select: { id: true, resourceType: true, createdAt: true },
+      select: {
+        id: true,
+        resourceType: true,
+        evidence: true,
+        evolvingMeta: true,
+        createdAt: true,
+      },
     });
     const now = new Date();
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
+      // evidence-структура зависит от детектора (block-linker / fact-supersede
+      // / decisions / specialists) — извлекаем суть и обе версии защитно.
+      const ev = asObject(i.evidence);
+      const meta = asObject(i.evolvingMeta);
+      const summary =
+        strOrUndef(ev.explanation) ??
+        strOrUndef(ev.reason) ??
+        strOrUndef(ev.supersedeReason) ??
+        `Конфликт карточек: ${resourceTypeRu(i.resourceType)}`;
+      const oldText =
+        strOrUndef(ev.oldStatement) ?? strOrUndef(ev.existingText) ?? '';
+      const newText =
+        strOrUndef(ev.newStatement) ?? strOrUndef(ev.newText) ?? '';
+      const detail: ConflictPendingDetail = {
+        kind: 'conflict',
+        summary,
+        oldVersion: {
+          text: oldText,
+          date: strOrUndef(meta.existingValidUntil),
+        },
+        newVersion: {
+          text: newText,
+          date: strOrUndef(meta.newValidFrom),
+        },
+      };
       return {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        title: `Конфликт карточек: ${resourceTypeRu(i.resourceType)}`,
+        // Реальная суть конфликта вместо чистого шаблона.
+        title: summary,
         severity:
           ageDays >= this.cfg.pendingActions.urgentAgeDays
             ? 'urgent'
@@ -77,7 +109,21 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         // Ведём прямо на detail-страницу конфликта /curation/conflicts/[id].
         actionUrl: `/curation/conflicts/${i.id}`,
         canQuickConfirm: false,
+        detail,
       } satisfies PendingActionItem;
     });
   }
+}
+
+/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
+function asObject(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  return {};
+}
+
+/** Непустая строка или undefined. */
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim().length > 0 ? v : undefined;
 }

@@ -7,8 +7,14 @@
  * TS-модуль, который потребляют компоненты `modern/*` и боевые дашборды.
  *
  * ВАЖНО: recharts-градиентам (`<stop stopColor>`) нужны литеральные цвета, а не
- * CSS-переменные, поэтому oklch-литералы скопированы 1-в-1 из витрины и НЕ
- * заменяются на `var(--*)`. Тема пока только тёмная (светлая — отдельная фаза).
+ * CSS-переменные, поэтому ЯРКИЕ data-цвета (violet…red) скопированы 1-в-1 из
+ * витрины и НЕ заменяются на `var(--*)` — они читаемы и на тёмной, и на светлой.
+ *
+ * Редизайн 2026-06-13 (Ф10, светлая тема): текстовые цвета (`text/dim/faint`),
+ * стеклянная поверхность (`glass()`) и фон страницы (`MODERN_PAGE_BG`) переведены
+ * на CSS-переменные из `tokens.css` — они flip-аются по `[data-theme]`. SVG-`fill`
+ * принимает `var(--*)` (это не gradient-stop), поэтому подписи осей/легенд тоже
+ * адаптируются к теме.
  *
  * Это НЕ 'use client' модуль — чистые данные и хелперы.
  */
@@ -16,13 +22,13 @@
 import type { CSSProperties } from 'react';
 
 /* ------------------------------------------------------------------ */
-/* Палитра графиков (oklch-литералы из витрины, объект `C`)            */
+/* Палитра графиков (объект `C`): текст — тема-зависим (var), data — литералы */
 /* ------------------------------------------------------------------ */
 
 export const CHART = {
-  text: 'oklch(0.97 0.01 280)',
-  dim: 'oklch(0.74 0.02 280)',
-  faint: 'oklch(0.58 0.02 280)',
+  text: 'var(--text-primary)',
+  dim: 'var(--text-secondary)',
+  faint: 'var(--text-tertiary)',
   violet: 'oklch(0.66 0.2 300)',
   indigo: 'oklch(0.62 0.2 278)',
   blue: 'oklch(0.7 0.16 245)',
@@ -59,14 +65,12 @@ export const GRAD = {
  */
 export function glass(extra?: CSSProperties): CSSProperties {
   return {
-    background:
-      'linear-gradient(180deg, oklch(0.3 0.035 280 / 0.55), oklch(0.22 0.03 278 / 0.5))',
-    border: '1px solid oklch(1 0 0 / 0.08)',
+    background: 'var(--glass-surface)',
+    border: '1px solid var(--glass-border)',
     borderRadius: 22,
-    boxShadow:
-      '0 1px 0 0 oklch(1 0 0 / 0.06) inset, 0 18px 40px -18px oklch(0.05 0.05 280 / 0.9), 0 2px 8px oklch(0.05 0.05 280 / 0.4)',
-    backdropFilter: 'blur(14px) saturate(1.3)',
-    WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
+    boxShadow: 'var(--glass-shadow)',
+    backdropFilter: 'var(--glass-blur)',
+    WebkitBackdropFilter: 'var(--glass-blur)',
     ...extra,
   };
 }
@@ -75,11 +79,12 @@ export function glass(extra?: CSSProperties): CSSProperties {
 /* Фон страницы (корневой `<div style={{ background }}>` из витрины)   */
 /* ------------------------------------------------------------------ */
 
-/** Фоновый градиент страницы дашборда (радиальные блики + базовый линейный). */
-export const MODERN_PAGE_BG: string =
-  'radial-gradient(1200px 600px at 12% -8%, oklch(0.3 0.09 290 / 0.55), transparent 60%),' +
-  'radial-gradient(1000px 700px at 100% 0%, oklch(0.28 0.08 235 / 0.45), transparent 55%),' +
-  'linear-gradient(180deg, oklch(0.17 0.035 280), oklch(0.13 0.025 275))';
+/**
+ * Фоновый градиент страницы дашборда. Тема-зависим: значение живёт в
+ * `tokens.css` (`--modern-page-bg`) и flip-ается по `[data-theme]` (тёмные блики
+ * на тёмном / приглушённые на светлом).
+ */
+export const MODERN_PAGE_BG: string = 'var(--modern-page-bg)';
 
 /* ------------------------------------------------------------------ */
 /* Тона статусов (объект `STATUS` из витрины, ключи переведены в en)   */
@@ -90,9 +95,9 @@ export const MODERN_PAGE_BG: string =
  * значения — те же oklch, что в витрине (ок→ok, внимание→warning, риск→risk).
  */
 export const STATUS_TONE: Record<'ok' | 'warning' | 'risk', { c: string; bg: string }> = {
-  ok: { c: CHART.mint, bg: 'oklch(0.85 0.15 165 / 0.14)' },
-  warning: { c: CHART.amber, bg: 'oklch(0.84 0.16 80 / 0.14)' },
-  risk: { c: CHART.red, bg: 'oklch(0.66 0.22 25 / 0.16)' },
+  ok: { c: 'var(--chip-success-fg)', bg: 'var(--chip-success-bg)' },
+  warning: { c: 'var(--chip-warning-fg)', bg: 'var(--chip-warning-bg)' },
+  risk: { c: 'var(--chip-danger-fg)', bg: 'var(--chip-danger-bg)' },
 };
 
 /* ------------------------------------------------------------------ */

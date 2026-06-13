@@ -96,6 +96,11 @@ describe('ValueRecapService', () => {
         doneWithOutcomes: 4,
         throughputPercent: 50,
       })),
+      listDecisionsForMonth: vi.fn(async () => [
+        { id: 'd1', statement: 'Перейти на ежедневные планёрки', status: 'done', throughputPercent: 100 },
+        { id: 'd2', statement: 'Нанять второго маркетолога', status: 'in_progress', throughputPercent: 50 },
+        { id: 'd3', statement: 'Сменить CRM', status: 'stalled', throughputPercent: 0 },
+      ]),
     };
 
     const svc = new ValueRecapService(
@@ -122,7 +127,14 @@ describe('ValueRecapService', () => {
     // count решений в паре с throughput.
     expect(res.payload.team.decisionsTotal).toBe(8);
     expect(res.payload.team.decisionsThroughputPercent).toBe(50);
-    // КЛЮЧЕВОЙ assert честности.
+    // Ф3 редизайн — список решений месяца в payload (топ-N со статусом).
+    expect(res.payload.decisions).toHaveLength(3);
+    expect(res.payload.decisions[0]).toMatchObject({
+      id: 'd1',
+      status: 'done',
+      throughputPercent: 100,
+    });
+    // КЛЮЧЕВОЙ assert честности (decisions[].throughputPercent в allow-list).
     expect(findForbiddenMetricKeys(res.payload)).toEqual([]);
     expect(metrics.incValueRecapBuilt).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledTimes(1);
@@ -166,6 +178,36 @@ describe('ValueRecapService', () => {
     const { svc } = buildService({ prevSnapshotRoutine: null, existingDelivered: true });
     const res = await svc.build({ tenantId: 't1', periodYm: '2026-05', now });
     expect(res.alreadyDelivered).toBe(true);
+  });
+
+  describe('getLatestPeriodWithData', () => {
+    function svcWithFindFirst(latest: { periodYm: string } | null) {
+      const prisma = {
+        valueRecapSnapshot: { findFirst: vi.fn(async () => latest) },
+      };
+      const svc = new ValueRecapService(
+        prisma as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      return { svc, prisma };
+    }
+
+    it('есть снимки → возвращает последний period', async () => {
+      const { svc, prisma } = svcWithFindFirst({ periodYm: '2026-04' });
+      await expect(svc.getLatestPeriodWithData('t1')).resolves.toBe('2026-04');
+      expect(prisma.valueRecapSnapshot.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { periodYm: 'desc' } }),
+      );
+    });
+
+    it('снимков нет → null', async () => {
+      const { svc } = svcWithFindFirst(null);
+      await expect(svc.getLatestPeriodWithData('t1')).resolves.toBeNull();
+    });
   });
 
   describe('helpers', () => {

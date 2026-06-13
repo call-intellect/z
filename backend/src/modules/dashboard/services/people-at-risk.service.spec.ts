@@ -100,19 +100,34 @@ function makePrisma(opts: {
   persons: PersonSeed[];
   departments?: Array<{ id: string; name: string }>;
   checkIns?: CheckInSeed[];
+  /** Резолв зрителя: userId → Person.id (для excludePersonId). */
+  viewerPersonByUserId?: Record<string, string>;
 }): PrismaService {
   return {
     person: {
-      findMany: vi.fn(async () =>
-        opts.persons.map((p) => ({
-          id: p.id,
-          name: p.name,
-          engagementScore: p.engagementScore,
-          engagementScoreAt: p.engagementScoreAt ?? null,
-          riskFlagsJson: p.riskFlagsJson ?? null,
-          primaryDepartmentId: p.primaryDepartmentId ?? null,
-        })),
+      findMany: vi.fn(
+        async (arg?: { where?: { id?: { not?: string } } }) => {
+          const excludeId = arg?.where?.id?.not;
+          return opts.persons
+            .filter((p) => (excludeId ? p.id !== excludeId : true))
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              engagementScore: p.engagementScore,
+              engagementScoreAt: p.engagementScoreAt ?? null,
+              riskFlagsJson: p.riskFlagsJson ?? null,
+              primaryDepartmentId: p.primaryDepartmentId ?? null,
+            }));
+        },
       ),
+      findFirst: vi.fn(async (arg?: { where?: { userId?: string } }) => {
+        const userId = arg?.where?.userId;
+        const personId =
+          userId && opts.viewerPersonByUserId
+            ? opts.viewerPersonByUserId[userId]
+            : undefined;
+        return personId ? { id: personId } : null;
+      }),
     },
     department: {
       findMany: vi.fn(async () => opts.departments ?? []),
@@ -129,6 +144,7 @@ function makeService(opts: {
   checkIns?: CheckInSeed[];
   overdueByPerson?: Record<string, number>;
   thresholds?: Partial<PeopleAtRiskThresholds>;
+  viewerPersonByUserId?: Record<string, string>;
 }): PeopleAtRiskService {
   return new PeopleAtRiskService(
     makePrisma(opts),
@@ -381,5 +397,59 @@ describe('PeopleAtRiskService.getAtRisk', () => {
     const res = await svc.compute({ tenantId: 't1', limit: 2 }, NOW);
     expect(res.totalAtRisk).toBe(4);
     expect(res.items.map((i) => i.pulseScore)).toEqual([10, 20]);
+  });
+});
+
+// ─── excludePersonId / viewerUserId (зритель не видит сам себя) ───────────────
+
+describe('PeopleAtRiskService — исключение зрителя', () => {
+  it('compute с excludePersonId фильтрует зрителя из выборки', async () => {
+    const svc = makeService({
+      persons: [
+        { id: 'p1', name: 'A', engagementScore: 0.1 },
+        { id: 'p2', name: 'B', engagementScore: 0.2 },
+      ],
+    });
+    const res = await svc.compute(
+      { tenantId: 't1', limit: 3, excludePersonId: 'p1' },
+      NOW,
+    );
+    // p1 исключён — остаётся только p2.
+    expect(res.totalAtRisk).toBe(1);
+    expect(res.items.map((i) => i.personId)).toEqual(['p2']);
+  });
+
+  it('getAtRisk резолвит viewerUserId→Person и исключает его', async () => {
+    const svc = makeService({
+      persons: [
+        { id: 'p-owner', name: 'Директор', engagementScore: 0.1 },
+        { id: 'p2', name: 'B', engagementScore: 0.2 },
+      ],
+      viewerPersonByUserId: { 'user-owner': 'p-owner' },
+    });
+    const res = await svc.getAtRisk({
+      tenantId: 't1',
+      limit: 3,
+      viewerUserId: 'user-owner',
+    });
+    expect(res.items.map((i) => i.personId)).toEqual(['p2']);
+    expect(res.totalAtRisk).toBe(1);
+  });
+
+  it('getAtRisk без резолва Person (нет связки) — никого не исключает', async () => {
+    const svc = makeService({
+      persons: [
+        { id: 'p1', name: 'A', engagementScore: 0.1 },
+        { id: 'p2', name: 'B', engagementScore: 0.2 },
+      ],
+      // viewerPersonByUserId не задан → findFirst вернёт null.
+    });
+    const res = await svc.getAtRisk({
+      tenantId: 't1',
+      limit: 3,
+      viewerUserId: 'unknown-user',
+    });
+    expect(res.totalAtRisk).toBe(2);
+    expect(res.items.map((i) => i.personId)).toEqual(['p1', 'p2']);
   });
 });

@@ -27,6 +27,11 @@ import {
   MyProbeHistoryQuerySchema,
   type MyProbeHistoryQuery,
   type MyProbeHistoryResponse,
+  ProbeControlQuerySchema,
+  type ProbeControlQuery,
+  type ProbeControlItemDto,
+  type ProbeControlResponse,
+  type ProbeControlStateDto,
 } from './dto/probe.dto';
 
 /**
@@ -141,6 +146,140 @@ export class ProbeController {
       page: q.page,
       limit: q.limit,
     };
+  }
+
+  @Get('probe/control')
+  @ApiOperation({
+    summary:
+      'Контроль вопросов Коры — дисциплина ответов (owner / admin / coo): кто получил вопрос и в каком он состоянии',
+  })
+  async controlQuestions(
+    @Query(new ZodValidationPipe(ProbeControlQuerySchema))
+    q: ProbeControlQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<ProbeControlResponse> {
+    const t = this.requireTenant(tenantId);
+    // Взгляд «сверху» — owner / admin / coo (тот же гейт, что у COO-дашборда).
+    const ok = await this.rbac.canViewOperationsDashboard(user.id, t);
+    if (!ok) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden',
+          message: 'Контроль вопросов Коры доступен только owner / admin / coo',
+        },
+      });
+    }
+
+    const now = new Date();
+    const since =
+      q.window === undefined || q.window === 'all'
+        ? null
+        : new Date(now.getTime() - q.window * 24 * 60 * 60 * 1000);
+
+    const notifications = await this.prisma.notification.findMany({
+      where: {
+        tenantId: t,
+        eventType: 'probe.question',
+        ...(since ? { createdAt: { gte: since } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: q.limit,
+      select: {
+        id: true,
+        recipientUserId: true,
+        payload: true,
+        status: true,
+        responseStatus: true,
+        expiresAt: true,
+        createdAt: true,
+        respondedAt: true,
+      },
+    });
+
+    // Резолвим имена адресатов (User → Person.name) одним запросом.
+    const recipientIds = Array.from(
+      new Set(notifications.map((n) => n.recipientUserId)),
+    );
+    const persons = recipientIds.length
+      ? await this.prisma.person.findMany({
+          where: { tenantId: t, userId: { in: recipientIds } },
+          select: { userId: true, name: true },
+        })
+      : [];
+    const nameByUserId = new Map<string, string>();
+    for (const p of persons) {
+      if (p.userId) nameByUserId.set(p.userId, p.name);
+    }
+
+    const counts: Record<ProbeControlStateDto, number> = {
+      answered: 0,
+      read_silent: 0,
+      unseen: 0,
+      expired: 0,
+    };
+
+    const items: ProbeControlItemDto[] = notifications.map((n) => {
+      const state = ProbeController.deriveState({
+        status: n.status,
+        responseStatus: n.responseStatus,
+        expiresAt: n.expiresAt,
+        now,
+      });
+      counts[state] += 1;
+      const payload = (n.payload as Record<string, unknown> | null) ?? {};
+      const question =
+        typeof payload.question === 'string' && payload.question.trim().length > 0
+          ? payload.question
+          : 'Вопрос Коры';
+      // waitingDays: для answered — до respondedAt; иначе — до now.
+      const endRef =
+        state === 'answered' && n.respondedAt ? n.respondedAt : now;
+      const waitingDays = Math.max(
+        0,
+        Math.floor(
+          (endRef.getTime() - n.createdAt.getTime()) / (24 * 60 * 60 * 1000),
+        ),
+      );
+      return {
+        notificationId: n.id,
+        question,
+        recipientName: nameByUserId.get(n.recipientUserId) ?? null,
+        askedAt: n.createdAt.toISOString(),
+        expiresAt: n.expiresAt?.toISOString() ?? null,
+        state,
+        waitingDays: state === 'answered' ? 0 : waitingDays,
+      };
+    });
+
+    return { items, counts };
+  }
+
+  /**
+   * Маппинг состояния вопроса Коры. Приоритет:
+   *   answered (responseStatus) > expired (responseStatus/expiresAt) >
+   *   read_silent (status=read && pending) > unseen.
+   */
+  static deriveState(args: {
+    status: string;
+    responseStatus: string | null;
+    expiresAt: Date | null;
+    now: Date;
+  }): ProbeControlStateDto {
+    if (args.responseStatus === 'answered' || args.status === 'responded') {
+      return 'answered';
+    }
+    if (
+      args.responseStatus === 'expired' ||
+      (args.expiresAt != null && args.expiresAt.getTime() < args.now.getTime())
+    ) {
+      return 'expired';
+    }
+    if (args.status === 'read' && (args.responseStatus === 'pending' || args.responseStatus == null)) {
+      return 'read_silent';
+    }
+    return 'unseen';
   }
 
   private requireTenant(tenantId: string | undefined): string {

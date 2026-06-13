@@ -15,6 +15,7 @@ import type {
   CreateDepartmentDto,
   DepartmentDto,
   DepartmentListItemDto,
+  MergeDepartmentResultDto,
   UpdateDepartmentDto,
 } from '../dto/departments.dto';
 
@@ -345,6 +346,213 @@ export class DepartmentsService {
     return this.toListItem(updated, c?.roles ?? 0, c?.children ?? 0);
   }
 
+  /**
+   * Редизайн кабинета Ф7а — слияние отделов. Все ссылки source-отдела
+   * переносятся в target, после чего source помечается soft-deleted.
+   *
+   * Переносимые FK (source → target) в одной транзакции:
+   *   - Role.departmentId           (UPDATE всех активных и удалённых);
+   *   - Appointment.departmentId    (UPDATE);
+   *   - Project.departmentId        (UPDATE);
+   *   - Person.primaryDepartmentId  (UPDATE);
+   *   - Department.parentDepartmentId дочерних source → target (переподвес);
+   *   - DepartmentDomainLink.departmentId (UPDATE; пара (departmentId, domainId)
+   *     уникальна — на дубль удаляем source-ссылку, как в entity-merge).
+   * headPersonId target'а не трогаем, если у source он был — переносим только
+   * когда у target пусто (опционально, без затирания).
+   *
+   * Валидация: оба существуют и не удалены, тот же tenantId, source≠target,
+   * target НЕ является потомком source (запрет цикла — иначе target остался бы
+   * подвешен сам под себя). Идемпотентность: если source уже soft-deleted —
+   * BadRequest (не 500).
+   */
+  async mergeDepartments(args: {
+    tenantId: string;
+    sourceId: string;
+    targetId: string;
+    byUserId: string;
+  }): Promise<MergeDepartmentResultDto> {
+    const { tenantId, sourceId, targetId } = args;
+
+    if (sourceId === targetId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'department_merge_self',
+          message: 'Нельзя слить отдел сам с собой',
+        },
+      });
+    }
+
+    const [source, target] = await Promise.all([
+      this.prisma.department.findUnique({ where: { id: sourceId } }),
+      this.prisma.department.findUnique({ where: { id: targetId } }),
+    ]);
+    if (!source || source.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'department_not_found',
+          message: 'Отдел-источник не найден',
+        },
+      });
+    }
+    if (!target || target.tenantId !== tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'department_not_found',
+          message: 'Отдел-приёмник не найден',
+        },
+      });
+    }
+    if (source.deletedAt) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'department_already_deleted',
+          message: 'Отдел-источник уже удалён — слияние невозможно',
+        },
+      });
+    }
+    if (target.deletedAt) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'department_target_deleted',
+          message: 'Отдел-приёмник удалён — выберите активный отдел',
+        },
+      });
+    }
+
+    // Запрет цикла: target не должен быть потомком source. Иначе после
+    // переподвеса детей source→target target оказался бы подвешен сам под себя.
+    await this.assertNotDescendant(tenantId, sourceId, targetId);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Role.departmentId → target (и активные, и soft-deleted — чтобы не
+      //    осиротить ссылки на удаляемый source).
+      const roles = await tx.role.updateMany({
+        where: { tenantId, departmentId: sourceId },
+        data: { departmentId: targetId },
+      });
+
+      // 2. Appointment.departmentId → target.
+      const appointments = await tx.appointment.updateMany({
+        where: { tenantId, departmentId: sourceId },
+        data: { departmentId: targetId },
+      });
+
+      // 3. Project.departmentId → target.
+      const projects = await tx.project.updateMany({
+        where: { tenantId, departmentId: sourceId },
+        data: { departmentId: targetId },
+      });
+
+      // 4. Person.primaryDepartmentId → target.
+      const persons = await tx.person.updateMany({
+        where: { tenantId, primaryDepartmentId: sourceId },
+        data: { primaryDepartmentId: targetId },
+      });
+
+      // 5. Дочерние Department → переподвес на target (НЕ удаляем).
+      const childDepartments = await tx.department.updateMany({
+        where: { tenantId, parentDepartmentId: sourceId },
+        data: { parentDepartmentId: targetId },
+      });
+
+      // 6. DepartmentDomainLink.departmentId → target. Пара (departmentId,
+      //    domainId) уникальна: если у target уже есть ссылка на тот же domain —
+      //    удаляем source-ссылку (как делает entity-merge при P2002).
+      const sourceDomainLinks = await tx.departmentDomainLink.findMany({
+        where: { departmentId: sourceId },
+        select: { id: true, domainId: true },
+      });
+      let movedDomainLinks = 0;
+      if (sourceDomainLinks.length > 0) {
+        const targetLinks = await tx.departmentDomainLink.findMany({
+          where: { departmentId: targetId },
+          select: { domainId: true },
+        });
+        const targetDomainIds = new Set(targetLinks.map((l) => l.domainId));
+        for (const link of sourceDomainLinks) {
+          if (targetDomainIds.has(link.domainId)) {
+            // У target уже есть связь с этим доменом — выкидываем дубль source.
+            await tx.departmentDomainLink.delete({ where: { id: link.id } });
+          } else {
+            await tx.departmentDomainLink.update({
+              where: { id: link.id },
+              data: { departmentId: targetId },
+            });
+            movedDomainLinks += 1;
+          }
+        }
+      }
+
+      // 7. headPersonId: переносим из source только если у target пусто.
+      if (source.headPersonId && !target.headPersonId) {
+        await tx.department.update({
+          where: { id: targetId },
+          data: { headPersonId: source.headPersonId },
+        });
+      }
+
+      // 8. Soft-delete source.
+      const now = new Date();
+      await tx.department.update({
+        where: { id: sourceId },
+        data: { deletedAt: now },
+      });
+
+      // Свежий снимок target (мог быть обновлён шагом 7 — headPersonId).
+      const updatedTarget = await tx.department.findUniqueOrThrow({
+        where: { id: targetId },
+      });
+
+      return {
+        target: updatedTarget,
+        moved: {
+          roles: roles.count,
+          appointments: appointments.count,
+          projects: projects.count,
+          persons: persons.count,
+          childDepartments: childDepartments.count,
+          domainLinks: movedDomainLinks,
+        },
+      };
+    });
+
+    void this.audit.log({
+      userId: args.byUserId,
+      action: 'department.merged',
+      resourceId: sourceId,
+      metadata: {
+        tenantId,
+        sourceId,
+        targetId,
+        moved: result.moved,
+      },
+    });
+    this.logger.log(
+      {
+        tenantId,
+        sourceId,
+        targetId,
+        byUserId: args.byUserId,
+        moved: result.moved,
+      },
+      'departments: слияние отделов применено',
+    );
+
+    const counts = await this.countAttachments([result.target.id]);
+    const c = counts.get(result.target.id);
+    return {
+      ok: true,
+      target: this.toListItem(result.target, c?.roles ?? 0, c?.children ?? 0),
+      moved: result.moved,
+    };
+  }
+
   async softDelete(args: {
     tenantId: string;
     userId: string;
@@ -412,6 +620,42 @@ export class DepartmentsService {
   }
 
   // ─────────────────────────── helpers ──────────────────────────────
+
+  /**
+   * Запрет цикла при слиянии: проверяет, что `candidateId` (target) НЕ является
+   * потомком `ancestorId` (source). Идём вверх по `parentDepartmentId` от
+   * target — если встретили source, значит target внутри поддерева source и
+   * слияние создало бы цикл. Защита от зацикленных данных — лимит шагов.
+   */
+  private async assertNotDescendant(
+    tenantId: string,
+    ancestorId: string,
+    candidateId: string,
+  ): Promise<void> {
+    let currentId: string | null = candidateId;
+    const visited = new Set<string>();
+    const MAX_DEPTH = 1000;
+    for (let i = 0; i < MAX_DEPTH && currentId; i += 1) {
+      if (currentId === ancestorId) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'department_merge_cycle',
+            message:
+              'Нельзя слить отдел в его собственный дочерний отдел — образуется цикл',
+          },
+        });
+      }
+      if (visited.has(currentId)) break; // защита от уже зацикленных данных
+      visited.add(currentId);
+      const node: { parentDepartmentId: string | null } | null =
+        await this.prisma.department.findFirst({
+          where: { id: currentId, tenantId },
+          select: { parentDepartmentId: true },
+        });
+      currentId = node?.parentDepartmentId ?? null;
+    }
+  }
 
   private async assertParentExists(
     tenantId: string,

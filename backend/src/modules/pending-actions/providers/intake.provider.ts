@@ -6,6 +6,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import {
   ageDaysFrom,
+  type IntakePendingDetail,
   isPrivileged,
   type PendingActionItem,
   type PendingActionsProvider,
@@ -60,20 +61,55 @@ export class IntakePendingProvider implements PendingActionsProvider {
       select: {
         id: true,
         extractedTitle: true,
+        extractedDescription: true,
         rawContent: true,
+        suggestedAssigneeId: true,
+        suggestedDueDate: true,
+        confidence: true,
         createdAt: true,
       },
     });
+
+    // Батч-резолв имён предлагаемых исполнителей (userId → Person.name) —
+    // один запрос на весь список (паттерн IntakeService.resolveSuggestedNames).
+    const assigneeUserIds = [
+      ...new Set(
+        items
+          .map((i) => i.suggestedAssigneeId)
+          .filter((v): v is string => !!v),
+      ),
+    ];
+    const assigneeNames = new Map<string, string>();
+    if (assigneeUserIds.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { userId: { in: assigneeUserIds }, tenantId: a.tenantId },
+        select: { userId: true, name: true },
+      });
+      for (const p of persons) if (p.userId) assigneeNames.set(p.userId, p.name);
+    }
+
     const now = new Date();
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
       const label =
         i.extractedTitle?.trim() || i.rawContent.slice(0, 80).trim();
+      const detail: IntakePendingDetail = {
+        kind: 'intake',
+        title: label,
+        description: i.extractedDescription?.trim() || undefined,
+        assigneeName: i.suggestedAssigneeId
+          ? assigneeNames.get(i.suggestedAssigneeId)
+          : undefined,
+        dueLabel: i.suggestedDueDate?.toISOString() ?? undefined,
+        confidence:
+          i.confidence != null ? Number(i.confidence.toString()) : undefined,
+      };
       return {
         source: this.source,
         resourceType: 'intake_issue',
         resourceId: i.id,
-        title: `Входящая задача: ${label}`,
+        // Реальная суть задачи: extractedTitle ?? первые 80 символов raw.
+        title: label,
         severity:
           ageDays >= this.cfg.pendingActions.urgentAgeDays
             ? 'urgent'
@@ -81,6 +117,7 @@ export class IntakePendingProvider implements PendingActionsProvider {
         ageDays,
         actionUrl: '/intake',
         canQuickConfirm: false,
+        detail,
       } satisfies PendingActionItem;
     });
   }

@@ -21,6 +21,7 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { DecisionImplementationService } from './decision-implementation.service';
 import {
   assembleValueRecapPayload,
+  type ValueRecapDecision,
   type ValueRecapPayload,
   type ValueRecapRoutine,
   type ValueRecapTeam,
@@ -83,6 +84,14 @@ export class ValueRecapService {
     // 2. Soft-слой «команда лучше» (оценка + знаменатель).
     const team = await this.computeTeam({ tenantId: args.tenantId, from, to });
 
+    // 2.b. Список решений месяца со статусом доведения (Ф3 редизайн).
+    const decisions = await this.computeDecisions({
+      tenantId: args.tenantId,
+      from,
+      to,
+      now,
+    });
+
     // 3. Прошлый месяц — для дельты (baseline → null).
     const prevPeriod = shiftPeriod(args.periodYm, -1);
     const previousRoutine = await this.loadPreviousRoutine(
@@ -106,6 +115,7 @@ export class ValueRecapService {
       routine,
       team,
       previousRoutine,
+      decisions,
       narrative,
     });
 
@@ -176,6 +186,22 @@ export class ValueRecapService {
       openedAt: row.openedAt ? row.openedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * Последний период (YYYY-MM), для которого уже построен снимок с payload.
+   * Используется как дефолт-период витрины «последний месяц С ДАННЫМИ»
+   * (Ф3 редизайн) вместо «всегда прошлый календарный месяц». NULL — снимков нет.
+   */
+  async getLatestPeriodWithData(tenantId: string): Promise<string | null> {
+    // payloadJson — NOT NULL колонка (Json, не Json?): любой снимок уже несёт
+    // payload, отдельный фильтр на null не нужен. Берём максимальный period.
+    const row = await this.prisma.valueRecapSnapshot.findFirst({
+      where: { tenantId },
+      orderBy: { periodYm: 'desc' },
+      select: { periodYm: true },
+    });
+    return row?.periodYm ?? null;
   }
 
   /** Прочитать снимок по id (для opened/export, scope по tenantId). */
@@ -359,6 +385,32 @@ export class ValueRecapService {
       ideasShipped: nz(ideasShipped),
       estimate: true,
     };
+  }
+
+  /**
+   * Список решений месяца со статусом доведения (Ф3 редизайн). Топ-N=10,
+   * отсортированы done→in_progress→stalled→not_started. Переиспользует
+   * DecisionImplementationService (не дублирует классификацию/окно).
+   */
+  private async computeDecisions(args: {
+    tenantId: string;
+    from: Date;
+    to: Date;
+    now: Date;
+  }): Promise<ValueRecapDecision[]> {
+    const rows = await this.decisions.listDecisionsForMonth({
+      tenantId: args.tenantId,
+      from: args.from,
+      to: args.to,
+      limit: 10,
+      now: args.now,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      statement: r.statement,
+      status: r.status,
+      throughputPercent: r.throughputPercent,
+    }));
   }
 
   /**

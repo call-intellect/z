@@ -33,6 +33,8 @@ const baseRow: WeeklyPersonRowApi = {
   promisesNoAnswer: 0,
   reliabilityPercent: 80,
   tasksDone: 3,
+  tasksPlanned: 4,
+  tasksNotDone: 1,
   checkInsCompleted: 5,
 };
 

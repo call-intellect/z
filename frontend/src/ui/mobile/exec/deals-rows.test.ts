@@ -34,6 +34,8 @@ function row(over: Partial<WeeklyPersonRowUi> = {}): WeeklyPersonRowUi {
     promisesNoAnswer: 0,
     reliabilityPercent: null,
     tasksDone: 0,
+    tasksPlanned: 0,
+    tasksNotDone: 0,
     checkInsCompleted: 0,
     reliabilityLabel: '—',
     ...over,

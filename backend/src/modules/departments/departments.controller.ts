@@ -30,6 +30,7 @@ import {
   BatchCreateDepartmentsSchema,
   CreateDepartmentSchema,
   ListDepartmentsQuerySchema,
+  MergeDepartmentSchema,
   SetDepartmentHeadSchema,
   UpdateDepartmentSchema,
   type BatchCreateDepartmentsDto,
@@ -37,6 +38,8 @@ import {
   type DepartmentDto,
   type DepartmentListItemDto,
   type ListDepartmentsQuery,
+  type MergeDepartmentDto,
+  type MergeDepartmentResultDto,
   type SetDepartmentHeadDto,
   type UpdateDepartmentDto,
 } from './dto/departments.dto';
@@ -150,6 +153,29 @@ export class DepartmentsController {
       userId: user.id,
       id,
       headPersonId: body.headPersonId,
+    });
+  }
+
+  @Post(':id/merge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Слить отдел (:id) в другой (intoId): перенос всех ссылок + soft-delete источника',
+  })
+  async merge(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(MergeDepartmentSchema)) body: MergeDepartmentDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MergeDepartmentResultDto> {
+    const t = this.requireTenant(tenantId);
+    // Слияние удаляет отдел-источник → требуем право delete (owner/admin).
+    await this.requireDelete(user.id, t);
+    return this.departments.mergeDepartments({
+      tenantId: t,
+      sourceId: id,
+      targetId: body.intoId,
+      byUserId: user.id,
     });
   }
 

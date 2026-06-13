@@ -200,8 +200,45 @@ export class PeopleAtRiskService {
   async getAtRisk(args: {
     tenantId: string;
     limit: number;
+    /**
+     * userId текущего зрителя. Резолвим его Person в этой Org и исключаем из
+     * выборки, чтобы директор не видел сам себя в списке «под риском». Если
+     * Person не находится (нет связки userId↔Person) — никого не исключаем.
+     */
+    viewerUserId?: string | null;
   }): Promise<PeopleAtRiskResponse> {
-    return this.compute(args, new Date());
+    const excludePersonId = args.viewerUserId
+      ? await this.resolveViewerPersonId(args.tenantId, args.viewerUserId)
+      : null;
+    return this.compute(
+      { tenantId: args.tenantId, limit: args.limit, excludePersonId },
+      new Date(),
+    );
+  }
+
+  /**
+   * Person.id текущего зрителя в данной Org по его userId (связка
+   * `Person.userId`, образец — `me.service.ts` / `clones.service.ts`).
+   * На ошибку БД не падаем — возвращаем null (никого не исключаем).
+   */
+  private async resolveViewerPersonId(
+    tenantId: string,
+    userId: string,
+  ): Promise<string | null> {
+    try {
+      const person = await this.prisma.person.findFirst({
+        where: { tenantId, userId, deletedAt: null },
+        select: { id: true },
+      });
+      return person?.id ?? null;
+    } catch (err) {
+      this.logger.warn(
+        `resolveViewerPersonId fail (tenantId=${tenantId}, userId=${userId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
   }
 
   /**
@@ -209,10 +246,14 @@ export class PeopleAtRiskService {
    * проверку детерминизма. Публичный `getAtRisk` фиксирует `now = new Date()`.
    */
   async compute(
-    args: { tenantId: string; limit: number },
+    args: { tenantId: string; limit: number; excludePersonId?: string | null },
     now: Date,
   ): Promise<PeopleAtRiskResponse> {
-    const cacheKey = `people_at_risk:${args.tenantId}:${args.limit}`;
+    // excludePersonId входит в ключ — иначе зритель A получит из кэша список,
+    // посчитанный для зрителя B (с исключённым чужим personId).
+    const cacheKey = `people_at_risk:${args.tenantId}:${args.limit}:${
+      args.excludePersonId ?? '_'
+    }`;
     const cached = await this.tryReadCache(cacheKey);
     if (cached) return cached;
 
@@ -223,6 +264,7 @@ export class PeopleAtRiskService {
         tenantId: args.tenantId,
         deletedAt: null,
         relationship: 'employee',
+        ...(args.excludePersonId ? { id: { not: args.excludePersonId } } : {}),
       },
       select: {
         id: true,

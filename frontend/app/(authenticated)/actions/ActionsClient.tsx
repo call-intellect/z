@@ -1,80 +1,491 @@
 'use client';
 
 /**
- * `/actions` — Action Center: «Требует вашего подтверждения» (Фаза B1).
+ * `/actions` — «Требует вас» (редизайн Ф4).
  *
- * Список pending-подтверждений пользователя из четырёх источников
- * (карточки знаний / конфликты / задачи из встреч / вопросы Коры) с
- * фильтром по источнику, deep-link «Открыть» и «Отложить» (1д/3д/7д).
+ * Плоский список заменён на ГРУППЫ по источнику с inline-резолвом: каждый
+ * элемент несёт реальную суть (detail) и решается прямо из списка за ≤10 сек.
  *
- * Цвета — только парные токены (chip-* / bg-* + text-*-fg). Состояния
- * loading / error / empty покрыты.
+ *   - Шапка-сводка: hero-число total + «старейшее ждёт N дн.» + чипы bySource.
+ *   - Группа «Вопросы Коры» (probe): textarea-ответ своими словами (без кнопок
+ *     выбора — В6) → confirm(answerText) / «Пропустить» (snooze).
+ *   - Группа «Конфликты карточек» (conflict): две версии + keep_old / accept_new
+ *     / merge.
+ *   - Группа «Кандидаты в задачи» (intake): исполнитель/срок/уверенность →
+ *     accept / reject.
+ *   - Группа «Карточки на проверке» (curation): preview/cite → approve / reject /
+ *     «Открыть» (deep-link).
+ *
+ * Inline-резолв оптимистичный (хук убирает item из кэша). Ошибка → toast +
+ * откат. Пустые группы не рендерятся; все пусты → спокойный экран «Всё
+ * разобрано» (Б-6 три состояния).
+ *
+ * Цвета — только парные токены / семантические классы и токены modern-языка
+ * (CHART/GRAD); никаких text-white / hex / slate.
  */
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Clock, ExternalLink, Inbox } from 'lucide-react';
+import {
+  AlertTriangle,
+  ExternalLink,
+  GitMerge,
+  HelpCircle,
+  Inbox,
+  ListTodo,
+  Mic,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-import { GlassCard, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
+import { CardTitle, GlassCard, GRAD, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
+import { Textarea } from '@/ui/shadcn/textarea';
+import { Progress } from '@/ui/shadcn/progress';
 
 import { useAuth } from '@/contexts/auth-context';
 import { usePendingActions } from '@/hooks/usePendingActions';
 import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
 import {
-  formatPendingAge,
-  pendingSeverityBadgeVariant,
-  PENDING_SOURCE_LABEL,
+  formatPendingCite,
+  formatPendingPriority,
+  formatPendingWait,
   type PendingAction,
-  type PendingActionSource,
+  type PendingActionCite,
 } from '@/domain/pending-action';
 
-type SourceFilter = 'all' | PendingActionSource;
+// ─── мелкие пресентационные хелперы ─────────────────────────────────
 
-const FILTER_TABS: { value: SourceFilter; label: string }[] = [
-  { value: 'all', label: 'Все' },
-  { value: 'curation', label: PENDING_SOURCE_LABEL.curation },
-  { value: 'conflict', label: PENDING_SOURCE_LABEL.conflict },
-  { value: 'intake', label: PENDING_SOURCE_LABEL.intake },
-  { value: 'probe', label: PENDING_SOURCE_LABEL.probe },
-];
+/** Чип возраста («ждёт N дн.») — нейтральный тон. */
+function WaitChip({ ageDays }: { ageDays: number }) {
+  return (
+    <Badge variant="secondary" className="font-normal">
+      {formatPendingWait(ageDays)}
+    </Badge>
+  );
+}
 
-const SNOOZE_OPTIONS: { hours: number; label: string }[] = [
-  { hours: 24, label: 'На 1 день' },
-  { hours: 72, label: 'На 3 дня' },
-  { hours: 168, label: 'На 7 дней' },
-];
+/** Чип приоритета по severity. */
+function PriorityChip({ severity }: { severity: PendingAction['severity'] }) {
+  return (
+    <Badge variant={severity === 'urgent' ? 'danger' : 'warning'}>
+      {formatPendingPriority(severity)}
+    </Badge>
+  );
+}
+
+/** Чип источника-встречи с таймкодом (cite). Не рендерится, если cite пуст. */
+function CiteChip({ cite }: { cite?: PendingActionCite }) {
+  const text = formatPendingCite(cite);
+  if (!text) return null;
+  return (
+    <Badge variant="default" className="font-normal">
+      {text}
+    </Badge>
+  );
+}
+
+// ─── карточки групп ─────────────────────────────────────────────────
+
+interface CardProps {
+  action: PendingAction;
+  onConfirm: (
+    action: PendingAction,
+    resolve?: {
+      resolution?:
+        | 'keep_old'
+        | 'accept_new'
+        | 'merge'
+        | 'accept'
+        | 'reject'
+        | 'approve';
+      answerText?: string;
+    },
+  ) => Promise<void>;
+  onSnooze: (action: PendingAction, hours: number) => Promise<void>;
+  onOpen: (action: PendingAction) => void;
+}
+
+/** Группа «Вопросы Коры» (probe) — ответ своими словами (textarea, без кнопок выбора). */
+function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
+  const d = action.detail?.kind === 'probe' ? action.detail : undefined;
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const question = d?.question ?? action.title;
+  const cite: PendingActionCite | undefined =
+    d?.cite ?? (d?.meetingTitle ? { meetingTitle: d.meetingTitle } : undefined);
+
+  const handleAnswer = async () => {
+    const answer = text.trim();
+    if (!answer || busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(action, { answerText: answer });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<HelpCircle size={17} />} grad={GRAD.amber}>
+        {question}
+      </CardTitle>
+
+      {d?.context && (
+        <p className="text-sm leading-relaxed text-fg-secondary">{d.context}</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <CiteChip cite={cite} />
+        <PriorityChip severity={action.severity} />
+        <WaitChip ageDays={action.ageDays} />
+      </div>
+
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Ответьте своими словами — например: «Отвечает Петров, Иванов помогает с тестами»"
+        className="min-h-[64px]"
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={!text.trim() || busy}
+          onClick={() => void handleAnswer()}
+        >
+          Ответить
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void onSnooze(action, 72)}
+        >
+          Пропустить
+        </Button>
+        <span className="ml-auto flex items-center gap-1 text-[11.5px] text-fg-tertiary">
+          <Mic size={13} className="opacity-70" />
+          или надиктуйте голосом
+        </span>
+      </div>
+    </GlassCard>
+  );
+}
+
+/** Группа «Конфликты карточек» (conflict) — две версии + выбор. */
+function ConflictCard({ action, onConfirm }: CardProps) {
+  const d = action.detail?.kind === 'conflict' ? action.detail : undefined;
+  const [busy, setBusy] = useState(false);
+
+  const resolve = async (resolution: 'keep_old' | 'accept_new' | 'merge') => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(action, { resolution });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<AlertTriangle size={17} />} grad={GRAD.pink}>
+        {action.title}
+      </CardTitle>
+
+      {d?.summary && (
+        <p className="text-sm leading-relaxed text-fg-secondary">{d.summary}</p>
+      )}
+
+      {d && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* старая версия */}
+          <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-4">
+            <Badge variant="secondary" className="mb-2 font-normal">
+              старая{d.oldVersion.date ? ` · ${d.oldVersion.date}` : ''}
+            </Badge>
+            <p className="text-[13.5px] leading-relaxed text-fg-primary">
+              {d.oldVersion.text}
+            </p>
+            {formatPendingCite(d.oldVersion.cite) && (
+              <p className="mt-2 text-[11.5px] text-fg-tertiary">
+                источник: {formatPendingCite(d.oldVersion.cite)}
+              </p>
+            )}
+          </div>
+          {/* новая версия */}
+          <div className="rounded-xl border border-success/30 bg-success/10 p-4">
+            <Badge variant="success" className="mb-2 font-normal">
+              новая{d.newVersion.date ? ` · ${d.newVersion.date}` : ''}
+            </Badge>
+            <p className="text-[13.5px] leading-relaxed text-fg-primary">
+              {d.newVersion.text}
+            </p>
+            {formatPendingCite(d.newVersion.cite) && (
+              <p className="mt-2 text-[11.5px] text-fg-tertiary">
+                источник: {formatPendingCite(d.newVersion.cite)}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <PriorityChip severity={action.severity} />
+        <WaitChip ageDays={action.ageDays} />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void resolve('keep_old')}
+        >
+          Оставить старую
+        </Button>
+        <Button
+          size="sm"
+          className="gap-1 bg-success text-success-fg hover:bg-success/90"
+          disabled={busy}
+          onClick={() => void resolve('accept_new')}
+        >
+          Принять новую
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1"
+          disabled={busy}
+          onClick={() => void resolve('merge')}
+        >
+          <GitMerge size={14} />
+          Объединить обе
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
+
+/** Группа «Кандидаты в задачи» (intake) — исполнитель/срок/уверенность. */
+function IntakeCard({ action, onConfirm }: CardProps) {
+  const d = action.detail?.kind === 'intake' ? action.detail : undefined;
+  const [busy, setBusy] = useState(false);
+
+  const title = d?.title ?? action.title;
+  const cite = d?.cite;
+  const confidence = d?.confidencePct;
+
+  const resolve = async (resolution: 'accept' | 'reject') => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(action, { resolution });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<ListTodo size={17} />} grad={GRAD.blue}>
+        {title}
+      </CardTitle>
+
+      {d?.description && (
+        <p className="text-sm leading-relaxed text-fg-secondary">
+          {d.description}
+        </p>
+      )}
+
+      {(d?.assigneeName || d?.dueLabel) && (
+        <p className="text-sm text-fg-secondary">
+          {d?.assigneeName && (
+            <span className="font-medium text-fg-primary">
+              Исполнитель: {d.assigneeName}
+            </span>
+          )}
+          {d?.assigneeName && d?.dueLabel && (
+            <span className="text-fg-tertiary"> · </span>
+          )}
+          {d?.dueLabel && (
+            <span className="text-fg-tertiary">срок: {d.dueLabel}</span>
+          )}
+        </p>
+      )}
+
+      {confidence != null && (
+        <div className="flex items-center gap-2.5">
+          <span className="whitespace-nowrap text-xs text-fg-tertiary">
+            Уверенность Коры
+          </span>
+          <Progress value={confidence} className="h-2 flex-1" />
+          <span className="text-[13px] font-semibold text-fg-primary">
+            {confidence}%
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <CiteChip cite={cite} />
+        <WaitChip ageDays={action.ageDays} />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={busy} onClick={() => void resolve('accept')}>
+          В задачи
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 text-danger hover:text-danger"
+          disabled={busy}
+          onClick={() => void resolve('reject')}
+        >
+          Отклонить
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
+
+/** Группа «Карточки на проверке» (curation) — новое знание перед записью в память. */
+function CurationCard({ action, onConfirm, onOpen }: CardProps) {
+  const d = action.detail?.kind === 'curation' ? action.detail : undefined;
+  const [busy, setBusy] = useState(false);
+
+  const title = d?.cardTitle ?? action.title;
+  const cite = d?.cite;
+  // «скоро закроется автоматически» — близко к авто-expiry (severity/возраст).
+  const closingSoon = action.severity === 'urgent' || action.ageDays >= 14;
+
+  const resolve = async (resolution: 'approve' | 'reject') => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onConfirm(action, { resolution });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard className="flex flex-col gap-3 p-5">
+      <CardTitle icon={<ShieldCheck size={17} />} grad={GRAD.teal}>
+        {title}
+      </CardTitle>
+
+      {d?.preview && (
+        <div className="rounded-xl border border-border-subtle bg-bg-overlay/40 p-4">
+          <p className="text-[13px] leading-relaxed text-fg-secondary">
+            {d.preview}
+          </p>
+          {formatPendingCite(cite) && (
+            <p className="mt-2 text-[11.5px] text-fg-tertiary">
+              источник: {formatPendingCite(cite)}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {!d?.preview && <CiteChip cite={cite} />}
+        {closingSoon ? (
+          <Badge variant="danger" className="font-normal">
+            {formatPendingWait(action.ageDays)} · скоро закроется автоматически
+          </Badge>
+        ) : (
+          <WaitChip ageDays={action.ageDays} />
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          className="bg-success text-success-fg hover:bg-success/90"
+          disabled={busy}
+          onClick={() => void resolve('approve')}
+        >
+          Принять в память
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-danger hover:text-danger"
+          disabled={busy}
+          onClick={() => void resolve('reject')}
+        >
+          Отклонить
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="gap-1"
+          onClick={() => onOpen(action)}
+        >
+          <ExternalLink size={14} />
+          Открыть
+        </Button>
+      </div>
+    </GlassCard>
+  );
+}
+
+// ─── заголовок группы ───────────────────────────────────────────────
+
+function GroupHeader({
+  label,
+  hint,
+  variant,
+}: {
+  label: string;
+  hint: string;
+  variant: 'warning' | 'danger' | 'default' | 'success';
+}) {
+  return (
+    <div className="mt-8 mb-3 flex flex-wrap items-center gap-2">
+      <Badge variant={variant}>{label}</Badge>
+      <span className="text-sm text-fg-tertiary">{hint}</span>
+    </div>
+  );
+}
+
+// ─── экран ──────────────────────────────────────────────────────────
 
 export function ActionsClient() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const [filter, setFilter] = useState<SourceFilter>('all');
 
   const { items, isLoading, error, snooze, confirm } = usePendingActions(
     currentOrgId,
     50,
     Boolean(currentOrgId),
   );
-  const { mutate: mutateCount } = usePendingActionsCount(
+  const { bySource, mutate: mutateCount } = usePendingActionsCount(
     currentOrgId,
     Boolean(currentOrgId),
   );
 
-  const filtered = useMemo<PendingAction[]>(
-    () =>
-      filter === 'all'
-        ? items
-        : items.filter((it) => it.source === filter),
-    [items, filter],
+  const groups = useMemo(() => {
+    const by = (s: PendingAction['source']) =>
+      items.filter((it) => it.source === s);
+    return {
+      probe: by('probe'),
+      conflict: by('conflict'),
+      intake: by('intake'),
+      curation: by('curation'),
+    };
+  }, [items]);
+
+  const total = items.length;
+  const oldestDays = useMemo(
+    () => items.reduce((max, it) => Math.max(max, it.ageDays), 0),
+    [items],
   );
 
   const handleOpen = (action: PendingAction) => {
@@ -96,144 +507,191 @@ export function ActionsClient() {
     }
   };
 
-  const handleConfirm = async (action: PendingAction) => {
+  const handleConfirm: CardProps['onConfirm'] = async (action, resolve) => {
     try {
-      await confirm(action);
+      await confirm(action, resolve);
       await mutateCount();
-      toast.success('Подтверждено.');
+      toast.success('Готово.');
     } catch {
-      toast.error('Не удалось подтвердить.');
+      toast.error('Не удалось — возможно, уже решено. Обновите страницу.');
+      // мутация откатывается внутри хука (rollbackOnError); пробрасываем
+      // дальше, чтобы карточка сняла busy-состояние.
+      throw new Error('confirm failed');
     }
+  };
+
+  const cardProps = {
+    onConfirm: handleConfirm,
+    onSnooze: handleSnooze,
+    onOpen: handleOpen,
   };
 
   return (
     <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-          Требует вашего подтверждения
-        </h1>
-        <p className="mt-1 text-sm text-fg-tertiary">
-          Карточки знаний, конфликты, задачи из встреч и вопросы Коры,
-          которые ждут вашего решения.
-        </p>
-        <p className="mt-1 text-xs text-fg-tertiary">
-          «Открыть» ведёт туда, где можно ответить или решить. Вопросы Коры
-          также приходят в ваши каналы (Telegram, почта) — ответить можно и
-          там.
-        </p>
-      </header>
+      <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
+        {/* loading */}
+        {isLoading && (
+          <GlassCard className="px-4 py-10 text-center text-sm text-fg-tertiary">
+            Загрузка…
+          </GlassCard>
+        )}
 
-      <Tabs
-        value={filter}
-        onValueChange={(v) => setFilter(v as SourceFilter)}
-        className="mb-4"
-      >
-        <TabsList className="flex flex-wrap">
-          {FILTER_TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      {isLoading && (
-        <GlassCard className="px-4 py-10 text-center text-sm text-fg-tertiary">
-          Загрузка…
-        </GlassCard>
-      )}
-
-      {!isLoading && Boolean(error) && (
-        <div className="rounded-lg border border-danger/30 bg-danger/15 px-4 py-10 text-center text-sm text-danger">
-          Не удалось загрузить подтверждения. Попробуйте обновить страницу.
-        </div>
-      )}
-
-      {!isLoading && !error && filtered.length === 0 && (
-        <GlassCard className="flex flex-col items-center gap-3 px-4 py-12 text-center">
-          <Inbox size={32} className="text-fg-tertiary" />
-          <div>
-            <p className="text-sm font-medium text-fg-primary">
-              Всё разобрано
-            </p>
-            <p className="mt-1 text-sm text-fg-tertiary">
-              Сейчас ничего не ждёт вашего подтверждения.
-            </p>
+        {/* error */}
+        {!isLoading && Boolean(error) && (
+          <div className="rounded-lg border border-danger/30 bg-danger/15 px-4 py-10 text-center text-sm text-danger">
+            Не удалось загрузить. Попробуйте обновить страницу.
           </div>
-        </GlassCard>
-      )}
+        )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {filtered.map((it) => (
-            <li key={`${it.source}:${it.resourceId}`} className="contents">
-              <GlassCard className="p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-fg-primary">
-                    {it.title}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <Badge variant={pendingSeverityBadgeVariant(it.severity)}>
-                      {it.sourceLabel}
-                    </Badge>
-                    {it.severity === 'urgent' && (
-                      <Badge variant="danger">Срочно</Badge>
-                    )}
-                    <span className="text-xs text-fg-tertiary">
-                      {formatPendingAge(it.ageDays)}
-                    </span>
-                  </div>
-                </div>
+        {/* empty (Б-6) */}
+        {!isLoading && !error && total === 0 && (
+          <GlassCard className="flex flex-col items-center gap-3 px-4 py-16 text-center">
+            <Inbox size={32} className="text-fg-tertiary" />
+            <div>
+              <p className="text-base font-medium text-fg-primary">
+                Всё разобрано
+              </p>
+              <p className="mt-1 text-sm text-fg-tertiary">
+                Сейчас ничего не ждёт вашего решения. Кора сама закрывает
+                рутину — здесь появляется только то, что требует человека.
+              </p>
+            </div>
+          </GlassCard>
+        )}
 
-                <div className="flex shrink-0 items-center gap-2">
-                  {it.canQuickConfirm && (
-                    <Button
-                      size="sm"
-                      className="gap-1 bg-success text-success-fg hover:bg-success/90"
-                      onClick={() => void handleConfirm(it)}
-                    >
-                      <Check size={14} />
-                      Подтвердить
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1"
-                    onClick={() => handleOpen(it)}
-                  >
-                    <ExternalLink size={14} />
-                    Открыть
-                  </Button>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="ghost" className="gap-1">
-                        <Clock size={14} />
-                        Отложить
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {SNOOZE_OPTIONS.map((opt) => (
-                        <DropdownMenuItem
-                          key={opt.hours}
-                          onSelect={() => void handleSnooze(it, opt.hours)}
-                        >
-                          {opt.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+        {/* content */}
+        {!isLoading && !error && total > 0 && (
+          <>
+            {/* плашка автономии (статичная, W0–W4) */}
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-success/25 bg-success/10 px-4 py-3">
+              <Sparkles size={18} className="shrink-0 text-success" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-fg-primary">
+                  Очередь стала короче — Кора сама решает рутину
+                </p>
+                <p className="mt-0.5 text-xs text-fg-tertiary">
+                  Дубли-конфликты и повторные вопросы закрываются автоматически —
+                  здесь только то, что требует человека.
+                </p>
               </div>
-              </GlassCard>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+            </div>
+
+            {/* шапка-сводка */}
+            <GlassCard glow className="p-6">
+              <h1 className="text-lg font-semibold tracking-tight text-fg-primary">
+                Требует вас
+              </h1>
+              <div className="mt-3 flex items-baseline gap-4">
+                <span className="text-[44px] font-semibold leading-none tracking-tight text-fg-primary">
+                  {total}
+                </span>
+                <span className="text-sm text-fg-tertiary">
+                  {total === 1 ? 'решение ждёт вас' : 'решений ждут вас'}
+                  <br />
+                  старейшее{' '}
+                  <b className="text-fg-primary">{formatPendingWait(oldestDays)}</b>
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {bySource.probe > 0 && (
+                  <Badge variant="warning">{bySource.probe} вопросов Коры</Badge>
+                )}
+                {bySource.conflict > 0 && (
+                  <Badge variant="danger">{bySource.conflict} конфликтов</Badge>
+                )}
+                {bySource.intake > 0 && (
+                  <Badge variant="default">{bySource.intake} в задачи</Badge>
+                )}
+                {bySource.curation > 0 && (
+                  <Badge variant="success">
+                    {bySource.curation} на проверке
+                  </Badge>
+                )}
+              </div>
+            </GlassCard>
+
+            {/* Группа: Вопросы Коры */}
+            {groups.probe.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Вопросы Коры"
+                  hint="Кора не уверена и спрашивает — ответьте своими словами"
+                  variant="warning"
+                />
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {groups.probe.map((it) => (
+                    <ProbeCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Группа: Конфликты карточек */}
+            {groups.conflict.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Конфликты карточек"
+                  hint="Память нашла два противоречащих факта — выберите, что верно"
+                  variant="danger"
+                />
+                <div className="flex flex-col gap-3">
+                  {groups.conflict.map((it) => (
+                    <ConflictCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Группа: Кандидаты в задачи */}
+            {groups.intake.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Кандидаты в задачи"
+                  hint="Кора услышала обещание — поставить как задачу?"
+                  variant="default"
+                />
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {groups.intake.map((it) => (
+                    <IntakeCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Группа: Карточки на проверке */}
+            {groups.curation.length > 0 && (
+              <>
+                <GroupHeader
+                  label="Карточки на проверке"
+                  hint="Новое знание перед добавлением в память компании"
+                  variant="success"
+                />
+                <div className="flex flex-col gap-3">
+                  {groups.curation.map((it) => (
+                    <CurationCard
+                      key={`${it.source}:${it.resourceId}`}
+                      action={it}
+                      {...cardProps}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -222,5 +223,91 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
     expect(calls.project).toBe(1);
     expect(calls.goal).toBe(1);
     expect(calls.person).toBe(1);
+  });
+});
+
+/**
+ * Редизайн кабинета Ф5а (2026-06-13) — next-step отчёта → кандидат в задачу.
+ *
+ * Покрытие:
+ *   1. happy-path: встреча есть, дубля нет → intakeIssue.create вызван с
+ *      source='meeting', rawContent=text, extractedTitle=text.slice(0,120),
+ *      externalSource='meeting', externalId детерминирован.
+ *   2. встреча не найдена / чужой tenant → NotFoundException, create НЕ вызван.
+ *   3. идемпотентность: уже есть intake с тем же externalId → возвращаем его,
+ *      create НЕ вызван.
+ */
+describe('IntakeService.createFromMeetingNextStep', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function build(opts: { meetingFound: boolean; existing?: IntakeRow | null }): {
+    svc: IntakeService;
+    create: ReturnType<typeof vi.fn>;
+  } {
+    const create = vi.fn(async ({ data }: { data: Partial<IntakeRow> }) =>
+      makeIntake({ id: 'created-1', ...data }),
+    );
+    const prisma = {
+      meeting: {
+        findFirst: vi.fn(async () => (opts.meetingFound ? { id: 'm-1' } : null)),
+      },
+      intakeIssue: {
+        findFirst: vi.fn(async () => opts.existing ?? null),
+        create,
+      },
+    } as unknown as PrismaService;
+    const events = { publishIntakeNewItem: vi.fn() };
+    const webhooks = { dispatch: vi.fn(async () => undefined) };
+    const cfg = { pendingActions: { intakeTtlDays: 14 } };
+    const svc = new IntakeService(
+      prisma,
+      {} as never, // issues
+      events as never,
+      webhooks as never,
+      cfg as never,
+      // autoTriageQueue @Optional — не передаём
+    );
+    return { svc, create };
+  }
+
+  it('happy-path: создаёт intake с правильными полями', async () => {
+    const { svc, create } = build({ meetingFound: true });
+    const res = await svc.createFromMeetingNextStep({
+      meetingId: 'm-1',
+      text: 'Согласовать бюджет с финансами',
+      tenantId: TENANT,
+    });
+    expect(create).toHaveBeenCalledOnce();
+    const data = create.mock.calls[0]![0].data;
+    expect(data.source).toBe('meeting');
+    expect(data.rawContent).toBe('Согласовать бюджет с финансами');
+    expect(data.extractedTitle).toBe('Согласовать бюджет с финансами');
+    expect(data.externalSource).toBe('meeting');
+    expect(String(data.externalId)).toMatch(/^meeting:m-1:[0-9a-f]{16}$/u);
+    expect(res.source).toBe('meeting');
+  });
+
+  it('встреча не найдена → NotFoundException, create НЕ вызван', async () => {
+    const { svc, create } = build({ meetingFound: false });
+    await expect(
+      svc.createFromMeetingNextStep({
+        meetingId: 'm-x',
+        text: 'что-то',
+        tenantId: TENANT,
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('идемпотентность: дубль по externalId → возвращаем существующий, create НЕ вызван', async () => {
+    const existing = makeIntake({ id: 'dup-1', source: 'meeting' });
+    const { svc, create } = build({ meetingFound: true, existing });
+    const res = await svc.createFromMeetingNextStep({
+      meetingId: 'm-1',
+      text: 'повторный шаг',
+      tenantId: TENANT,
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(res.id).toBe('dup-1');
   });
 });

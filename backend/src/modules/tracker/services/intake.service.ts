@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   BadRequestException,
   Inject,
@@ -171,6 +173,78 @@ export class IntakeService {
         });
     }
     return response;
+  }
+
+  /**
+   * Редизайн кабинета Ф5а (2026-06-13) — «следующий шаг отчёта → кандидат в
+   * задачу». Создаёт IntakeIssue (source='meeting') из текста next-step отчёта
+   * встречи. Сама задача появится только после триажа (accept) — здесь только
+   * кандидат.
+   *
+   * Идемпотентность: externalId детерминирован по (meetingId + sha1(text)),
+   * source='meeting'. Повторный вызов с тем же text по той же встрече вернёт
+   * уже существующий intake (не плодит дубль).
+   *
+   * tenant-изоляция: проверяем, что встреча принадлежит tenantId (404 иначе) —
+   * без зависимости от MeetingsService (разрыв цикла meetings↔tracker).
+   *
+   * Полная петля sourceBlockIds + DecisionTaskLink — Ф8.1 (здесь не делаем).
+   */
+  async createFromMeetingNextStep(args: {
+    meetingId: string;
+    text: string;
+    description?: string | null;
+    tenantId: string;
+  }): Promise<IntakeResponseDto> {
+    const { meetingId, tenantId } = args;
+    const text = args.text.trim();
+    if (text.length === 0) {
+      throw new BadRequestException({
+        ok: false,
+        error: { code: 'text_required', message: 'Текст следующего шага пуст' },
+      });
+    }
+
+    // tenant-изоляция: встреча должна принадлежать организации.
+    const meeting = await this.prisma.meeting.findFirst({
+      where: { id: meetingId, tenantId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!meeting) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'meeting_not_found', message: 'Встреча не найдена' },
+      });
+    }
+
+    // Детерминированный externalId для идемпотентности (max 200 симв в схеме).
+    const textHash = createHash('sha1').update(text).digest('hex').slice(0, 16);
+    const externalId = `meeting:${meetingId}:${textHash}`.slice(0, 200);
+
+    // Если уже создавали этот же next-step по этой встрече — вернуть его.
+    const existing = await this.prisma.intakeIssue.findFirst({
+      where: { tenantId, source: 'meeting', externalSource: 'meeting', externalId },
+    });
+    if (existing) {
+      this.logger.debug(
+        { meetingId, externalId },
+        'intake from next-step: дубль — возвращаем существующий',
+      );
+      return this.toResponse(existing);
+    }
+
+    return this.create(
+      {
+        source: 'meeting',
+        rawContent: text,
+        extractedTitle: text.slice(0, 120),
+        extractedDescription: args.description?.trim() || null,
+        externalSource: 'meeting',
+        externalId,
+        suggestedLabels: [],
+      },
+      tenantId,
+    );
   }
 
   /** Список intake-карточек. Доступ: admin / project_manager. */

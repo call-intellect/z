@@ -70,6 +70,7 @@ import {
 } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
+import { MeetingTitleService } from '../services/meeting-title.service';
 import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
 /** Максимум ретраев перед поднятием exception (как в meeting-analyze-v2). */
@@ -113,6 +114,12 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи. Best-effort
+    // после готовности транскрипта; @Optional, чтобы старые unit-тесты воркера
+    // (позиционный конструктор без этого аргумента) не падали — там no-op.
+    @Optional()
+    @Inject(MeetingTitleService)
+    private readonly meetingTitle?: MeetingTitleService,
   ) {}
 
   onModuleInit(): void {
@@ -211,6 +218,21 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       where: { id: meetingId },
       data: { reportFastStatus: 'processing', reportFastError: null },
     });
+
+    // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи. Транскрипт
+    // здесь уже готов (turns.length>0). Best-effort + идемпотентно: сервис сам
+    // не трогает осмысленный пользовательский title (placeholder-гейт). Сбой
+    // генерации title НЕ должен валить отчёт — try/catch + @Optional.
+    if (this.meetingTitle) {
+      try {
+        await this.meetingTitle.generateMeetingTitle({ tenantId, meetingId });
+      } catch (err) {
+        this.logger.warn(
+          { meetingId, err: err instanceof Error ? err.message : String(err) },
+          'meeting-report-fast: авто-название встречи упало (best-effort) — продолжаем',
+        );
+      }
+    }
 
     // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
     // список участников встречи. Используется ДВАЖДЫ: (1) C6/C2 — имена и

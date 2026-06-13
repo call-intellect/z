@@ -30,6 +30,8 @@ import { GoalTaskLinkerService } from './services/goal-task-linker.service';
 import { GoalThemeLinkerService } from './services/goal-theme-linker.service';
 import { GoalsCheckpointProbeHandler } from './services/goals-checkpoint-probe.handler';
 import { GraphMaterializationService } from './services/graph-materialization.service';
+// Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи.
+import { MeetingTitleService } from './services/meeting-title.service';
 import { OwnerResolverService } from './services/owner-resolver.service';
 // TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona v1-vs-v2.
 import { PersonaLayerValidationService } from './services/persona-layer-validation.service';
@@ -286,6 +288,11 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // GoalTaskLinkerCron (WorkersModule). LlmRouterService берётся из @Global
     // AiModule (HTTP) / зарегистрирован в WorkersModule (worker-процесс).
     GoalTaskLinkerService,
+    // Редизайн кабинета Ф5а (2026-06-13) — MeetingTitleService: авто-название
+    // встречи (taskType meeting-title) поверх готового транскрипта. Инжектится
+    // MeetingReportFastWorker (WorkersModule). LlmRouterService — из @Global
+    // AiModule (HTTP) / WorkersModule (worker-процесс).
+    MeetingTitleService,
   ],
   exports: [
     SegmentBuilderService,
@@ -411,6 +418,8 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Agent-chain overhaul Фаза 4.1 — экспорт для Specialist314GoalsService
     // (on-event хук) и GoalTaskLinkerCron (WorkersModule, догоночный sweep).
     GoalTaskLinkerService,
+    // Редизайн кабинета Ф5а — экспорт для MeetingReportFastWorker (WorkersModule).
+    MeetingTitleService,
   ],
 })
 export class KnowledgeCoreModule {}

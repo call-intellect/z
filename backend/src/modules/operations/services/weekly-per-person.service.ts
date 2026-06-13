@@ -8,6 +8,9 @@ import { reliabilityOrLowData } from '../../dashboard/services/commitment-reliab
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type {
   WeeklyPerPersonDto,
+  WeeklyPersonItemDto,
+  WeeklyPersonItemFactStatus,
+  WeeklyPersonItemsDto,
   WeeklyPersonRowDto,
 } from '../dto/weekly-per-person.dto';
 import { completeCommitmentWhere } from '../utils/commitment-completeness';
@@ -57,6 +60,14 @@ interface PersonAcc {
   /** ТЗ-2 Ф4 — обещания «без ответа» (commitmentStatus='asked'). */
   promisesNoAnswer: number;
   tasksDone: number;
+  /**
+   * ТЗ редизайн Ф8.5 (🟡) — задачи, ЗАПЛАНИРОВАННЫЕ на неделю (Task.dueDate в
+   * окне недели, назначенные человеку). В отличие от tasksDone (по updatedAt
+   * закрытия) — по сроку.
+   */
+  tasksPlanned: number;
+  /** Сколько из запланированных на неделю задач закрыты (status='done'). */
+  tasksPlannedDone: number;
   checkInsCompleted: number;
   /**
    * ТЗ-2 Ф4 — множество blockId обещаний, УЖЕ учтённых за этого человека.
@@ -74,6 +85,26 @@ export interface WeeklyPerPersonArgs {
   limit: number;
   offset: number;
   sort: 'reliability' | 'risk';
+}
+
+/** ТЗ редизайн Ф8.5 — аргументы drill-down «план-факт по людям». */
+export interface WeeklyPersonWeekItemsArgs {
+  tenantId: string;
+  personId: string;
+  /** Понедельник недели, YYYY-MM-DD. */
+  weekStart: string;
+}
+
+/** Минимальная проекция чек-ина для drill-down (plans/dones/blockers). */
+interface CheckInRow {
+  plansJson: unknown;
+  donesJson: unknown;
+  blockersJson: unknown;
+}
+
+/** Элемент plansJson / donesJson (поле text — то, что показываем). */
+interface CheckInTextItem {
+  text?: unknown;
 }
 
 @Injectable()
@@ -135,6 +166,196 @@ export class WeeklyPerPersonService {
 
     await this.tryWriteCache(cacheKey, dto);
     return dto;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ТЗ редизайн Ф8.5 — drill-down «план-факт по людям» (построчный список).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Построчный план-факт по одному человеку за неделю из ВСЕХ трёх источников:
+   *   - commitment: IdeaBlock signalType='commitment', автор=personId, срок в
+   *     неделю (полные обещания — completeCommitmentWhere);
+   *   - task: Task назначенные человеку с dueDate в неделю (план = срок);
+   *   - checkin: каждый план из plansJson чек-инов недели как пункт; факт —
+   *     наличие в donesJson; «что мешало» — ближайший блокер из blockersJson.
+   *
+   * `blockedBy` для overdue/missed-пунктов — ближайший (по индексу) блокер из
+   * blockersJson за неделю. Атрибуция блокеров графа (signalType='blocker')
+   * к человеку детерминированно невозможна (нет authorPersonId-аналога), поэтому
+   * НЕ используется — источник «что мешало» это чек-ины человека.
+   *
+   * Live (без кэша): drill-down вызывается реже агрегата и должен быть свежим.
+   */
+  async getPersonWeekItems(
+    args: WeeklyPersonWeekItemsArgs,
+    now: Date,
+  ): Promise<WeeklyPersonItemsDto> {
+    const { tenantId, personId, weekStart } = args;
+
+    const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
+    const weekEndDate = new Date(weekStartDate.getTime() + 6 * DAY_MS);
+    weekEndDate.setUTCHours(23, 59, 59, 999);
+    const weekEndStr = this.formatDate(weekEndDate);
+    const nowMs = now.getTime();
+
+    // Person.userId нужен для связи с Task.assigneeUserId.
+    const person = await this.prisma.person.findFirst({
+      where: { tenantId, id: personId },
+      select: { userId: true },
+    });
+
+    const [commitmentRows, taskRows, checkInRows] = await Promise.all([
+      this.prisma.ideaBlock.findMany({
+        where: {
+          tenantId,
+          signalType: 'commitment',
+          commitmentAuthorPersonId: personId,
+          commitmentDueDate: { gte: weekStartDate, lte: weekEndDate },
+          ...completeCommitmentWhere(),
+        },
+        select: { name: true, commitmentStatus: true, commitmentDueDate: true },
+      }),
+      person?.userId
+        ? this.prisma.task.findMany({
+            where: {
+              tenantId,
+              assigneeUserId: person.userId,
+              dueDate: { gte: weekStartDate, lte: weekEndDate },
+            },
+            select: { title: true, status: true, dueDate: true },
+          })
+        : Promise.resolve(
+            [] as Array<{
+              title: string;
+              status: string;
+              dueDate: Date | null;
+            }>,
+          ),
+      this.prisma.dailyCheckIn.findMany({
+        where: {
+          tenantId,
+          personId,
+          completedAt: { not: null, gte: weekStartDate, lte: weekEndDate },
+        },
+        select: { plansJson: true, donesJson: true, blockersJson: true },
+      }) as Promise<CheckInRow[]>,
+    ]);
+
+    // Блокеры за неделю (плоский список текстов) — для blockedBy у overdue/missed.
+    const weekBlockers = this.collectBlockerTexts(checkInRows);
+    const nearestBlocker = weekBlockers.length > 0 ? weekBlockers[0]! : null;
+
+    const items: WeeklyPersonItemDto[] = [];
+
+    // commitment-пункты.
+    for (const c of commitmentRows) {
+      const dueMs = c.commitmentDueDate?.getTime();
+      const factStatus = this.commitmentFactStatus(
+        c.commitmentStatus,
+        dueMs,
+        nowMs,
+      );
+      items.push({
+        kind: 'commitment',
+        title: c.name,
+        plannedDue: c.commitmentDueDate
+          ? c.commitmentDueDate.toISOString()
+          : null,
+        factStatus,
+        blockedBy:
+          factStatus === 'overdue' || factStatus === 'missed'
+            ? nearestBlocker
+            : null,
+      });
+    }
+
+    // task-пункты.
+    for (const t of taskRows) {
+      const dueMs = t.dueDate?.getTime();
+      const factStatus = this.taskFactStatus(t.status, dueMs, nowMs);
+      items.push({
+        kind: 'task',
+        title: t.title,
+        plannedDue: t.dueDate ? t.dueDate.toISOString() : null,
+        factStatus,
+        blockedBy: factStatus === 'overdue' ? nearestBlocker : null,
+      });
+    }
+
+    // checkin-пункты: каждый план как item; done если текст есть в donesJson.
+    const doneTexts = new Set<string>();
+    for (const row of checkInRows) {
+      for (const text of this.extractTexts(row.donesJson)) {
+        doneTexts.add(this.normalizeText(text));
+      }
+    }
+    for (const row of checkInRows) {
+      for (const text of this.extractTexts(row.plansJson)) {
+        const done = doneTexts.has(this.normalizeText(text));
+        items.push({
+          kind: 'checkin',
+          title: text,
+          plannedDue: null,
+          factStatus: done ? 'done' : 'planned',
+          blockedBy: done ? null : nearestBlocker,
+        });
+      }
+    }
+
+    return { personId, weekStart, weekEnd: weekEndStr, items };
+  }
+
+  /** Маппинг commitmentStatus → factStatus пункта (см. контракт DTO). */
+  private commitmentFactStatus(
+    status: string | null,
+    dueMs: number | undefined,
+    nowMs: number,
+  ): WeeklyPersonItemFactStatus {
+    if (status === 'fulfilled') return 'fulfilled';
+    if (status === 'missed') return 'missed';
+    // open / asked / null: просрочен если срок прошёл; иначе asked → 'asked',
+    // прочее → 'open'.
+    if (dueMs !== undefined && dueMs < nowMs) return 'overdue';
+    if (status === 'asked') return 'asked';
+    return 'open';
+  }
+
+  /** Маппинг Task.status + срок → factStatus пункта. */
+  private taskFactStatus(
+    status: string,
+    dueMs: number | undefined,
+    nowMs: number,
+  ): WeeklyPersonItemFactStatus {
+    if (status === 'done') return 'done';
+    if (dueMs !== undefined && dueMs < nowMs) return 'overdue';
+    return 'open';
+  }
+
+  /** Тексты из plansJson/donesJson (Array<{ text }>) с фильтром пустых. */
+  private extractTexts(json: unknown): string[] {
+    if (!Array.isArray(json)) return [];
+    const out: string[] = [];
+    for (const item of json as CheckInTextItem[]) {
+      const text = item?.text;
+      if (typeof text === 'string' && text.trim().length > 0) {
+        out.push(text.trim());
+      }
+    }
+    return out;
+  }
+
+  /** Плоский список текстов блокеров за неделю (порядок чек-инов сохраняем). */
+  private collectBlockerTexts(rows: CheckInRow[]): string[] {
+    const out: string[] = [];
+    for (const row of rows) {
+      out.push(...this.extractTexts(row.blockersJson));
+    }
+    return out;
+  }
+
+  private normalizeText(s: string): string {
+    return s.trim().toLowerCase();
   }
 
   // ---------------------------------------------------------------------------
@@ -256,6 +477,27 @@ export class WeeklyPerPersonService {
         if (this.taskFromCountedCommitment(t.evidenceBlockIds, acc)) continue;
         acc.tasksDone += 1;
       }
+
+      // 5c. ТЗ редизайн Ф8.5 (🟡) — ЗАПЛАНИРОВАННЫЕ на неделю задачи: dueDate в
+      //     окне недели (не updatedAt). Отдельная выборка — «план» по сроку, а
+      //     не «факт» по закрытию. tasksNotDone = planned − doneAmongPlanned.
+      const plannedTasks = await this.prisma.task.findMany({
+        where: {
+          tenantId,
+          assigneeUserId: { in: authorUserIds },
+          dueDate: { gte: weekStartDate, lte: weekEndDate },
+        },
+        select: { assigneeUserId: true, status: true },
+      });
+      for (const t of plannedTasks) {
+        if (!t.assigneeUserId) continue;
+        const personId = userIdToPersonId.get(t.assigneeUserId);
+        if (!personId) continue;
+        const acc = accByPerson.get(personId);
+        if (!acc) continue;
+        acc.tasksPlanned += 1;
+        if (t.status === 'done') acc.tasksPlannedDone += 1;
+      }
     }
 
     // 6. Чек-ины: completedAt в окне недели. DailyCheckIn.tenantId — NOT NULL,
@@ -347,6 +589,8 @@ export class WeeklyPerPersonService {
         promisesOverdue: 0,
         promisesNoAnswer: 0,
         tasksDone: 0,
+        tasksPlanned: 0,
+        tasksPlannedDone: 0,
         checkInsCompleted: 0,
         countedCommitmentBlockIds: new Set<string>(),
       };
@@ -392,6 +636,8 @@ export class WeeklyPerPersonService {
       promisesNoAnswer: acc.promisesNoAnswer,
       reliabilityPercent: this.calcReliability(acc, minDenom),
       tasksDone: acc.tasksDone,
+      tasksPlanned: acc.tasksPlanned,
+      tasksNotDone: Math.max(0, acc.tasksPlanned - acc.tasksPlannedDone),
       checkInsCompleted: acc.checkInsCompleted,
     };
   }

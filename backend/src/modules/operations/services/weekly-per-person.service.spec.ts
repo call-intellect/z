@@ -49,6 +49,8 @@ interface PersonRow {
 interface TaskRow {
   assigneeUserId: string | null;
   evidenceBlockIds?: string[];
+  status?: string;
+  dueDate?: Date | null;
 }
 interface CheckInRow {
   personId: string;
@@ -62,6 +64,12 @@ function buildService(opts: {
   commitments?: CommitmentRow[];
   persons?: PersonRow[];
   tasks?: TaskRow[];
+  /**
+   * ТЗ редизайн Ф8.5 — отдельный набор для ВТОРОГО `task.findMany` (план по
+   * dueDate). Если не задан — используется `tasks` (как для done-выборки).
+   * Первый вызов — done-задачи, второй — планируемые.
+   */
+  plannedTasks?: TaskRow[];
   checkIns?: CheckInRow[];
   departments?: DeptRow[];
   cacheValue?: string | null;
@@ -86,10 +94,19 @@ function buildService(opts: {
   redisSet: ReturnType<typeof vi.fn>;
   noAnswerCalls: Array<{ tenantTop: string; noAnswerTotal: number }>;
 } {
+  // task.findMany вызывается дважды в computeFromDb: [0]=done, [1]=planned.
+  let taskCall = 0;
   const prisma = {
     ideaBlock: { findMany: vi.fn(async () => opts.commitments ?? []) },
     person: { findMany: vi.fn(async () => opts.persons ?? []) },
-    task: { findMany: vi.fn(async () => opts.tasks ?? []) },
+    task: {
+      findMany: vi.fn(async () => {
+        const isPlanned = taskCall === 1;
+        taskCall += 1;
+        if (isPlanned) return opts.plannedTasks ?? opts.tasks ?? [];
+        return opts.tasks ?? [];
+      }),
+    },
     dailyCheckIn: { findMany: vi.fn(async () => opts.checkIns ?? []) },
     department: { findMany: vi.fn(async () => opts.departments ?? []) },
   };
@@ -572,6 +589,231 @@ describe('WeeklyPerPersonService', () => {
       expect(p1.promisesGiven).toBe(1);
       expect(p1.promisesKept).toBe(1);
       expect(p1.tasksDone).toBe(2);
+    });
+  });
+
+  // ───────────────────── ТЗ редизайн Ф8.5 — свод tasksPlanned/tasksNotDone ──
+
+  describe('ТЗ редизайн Ф8.5 — tasksPlanned / tasksNotDone', () => {
+    it('tasksPlanned = задачи недели по dueDate; tasksNotDone = planned − done', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      // done-выборка (по updatedAt): одна закрытая задача → tasksDone=1.
+      const tasks: TaskRow[] = [{ assigneeUserId: 'U1', status: 'done' }];
+      // planned-выборка (по dueDate): 3 задачи на неделю, из них 1 done.
+      const plannedTasks: TaskRow[] = [
+        { assigneeUserId: 'U1', status: 'done', dueDate: dayInWeek('2026-06-03') },
+        { assigneeUserId: 'U1', status: 'open', dueDate: dayInWeek('2026-06-04') },
+        { assigneeUserId: 'U1', status: 'open', dueDate: dayInWeek('2026-06-05') },
+      ];
+      const { service } = buildService({ commitments, persons, tasks, plannedTasks });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.tasksDone).toBe(1);
+      expect(p1.tasksPlanned).toBe(3);
+      expect(p1.tasksNotDone).toBe(2); // 3 planned − 1 done(among planned)
+    });
+
+    it('tasksNotDone не уходит в минус (done > planned по разным окнам)', async () => {
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'open', commitmentDueDate: dayInWeek('2026-06-06') },
+      ];
+      const tasks: TaskRow[] = [
+        { assigneeUserId: 'U1', status: 'done' },
+        { assigneeUserId: 'U1', status: 'done' },
+      ];
+      const plannedTasks: TaskRow[] = []; // ни одной задачи со сроком на неделю
+      const { service } = buildService({ commitments, persons, tasks, plannedTasks });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.tasksPlanned).toBe(0);
+      expect(p1.tasksNotDone).toBe(0); // max(0, 0 − 0)
+    });
+  });
+
+  // ─────────────── ТЗ редизайн Ф8.5 — drill-down getPersonWeekItems ─────────
+
+  describe('ТЗ редизайн Ф8.5 — getPersonWeekItems (построчный план-факт)', () => {
+    function buildItemsService(opts: {
+      person?: { userId: string | null } | null;
+      commitments?: Array<{
+        name: string;
+        commitmentStatus: string | null;
+        commitmentDueDate: Date | null;
+      }>;
+      tasks?: Array<{ title: string; status: string; dueDate: Date | null }>;
+      checkIns?: Array<{
+        plansJson: unknown;
+        donesJson: unknown;
+        blockersJson: unknown;
+      }>;
+    }) {
+      const prisma = {
+        person: { findFirst: vi.fn(async () => opts.person ?? null) },
+        ideaBlock: { findMany: vi.fn(async () => opts.commitments ?? []) },
+        task: { findMany: vi.fn(async () => opts.tasks ?? []) },
+        dailyCheckIn: { findMany: vi.fn(async () => opts.checkIns ?? []) },
+      };
+      const redis = {
+        client: { get: vi.fn(async () => null), set: vi.fn(async () => 'OK') },
+      } as unknown as RedisService;
+      const cfg = {
+        getDynamic: vi.fn(async () => 1),
+      } as unknown as TypedConfigService;
+      const metrics = {
+        recordWeeklyPerPersonCompute: vi.fn(),
+        incWeeklyPerPersonSelfViewServed: vi.fn(),
+      } as unknown as BusinessMetricsService;
+      const service = new WeeklyPerPersonService(
+        prisma as unknown as PrismaService,
+        redis,
+        cfg,
+        metrics,
+      );
+      return { service, prisma };
+    }
+
+    it('обещание fulfilled + задача overdue + чек-ин-план без done → 3 пункта с правильными factStatus/blockedBy', async () => {
+      const { service } = buildItemsService({
+        person: { userId: 'U1' },
+        commitments: [
+          {
+            name: 'Подготовить КП клиенту',
+            commitmentStatus: 'fulfilled',
+            commitmentDueDate: dayInWeek('2026-06-02'),
+          },
+        ],
+        tasks: [
+          {
+            title: 'Закрыть тикет №42',
+            status: 'open',
+            dueDate: dayInWeek('2026-06-02'), // прошлый срок → overdue
+          },
+        ],
+        checkIns: [
+          {
+            plansJson: [{ text: 'Созвон с поставщиком' }],
+            donesJson: [], // нет факта → planned
+            blockersJson: [{ text: 'Нет ответа от поставщика' }],
+          },
+        ],
+      });
+
+      const dto = await service.getPersonWeekItems(
+        { tenantId: 't-1', personId: 'P1', weekStart: WEEK_START },
+        NOW,
+      );
+
+      expect(dto.personId).toBe('P1');
+      expect(dto.weekStart).toBe(WEEK_START);
+      expect(dto.weekEnd).toBe('2026-06-07');
+      expect(dto.items).toHaveLength(3);
+
+      const commitment = dto.items.find((i) => i.kind === 'commitment')!;
+      expect(commitment.title).toBe('Подготовить КП клиенту');
+      expect(commitment.factStatus).toBe('fulfilled');
+      expect(commitment.plannedDue).toBe(dayInWeek('2026-06-02').toISOString());
+      expect(commitment.blockedBy).toBeNull(); // не проблемный
+
+      const task = dto.items.find((i) => i.kind === 'task')!;
+      expect(task.title).toBe('Закрыть тикет №42');
+      expect(task.factStatus).toBe('overdue');
+      // overdue → подтягивает ближайший блокер из чек-ина
+      expect(task.blockedBy).toBe('Нет ответа от поставщика');
+
+      const checkin = dto.items.find((i) => i.kind === 'checkin')!;
+      expect(checkin.title).toBe('Созвон с поставщиком');
+      expect(checkin.factStatus).toBe('planned');
+      expect(checkin.plannedDue).toBeNull();
+      expect(checkin.blockedBy).toBe('Нет ответа от поставщика');
+    });
+
+    it('checkin-план, попавший в donesJson → factStatus=done, blockedBy=null', async () => {
+      const { service } = buildItemsService({
+        person: { userId: 'U1' },
+        checkIns: [
+          {
+            plansJson: [{ text: 'Написать отчёт' }, { text: 'Позвонить Пете' }],
+            donesJson: [{ text: 'написать отчёт' }], // регистр игнорируем
+            blockersJson: [{ text: 'Завис сервер' }],
+          },
+        ],
+      });
+      const dto = await service.getPersonWeekItems(
+        { tenantId: 't-1', personId: 'P1', weekStart: WEEK_START },
+        NOW,
+      );
+      const done = dto.items.find((i) => i.title === 'Написать отчёт')!;
+      expect(done.factStatus).toBe('done');
+      expect(done.blockedBy).toBeNull();
+      const planned = dto.items.find((i) => i.title === 'Позвонить Пете')!;
+      expect(planned.factStatus).toBe('planned');
+      expect(planned.blockedBy).toBe('Завис сервер');
+    });
+
+    it('commitment missed → factStatus=missed + blockedBy; open с прошлым due → overdue', async () => {
+      const { service } = buildItemsService({
+        person: { userId: 'U1' },
+        commitments: [
+          {
+            name: 'Сорванное обещание',
+            commitmentStatus: 'missed',
+            commitmentDueDate: dayInWeek('2026-06-01'),
+          },
+          {
+            name: 'Просроченное открытое',
+            commitmentStatus: 'open',
+            commitmentDueDate: dayInWeek('2026-06-02'),
+          },
+          {
+            name: 'Ещё не наступило',
+            commitmentStatus: 'open',
+            commitmentDueDate: dayInWeek('2026-06-06'),
+          },
+        ],
+        checkIns: [
+          { plansJson: [], donesJson: [], blockersJson: [{ text: 'Болезнь' }] },
+        ],
+      });
+      const dto = await service.getPersonWeekItems(
+        { tenantId: 't-1', personId: 'P1', weekStart: WEEK_START },
+        NOW,
+      );
+      const missed = dto.items.find((i) => i.title === 'Сорванное обещание')!;
+      expect(missed.factStatus).toBe('missed');
+      expect(missed.blockedBy).toBe('Болезнь');
+      const overdue = dto.items.find((i) => i.title === 'Просроченное открытое')!;
+      expect(overdue.factStatus).toBe('overdue');
+      const open = dto.items.find((i) => i.title === 'Ещё не наступило')!;
+      expect(open.factStatus).toBe('open');
+      expect(open.blockedBy).toBeNull();
+    });
+
+    it('person без userId → задачи не выбираются (task.findMany не вызван)', async () => {
+      const { service, prisma } = buildItemsService({
+        person: { userId: null },
+        commitments: [],
+        checkIns: [],
+      });
+      const dto = await service.getPersonWeekItems(
+        { tenantId: 't-1', personId: 'P1', weekStart: WEEK_START },
+        NOW,
+      );
+      expect(prisma.task.findMany).not.toHaveBeenCalled();
+      expect(dto.items).toEqual([]);
     });
   });
 });

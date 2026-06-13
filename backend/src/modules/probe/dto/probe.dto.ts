@@ -66,3 +66,55 @@ export interface MyProbeHistoryResponse {
   page: number;
   limit: number;
 }
+
+// ─────────────────── Контроль вопросов Коры (Редизайн Ф8.6) ─────────────────
+//
+// Сводка «куда ушли вопросы Коры и что с ними»: для owner/admin/coo — взгляд
+// сверху на дисциплину ответов. Источник — Notification(eventType='probe.question')
+// + ProbeEvent. State выводится из responseStatus / status / expiresAt.
+
+/** Окно выборки: число дней либо `all`. */
+export const ProbeControlWindowSchema = z
+  .union([z.literal('all'), z.coerce.number().int().min(1).max(3650)])
+  .default(30);
+export type ProbeControlWindowDto = z.infer<typeof ProbeControlWindowSchema>;
+
+export const ProbeControlQuerySchema = z
+  .object({
+    window: ProbeControlWindowSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(200),
+  })
+  .strict();
+export type ProbeControlQuery = z.infer<typeof ProbeControlQuerySchema>;
+
+/**
+ * Состояние вопроса Коры:
+ *   - answered    — на вопрос ответили (responseStatus='answered').
+ *   - read_silent — прочитан, но висит без ответа (status='read' &&
+ *                   responseStatus='pending').
+ *   - expired     — responseStatus='expired' ИЛИ просрочен (expiresAt < now).
+ *   - unseen      — доставлен/отправлен, ещё не открыт.
+ */
+export const ProbeControlStateSchema = z.enum([
+  'answered',
+  'read_silent',
+  'unseen',
+  'expired',
+]);
+export type ProbeControlStateDto = z.infer<typeof ProbeControlStateSchema>;
+
+export interface ProbeControlItemDto {
+  notificationId: string;
+  question: string;
+  recipientName: string | null;
+  askedAt: string;
+  expiresAt: string | null;
+  state: ProbeControlStateDto;
+  /** Сколько календарных дней висит без ответа (0 для answered). */
+  waitingDays: number;
+}
+
+export interface ProbeControlResponse {
+  items: ProbeControlItemDto[];
+  counts: Record<ProbeControlStateDto, number>;
+}

@@ -9804,6 +9804,31 @@ model ActivityFeedSubscription {
   @@unique([userId, feedType])
 }
 
+/// Редизайн Ф8.6 «Лента Коры» (2026-06-13) — per-user курсор «непрочитанного».
+///
+/// ActivityFeedItem.seenAt — единый timestamp на запись (НЕ per-user), поэтому
+/// он не годится для метки «прочитано конкретным пользователем» в гибридной
+/// ленте, которая виртуально читает ещё и source-таблицы (IdeaBlock / Insight /
+/// Decision / ConflictItem / BlockerSynthesis) без собственного seenAt-поля.
+///
+/// `lastSeenAt` — момент, когда пользователь последний раз «дочитал» ленту до
+/// верха (POST /feed/cora/seen). Запись из ленты считается непрочитанной
+/// (`unread=true`), если её `createdAt > lastSeenAt`. Если курсора нет —
+/// вся лента непрочитана.
+/// (без relation на Org — как и ActivityFeedItem / ActivityFeedSubscription:
+/// эти модели намеренно не заводят back-relation на Org, чтобы не раздувать
+/// модель Org. tenant-scope обеспечивается WHERE-фильтром в сервисе.)
+model FeedReadCursor {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  lastSeenAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@map("feed_read_cursor")
+}
+
 // ──────────────────────────── Wave 2: Specialist 3.8 Helpfulness (2026-05-24) ────────────────────────────
 // Sub-ТЗ: plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md
 // Этическая защита: question_unanswered + question_acknowledged_no_action — только private (admin + руководитель), никогда публично.

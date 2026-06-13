@@ -28,6 +28,17 @@ export const FeedTypeSchema = z.enum([
   'conflict',
   'knowledge_change',
   'recognition',
+  // Редизайн Ф8.6 «Лента Коры» (2026-06-13) — типы единой ленты-новостей.
+  // Часть из них читается ВИРТУАЛЬНО из source-таблиц (idea/insight/decision/
+  // conflict/blocker/open_question), часть — событийные (probe_question/
+  // recognition/task). См. CoraFeedService.
+  'blocker',
+  'open_question',
+  // `activity` — собирательный тип «кто что сделал»: объединяет событийные
+  // recognition + task в одну дорожку. Отдельного значения в БД не получает —
+  // CoraFeedService разворачивает его в feedType IN (recognition, task) при
+  // виртуальном чтении ActivityFeedItem.
+  'activity',
 ]);
 export type FeedTypeDto = z.infer<typeof FeedTypeSchema>;
 
@@ -217,4 +228,99 @@ export interface FeedSubscriptionDto {
   channels: FeedChannelDto[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ─────────────────────────── «Лента Коры» (Редизайн Ф8.6) ───────────────────
+//
+// Единая лента-новости с переключателем типов. Гибрид: реестровые типы
+// (idea / insight / decision / conflict / blocker / open_question) читаются
+// ВИРТУАЛЬНО из source-таблиц; событийные (probe_question / recognition / task,
+// собранные под `activity`) — из ActivityFeedItem. См. CoraFeedService.
+
+/**
+ * Тип в контексте «Ленты Коры». Помимо всех FeedTypeDto добавляет `'all'` —
+ * собирательный фильтр «все типы».
+ */
+export const CoraFeedTypeSchema = z.enum([
+  'all',
+  'idea',
+  'insight',
+  'decision',
+  'conflict',
+  'blocker',
+  'activity',
+  'probe_question',
+  'open_question',
+]);
+export type CoraFeedTypeDto = z.infer<typeof CoraFeedTypeSchema>;
+
+/** Список конкретных (не `all`) типов, по которым строятся counters. */
+export const CORA_FEED_TYPES = [
+  'idea',
+  'insight',
+  'decision',
+  'conflict',
+  'blocker',
+  'activity',
+  'probe_question',
+  'open_question',
+] as const satisfies readonly Exclude<CoraFeedTypeDto, 'all'>[];
+
+/**
+ * Severity карточки ленты Коры. Упрощённая (3 уровня) проекция исходных
+ * severity'ей источников — управляет цветом/иконкой и сортировкой
+ * (risk > warn > info).
+ */
+export const CoraSeveritySchema = z.enum(['info', 'warn', 'risk']);
+export type CoraSeverityDto = z.infer<typeof CoraSeveritySchema>;
+
+/**
+ * Окно выборки: число дней (строкой, чтобы один query-параметр принимал и
+ * число, и `all`) либо `all` — без ограничения по дате.
+ */
+export const CoraWindowSchema = z
+  .union([z.literal('all'), z.coerce.number().int().min(1).max(3650)])
+  .default(30);
+export type CoraWindowDto = z.infer<typeof CoraWindowSchema>;
+
+export const CoraFeedQuerySchema = z.object({
+  type: CoraFeedTypeSchema.default('all'),
+  window: CoraWindowSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type CoraFeedQuery = z.infer<typeof CoraFeedQuerySchema>;
+
+/**
+ * Единая карточка «Ленты Коры». Несёт АНАЛИЗ (не сырой факт): `analysis` —
+ * человекочитаемая выжимка (N упоминаний / % доведения / daysOpen / тренд),
+ * `severity` управляет цветом и сортировкой. `payload` — type-specific
+ * дополнительные поля (для conflict — две версии; для open_question —
+ * askedByManager и т.п.).
+ */
+export interface CoraFeedItemDto {
+  id: string;
+  type: Exclude<CoraFeedTypeDto, 'all'>;
+  title: string;
+  analysis?: string;
+  severity: CoraSeverityDto;
+  sourceRef?: {
+    meetingId?: string;
+    cite?: string;
+  };
+  createdAt: string;
+  unread: boolean;
+  payload?: Record<string, unknown>;
+}
+
+export interface CoraFeedResponseDto {
+  items: CoraFeedItemDto[];
+  /** Сколько записей каждого конкретного типа за окно (для бейджей переключателя). */
+  counters: Record<Exclude<CoraFeedTypeDto, 'all'>, number>;
+  /** Сколько всего непрочитанных (createdAt > курсор) в ОТФИЛЬТРОВАННОЙ выдаче. */
+  unreadCount: number;
+}
+
+export interface CoraSeenResponseDto {
+  ok: true;
+  lastSeenAt: string;
 }

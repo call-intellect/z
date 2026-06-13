@@ -23,6 +23,10 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import {
+  type CoraFeedQuery,
+  CoraFeedQuerySchema,
+  type CoraFeedResponseDto,
+  type CoraSeenResponseDto,
   type FeedItemDto,
   type FeedTypeDto,
   FeedTypeSchema,
@@ -33,6 +37,7 @@ import {
   type ReactBody,
 } from '../dto/activity-feed.dto';
 import { ActivityFeedService } from '../services/activity-feed.service';
+import { CoraFeedService } from '../services/cora-feed.service';
 
 /**
  * Feed REST API (Wave 2 Поток D, 2026-05-24).
@@ -59,6 +64,7 @@ import { ActivityFeedService } from '../services/activity-feed.service';
 export class FeedController {
   constructor(
     @Inject(ActivityFeedService) private readonly svc: ActivityFeedService,
+    @Inject(CoraFeedService) private readonly cora: CoraFeedService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
@@ -81,6 +87,38 @@ export class FeedController {
       userRoleIds: ctx.roleIds,
       query: q,
     });
+  }
+
+  // ВАЖНО: статические роуты `/feed/cora*` объявлены ДО динамического
+  // `@Get(':type')`, иначе `:type` перехватит сегмент `cora`.
+
+  @Get('cora')
+  @ApiOperation({
+    summary:
+      'Лента Коры — единая лента-новости с переключателем типов (idea / insight / decision / conflict / blocker / activity / probe_question / open_question)',
+  })
+  async coraFeed(
+    @Query(new ZodValidationPipe(CoraFeedQuerySchema))
+    q: CoraFeedQuery,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CoraFeedResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.cora.getFeed({ tenantId: t, userId: user.id, query: q });
+  }
+
+  @Post('cora/seen')
+  @ApiOperation({
+    summary: 'Отметить Ленту Коры прочитанной (двигает per-user курсор на now)',
+  })
+  async coraSeen(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<CoraSeenResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.cora.markCoraSeen({ tenantId: t, userId: user.id });
   }
 
   @Get(':type')

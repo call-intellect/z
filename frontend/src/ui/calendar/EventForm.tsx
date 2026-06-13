@@ -20,11 +20,14 @@ import {
   type EventKindApi,
   type EventVisibilityApi,
   type ParticipantInputApi,
+  type ReminderChannelApi,
+  type ReminderInputApi,
   type UpdateEventRequestApi,
 } from '@/api/calendar.api';
 import { EVENT_KIND_LABELS, EVENT_VISIBILITY_LABELS } from '@/domain/calendar';
 import type { CalendarEventDomain } from '@/domain/calendar';
 import { Button } from '@/ui/shadcn/button';
+import { Checkbox } from '@/ui/shadcn/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -51,6 +54,104 @@ const KIND_OPTIONS: EventKindApi[] = [
 
 const VISIBILITY_OPTIONS: EventVisibilityApi[] = ['company', 'team', 'personal'];
 
+// ─────────────────────── Повторяемость (RFC-5545) ────────────────────
+
+/**
+ * Пресеты повторяемости. `value` — строка RFC-5545 (пустая = не повторять).
+ * Бэк принимает любой валидный RRULE; UI ограничен набором MVP-пресетов.
+ */
+const RRULE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '', label: 'Не повторять' },
+  { value: 'FREQ=DAILY', label: 'Каждый день' },
+  { value: 'FREQ=WEEKLY', label: 'Каждую неделю' },
+  { value: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: 'По будням' },
+  { value: 'FREQ=MONTHLY', label: 'Каждый месяц' },
+  { value: 'FREQ=YEARLY', label: 'Каждый год' },
+];
+
+/** Спецзначение для select, когда rrule не совпал ни с одним пресетом. */
+const RRULE_CUSTOM_SENTINEL = '__custom__';
+
+/**
+ * Нормализует RRULE к каноническому виду пресета для сравнения:
+ * убирает префикс `RRULE:`, регистр, пробелы и сортирует пары `KEY=VAL`.
+ */
+function normalizeRrule(rrule: string): string {
+  const cleaned = rrule
+    .trim()
+    .replace(/^RRULE:/i, '')
+    .toUpperCase()
+    .replace(/\s+/g, '');
+  if (!cleaned) return '';
+  return cleaned.split(';').filter(Boolean).sort().join(';');
+}
+
+/** Подбирает пресет по существующему rrule. '' если не повторять/не совпал. */
+function matchRrulePreset(rrule: string | null | undefined): string {
+  if (!rrule || !rrule.trim()) return '';
+  const norm = normalizeRrule(rrule);
+  for (const preset of RRULE_PRESETS) {
+    if (preset.value && normalizeRrule(preset.value) === norm) {
+      return preset.value;
+    }
+  }
+  return RRULE_CUSTOM_SENTINEL;
+}
+
+// ─────────────────────────── Напоминания ─────────────────────────────
+
+const REMINDER_OFFSET_OPTIONS: ReadonlyArray<{
+  value: number;
+  label: string;
+}> = [
+  { value: 0, label: 'В момент начала' },
+  { value: 5, label: 'За 5 минут' },
+  { value: 15, label: 'За 15 минут' },
+  { value: 30, label: 'За 30 минут' },
+  { value: 60, label: 'За 1 час' },
+  { value: 1440, label: 'За 1 день' },
+];
+
+const REMINDER_CHANNEL_OPTIONS: ReadonlyArray<{
+  value: ReminderChannelApi;
+  label: string;
+}> = [
+  { value: 'push', label: 'Push' },
+  { value: 'email', label: 'Почта' },
+  { value: 'telegram', label: 'Telegram' },
+];
+
+const REMINDER_CHANNEL_LABELS: Record<ReminderChannelApi, string> = {
+  push: 'Push',
+  email: 'Почта',
+  telegram: 'Telegram',
+};
+
+const MAX_REMINDERS = 20;
+
+interface ReminderDraft {
+  offsetMin: number;
+  channel: ReminderChannelApi;
+}
+
+// ─────────────────────────── Часовые пояса ───────────────────────────
+
+const TIMEZONE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
+  { value: 'Europe/Moscow', label: 'Москва (UTC+3)' },
+  { value: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
+  { value: 'Asia/Novosibirsk', label: 'Новосибирск (UTC+7)' },
+  { value: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
+  { value: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
+  { value: 'Asia/Almaty', label: 'Алматы (UTC+5)' },
+];
+
+const DEFAULT_TIMEZONE = 'Europe/Moscow';
+
+/** Единый класс для нативных select (повторяет стиль поля «Тип события»). */
+const SELECT_CLASS =
+  'flex h-10 w-full rounded-md border border-border-subtle bg-bg-overlay px-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent';
+
 export interface EventFormProps {
   open: boolean;
   onClose: () => void;
@@ -73,6 +174,22 @@ interface FormState {
   visibility: EventVisibilityApi;
   /** Calendar MVP Фаза P4 — структурированный список участников. */
   participants: ParticipantPickerValue[];
+  /** Редизайн Ф6 — событие на весь день (скрывает время). */
+  allDay: boolean;
+  /** Редизайн Ф6 — часовой пояс события (IANA). */
+  timezone: string;
+  /**
+   * Редизайн Ф6 — выбранный пресет повторяемости (RFC-5545).
+   * Пусто = не повторять; RRULE_CUSTOM_SENTINEL = заданное вручную значение.
+   */
+  rrulePreset: string;
+  /**
+   * Редизайн Ф6 — исходный rrule события (для сохранения при редактировании,
+   * если пользователь не трогал нераспознанное «Другое» значение).
+   */
+  rruleRaw: string;
+  /** Редизайн Ф6 — черновики напоминаний (отправляются только при создании). */
+  reminders: ReminderDraft[];
 }
 
 function toLocalInputValue(d: Date): string {
@@ -89,6 +206,21 @@ function toLocalInputValue(d: Date): string {
 function fromLocalInputValue(v: string): Date {
   // new Date("YYYY-MM-DDTHH:mm") интерпретируется как локальное время.
   return new Date(v);
+}
+
+/** Выделяет дату (YYYY-MM-DD) из значения datetime-local (для режима «весь день»). */
+function dateOnly(v: string): string {
+  return v.slice(0, 10);
+}
+
+/**
+ * Меняет дату в datetime-local-значении, сохраняя время.
+ * Если времени ещё нет (был режим «весь день») — ставит 00:00.
+ */
+function withDate(prev: string, date: string): string {
+  if (!date) return prev;
+  const time = prev.slice(11, 16) || '00:00';
+  return `${date}T${time}`;
 }
 
 function buildDefaultState(
@@ -108,6 +240,15 @@ function buildDefaultState(
       visibility: event.visibility,
       // В edit-режиме participants не редактируются (имена не приходят в EventDto).
       participants: [],
+      allDay: event.allDay,
+      timezone: event.timezone || DEFAULT_TIMEZONE,
+      rrulePreset: matchRrulePreset(event.rrule),
+      rruleRaw: event.rrule ?? '',
+      // Напоминания в edit-режиме показываются read-only из EventDto.
+      reminders: event.reminders.map((r) => ({
+        offsetMin: r.offsetMin,
+        channel: r.channel,
+      })),
     };
   }
   const base = defaultStartAt ?? new Date();
@@ -124,6 +265,11 @@ function buildDefaultState(
     description: '',
     visibility: 'company',
     participants: [],
+    allDay: false,
+    timezone: DEFAULT_TIMEZONE,
+    rrulePreset: '',
+    rruleRaw: '',
+    reminders: [],
   };
 }
 
@@ -161,6 +307,43 @@ export function EventForm({
     value: FormState[K],
   ): void {
     setState((s) => ({ ...s, [key]: value }));
+  }
+
+  /** Добавляет новое напоминание (только в режиме создания). */
+  function addReminder(): void {
+    setState((s) =>
+      s.reminders.length >= MAX_REMINDERS
+        ? s
+        : {
+            ...s,
+            reminders: [...s.reminders, { offsetMin: 15, channel: 'push' }],
+          },
+    );
+  }
+
+  function updateReminder(index: number, patch: Partial<ReminderDraft>): void {
+    setState((s) => ({
+      ...s,
+      reminders: s.reminders.map((r, i) =>
+        i === index ? { ...r, ...patch } : r,
+      ),
+    }));
+  }
+
+  function removeReminder(index: number): void {
+    setState((s) => ({
+      ...s,
+      reminders: s.reminders.filter((_, i) => i !== index),
+    }));
+  }
+
+  /**
+   * Разрешает выбранный пресет повторяемости в строку RFC-5545.
+   * Для нераспознанного «Другое» сохраняем исходное значение rruleRaw.
+   */
+  function resolveRrule(): string {
+    if (state.rrulePreset === RRULE_CUSTOM_SENTINEL) return state.rruleRaw;
+    return state.rrulePreset;
   }
 
   function validate(): string | null {
@@ -211,6 +394,7 @@ export function EventForm({
       const endIso = state.endAt
         ? fromLocalInputValue(state.endAt).toISOString()
         : undefined;
+      const rrule = resolveRrule();
 
       if (isEdit && event) {
         const patch: UpdateEventRequestApi = {
@@ -223,6 +407,10 @@ export function EventForm({
           description: state.description.trim()
             ? state.description.trim()
             : null,
+          allDay: state.allDay,
+          timezone: state.timezone,
+          // Пусто → null (снять повторяемость); update принимает rrule, но НЕ reminders.
+          rrule: rrule ? rrule : null,
         };
         await calendarApi.updateEvent(event.id, patch);
       } else {
@@ -231,15 +419,25 @@ export function EventForm({
           kind: state.kind,
           startAt: startIso,
           visibility: state.visibility,
+          allDay: state.allDay,
+          timezone: state.timezone,
           ...(endIso ? { endAt: endIso } : {}),
           ...(state.location.trim() ? { location: state.location.trim() } : {}),
           ...(state.description.trim()
             ? { description: state.description.trim() }
             : {}),
+          ...(rrule ? { rrule } : {}),
           ...(projectId ? { projectId } : {}),
         };
         const participants = buildParticipantsPayload();
         if (participants.length > 0) body.participants = participants;
+        // Напоминания принимаются только при создании события.
+        if (state.reminders.length > 0) {
+          body.reminders = state.reminders.map<ReminderInputApi>((r) => ({
+            offsetMin: r.offsetMin,
+            channel: r.channel,
+          }));
+        }
         await calendarApi.createEvent(body);
       }
       onSaved();
@@ -317,28 +515,60 @@ export function EventForm({
             </select>
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-fg-secondary">
+            <Checkbox
+              checked={state.allDay}
+              onCheckedChange={(c) => setField('allDay', c === true)}
+            />
+            <span>Весь день</span>
+          </label>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="event-start">Начало *</Label>
-              <Input
-                id="event-start"
-                type="datetime-local"
-                value={state.startAt}
-                onChange={(e) => setField('startAt', e.target.value)}
-                required
-              />
+              {state.allDay ? (
+                <Input
+                  id="event-start"
+                  type="date"
+                  value={dateOnly(state.startAt)}
+                  onChange={(e) =>
+                    setField('startAt', withDate(state.startAt, e.target.value))
+                  }
+                  required
+                />
+              ) : (
+                <Input
+                  id="event-start"
+                  type="datetime-local"
+                  value={state.startAt}
+                  onChange={(e) => setField('startAt', e.target.value)}
+                  required
+                />
+              )}
             </div>
             <div>
               <Label htmlFor="event-end">
                 Окончание{requiresEndAt ? ' *' : ''}
               </Label>
-              <Input
-                id="event-end"
-                type="datetime-local"
-                value={state.endAt}
-                onChange={(e) => setField('endAt', e.target.value)}
-                {...(requiresEndAt ? { required: true } : {})}
-              />
+              {state.allDay ? (
+                <Input
+                  id="event-end"
+                  type="date"
+                  value={dateOnly(state.endAt)}
+                  onChange={(e) =>
+                    setField('endAt', withDate(state.endAt, e.target.value))
+                  }
+                  {...(requiresEndAt ? { required: true } : {})}
+                />
+              ) : (
+                <Input
+                  id="event-end"
+                  type="datetime-local"
+                  value={state.endAt}
+                  onChange={(e) => setField('endAt', e.target.value)}
+                  {...(requiresEndAt ? { required: true } : {})}
+                />
+              )}
             </div>
           </div>
 
@@ -363,6 +593,142 @@ export function EventForm({
               placeholder="Краткая повестка или контекст"
               maxLength={8000}
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="event-rrule">Повторение</Label>
+              <select
+                id="event-rrule"
+                value={state.rrulePreset}
+                onChange={(e) => setField('rrulePreset', e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {RRULE_PRESETS.map((p) => (
+                  <option key={p.value || 'none'} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+                {state.rrulePreset === RRULE_CUSTOM_SENTINEL && (
+                  <option value={RRULE_CUSTOM_SENTINEL} disabled>
+                    Другое (заданное правило)
+                  </option>
+                )}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="event-timezone">Часовой пояс</Label>
+              <select
+                id="event-timezone"
+                value={state.timezone}
+                onChange={(e) => setField('timezone', e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {TIMEZONE_OPTIONS.map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+                {!TIMEZONE_OPTIONS.some((tz) => tz.value === state.timezone) && (
+                  <option value={state.timezone} disabled>
+                    {state.timezone}
+                  </option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          {/* Редизайн Ф6 — напоминания. При создании редактируемы, при
+              редактировании показываются read-only (бэк не принимает их в update). */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Напоминания</Label>
+              {!isEdit && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={addReminder}
+                  disabled={state.reminders.length >= MAX_REMINDERS}
+                >
+                  + Напоминание
+                </Button>
+              )}
+            </div>
+
+            {state.reminders.length === 0 ? (
+              <p className="mt-1 text-xs text-fg-tertiary">
+                {isEdit
+                  ? 'Напоминания не настроены.'
+                  : 'Напоминаний нет. Добавьте, чтобы получить уведомление заранее.'}
+              </p>
+            ) : isEdit ? (
+              <ul className="mt-2 space-y-1 text-sm text-fg-secondary">
+                {state.reminders.map((r, i) => (
+                  <li
+                    key={`${r.offsetMin}-${r.channel}-${i}`}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-fg-tertiary" />
+                    <span>
+                      {REMINDER_OFFSET_OPTIONS.find(
+                        (o) => o.value === r.offsetMin,
+                      )?.label ?? `За ${r.offsetMin} мин`}{' '}
+                      · {REMINDER_CHANNEL_LABELS[r.channel]}
+                    </span>
+                  </li>
+                ))}
+                <li className="text-xs text-fg-tertiary">
+                  Напоминания меняются только при пересоздании события.
+                </li>
+              </ul>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {state.reminders.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <select
+                      value={r.offsetMin}
+                      onChange={(e) =>
+                        updateReminder(i, { offsetMin: Number(e.target.value) })
+                      }
+                      className={SELECT_CLASS}
+                      aria-label="Время напоминания"
+                    >
+                      {REMINDER_OFFSET_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={r.channel}
+                      onChange={(e) =>
+                        updateReminder(i, {
+                          channel: e.target.value as ReminderChannelApi,
+                        })
+                      }
+                      className={SELECT_CLASS}
+                      aria-label="Канал напоминания"
+                    >
+                      {REMINDER_CHANNEL_OPTIONS.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeReminder(i)}
+                      aria-label="Удалить напоминание"
+                    >
+                      ×
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

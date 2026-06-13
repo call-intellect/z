@@ -51,12 +51,34 @@ import { WeeklyPerPersonWidget } from './WeeklyPerPersonWidget';
  *
  * Навигация по неделям — кнопки «← Прошлая» / «Следующая →» (с проверкой
  * на будущее: следующую неделю не запрашиваем).
+ *
+ * Встроенный режим (`embedded`, ТЗ редизайн кабинета Ф2): на экране `/week`
+ * клиент живёт внутри общего `ModernPageShell` + вкладок. В этом режиме:
+ *   - не рендерим собственный `ModernPageShell` / `OperationsTabs`;
+ *   - `weekStart` приходит пропом, навигацию проксируем в `onWeekChange`
+ *     (родитель синхронизирует неделю между всеми вкладками и query);
+ *   - не рендерим `WeeklyPerPersonWidget` — он переехал во вкладку
+ *     «Кто держит слово».
  */
-export function WeeklyDigestClient() {
+export function WeeklyDigestClient({
+  embedded = false,
+  weekStart: weekStartProp,
+  onWeekChange,
+}: {
+  embedded?: boolean;
+  /** Неделя извне (только embedded). Управляет родитель `/week`. */
+  weekStart?: string;
+  /** Колбэк смены недели (только embedded). */
+  onWeekChange?: (nextWeek: string) => void;
+} = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialWeek = searchParams?.get('weekStart') ?? defaultLastMondayUtc();
-  const [weekStart, setWeekStart] = useState(initialWeek);
+  const [internalWeek, setInternalWeek] = useState(initialWeek);
+
+  // В embedded неделя — внешняя (от `/week`); иначе — собственный state.
+  const weekStart =
+    embedded && weekStartProp !== undefined ? weekStartProp : internalWeek;
 
   const digestSwr = useSWR(
     ['weekly-digest', weekStart],
@@ -68,7 +90,11 @@ export function WeeklyDigestClient() {
   const error = weeklyDigestErrorMessage(digestSwr.error);
 
   const goToWeek = (nextWeek: string) => {
-    setWeekStart(nextWeek);
+    if (embedded) {
+      onWeekChange?.(nextWeek);
+      return;
+    }
+    setInternalWeek(nextWeek);
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.set('weekStart', nextWeek);
     router.replace(`/dashboard/operations/weekly?${params.toString()}`);
@@ -79,18 +105,14 @@ export function WeeklyDigestClient() {
   const today = todayUtcDate();
   const nextWeekDisabled = nextWeek > today;
 
-  return (
-    <ModernPageShell
-      title="Недельная сводка"
-      subtitle="Обзор для операционного директора: температура команды, повторяющиеся блокеры, сигналы, цели, висящие решения."
-    >
-      {/* §5.1 — Общая навигация по операционному разделу. */}
-      <OperationsTabs />
-
+  const body = (
+    <>
       {/* Week-picker — стеклянная панель навигации по неделям. */}
       <div
         style={glass()}
-        className="mb-6 mt-4 flex flex-wrap items-center gap-3 p-3"
+        className={`flex flex-wrap items-center gap-3 p-3 ${
+          embedded ? 'mb-6' : 'mb-6 mt-4'
+        }`}
       >
         <button
           type="button"
@@ -139,11 +161,28 @@ export function WeeklyDigestClient() {
         <DigestView data={data} />
       ) : null}
 
-      {/* ТЗ-D Фаза 5 — недельный план-факт по людям. Грузит данные сам,
-          независимо от дайджеста (рендерится даже если дайджест 404). */}
-      <div className="mt-6">
-        <WeeklyPerPersonWidget weekStart={weekStart} />
-      </div>
+      {/* ТЗ-D Фаза 5 — недельный план-факт по людям. В embedded не рендерим:
+          на `/week` он переехал во вкладку «Кто держит слово». */}
+      {embedded ? null : (
+        <div className="mt-6">
+          <WeeklyPerPersonWidget weekStart={weekStart} />
+        </div>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return body;
+  }
+
+  return (
+    <ModernPageShell
+      title="Недельная сводка"
+      subtitle="Обзор для операционного директора: температура команды, повторяющиеся блокеры, сигналы, цели, висящие решения."
+    >
+      {/* §5.1 — Общая навигация по операционному разделу. */}
+      <OperationsTabs />
+      {body}
     </ModernPageShell>
   );
 }
@@ -798,7 +837,27 @@ function teamDynamicsLabel(
 }
 
 function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
-  if (items.length === 0) return null;
+  // Б-6 — три состояния. Пустой прогноз ≠ «скрыть»: показываем явный
+  // empty-state «Пока недостаточно данных» (прототип part-week блок 8),
+  // чтобы пользователь понимал, что Коре нужно накопить историю.
+  if (items.length === 0) {
+    return (
+      <GlassCard>
+        <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
+          Прогноз на следующую неделю
+        </CardTitle>
+        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+          <p className="text-sm font-medium" style={{ color: CHART.dim }}>
+            Пока недостаточно данных для прогноза
+          </p>
+          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed" style={{ color: CHART.faint }}>
+            Чтобы Кора строила прогноз, нужно несколько недель истории встреч и
+            обещаний. Прогноз появится, когда накопится достаточно недель.
+          </p>
+        </div>
+      </GlassCard>
+    );
+  }
   return (
     <GlassCard>
       <div className="flex flex-wrap items-center justify-between gap-2">

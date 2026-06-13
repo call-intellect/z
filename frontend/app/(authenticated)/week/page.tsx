@@ -3,19 +3,18 @@ import type { Metadata } from 'next';
 import { MobileShell } from '@/ui/mobile/MobileShell';
 import { MobileDealsClient } from '@/ui/mobile/exec/MobileDealsClient';
 
-import { WeeklyDigestClient } from '../dashboard/operations/weekly/WeeklyDigestClient';
+import { WeekDesktopClient } from './WeekDesktopClient';
 
 export const metadata: Metadata = {
   title: 'Неделя',
 };
 
 /**
- * НЕДЕЛЯ — `/week` (ТЗ 2026-06-13 «Редизайн кабинета», Ф0).
+ * НЕДЕЛЯ — `/week` (ТЗ редизайн кабинета, Ф2).
  *
  * Понедельничный ритм: слияние недельной сводки + операционного пульса +
- * портфеля целей. На Ф0 — каркас поверх готового `WeeklyDigestClient`
- * (старый `/dashboard/operations/weekly` теперь редиректит сюда). Полный состав
- * вкладок (Сводка · Пульс сейчас · Кто держит слово) достраивается в Ф2.
+ * «кто держит слово» в один экран с вкладками (`WeekDesktopClient`). Старые
+ * роуты `/dashboard/operations/weekly` и `/dashboard/portfolio` редиректят сюда.
  *
  * Мобайл: ниже md — «Дела» (`MobileDealsClient`), как и прежний роут.
  */
@@ -23,7 +22,7 @@ export default function WeekPage() {
   return (
     <MobileShell
       mobile={<MobileDealsClient />}
-      desktop={<WeeklyDigestClient />}
+      desktop={<WeekDesktopClient />}
     />
   );
 }

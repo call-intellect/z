@@ -1,0 +1,348 @@
+<!-- ============================ ПАМЯТЬ ============================ -->
+<section class="screen" id="screen-memory">
+
+  <!-- Поиск по памяти — гибридный результат с цитатами и уверенностью -->
+  <div class="glass float" style="margin-bottom:20px;">
+    <span class="glow blue"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-blue)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      </span>
+      <h3>Поиск по памяти компании</h3>
+      <span class="chip info" style="margin-left:auto"><span class="led"></span>гибридный поиск</span>
+    </div>
+    <div class="search-pill" style="width:100%; padding:13px 18px; font-size:14px; color:var(--text);">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <span>тариф для «Орбиты»</span>
+      <span style="margin-left:auto; color:var(--faint); font-size:12px;">найдено 4 за всё время</span>
+    </div>
+    <div class="row-list" style="margin-top:6px;">
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">«Орбита» переходит на расширенный тариф с июля — подтверждено на встрече</div>
+          <div class="meta">источник: встреча 12.06 <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">[01:57]</span> · решение зафиксировано</div>
+        </div>
+        <span class="chip ok"><span class="led"></span>уверенность 92%</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Скидку на первый месяц «Орбите» не давали — решено держать прайс</div>
+          <div class="meta">источник: переписка с менеджером 09.06 · правило по сделкам</div>
+        </div>
+        <span class="chip warn"><span class="led"></span>уверенность 64%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Топ-бар вкладок раздела -->
+  <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
+    <div class="pill-group">
+      <button class="pill active">Спросить</button>
+      <button class="pill">Лента</button>
+      <button class="pill">Реестры</button>
+    </div>
+    <span class="faint" style="font-size:12px;">3 входа вместо восьми пунктов меню — спрашиваете, читаете, смотрите свод</span>
+  </div>
+
+  <!-- ============================ 1. СПРОСИТЬ ============================ -->
+  <div class="section-h">Спросить — чат-помощник по памяти компании</div>
+  <div class="grid g-1-2">
+
+    <!-- Слева: список диалогов с авто-названиями -->
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        <h3>Диалоги</h3>
+        <span class="more">+ новый</span>
+      </div>
+      <div class="row-list">
+        <div class="list-row" style="background:oklch(1 0 0 / 0.04); border-radius:12px; padding:11px 12px; border-top:none;">
+          <span class="lead" style="background:var(--risk-bg)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Риски по поддержке</div><div class="meta">обновлён 14 минут назад · 6 ответов</div></div>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--info-bg)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h12"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Тарифная политика</div><div class="meta">вчера · 4 ответа</div></div>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--ok-bg)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Что обещали «Вектору»</div><div class="meta">11.06 · 3 ответа</div></div>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--warn-bg)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Блокеры по коннекторам</div><div class="meta">10.06 · 5 ответов</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Справа: окно чата с помощником -->
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-teal)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
+        </span>
+        <h3>Мастер Кора</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>помнит за всю команду</span>
+      </div>
+
+      <!-- Проактивная сводка-наблюдение от помощника -->
+      <div class="ai-card" style="margin-bottom:16px;">
+        <span class="glow amber" style="filter:blur(40px); opacity:.6"></span>
+        <p style="margin:0 0 14px;">
+          Я нашла противоречие в регламентах: «менеджер согласует скидку до 10% сам»
+          (<span class="cite">регламент сделок · ред. 02.06</span>) расходится с «любая скидка — только через директора»
+          (<span class="cite">планёрка 10.06 [12:30]</span>). Команда сейчас опирается на разные версии — стоит свести к одной.
+        </p>
+        <button class="ai-cta">Свести регламент →</button>
+      </div>
+
+      <!-- Лента сообщений -->
+      <div class="row-list" style="margin-bottom:16px;">
+        <div class="list-row" style="border-top:none; align-items:flex-start;">
+          <span class="avatar" style="background:var(--grad-violet); color:var(--text);">Я</span>
+          <div class="body">
+            <div class="ttl" style="font-weight:500;">Какие риски сейчас по клиентам?</div>
+            <div class="meta">вы · 2 минуты назад</div>
+          </div>
+        </div>
+        <div class="list-row" style="align-items:flex-start;">
+          <span class="lead" style="background:var(--grad-teal)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl" style="font-weight:400; line-height:1.55;">
+              Главный риск — поддержка: «Орбита» и ещё двое за неделю упоминали молчание поддержки
+              (<span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">встреча 12.06 [34:10]</span>),
+              это риск ухода. Второй — задержка оплаты коннекторов тормозит интеграцию «Вектора».
+            </div>
+            <div class="meta" style="display:flex; gap:8px; margin-top:8px;">
+              <span class="chip ok"><span class="led"></span>уверенность 88%</span>
+              <span class="faint">3 источника</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Поле ввода -->
+      <div class="search-pill" style="width:100%; padding:14px 18px; font-size:14px; color:var(--text); border-color:oklch(0.66 0.20 300/.3);">
+        <span style="color:var(--faint)">Спросите память компании…</span>
+        <span style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+          <span class="icon-btn" style="width:34px; height:34px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          </span>
+          <span class="btn primary" style="padding:8px 14px;">Спросить →</span>
+        </span>
+      </div>
+      <div class="faint" style="font-size:11.5px; margin-top:8px;">Голосом — только ввод, ответ всегда текстом</div>
+
+      <!-- Быстрые вопросы -->
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+        <span class="chip info" style="cursor:pointer"><span class="led"></span>Какие риски по клиентам?</span>
+        <span class="chip info" style="cursor:pointer"><span class="led"></span>Что решили по тарифам?</span>
+        <span class="chip info" style="cursor:pointer"><span class="led"></span>Что обещали «Орбите»?</span>
+        <span class="chip info" style="cursor:pointer"><span class="led"></span>Кто отвечает за коннекторы?</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ 2. ЛЕНТА ============================ -->
+  <div class="section-h mt">Лента памяти — что прибавилось за сегодня</div>
+  <div class="grid g-2-1">
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-pink)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </span>
+        <h3>Сегодня в памяти</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>✓ записано в память</span>
+      </div>
+      <div class="row-list">
+        <div class="list-row">
+          <span class="lead" style="background:var(--grad-blue)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl">Решение: «Орбиту» переводим на расширенный тариф с 1 июля</div>
+            <div class="meta">тип: решение · встреча 12.06 <span style="color:var(--cyan); cursor:pointer">[01:57]</span> · 11 минут назад</div>
+          </div>
+          <span class="chip info">решение</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--grad-amber)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M12 2v6M12 22a8 8 0 0 0 0-16"/><circle cx="12" cy="12" r="2"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl">Инсайт: трое клиентов за неделю упомянули молчание поддержки</div>
+            <div class="meta">тип: инсайт · радар · собран из 3 источников · 40 минут назад</div>
+          </div>
+          <span class="chip warn">инсайт</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--grad-teal)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M9 11l3 3 8-8"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl">Задача: подготовить ответ «Вектору» по срокам интеграции коннекторов</div>
+            <div class="meta">тип: задача · из планёрки 13.06 · 1 час назад</div>
+          </div>
+          <span class="chip ok">задача</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--grad-violet)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M6 3v12M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9c0 7-12 3-12 9"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl">Связь: «Орбита» и «Вектор» оба упёрлись в оплату коннекторов</div>
+            <div class="meta">тип: блок знаний · граф связал 2 сущности · 2 часа назад</div>
+          </div>
+          <span class="chip info">связь</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--grad-red)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          </span>
+          <div class="body">
+            <div class="ttl">Противоречие: две версии регламента по скидкам</div>
+            <div class="meta">тип: конфликт · нашёл помощник · ждёт сведения · 3 часа назад</div>
+          </div>
+          <span class="chip risk">конфликт</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Свод дня -->
+    <div class="glass float" style="background:linear-gradient(180deg, oklch(0.32 0.06 200/.4), oklch(0.22 0.04 250/.45)); border-color:oklch(0.70 0.16 245/.25)">
+      <span class="glow blue"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-blue)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        </span>
+        <h3>Прибавилось за день</h3>
+      </div>
+      <div class="hero-num glow-text" style="color:var(--cyan)">17</div>
+      <div class="faint" style="font-size:12px; margin:6px 0 18px;">новых единиц знания в памяти</div>
+      <div class="row-list">
+        <div class="list-row" style="padding:9px 0; border-top:none;">
+          <span class="chip info" style="flex:none"><span class="led"></span>решения</span>
+          <div class="body"><div class="ttl">4</div></div>
+        </div>
+        <div class="list-row" style="padding:9px 0;">
+          <span class="chip warn" style="flex:none"><span class="led"></span>инсайты</span>
+          <div class="body"><div class="ttl">3</div></div>
+        </div>
+        <div class="list-row" style="padding:9px 0;">
+          <span class="chip ok" style="flex:none"><span class="led"></span>задачи</span>
+          <div class="body"><div class="ttl">7</div></div>
+        </div>
+        <div class="list-row" style="padding:9px 0;">
+          <span class="chip risk" style="flex:none"><span class="led"></span>конфликты</span>
+          <div class="body"><div class="ttl">1</div></div>
+        </div>
+      </div>
+      <!-- мини-спарклайн динамики недели -->
+      <svg class="spark" width="100%" height="46" viewBox="0 0 240 46" preserveAspectRatio="none" style="margin-top:14px;">
+        <defs><linearGradient id="memSpark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.80 0.13 205 / 0.5)"/><stop offset="1" stop-color="oklch(0.80 0.13 205 / 0)"/></linearGradient></defs>
+        <path d="M0 38 L40 30 L80 32 L120 20 L160 24 L200 12 L240 8 L240 46 L0 46 Z" fill="url(#memSpark)"/>
+        <polyline points="0,38 40,30 80,32 120,20 160,24 200,12 240,8" fill="none" stroke="oklch(0.80 0.13 205)" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <div class="faint" style="font-size:11.5px; margin-top:6px;">память растёт 7 дней подряд</div>
+    </div>
+  </div>
+
+  <!-- ============================ 3. РЕЕСТРЫ ============================ -->
+  <div class="section-h mt">Реестры — структурированная память по полкам</div>
+  <div class="glass float">
+    <span class="glow"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-violet)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18v13H3zM3 7l3-4h12l3 4M9 12h6"/></svg>
+      </span>
+      <h3>Реестр памяти</h3>
+      <div class="pill-group" style="margin-left:auto; padding:3px;">
+        <button class="pill active" style="padding:5px 12px; font-size:12px;">Решения</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;">Правила</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;">Темы</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;">Сущности</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;">Таблицы</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;">Идеи</button>
+      </div>
+    </div>
+
+    <table class="mtable">
+      <thead>
+        <tr>
+          <th>Решение</th>
+          <th>Статус</th>
+          <th>Дата</th>
+          <th>Источник</th>
+          <th class="r">Доведено</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="max-width:340px;">«Орбиту» переводим на расширенный тариф с 1 июля</td>
+          <td><span class="chip ok"><span class="led"></span>внедрено</span></td>
+          <td class="faint">12.06</td>
+          <td><span style="color:var(--cyan); cursor:pointer">встреча [01:57]</span></td>
+          <td class="r"><div style="display:flex; justify-content:flex-end;"><div class="progress" style="width:90px;"><span style="width:100%"></span></div></div></td>
+        </tr>
+        <tr>
+          <td style="max-width:340px;">Выбрать подрядчика на внедрение коннекторов</td>
+          <td><span class="chip info"><span class="led"></span>принято</span></td>
+          <td class="faint">11.06</td>
+          <td><span style="color:var(--cyan); cursor:pointer">планёрка [12:30]</span></td>
+          <td class="r"><div style="display:flex; justify-content:flex-end;"><div class="progress warn" style="width:90px;"><span style="width:45%"></span></div></div></td>
+        </tr>
+        <tr>
+          <td style="max-width:340px;">Свести регламент по скидкам к одной версии</td>
+          <td><span class="chip risk"><span class="led"></span>застряло</span></td>
+          <td class="faint">10.06</td>
+          <td><span style="color:var(--cyan); cursor:pointer">конфликт в графе</span></td>
+          <td class="r"><div style="display:flex; justify-content:flex-end;"><div class="progress risk" style="width:90px;"><span style="width:12%"></span></div></div></td>
+        </tr>
+        <tr>
+          <td style="max-width:340px;">Запустить недельный регламент ответов поддержки</td>
+          <td><span class="chip warn"><span class="led"></span>в работе</span></td>
+          <td class="faint">09.06</td>
+          <td><span style="color:var(--cyan); cursor:pointer">радар сигналов</span></td>
+          <td class="r"><div style="display:flex; justify-content:flex-end;"><div class="progress warn" style="width:90px;"><span style="width:60%"></span></div></div></td>
+        </tr>
+        <tr>
+          <td style="max-width:340px;">Держать прайс без скидки на первый месяц</td>
+          <td><span class="chip ok"><span class="led"></span>внедрено</span></td>
+          <td class="faint">07.06</td>
+          <td><span style="color:var(--cyan); cursor:pointer">переписка с менеджером</span></td>
+          <td class="r"><div style="display:flex; justify-content:flex-end;"><div class="progress" style="width:90px;"><span style="width:100%"></span></div></div></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="display:flex; align-items:center; gap:10px; margin-top:16px; flex-wrap:wrap;">
+      <span class="chip ok"><span class="led"></span>2 внедрено</span>
+      <span class="chip info"><span class="led"></span>1 принято</span>
+      <span class="chip warn"><span class="led"></span>1 в работе</span>
+      <span class="chip risk"><span class="led"></span>1 застряло</span>
+      <span class="faint" style="margin-left:auto; font-size:12px;">не все решения доходят — Кора показывает где застряло, чтобы помочь сдвинуть</span>
+    </div>
+  </div>
+
+</section>

@@ -573,7 +573,7 @@ function closeOverlay() {
   if (body) body.innerHTML = '';
 }
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeOverlay();
+  if (e.key === 'Escape') { closeOverlay(); closeChat(); }
 });
 
 /* --- Tab-движок: переключение вкладок в пределах data-group --- */
@@ -614,6 +614,204 @@ function applyFilter(el) {
   });
 }
 
+/* ---------------------------------------------------------------------------
+   Ф6: чат «Спросить Кору» (офлайн KB) + плавающий значок-помощник
+   --------------------------------------------------------------------------- */
+
+/* --- Инъекция плавающего значка + панели чата (идемпотентно) --- */
+function ensureChat() {
+  if (!document.getElementById('kora-fab')) {
+    const fab = document.createElement('button');
+    fab.id = 'kora-fab';
+    fab.className = 'kora-fab';
+    fab.setAttribute('data-action', 'ask-kora');
+    fab.setAttribute('aria-label', 'Спросить Кору');
+    fab.innerHTML =
+      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' +
+        '<path d="M9.5 9.5l1 1.6 1.6-.6-.6 1.6 1.6 1-1.6.6.6 1.6-1.6-.6-1 1.6-1-1.6-1.6.6.6-1.6L7 11.5l1.6-.6z" fill="currentColor" stroke="none"/>' +
+      '</svg>' +
+      '<span class="kora-fab-label">Спросить Кору</span>';
+    document.body.appendChild(fab);
+  }
+  if (!document.getElementById('chat')) {
+    const chat = document.createElement('div');
+    chat.id = 'chat';
+    chat.className = 'chat-panel';
+    chat.hidden = true;
+    chat.innerHTML =
+      '<div class="chat-head">' +
+        '<span class="chat-ico">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>' +
+        '</span>' +
+        '<div class="chat-titles">' +
+          '<div class="chat-title">Спросить Кору</div>' +
+          '<div class="chat-sub">Память компании · ответ с цитатами</div>' +
+        '</div>' +
+        '<button class="chat-close" data-action="chat-close" aria-label="Закрыть">×</button>' +
+      '</div>' +
+      '<div class="chat-thread" id="chat-thread"></div>' +
+      '<div class="chat-suggest" id="chat-suggest"></div>' +
+      '<form class="chat-form" id="chat-form" autocomplete="off">' +
+        '<input class="chat-input" id="chat-input" type="text" placeholder="Спросите память компании…" aria-label="Вопрос Коре">' +
+        '<button class="chat-send" type="button" data-action="chat-send" aria-label="Отправить">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>' +
+        '</button>' +
+      '</form>';
+    document.body.appendChild(chat);
+
+    // Отправка по Enter в инпуте
+    const input = chat.querySelector('#chat-input');
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); chatSend(); }
+      });
+    }
+    // submit формы не должен перезагружать страницу (file://)
+    const form = chat.querySelector('#chat-form');
+    if (form) form.addEventListener('submit', (e) => { e.preventDefault(); chatSend(); });
+  }
+}
+ensureChat();
+
+/* --- Матчер по базе знаний (офлайн) --- */
+function norm(s) {
+  return (s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+function matchKB(query) {
+  const q = norm(query);
+  if (!q) return null;
+  const all = [
+    ...((window.DEMO && window.DEMO.kbCompany) || []).map(e => ({ ...e, domain: 'company' })),
+    ...((window.DEMO && window.DEMO.kbProduct) || []).map(e => ({ ...e, domain: 'product' })),
+  ];
+  let best = null, bestScore = 0;
+  all.forEach(e => {
+    let score = 0;
+    (e.keywords || []).forEach(k => { if (q.includes(norm(k))) score += 2; });
+    norm(e.q).split(' ').forEach(w => { if (w.length > 3 && q.includes(w)) score += 1; });
+    if (score > bestScore) { bestScore = score; best = e; }
+  });
+  return bestScore >= 2 ? best : null;
+}
+
+/* --- Подсказки-чипы: несколько примеров из company + product --- */
+function chatSuggestionPool() {
+  const company = ((window.DEMO && window.DEMO.kbCompany) || []).slice(0, 3).map(e => e.q);
+  const product = ((window.DEMO && window.DEMO.kbProduct) || []).slice(0, 3).map(e => e.q);
+  return company.concat(product);
+}
+function renderSuggestChips(questions) {
+  const box = document.getElementById('chat-suggest');
+  if (!box) return;
+  box.innerHTML = (questions || []).map(q =>
+    '<button class="chat-chip" data-action="chat-suggest" data-q="' + esc(q) + '">' + esc(q) + '</button>'
+  ).join('');
+}
+
+/* --- Тред: добавить реплику пользователя / бота --- */
+function chatScrollDown() {
+  const thread = document.getElementById('chat-thread');
+  if (thread) thread.scrollTop = thread.scrollHeight;
+}
+function chatAddUser(text) {
+  const thread = document.getElementById('chat-thread');
+  if (!thread) return;
+  const el = document.createElement('div');
+  el.className = 'chat-msg user';
+  el.textContent = text;
+  thread.appendChild(el);
+  chatScrollDown();
+}
+function chatAddTyping() {
+  const thread = document.getElementById('chat-thread');
+  if (!thread) return null;
+  const el = document.createElement('div');
+  el.className = 'chat-msg bot';
+  el.innerHTML = '<span class="chat-typing"><span></span><span></span><span></span></span>';
+  thread.appendChild(el);
+  chatScrollDown();
+  return el;
+}
+function chatBotHtml(entry) {
+  let html = esc(entry.a);
+  if (Array.isArray(entry.cites) && entry.cites.length) {
+    const meetings = (window.DEMO && window.DEMO.meetings) || [];
+    const chips = entry.cites.map(cid => {
+      const m = meetings.find(x => x.id === cid);
+      const label = m ? (m.title || (m.date ? 'встреча ' + m.date : cid)) : cid;
+      return '<button class="chat-cite" data-action="open-meeting" data-id="' + esc(cid) + '">' +
+               '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>' +
+               esc(label) +
+             '</button>';
+    }).join('');
+    html += '<div class="chat-cites">' + chips + '</div>';
+  }
+  return html;
+}
+function chatBotFallback() {
+  // 3–4 подсказки: смесь company + product
+  const company = ((window.DEMO && window.DEMO.kbCompany) || []).slice(0, 2).map(e => e.q);
+  const product = ((window.DEMO && window.DEMO.kbProduct) || []).slice(0, 2).map(e => e.q);
+  const qs = company.concat(product);
+  let html = 'В демо я отвечаю на типовые вопросы — попробуйте один из этих:';
+  html += '<div class="chat-cites">' + qs.map(q =>
+    '<button class="chat-cite" data-action="chat-suggest" data-q="' + esc(q) + '">' + esc(q) + '</button>'
+  ).join('') + '</div>';
+  return html;
+}
+
+/* --- Ответить на вопрос (общий путь для send/suggest) --- */
+function chatAnswer(query) {
+  const text = (query || '').trim();
+  if (!text) return;
+  // если чат закрыт (клик по чипу-подсказке вне панели) — открыть
+  const chat = document.getElementById('chat');
+  if (chat && chat.hidden) openChat();
+  chatAddUser(text);
+  const typing = chatAddTyping();
+  const entry = matchKB(text);
+  setTimeout(() => {
+    if (typing) typing.innerHTML = entry ? chatBotHtml(entry) : chatBotFallback();
+    chatScrollDown();
+  }, 600);
+}
+function chatSend() {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const text = input.value;
+  if (!text.trim()) return;
+  input.value = '';
+  chatAnswer(text);
+}
+
+/* --- Открыть/закрыть панель чата --- */
+let _chatGreeted = false;
+function openChat() {
+  ensureChat();
+  const chat = document.getElementById('chat');
+  if (!chat) return;
+  chat.hidden = false;
+  if (!_chatGreeted) {
+    const thread = document.getElementById('chat-thread');
+    if (thread) {
+      const greet = document.createElement('div');
+      greet.className = 'chat-msg bot';
+      greet.textContent = 'Здравствуйте! Я Кора — память вашей компании. Спросите меня о клиентах, рисках, решениях или о самом продукте. Вот примеры:';
+      thread.appendChild(greet);
+    }
+    renderSuggestChips(chatSuggestionPool());
+    _chatGreeted = true;
+  }
+  const input = document.getElementById('chat-input');
+  if (input) input.focus();
+  chatScrollDown();
+}
+function closeChat() {
+  const chat = document.getElementById('chat');
+  if (chat) chat.hidden = true;
+}
+
 /* --- Делегированный диспетчер: один слушатель на document --- */
 const ACTIONS = {
   'tab': activateTab,
@@ -630,6 +828,10 @@ const ACTIONS = {
   'decision-return': el => decisionAction(el.dataset.id, 'return'),
   'decision-postpone': el => decisionAction(el.dataset.id, 'postpone'),
   'close-overlay': closeOverlay,
+  'ask-kora': openChat,
+  'chat-close': closeChat,
+  'chat-send': chatSend,
+  'chat-suggest': el => chatAnswer(el.dataset.q),
 };
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');

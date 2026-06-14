@@ -71,6 +71,33 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🛠️ 2026-06-14 — Мастер-фиксы кабинета: рефералка + хаб «Оцифровано» (A/B/C)
+
+> Контракт: ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb` (8 коммитов). ТЗ: `plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (части A/B/C). second-brain: `01_projects/director-dashboard.md`, `01_projects/api-layer.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md`.
+>
+> **Зачем для прода:** доработка кабинета по итогам аудита. (A) светлая тема доведена до конца — тема-зависимые токены поверхностей вместо белых оверлеев в modern-примитивах и ~24 файлах кабинета; ack «✓ Записано в память компании» на чек-ине; бейдж «Спросил руководитель» в Ленте Коры; синхронизация `/intake` с очередью решений; виджет «Висят без ответа ≥3 дней» на /week; CSV-экспорт «Скачать для планёрки»; merge отделов переносит FK (Metric/Interaction/OrgUnit/Entity); петля next-step→Issue с `IntakeIssue.sourceBlockIds`. (B) пункт меню «Партнёрка» (/referrals) вернулся в кабинет, persistent role-баннер «N из 3» вместо промо-полоски, редизайн кабинета рефералки на modern/, новый эндпоинт прогресса вознаграждения. (C) пункт меню «Оцифровано» (/regulations) — хаб с 4 типами норм + вкладкой шаблонов процессов + провенанс-цитатами + summary-виджетом на «Сегодня».
+>
+> **1 миграция (авто, аддитивная колонка).** **3 новых ENV (все с дефолтами — действий владельца НЕ требуют).** **Seed/patch/backfill новых нет.** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (3 новых, рабочие дефолты — действий владельца НЕ требуют):**
+  - `DASHBOARD_THEME_SILENCE_ENABLED` (zBool default `true`) — kill-switch детектора молчащих тем (оживлён: раньше флаг был мёртв). Аварийный откат: `=false` в `.env` + рестарт → cron `theme-silence-detector` no-op.
+  - `DASHBOARD_THEME_SILENCE_WEEKS` (int default `3`) — порог недель молчания темы (раньше — только AdminSetting `dashboard.theme_silence_weeks`; ENV даёт прод-fallback).
+  - `USE_APPOINTMENT_FOR_PERSON_ROLES` (zBool default `false`) — флаг миграции источника ролей `PersonRole`→`Appointment` (`persons.service` читает `cfg.persons.useAppointment`). Дефолт OFF — поведение не меняется до явного перевода. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting** — новых ключей нет (ENV-флаги Шага 1 имеют code-default).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260614110154_add_intake_source_block_ids`, аддитивная, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): `ALTER TABLE "IntakeIssue" ADD COLUMN "sourceBlockIds" TEXT[] DEFAULT ARRAY[]::TEXT[]` (петля next-step→Issue→DecisionTaskLink('derived')). Backfill НЕ нужен (default `ARRAY[]` = пустой массив для существующих строк). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новая миграция в PrismaClient, новые контроллеры/эндпоинты, новые ENV, фронт — новые пункты меню + редизайн `/referrals` + хаб `/regulations`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит новые эндпоинты: `GET /api/v1/referrals/me/reward-progress`, `GET /api/v1/regulations/:id/sources`, `GET /api/v1/regulations/summary`;
+  - (б) `GET /api/v1/referrals/me/reward-progress` отдаёт `{hasProfile, activePaying, targetClients, monthlyEarnedKopecks}` (не 500);
+  - (в) `GET /api/v1/regulations/summary` отдаёт счётчики по 4 типам норм; `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты;
+  - (г) меню кабинета содержит пункты «Партнёрка» (/referrals) и «Оцифровано» (/regulations); `/policies` редиректит на `/regulations?kind=policy`; дубля `/processes` в меню нет;
+  - (д) светлая тема: в кабинете (modern-примитивы, /referrals, хаб) нет «светлое-на-светлом» от белых оверлеев — фон поверхностей берётся из тема-токенов.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🗂️ 2026-06-13 — Редизайн кабинета: ритмы (Сегодня/Неделя/Месяц) + очередь решений + Лента Коры (Ф0–Ф10)
 
 > Контракт: ветка `feature/cabinet-redesign-rhythms`, 23 коммита. ТЗ: `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10). second-brain: `05_история/2026-06-13-cabinet-redesign-implementation.md`, `01_projects/director-dashboard.md`. Реестр флагов — `docs/operations/feature-flags.md`.

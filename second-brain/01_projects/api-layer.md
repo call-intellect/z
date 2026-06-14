@@ -58,6 +58,7 @@ covers: реестр всех REST endpoints backend по модулям
 | GET | `/api/v1/referrals/me/income-chart` | 12 месяцев `{month, incomeRub, activeClients}` |
 | GET | `/api/v1/referrals/me/funnel?period=30d\|90d\|all` | Воронка `{clicks, signups, firstPayments, activeNow, conversions}` |
 | POST | `/api/v1/referrals/me/promo-event` | Трекинг impression/click/dismissed промо-баннера. Throttle 30/min/IP |
+| GET | `/api/v1/referrals/me/reward-progress` | Прогресс к вознаграждению для persistent role-баннера `ReferralRewardBanner`: `{hasProfile, activePaying, targetClients, monthlyEarnedKopecks}`. (2026-06-14, ТЗ cabinet-master-fixes B2) |
 
 `GET /api/v1/admin/referrals/:id` (super_admin) теперь использует `listClientsForAdmin` — НЕ маскированный, со всеми `org.name/id` для аудита.
 
@@ -200,6 +201,12 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 ## Regulations (единый API регламентов/процессов/политик/инструкций)
 
 Единая поверхность `/api/v1/regulations` агрегирует несколько таблиц через query-параметр `kind`. Полная карта эндпоинтов и DTO — [[../02_architecture/module-map]] §«SBA α-7 / Specialist 3.1». **Мастер-ТЗ промптов (2026-06-10):** `kind=instruction` добавлен как 4-я сущность — `GET /regulations?kind=instruction` (list), `GET /regulations/:id?kind=instruction` (get), `POST /regulations/:id/confirm` читают/пишут **`prisma.instruction`** (отдельная таблица `instructions`, см. [[../02_architecture/data-model]]). RBAC — ResourceType `instruction` (зеркалит `process`). Detail отдаёт поле `extractionStatus` (Существует / Нужен / Обсуждается).
+
+**Хаб «Оцифровано» (2026-06-14, ТЗ cabinet-master-fixes часть C):** `/regulations` поднят в видимый пункт меню «Оцифровано», страница стала хабом (4 типа норм + вкладка шаблонов процессов). Два новых эндпоинта:
+- `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты (источники карточки до цитаты), фронт — аккордеон «Источники» (C3).
+- `GET /api/v1/regulations/summary` — агрегированные счётчики по 4 типам норм; питает чипы-счётчики хаба, блок «Недавно оцифровано» и summary-виджет «Оцифровано» на экране «Сегодня» (C4).
+
+`/policies` теперь redirect на `/regulations?kind=policy`; дубль пункта `/processes` из меню убран (C1). См. [[regulations]] §«Хаб "Оцифровано"».
 
 ## Curation (Слой 4)
 

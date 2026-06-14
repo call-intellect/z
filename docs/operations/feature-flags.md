@@ -126,6 +126,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `CDM_INTERVIEW_ENABLED` / `knowledge.cdmInterviewEnabled` | 🟢 ВКЛ | CDM-интервью носителя роли: Кора по свежим reasoning-кейсам сама задаёт носителю до 5 не наводящих вопросов ретроспективного разбора (Critical Decision Method — «почему выбрали этот вариант», «какие альтернативы отвергли») через probe (`skill.cdm_interview`); ответ (текст/голос) идёт в граф как high-priority reasoning (`signalTypeHint='reasoning'`). Выкл → Кора перестаёт задавать новые CDM-вопросы носителям; ответы на уже заданные вопросы продолжают обрабатываться (closing-loop probe не гейтится). Лимиты — AdminSetting `knowledge.cdmInterviewMaxQuestions` (5) / `knowledge.cdmInterviewCooldownDays` (7). ENV-рубильник + AdminSetting (resolveSync, zBool default true). (ТЗ clone-persona-method-layer Э3.1) |
 | `PERSONA_LAYER_VALIDATION_ENABLED` / `knowledge.personaLayerValidationEnabled` | 🟢 ВКЛ | Еженедельная поведенческая оценка качества клона (`PersonaLayerValidationCron`, вс 07:00, после persona-build): на реальных кейсах роли LLM-судья (`persona-behavior-judge`) сравнивает ответы клона со старой persona v1 («только черты») и новой v2 (все слои метода) → метрика `clone_persona_layer_score{variant}` + лог; ничего не блокирует и не меняет (только наблюдение прод-качества, R10 — без human-approval). Выкл → еженедельная поведенческая оценка persona v1-vs-v2 не запускается; на работу клона не влияет. Число кейсов на роль — AdminSetting `knowledge.personaValidationCasesPerRole` (3). ENV-рубильник + AdminSetting (resolveSync, zBool default true). (ТЗ clone-persona-method-layer ВАЛ.1) |
 | `dashboard.theme_silence.enabled` | 🟢 ВКЛ | Детектор молчащих тем (`@Cron('theme-silence-detector')`): тема графа без активности ≥ N недель → создаётся `Insight` «тема замолчала» (порог — крутилка `dashboard.theme_silence_weeks`, default 3). Выкл → cron no-op, инсайты о замолчавших темах не создаются; на остальное не влияет. AdminSetting-ключ (kill-switch, code-default true), действий владельца НЕ требует. (ТЗ cabinet-redesign-rhythms Ф8.2/8.1) |
+| `DASHBOARD_THEME_SILENCE_ENABLED` | 🟢 ВКЛ | ENV-fallback того же детектора молчащих тем (раньше флаг был **мёртв** — теперь оживлён в `env.schema.ts`, подсхема `KnowledgeCoreSchema`, zBool default `true`; порог недель — `DASHBOARD_THEME_SILENCE_WEEKS`, int default `3`). Аварийный откат: `=false` в `.env` + рестарт → детектор no-op. Действий владельца НЕ требует. (ТЗ cabinet-master-fixes A3) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -144,6 +145,12 @@ _(пусто — все доставки в Telegram авторизованы в
 Это не «забытые», а незрелые. По Ship-On: когда дозреют — выкатятся сразу включёнными. Сейчас трогать не нужно.
 
 `MAIL_INBOX_ENABLED` (задачи из писем) · `CLONE_V2_ENABLED` · `SPECIALISTS_COMBINED_ENABLED` · `BITEMPORAL_ENABLED` / `BITEMPORAL_SUPERSEDE_ENABLED` (версионирование знаний во времени) · `PROMPT_EVOLUTION_ENABLED` (авто-эволюция промптов, GEPA).
+
+### Флаг миграции (default OFF до переключения источника данных)
+
+| Флаг | Сейчас | Что переключает |
+|---|---|---|
+| `USE_APPOINTMENT_FOR_PERSON_ROLES` | ⚫ ВЫКЛ | Источник ролей человека: при `false` `persons.service` читает старую модель `PersonRole`, при `true` — новую `Appointment`. Дефолт OFF — поведение не меняется. Это **флаг миграции данных**, не продуктовый рубильник: включается разово после переноса/сверки назначений. ENV (`cfg.persons.useAppointment`, `env.schema.ts` подсхема `KnowledgeCoreSchema`, zBool default `false`). (ТЗ cabinet-master-fixes A3) |
 
 ---
 

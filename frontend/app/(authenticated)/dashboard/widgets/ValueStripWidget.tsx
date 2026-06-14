@@ -95,7 +95,7 @@ export function ValueStripWidget({
           <div
             key={cell.key}
             className="rounded-2xl p-4"
-            style={{ background: 'oklch(1 0 0 / 0.04)' }}
+            style={{ background: 'var(--surface-inset)' }}
           >
             <div
               className="grid h-9 w-9 place-items-center rounded-xl"

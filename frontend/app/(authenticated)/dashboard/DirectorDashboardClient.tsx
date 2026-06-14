@@ -285,7 +285,7 @@ export function DirectorDashboardClient() {
             <Link
               href="/week"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               aria-label="Открыть Неделю"
             >
               <Calendar size={14} strokeWidth={1.75} className="shrink-0" />
@@ -294,7 +294,7 @@ export function DirectorDashboardClient() {
             <Link
               href="/month"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               aria-label="Открыть Итоги месяца"
             >
               <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
@@ -474,7 +474,7 @@ function PeriodSwitch({
   return (
     <div
       className="inline-flex items-center rounded-md p-0.5 text-sm"
-      style={{ background: 'oklch(1 0 0 / 0.06)' }}
+      style={{ background: 'var(--surface-inset)' }}
     >
       {(['week', 'month'] as const).map((p) => (
         <button
@@ -629,7 +629,7 @@ function RequiresAnchorCard({
                 <li key={s} className="flex items-center gap-2 text-sm">
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+                    style={{ background: 'var(--surface-inset-strong)', color: CHART.dim }}
                   >
                     {REQUIRES_SOURCE_LABEL[s]}
                   </span>
@@ -643,7 +643,7 @@ function RequiresAnchorCard({
           <Link
             href="/actions"
             className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium transition-transform hover:translate-y-[-1px]"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.text }}
+            style={{ background: 'var(--surface-inset-strong)', color: CHART.text }}
           >
             Открыть очередь
             <ArrowRight size={15} />
@@ -733,7 +733,7 @@ function SharpRadarCard({
               <li key={s.id} style={{ opacity }}>
                 <Link
                   href={href}
-                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <span
                     className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
@@ -826,11 +826,11 @@ function DayFeedCard({
               <li key={`${e.kind}:${e.id}`}>
                 <Link
                   href={e.link || '/meetings'}
-                  className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                  className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <span
                     className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.faint }}
+                    style={{ background: 'var(--surface-inset-strong)', color: CHART.faint }}
                   >
                     {EVENT_KIND_LABEL[e.kind] ?? e.kind}
                   </span>
@@ -910,7 +910,7 @@ function CheckinDisciplineTodayPill({
         <div className="flex items-center gap-2.5">
           <span
             className="grid h-8 w-8 place-items-center rounded-xl"
-            style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.faint }}
+            style={{ background: 'var(--surface-inset)', color: CHART.faint }}
           >
             <ClipboardCheck size={16} />
           </span>

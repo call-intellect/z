@@ -65,7 +65,7 @@ export function CauseCategoryMapWidget(props: {
         </CardTitle>
         <p
           className="mt-4 rounded-xl p-3 text-sm"
-          style={{ background: 'oklch(1 0 0 / 0.04)', color: CHART.dim }}
+          style={{ background: 'var(--surface-inset)', color: CHART.dim }}
         >
           За последние 7 дней новых сигналов средней / высокой важности нет.
         </p>

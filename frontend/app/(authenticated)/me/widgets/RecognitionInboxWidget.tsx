@@ -41,7 +41,7 @@ export function RecognitionInboxWidget() {
               <li
                 key={i}
                 className="h-12 animate-pulse rounded-xl"
-                style={{ background: 'oklch(1 0 0 / 0.05)' }}
+                style={{ background: 'var(--surface-inset)' }}
               />
             ))}
           </ul>
@@ -55,7 +55,7 @@ export function RecognitionInboxWidget() {
               <li
                 key={r.id}
                 className="rounded-xl px-3 py-2.5"
-                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                style={{ background: 'var(--surface-inset)' }}
               >
                 <div className="flex items-center gap-2">
                   <span

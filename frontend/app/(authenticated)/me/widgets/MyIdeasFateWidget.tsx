@@ -50,7 +50,7 @@ export function MyIdeasFateWidget() {
               <li
                 key={i}
                 className="h-12 animate-pulse rounded-xl"
-                style={{ background: 'oklch(1 0 0 / 0.05)' }}
+                style={{ background: 'var(--surface-inset)' }}
               />
             ))}
           </ul>
@@ -64,7 +64,7 @@ export function MyIdeasFateWidget() {
               <li key={idea.id}>
                 <Link
                   href={ideaHref(idea.id)}
-                  className="block rounded-xl px-3 py-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                  className="block rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <p
                     className="line-clamp-2 text-sm"
@@ -76,7 +76,7 @@ export function MyIdeasFateWidget() {
                     <span
                       className="rounded-full px-2 py-0.5 font-medium"
                       style={{
-                        background: 'oklch(1 0 0 / 0.06)',
+                        background: 'var(--surface-inset)',
                         color: CHART.dim,
                       }}
                     >

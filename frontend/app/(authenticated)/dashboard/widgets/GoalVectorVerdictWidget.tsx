@@ -165,7 +165,7 @@ export function GoalVectorVerdictWidget({
                 <span
                   key={chip.key}
                   className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
-                  style={{ background: 'oklch(1 0 0 / 0.05)', color: CHART.dim }}
+                  style={{ background: 'var(--surface-inset)', color: CHART.dim }}
                 >
                   <span
                     className="h-2 w-2 rounded-full"

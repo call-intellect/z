@@ -49,7 +49,7 @@
 - **A1.3 — hover:** 9× `hover:bg-white/5` → `--surface-hover` (flip).
 - **A1.4 (опц, low)** — anti-FOUC inline-скрипт темы в `app/layout.tsx` до гидрации.
 
-**Статус:** [ ]
+**Статус:** [x] (кроме A1.4 — low, опц., вне поставки) — РАСХОЖДЕНИЕ с ТЗ: светлая тема и var-перевод modern уже были (Ф10); реальная работа — **белые оверлеи**. A1-core: токены `--surface-inset/-strong/-hover` + `--border-inset` (обе темы) + 7 modern-примитивов + гард. A1.1 `color: CHART.x`-как-текст: подавляющее большинство уже `var(--text-*)`; точечные data-цвета-как-текст (StatCard дельта) → парные `--chip-*-fg/bg`. A1.2/A1.3 sweep: ~50 белых оверлеев `oklch(1 0 0 /…)` + все `hover:bg-white/5`/`hover:bg-[oklch(1_0_0…)]` в 24 файлах кабинета → тема-токены; 0 остатков (греп). Гард распространён на modern/ + referrals/.
 
 ## A2. merge отделов — полный перенос FK
 **Корень:** [departments.service.ts:432-523](backend/src/modules/departments/services/departments.service.ts#L432) пропускает FK; источник soft-deleted → `SetNull` не срабатывает → висячие ссылки. Дополнить переносом: `Metric.attachedToDepartmentId` (`schema:6089`), `Interaction.counterpartDepartmentId` (`:5420`), `Project.departmentId` (`:8797`), `Person.primaryDepartmentId`, `DepartmentHead`, `Entity`(DepartmentEntity), `PersonRole`, дочерние `parentDepartmentId` (`:4693`). + регресс-тест «после merge 0 ссылок на источник».

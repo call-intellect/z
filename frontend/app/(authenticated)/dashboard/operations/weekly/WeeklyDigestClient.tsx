@@ -117,8 +117,8 @@ export function WeeklyDigestClient({
         <button
           type="button"
           onClick={() => goToWeek(prevWeek)}
-          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/5"
-          style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
         >
           ← Прошлая неделя
         </button>
@@ -138,8 +138,8 @@ export function WeeklyDigestClient({
           type="button"
           onClick={() => goToWeek(nextWeek)}
           disabled={nextWeekDisabled}
-          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-          style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-40"
+          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
         >
           Следующая неделя →
         </button>
@@ -394,7 +394,7 @@ function GoalStat({
   return (
     <div
       className="rounded-2xl p-3"
-      style={{ background: 'oklch(1 0 0 / 0.04)' }}
+      style={{ background: 'var(--surface-inset)' }}
     >
       <div
         className="text-2xl font-semibold leading-none tabular-nums"
@@ -490,7 +490,7 @@ function InsightsSection({
               <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
               <span
                 className="rounded px-2 py-0.5 text-xs"
-                style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+                style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               >
                 {it.kind}
               </span>
@@ -680,8 +680,8 @@ function OpenLink({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      className="rounded-full px-2 py-0.5 text-xs transition-colors hover:bg-white/5"
-      style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+      className="rounded-full px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+      style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
     >
       Открыть
     </Link>
@@ -846,7 +846,7 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
         <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
           Прогноз на следующую неделю
         </CardTitle>
-        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'var(--surface-inset)' }}>
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Пока недостаточно данных для прогноза
           </p>
@@ -878,12 +878,12 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
             <li
               key={f.metric}
               className="rounded-xl p-3 text-sm"
-              style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              style={{ background: 'var(--surface-inset)' }}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className="rounded px-2 py-0.5 text-[11px]"
-                  style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+                  style={{ background: 'var(--surface-inset)', color: CHART.dim }}
                 >
                   {forecastMetricLabel(f.metric)}
                 </span>

@@ -333,7 +333,7 @@ export function OperationsDashboardClient({
           {data.maturity.score !== null ? (
             <span
               className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
             >
               оценка
               {maturityDomainCount > 0
@@ -401,7 +401,7 @@ export function OperationsDashboardClient({
                   <li
                     key={f.id}
                     className="rounded-xl p-3"
-                    style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                    style={{ background: 'var(--surface-inset)' }}
                   >
                     <div className="flex flex-wrap items-baseline gap-2 text-sm">
                       <strong>{f.fromPersonName ?? 'неизвестный'}</strong>
@@ -463,7 +463,7 @@ function TeamTemperatureSection(props: {
           </CardTitle>
           <div
             className="inline-flex gap-1 rounded-xl p-1"
-            style={{ background: 'oklch(1 0 0 / 0.06)' }}
+            style={{ background: 'var(--surface-inset)' }}
           >
             <TemperatureModePill
               active={mode === 'overall'}
@@ -505,7 +505,7 @@ function TemperatureModePill(props: {
       className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
       style={
         props.active
-          ? { background: 'oklch(1 0 0 / 0.1)', color: CHART.text }
+          ? { background: 'var(--surface-inset-strong)', color: CHART.text }
           : { color: CHART.dim }
       }
     >
@@ -613,7 +613,7 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
                 <li
                   key={author}
                   className="rounded-xl p-3"
-                  style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                  style={{ background: 'var(--surface-inset)' }}
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Avatar name={author} />
@@ -775,7 +775,7 @@ function MissingCheckInsCard(props: {
               <li
                 key={m.personId}
                 className="rounded-lg px-3 py-1.5"
-                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                style={{ background: 'var(--surface-inset)' }}
               >
                 {m.personName ?? 'Без имени'}
               </li>

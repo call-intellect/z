@@ -386,7 +386,7 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
                   style={
                     i === 0
                       ? undefined
-                      : { borderTop: '1px solid oklch(1 0 0 / 0.06)' }
+                      : { borderTop: '1px solid var(--border-inset)' }
                   }
                 >
                   <Link
@@ -400,7 +400,7 @@ function MyDocumentsBlock({ orgId }: { orgId: string }) {
                     className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                     style={{
                       color: documentStatusColor(d.status),
-                      background: 'oklch(1 0 0 / 0.06)',
+                      background: 'var(--surface-inset)',
                     }}
                   >
                     {documentStatusLabel(d.status)}
@@ -451,7 +451,7 @@ function MyMeetingsBlock() {
                 style={
                   i === 0
                     ? undefined
-                    : { borderTop: '1px solid oklch(1 0 0 / 0.06)' }
+                    : { borderTop: '1px solid var(--border-inset)' }
                 }
               >
                 <Link

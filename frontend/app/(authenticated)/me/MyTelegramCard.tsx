@@ -103,7 +103,7 @@ function TelegramStatus({ status }: { status: TelegramChannelStatus }) {
       <div className="space-y-1">
         <span
           className="inline-block rounded-full px-3 py-1 text-xs font-medium"
-          style={{ color: badgeColor, background: 'oklch(1 0 0 / 0.06)' }}
+          style={{ color: badgeColor, background: 'var(--surface-inset)' }}
         >
           {badgeLabel}
         </span>

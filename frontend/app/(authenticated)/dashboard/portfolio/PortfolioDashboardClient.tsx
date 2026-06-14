@@ -215,8 +215,8 @@ function PortfolioBody({
             onChange={(e) => void handlePriorityChange(row, e.target.value)}
             className="rounded-lg px-2 py-1 text-xs outline-none"
             style={{
-              background: 'oklch(1 0 0 / 0.06)',
-              border: '1px solid oklch(1 0 0 / 0.1)',
+              background: 'var(--surface-inset)',
+              border: '1px solid var(--border-inset)',
               color: CHART.text,
             }}
             aria-label={`Приоритет цели «${row.name}»`}
@@ -268,7 +268,7 @@ function PortfolioBody({
               className="rounded-full px-3 py-1 text-xs font-medium"
               style={{
                 color: domain.levelView.color,
-                background: 'oklch(1 0 0 / 0.06)',
+                background: 'var(--surface-inset)',
               }}
             >
               {domain.levelView.label}
@@ -300,7 +300,7 @@ function PortfolioBody({
               <div
                 key={b.priority}
                 className="rounded-xl p-4"
-                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                style={{ background: 'var(--surface-inset)' }}
               >
                 <div className="text-xs" style={{ color: CHART.dim }}>
                   {b.label}

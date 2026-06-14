@@ -21,8 +21,11 @@
 | `meeting-report-fast` | [meeting-report-fast.prompt.ts](../../../backend/src/modules/ai/services/prompts/meeting-report-fast.prompt.ts) | 🟡 | ТЗ 2026-06-11, Прил. A1 | 2026-06-11 |
 | `extract_sales` (type-sales) | [type-sales.ts](../../../backend/src/modules/ai/services/prompts/type-sales.ts) | 🟡 | ТЗ 2026-06-11, Прил. A2 | 2026-06-11 |
 | `client-meeting-split` | [client-meeting-split.prompt.ts](../../../backend/src/modules/ai/services/prompts/client-meeting-split.prompt.ts) | 🟡 | ТЗ 2026-06-11, Прил. A3 | 2026-06-11 |
+| `dialog-multi-query` (модуль понимания запроса — слияние контекстуализатора + оценщика + расширителя) | [multi-query-expansion.service.ts](../../../backend/src/modules/dialog-layer/services/multi-query-expansion.service.ts) | 🟡 | ТЗ 2026-06-14, Прил. A | 2026-06-14 |
+| `dialog-extract-plan` (извлекатель плана — вход 3 формулировки, объединённый план) | [extract-plan.prompt.ts](../../../backend/src/modules/dialog-layer/prompts/extract-plan.prompt.ts) | 🟡 | ТЗ 2026-06-14, Прил. B | 2026-06-14 |
+| `concierge-respond` (помощник — развилка + руки + уточнитель + границы) | [concierge.service.ts](../../../backend/src/modules/concierge/services/concierge.service.ts) | 🟡 | ТЗ 2026-06-14 (assistant-router-dedup), Прил. A | 2026-06-14 |
 
-ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md)
+ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md)
 
 ## Очередь — отчёты по типам встреч (`extract_*`)
 

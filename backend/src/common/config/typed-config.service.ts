@@ -84,6 +84,14 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── persons ───────────────────────────
+  get persons() {
+    return {
+      /** SBA α-8 wave 3 — читать/писать должности через Appointment вместо PersonRole. */
+      useAppointment: this.get('USE_APPOINTMENT_FOR_PERSON_ROLES') as boolean,
+    } as const;
+  }
+
   // ─────────────────────────── logging (LoggingModule defaults) ──
   /**
    * Env-дефолты технического логирования. Используются `LogSettingsService`

@@ -41,7 +41,7 @@ export function RadarCard({
                 <stop offset="100%" stopColor={CHART.cyan} stopOpacity={0.5} />
               </linearGradient>
             </defs>
-            <PolarGrid stroke="oklch(1 0 0 / 0.1)" />
+            <PolarGrid stroke="var(--border-inset)" />
             <PolarAngleAxis dataKey="k" tick={{ fill: CHART.dim, fontSize: 11 }} />
             <Radar
               dataKey="v"

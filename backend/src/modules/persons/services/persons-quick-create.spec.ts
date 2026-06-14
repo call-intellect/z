@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PersonsService } from './persons.service';
 
 const auditStub = { log: vi.fn(async () => undefined) } as never;
+const cfgStub = { persons: { useAppointment: false } } as never;
 
 function buildPrismaStub(opts: {
   findFirst?: (args: unknown) => Promise<unknown>;
@@ -36,7 +37,7 @@ describe('PersonsService.quickCreate', () => {
         email: 'ivan@x.test',
       }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
     const res = await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',
@@ -58,7 +59,7 @@ describe('PersonsService.quickCreate', () => {
         email: 'ivan@x.test',
       }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
     await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',
@@ -85,7 +86,7 @@ describe('PersonsService.quickCreate', () => {
         email: 'new@x.test',
       }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
     const res = await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',
@@ -118,7 +119,7 @@ describe('PersonsService.quickCreate', () => {
         email: '',
       }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
     const res = await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',
@@ -155,7 +156,7 @@ describe('PersonsService.quickCreate', () => {
         email: '',
       }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
     const res = await svc.quickCreate({
       tenantId: 'org-1',
       userId: 'u-1',

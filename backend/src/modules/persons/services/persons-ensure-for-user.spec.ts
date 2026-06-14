@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PersonsService } from './persons.service';
 
 const auditStub = { log: vi.fn(async () => undefined) } as never;
+const cfgStub = { persons: { useAppointment: false } } as never;
 
 function p2002(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -36,7 +37,7 @@ describe('PersonsService.ensurePersonForUser', () => {
       membership: { findUnique: vi.fn() },
       user: { findUnique: vi.fn() },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     const res = await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 
@@ -61,7 +62,7 @@ describe('PersonsService.ensurePersonForUser', () => {
       },
       user: { findUnique: vi.fn() },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     const res = await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 
@@ -85,7 +86,7 @@ describe('PersonsService.ensurePersonForUser', () => {
         findUnique: vi.fn(async () => ({ email: 'owner@x.test', name: 'Влад' })),
       },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     const res = await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 
@@ -113,7 +114,7 @@ describe('PersonsService.ensurePersonForUser', () => {
       membership: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 
@@ -145,7 +146,7 @@ describe('PersonsService.ensurePersonForUser', () => {
         findUnique: vi.fn(async () => ({ email: 'dup@x.test', name: 'Дубль' })),
       },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     const res = await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 
@@ -173,7 +174,7 @@ describe('PersonsService.ensurePersonForUser', () => {
         findUnique: vi.fn(async () => ({ email: 'r@x.test', name: 'Гонка' })),
       },
     };
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     const res = await svc.ensurePersonForUser({ tenantId: 'org-1', userId: 'u-1' });
 

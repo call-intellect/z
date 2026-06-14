@@ -57,7 +57,7 @@ export function GaugeCard({
               </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
               <RadialBar
-                background={{ fill: 'oklch(1 0 0 / 0.06)' }}
+                background={{ fill: 'var(--surface-inset)' }}
                 dataKey="value"
                 cornerRadius={20}
                 fill="url(#gauge)"
@@ -75,7 +75,7 @@ export function GaugeCard({
       {footer && footer.length > 0 && (
         <div className="grid grid-cols-3 gap-2 text-center">
           {footer.map((s) => (
-            <div key={s.t} className="rounded-xl py-2" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+            <div key={s.t} className="rounded-xl py-2" style={{ background: 'var(--surface-inset)' }}>
               <div className="text-sm font-semibold" style={{ color: s.c }}>
                 {s.v}
               </div>

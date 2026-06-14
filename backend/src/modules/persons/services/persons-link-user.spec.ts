@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PersonsService } from './persons.service';
 
 const auditStub = { log: vi.fn(async () => undefined) } as never;
+const cfgStub = { persons: { useAppointment: false } } as never;
 
 function buildPrismaStub(opts: {
   membershipFindUnique?: (args: unknown) => Promise<unknown>;
@@ -31,7 +32,7 @@ function buildPrismaStub(opts: {
 describe('PersonsService.create — linkUserId guard', () => {
   it('linkUserId без membership → BadRequestException (400)', async () => {
     const prisma = buildPrismaStub({ membershipFindUnique: async () => null });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     await expect(
       svc.create({
@@ -49,7 +50,7 @@ describe('PersonsService.create — linkUserId guard', () => {
       membershipFindUnique: async () => ({ userId: 'u-1' }),
       personFindFirst: async () => ({ id: 'p-existing' }),
     });
-    const svc = new PersonsService(prisma as never, auditStub);
+    const svc = new PersonsService(prisma as never, auditStub, cfgStub);
 
     await expect(
       svc.create({

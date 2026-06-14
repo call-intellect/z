@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
 import type {
@@ -43,22 +44,24 @@ import type {
  * заполняет Appointment по существующим PersonRole. Через 1 месяц после
  * прода — отдельный sub-ТЗ на удаление PersonRole.
  *
- * NB: используем `process.env.*` вместо `TypedConfigService` — добавление
- * двух ENV в `EnvSchema` спровоцировало бы TS2589 на длинной merge-цепочке
- * (см. typed-config.service.ts:21-22). См. ТЗ §13.
+ * NB: флаг читается через `TypedConfigService` (ключ
+ * `USE_APPOINTMENT_FOR_PERSON_ROLES` в `EnvSchema`,
+ * `config.persons.useAppointment`).
  */
 @Injectable()
 export class PersonsService {
   private readonly logger = new Logger(PersonsService.name);
 
   /** Feature-flag SBA α-8 wave 3 — читать из Appointment вместо PersonRole. */
-  private readonly useAppointment: boolean =
-    process.env.USE_APPOINTMENT_FOR_PERSON_ROLES === 'true';
+  private readonly useAppointment: boolean;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
-  ) {}
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+  ) {
+    this.useAppointment = this.cfg.persons.useAppointment;
+  }
 
   // ─────────────────────── ensurePersonForUser ──────────────────────
 

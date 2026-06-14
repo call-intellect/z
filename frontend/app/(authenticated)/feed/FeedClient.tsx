@@ -330,6 +330,12 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             >
               {item.typeLabel}
             </span>
+            {/* R9 — подсветка «спросил руководитель» на вопросах людей */}
+            {item.type === 'open_question' && item.askedByManager ? (
+              <span className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
+                Спросил руководитель
+              </span>
+            ) : null}
             {item.unread ? (
               <span className="text-[10px] font-medium uppercase tracking-wide text-accent">
                 новое

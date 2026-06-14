@@ -685,6 +685,31 @@ const KnowledgeCoreSchema = z.object({
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 
+  // ── Редизайн кабинета Ф8.2: theme-silence-detector cron ──
+  /**
+   * Kill-switch ночного `theme-silence-detector.cron` (Ship-On: дефолт ON).
+   * При `true` (default) cron ищет «молчащие» темы и заводит/обновляет
+   * Insight(kind='risk'); при `false` проход целиком пропускается. Лучше
+   * крутить через AdminSetting `dashboard.theme_silence.enabled` (admin-editable),
+   * ENV — fallback. Аварийный рубильник, действий владельца не требует.
+   */
+  DASHBOARD_THEME_SILENCE_ENABLED: zBool(true),
+  /**
+   * Сколько недель без сигнала по теме делают её «молчащей». 3 недели —
+   * дефолт (выровнено с `DEFAULT_THEME_SILENCE_WEEKS` в scoring). Лучше
+   * крутить через AdminSetting `dashboard.theme_silence_weeks`, ENV — fallback.
+   */
+  DASHBOARD_THEME_SILENCE_WEEKS: z.coerce.number().int().positive().default(3),
+
+  // ── SBA α-8 wave 3: PersonRole → Appointment ──
+  /**
+   * Feature-flag двойной записи/чтения должностей через `Appointment`
+   * параллельно с `PersonRole` (PersonsService). Де-факто дефолт — `false`
+   * (прежний `process.env.* === 'true'` → false при отсутствии). Читается
+   * через TypedConfigService (`config.persons.useAppointment`).
+   */
+  USE_APPOINTMENT_FOR_PERSON_ROLES: zBool(false),
+
   // ── DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2 + extractor-v2) удалён ──
   // Воркер/cron/очередь/extractor-сервисы снесены как мёртвый код (прод никогда
   // не включал `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`). ENV-ключи оставлены инертными,

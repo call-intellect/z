@@ -434,10 +434,28 @@ export class CoraFeedService {
       },
     });
     const now = new Date();
+    // Сначала отбираем «висящие» вопросы детектором, затем ОДНИМ батчем
+    // резолвим их авторов и считаем askedByManager (без N+1).
+    const surviving = rows
+      .map((r) => ({
+        r,
+        businessDays: CoraFeedService.businessDaysBetween(r.createdAt, now),
+      }))
+      .filter((x) => x.businessDays >= OPEN_QUESTION_MIN_BUSINESS_DAYS)
+      .slice(0, ctx.limit);
+
+    // R9: подсветка «спросил руководитель». Авторство ВОПРОСА не
+    // материализовано на IdeaBlock (commitmentAuthorPersonId заполнен только
+    // для commitment). Используем сигнал `IdeaBlockEntity(role='subject')`,
+    // который block-ingest.attributeSubject пишет для ВСЕХ блоков-рассуждений
+    // (включая вопросы): subject-Entity(type=person) → Person → «руководитель».
+    const askedByManagerByBlock = await this.resolveAskedByManager(
+      ctx.tenantId,
+      surviving.map((x) => x.r.id),
+    );
+
     const out: CoraFeedItemDto[] = [];
-    for (const r of rows) {
-      const businessDays = CoraFeedService.businessDaysBetween(r.createdAt, now);
-      if (businessDays < OPEN_QUESTION_MIN_BUSINESS_DAYS) continue;
+    for (const { r, businessDays } of surviving) {
       out.push(
         this.item({
           id: `open_question:${r.id}`,
@@ -447,12 +465,92 @@ export class CoraFeedService {
           severity: businessDays >= OPEN_QUESTION_MIN_BUSINESS_DAYS * 2 ? 'risk' : 'warn',
           createdAt: r.createdAt,
           cursorAt: ctx.cursorAt,
-          payload: { ideaBlockId: r.id, businessDays },
+          payload: {
+            ideaBlockId: r.id,
+            businessDays,
+            askedByManager: askedByManagerByBlock.get(r.id) ?? false,
+          },
         }),
       );
-      if (out.length >= ctx.limit) break;
     }
     return out;
+  }
+
+  /**
+   * R9 — для пачки вопросов-блоков определяет, является ли АВТОР вопроса
+   * «руководителем». Батч-эффективно (4 запроса на всю пачку, без N+1).
+   *
+   * Цепочка резолва авторства (всё — на материализованных связях, без LLM):
+   *   IdeaBlockEntity(role='subject') → Entity(type=person) → Person.
+   * Источник subject-связи — block-ingest `attributeSubject` (Фаза 1.2),
+   * который пишет автора рассуждения по speakerParticipantId/authorPersonId
+   * сегмента-источника. Для вопросов без резолва автора (нет subject-Entity
+   * или Entity не привязан к Person) → false (бейдж не показываем, не падаем).
+   *
+   * «Руководитель» (поля «менеджер» в схеме нет): Person является главой
+   * какого-либо отдела (Department.headPersonId == person.id) ИЛИ имеет
+   * Membership с ролью owner/admin/coo.
+   */
+  private async resolveAskedByManager(
+    tenantId: string,
+    blockIds: string[],
+  ): Promise<Map<string, boolean>> {
+    const result = new Map<string, boolean>();
+    if (blockIds.length === 0) return result;
+
+    // 1. blockId → subject-Entity.id (одна связь role='subject' на блок).
+    const subjects = await this.prisma.ideaBlockEntity.findMany({
+      where: { blockId: { in: blockIds }, role: 'subject' },
+      select: { blockId: true, entityId: true },
+    });
+    if (subjects.length === 0) return result;
+    const blockToEntity = new Map<string, string>();
+    for (const s of subjects) {
+      if (!blockToEntity.has(s.blockId)) blockToEntity.set(s.blockId, s.entityId);
+    }
+    const entityIds = [...new Set(blockToEntity.values())];
+
+    // 2. Entity.id → Person.id (subject-Entity линкуется с Person через entityId).
+    const persons = await this.prisma.person.findMany({
+      where: { tenantId, entityId: { in: entityIds }, deletedAt: null },
+      select: { id: true, entityId: true },
+    });
+    if (persons.length === 0) return result;
+    const entityToPerson = new Map<string, string>();
+    for (const p of persons) {
+      if (p.entityId && !entityToPerson.has(p.entityId)) {
+        entityToPerson.set(p.entityId, p.id);
+      }
+    }
+    const personIds = [...new Set(entityToPerson.values())];
+
+    // 3+4. «Руководитель»: глава какого-либо отдела ИЛИ owner/admin/coo.
+    const [heads, admins] = await Promise.all([
+      this.prisma.department.findMany({
+        where: { tenantId, headPersonId: { in: personIds }, deletedAt: null },
+        select: { headPersonId: true },
+      }),
+      this.prisma.membership.findMany({
+        where: {
+          orgId: tenantId,
+          personId: { in: personIds },
+          role: { in: ['owner', 'admin', 'coo'] },
+        },
+        select: { personId: true },
+      }),
+    ]);
+    const managerPersonIds = new Set<string>();
+    for (const h of heads) if (h.headPersonId) managerPersonIds.add(h.headPersonId);
+    for (const a of admins) if (a.personId) managerPersonIds.add(a.personId);
+
+    // Сводим обратно: blockId → askedByManager.
+    for (const [blockId, entityId] of blockToEntity) {
+      const personId = entityToPerson.get(entityId);
+      if (personId && managerPersonIds.has(personId)) {
+        result.set(blockId, true);
+      }
+    }
+    return result;
   }
 
   // activity ← ActivityFeedItem(feedType in recognition|task) — «кто что сделал».

@@ -164,23 +164,23 @@
 
 ## C1. Поднять `/regulations` в видимый пункт «Оцифровано»
 [nav-config.ts:307](frontend/src/ui/components/app-shell/nav-config.ts#L307): пункт **«Оцифровано»** → `/regulations`, секция РАБОТА, роли LEADERSHIP+manager (read), icon BookText. «Правила» в [memory/page.tsx:43](frontend/app/(authenticated)/memory/page.tsx#L43) → алиас на хаб. `nav-subset.spec` зелёный.
-**Статус:** [ ]
+**Статус:** [x] — пункт «Оцифровано» (BookText) в WORK_SECTION; дубль «Процессы»→/processes убран из «Справочника» (+ осиротевший импорт Workflow); memory «Правила»→«Оцифровано»-алиас. nav-subset 3/3.
 
 ## C2. Хаб: 4 типа + вкладка «Шаблоны процессов» + живой /policies
 - Верх хаба — счётчики-чипы (из C4); переключатель типа есть.
 - Вкладка «Шаблоны процессов» = существующий [ProcessTemplatesClient.tsx](frontend/app/(authenticated)/processes/ProcessTemplatesClient.tsx) (модель `ProcessTemplate`), модели не сливать.
 - `/policies` — убрать `ComingSoonPage` ([ComingSoonPage.tsx:76](frontend/src/ui/components/ComingSoonPage.tsx#L76)), политики живьём (API живой) → `/policies` redirect `/regulations?kind=policy`.
-**Статус:** [ ]
+**Статус:** [x] — чипы-счётчики из `getSummary`; верхний таб «Регламенты»/«Шаблоны процессов» (embed ProcessTemplatesClient, модели не слиты); `/policies` → `redirect('/regulations?kind=policy')` (ComingSoon убран, компонент жив для /metrics); RegulationsListClient читает `?kind=` из URL.
 
 ## C3. Провенанс «откуда собралось» (дифференциатор)
 - 🔴 Бэк: `GET /api/v1/regulations/:id/sources?kind=` → `sourceBlockIds[] → IdeaBlock → IdeaBlockEvidence.quote` + `{встреча(название/дата/ссылка), дата}`. Zod-DTO+Swagger, тот же гейт доступа, что `:id`.
 - 🟡 Фронт: в detail-панели `RegulationsListClient` аккордеон «Источники» с дословными цитатами + ссылкой на встречу (сейчас только число «Источников: N», `RegulationsListClient.tsx:499`).
-**Статус:** [ ]
+**Статус:** [x] — Бэк: `GET /regulations/:id/sources?kind=` → sourceBlockIds→IdeaBlock→IdeaBlockEvidence.quote + резолв встречи (RawEvent sourceType='meeting'→Meeting, best-effort meeting|null); гейт = requireRead как :id; гранулярность по цитате; тесты. Фронт: `<SourcesAccordion>` лениво грузит цитаты + ссылка на встречу.
 
 ## C4. Счётчик «Оцифровано» на Сегодня + «Недавно оцифровано»
 - 🟡 Бэк: агрегат `GET /api/v1/regulations/summary` → `{regulations, processes, instructions, policies, weekDelta}` (свести 4 раздельных `structure/.../count`, [structure.controller.ts:63](backend/src/modules/structure/structure.controller.ts#L63), + instruction + дельта).
 - 🟡 Фронт: на Сегодня — компактный виджет «Оцифровано: N регламентов · M процессов · K инструкций» (тема-зависимый, без денег) → клик в хаб. В хабе — блок «Недавно оцифровано» (`list(sort=updatedAt)` + бейдж черновиков `extractionStatus`).
-**Статус:** [ ]
+**Статус:** [x] — Бэк: `GET /regulations/summary` → {regulations,processes,instructions,policies,weekDelta} (4 count + instruction + дельта 7д, гейт requireReadAny). Фронт: `DigitizedSummaryWidget` на Сегодня (рядом с SharpRadar, клик→хаб) + блок «Недавно оцифровано» в хабе (топ-8 по updatedAt, бейдж черновик/готово).
 
 ## C5. Долг Instruction — строка в реестре
 Добавить в `second-brain/04_не-сделано/README.md`: «Instruction — версии/триаж/CardVersion + цитаты не дотянуты (упрощённый `upsertInstruction`, `specialist-3-1-regulations.service.ts:1103`)». Сверить устаревшую строку 34 (A7-компилятор).

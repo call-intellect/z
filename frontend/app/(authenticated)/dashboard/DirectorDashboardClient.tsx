@@ -56,6 +56,7 @@ import {
   MODERN_PAGE_BG,
   glass,
 } from '@/ui/components/dashboard/modern';
+import { DigitizedSummaryWidget } from './widgets/DigitizedSummaryWidget';
 import { ValueStripWidget } from './widgets/ValueStripWidget';
 import { VerdictBar } from './widgets/VerdictBar';
 
@@ -73,7 +74,8 @@ import { VerdictBar } from './widgets/VerdictBar';
  *   2. Грид: «Что было вчера» (daily-digest.shortSummary) + «Требует вас» (якорь).
  *   3. «Польза за неделю» (valueStrip, 5 stat).
  *   4. Грид: «Вектор к цели» (CompassWidget ← pulse.goalVector) + «Сводка Коры».
- *   5. «Самое острое» (радар топ-3 ← newSignals, затухание по свежести).
+ *   5. Грид: «Самое острое» (радар топ-3 ← newSignals, затухание по свежести)
+ *      + «Оцифровано» (счётчики regulations/summary, CTA → /regulations).
  *   6. «Лента дня» (свёрнуто, топ-5 ← daily-digest.eventsToday) + плашка
  *      «Вопросов Коры без ответа: N».
  *   7. «Дисциплина чек-инов сегодня» (checkin-discipline, from=to=сегодня).
@@ -432,12 +434,13 @@ export function DirectorDashboardClient() {
           </div>
         </div>
 
-        {/* ── 5. Самое острое — радар топ-3 ────────────────────────────── */}
-        <div className="mb-6">
+        {/* ── 5. Грид: «Самое острое» (радар топ-3) + «Оцифровано» ──────── */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           <SharpRadarCard
             signals={sharpSignals}
             loading={loading && data === null}
           />
+          <DigitizedSummaryWidget orgId={currentOrgId} />
         </div>
 
         {/* ── 6. Лента дня (свёрнуто) + плашка «Вопросов Коры без ответа» ─ */}

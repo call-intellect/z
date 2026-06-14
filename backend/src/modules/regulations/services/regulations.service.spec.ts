@@ -433,3 +433,175 @@ describe('RegulationsService — Ф6 гейт проекций на list', () =>
     expect(partitionSpy).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * C4 — `getSummary`: счётчики 4 типов карточек + weekDelta (создано за 7 дней).
+ */
+describe('RegulationsService — C4 getSummary', () => {
+  it('считает 4 типа + weekDelta (сумма созданных за 7 дней) с tenant-фильтром', async () => {
+    const regCount = vi.fn().mockResolvedValueOnce(10).mockResolvedValueOnce(2);
+    const procCount = vi.fn().mockResolvedValueOnce(5).mockResolvedValueOnce(1);
+    const instrCount = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(0);
+    const polCount = vi.fn().mockResolvedValueOnce(7).mockResolvedValueOnce(4);
+
+    const prisma = {
+      regulation: { count: regCount },
+      process: { count: procCount },
+      instruction: { count: instrCount },
+      policy: { count: polCount },
+    } as unknown as PrismaService;
+
+    const svc = new RegulationsService(prisma, {} as unknown as CurationService);
+    const res = await svc.getSummary('t-1');
+
+    expect(res).toEqual({
+      regulations: 10,
+      processes: 5,
+      instructions: 3,
+      policies: 7,
+      weekDelta: 2 + 1 + 0 + 4,
+    });
+
+    // tenant-фильтр на каждом count'е (первый вызов каждой модели — общий count).
+    expect(regCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
+    expect(procCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
+    expect(instrCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
+    expect(polCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });
+    // weekDelta-вызов — с createdAt >= weekAgo и тем же tenant'ом.
+    expect(regCount).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 't-1',
+          createdAt: expect.objectContaining({ gte: expect.any(Date) }),
+        }),
+      }),
+    );
+  });
+});
+
+/**
+ * C3 — `getSources`: цитаты-первоисточники карточки. Непустой sourceBlockIds →
+ * цитаты из IdeaBlockEvidence (+ резолв встречи best-effort); пустой → {items:[]}.
+ */
+describe('RegulationsService — C3 getSources', () => {
+  function buildSvc(opts: {
+    sourceBlockIds: string[];
+    blocks?: Array<{ id: string }>;
+    evidence?: Array<{
+      blockId: string;
+      quote: string;
+      rawEvent: { sourceType: string; sourceExternalId: string | null };
+    }>;
+    meetings?: Array<{ id: string; title: string; startedAt: Date | null; createdAt: Date }>;
+  }): {
+    svc: RegulationsService;
+    regFindFirst: ReturnType<typeof vi.fn>;
+    blockFindMany: ReturnType<typeof vi.fn>;
+    evidenceFindMany: ReturnType<typeof vi.fn>;
+    meetingFindMany: ReturnType<typeof vi.fn>;
+  } {
+    const regFindFirst = vi
+      .fn()
+      .mockResolvedValue({ sourceBlockIds: opts.sourceBlockIds });
+    const blockFindMany = vi.fn().mockResolvedValue(opts.blocks ?? []);
+    const evidenceFindMany = vi.fn().mockResolvedValue(opts.evidence ?? []);
+    const meetingFindMany = vi.fn().mockResolvedValue(opts.meetings ?? []);
+
+    const prisma = {
+      regulation: { findFirst: regFindFirst },
+      ideaBlock: { findMany: blockFindMany },
+      ideaBlockEvidence: { findMany: evidenceFindMany },
+      meeting: { findMany: meetingFindMany },
+    } as unknown as PrismaService;
+
+    const svc = new RegulationsService(prisma, {} as unknown as CurationService);
+    return { svc, regFindFirst, blockFindMany, evidenceFindMany, meetingFindMany };
+  }
+
+  it('пустой sourceBlockIds → {items:[]} (без запроса блоков/evidence)', async () => {
+    const { svc, blockFindMany, evidenceFindMany } = buildSvc({ sourceBlockIds: [] });
+    const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
+    expect(res).toEqual({ items: [] });
+    expect(blockFindMany).not.toHaveBeenCalled();
+    expect(evidenceFindMany).not.toHaveBeenCalled();
+  });
+
+  it('непустой sourceBlockIds → цитаты + резолв встречи (best-effort)', async () => {
+    const startedAt = new Date('2026-03-10T09:00:00.000Z');
+    const { svc, regFindFirst, blockFindMany, evidenceFindMany, meetingFindMany } =
+      buildSvc({
+        sourceBlockIds: ['b-1', 'b-2'],
+        blocks: [{ id: 'b-1' }, { id: 'b-2' }],
+        evidence: [
+          {
+            blockId: 'b-1',
+            quote: 'Мы решили перейти на недельные спринты',
+            rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-1' },
+          },
+          {
+            blockId: 'b-2',
+            quote: 'Из чата без встречи',
+            rawEvent: { sourceType: 'chat', sourceExternalId: 'c-9' },
+          },
+        ],
+        meetings: [
+          { id: 'm-1', title: 'Планёрка', startedAt, createdAt: new Date('2026-03-01') },
+        ],
+      });
+
+    const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
+
+    expect(res.items).toEqual([
+      {
+        blockId: 'b-1',
+        quote: 'Мы решили перейти на недельные спринты',
+        meeting: { id: 'm-1', title: 'Планёрка', date: startedAt.toISOString() },
+      },
+      // chat-источник → meeting:null.
+      { blockId: 'b-2', quote: 'Из чата без встречи', meeting: null },
+    ]);
+
+    // tenant-фильтр на карточке, блоках и встречах.
+    expect(regFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'r-1', tenantId: 't-1' }),
+      }),
+    );
+    expect(blockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: ['b-1', 'b-2'] }, tenantId: 't-1' },
+      }),
+    );
+    expect(meetingFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: 't-1', id: { in: ['m-1'] } },
+      }),
+    );
+    // evidence запрашивается только по блокам этого tenant'а.
+    expect(evidenceFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { blockId: { in: ['b-1', 'b-2'] } },
+      }),
+    );
+  });
+
+  it('встреча не найдена в tenant → meeting:null (best-effort)', async () => {
+    const { svc } = buildSvc({
+      sourceBlockIds: ['b-1'],
+      blocks: [{ id: 'b-1' }],
+      evidence: [
+        {
+          blockId: 'b-1',
+          quote: 'Цитата с неразрешённой встречей',
+          rawEvent: { sourceType: 'meeting', sourceExternalId: 'm-missing' },
+        },
+      ],
+      meetings: [], // встреча не найдена (чужой tenant / удалена)
+    });
+    const res = await svc.getSources({ tenantId: 't-1', id: 'r-1', kind: 'regulation' });
+    expect(res.items).toEqual([
+      { blockId: 'b-1', quote: 'Цитата с неразрешённой встречей', meeting: null },
+    ]);
+  });
+});

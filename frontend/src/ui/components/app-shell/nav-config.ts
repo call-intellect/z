@@ -36,6 +36,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  BookText,
   Bot,
   Brain,
   Building2,
@@ -68,7 +69,6 @@ import {
   UserRound,
   Users,
   Video,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -237,6 +237,14 @@ const WORK_SECTION: NavConfigSection = {
       matchPrefix: '/memory',
       overviewTarget: 'overview.memory',
     },
+    // «Оцифровано» — регламенты, процессы, инструкции и политики, извлечённые из
+    // встреч (страница /regulations сама гейтит доступ по RBAC).
+    {
+      href: '/regulations',
+      label: 'Оцифровано',
+      icon: BookText,
+      matchPrefix: '/regulations',
+    },
     {
       href: '/structure',
       label: SECTION_LABELS.structure, // «Команда»
@@ -303,9 +311,9 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
     { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
     { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
     { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
-    // Процессы — реальная страница (была в «Будет в следующей фазе»), оставляем
-    // достижимой из Справочника.
-    { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes' },
+    // «Процессы» (/processes) убраны из меню — их поглощает хаб «Оцифровано»
+    // (/regulations) вкладкой «Шаблоны процессов». Сама страница остаётся живой
+    // (используется хабом), просто без отдельного пункта в Справочнике.
   ],
 };
 

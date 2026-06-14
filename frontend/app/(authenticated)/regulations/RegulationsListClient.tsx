@@ -1,8 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import useSWR from 'swr';
 import { toast } from 'sonner';
-import { CheckCircle2, History, Replace, Search } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronDown,
+  History,
+  Quote,
+  Replace,
+  Search,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 
@@ -22,6 +32,7 @@ import {
   REGULATION_KIND_LABEL,
   REGULATION_STATUS_LABEL,
   isDraftExtraction,
+  mapRegulationSources,
   mapVersionItem,
   type ExtractionStatus,
   type PolicySeverity,
@@ -29,6 +40,7 @@ import {
   type RegulationStatus,
   mapRegulationDetail,
 } from '@/domain/regulation';
+import { ProcessTemplatesClient } from '@app/(authenticated)/processes/ProcessTemplatesClient';
 import { Chip } from '@/ui/components/shared/Chip';
 import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
@@ -82,6 +94,16 @@ const KIND_FILTERS: ReadonlyArray<{
   { value: 'policy', label: 'Политики и положения' },
 ];
 
+/** Допустимые значения `?kind=` в URL (редирект `/policies` и т.п.). */
+const KIND_FILTER_VALUES = new Set(KIND_FILTERS.map((f) => f.value));
+
+type TopTab = 'regulations' | 'process-templates';
+
+const TOP_TABS: ReadonlyArray<{ key: TopTab; label: string }> = [
+  { key: 'regulations', label: 'Регламенты' },
+  { key: 'process-templates', label: 'Шаблоны процессов' },
+];
+
 const STATUS_FILTERS: ReadonlyArray<{
   value: 'all' | RegulationStatusApi;
   label: string;
@@ -130,13 +152,23 @@ const CONTENT_MARKERS: ReadonlyArray<{
 function RegulationsListContent() {
   const { currentOrgRole } = useAuth();
   const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
+  const searchParams = useSearchParams();
+  // `?kind=policy` (редирект с `/policies`) приземляется на нужный фильтр.
+  const initialKind = useMemo<'all' | RegulationKindApi>(() => {
+    const raw = searchParams.get('kind');
+    return raw && KIND_FILTER_VALUES.has(raw as 'all' | RegulationKindApi)
+      ? (raw as 'all' | RegulationKindApi)
+      : 'all';
+  }, [searchParams]);
+  const [topTab, setTopTab] = useState<TopTab>('regulations');
   const [data, setData] = useState<RegulationsListResponseApi | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [q, setQ] = useState('');
   const [qDebounced, setQDebounced] = useState('');
-  const [kindFilter, setKindFilter] = useState<'all' | RegulationKindApi>('all');
+  const [kindFilter, setKindFilter] =
+    useState<'all' | RegulationKindApi>(initialKind);
   const [statusFilter, setStatusFilter] =
     useState<'all' | RegulationStatusApi>('all');
   const [selected, setSelected] = useState<{
@@ -153,6 +185,8 @@ function RegulationsListContent() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [supersedeOpen, setSupersedeOpen] = useState(false);
   const [supersedeTargetId, setSupersedeTargetId] = useState('');
+  // C3: provenance-аккордеон раскрывается лениво по клику.
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   // Debounce поиска (300 мс).
   useEffect(() => {
@@ -193,6 +227,7 @@ function RegulationsListContent() {
     setDetailError(null);
     setHistory(null);
     setHistoryOpen(false);
+    setSourcesOpen(false);
     try {
       const dto = await regulationsApi.get(selected.id, selected.kind);
       setDetail(mapRegulationDetail(dto));
@@ -276,6 +311,24 @@ function RegulationsListContent() {
 
   const groupedItems = useMemo(() => data?.items ?? [], [data]);
 
+  // Чипы-счётчики (C4): summary живёт отдельно от фильтрованного списка.
+  const summarySwr = useSWR(
+    'regulations-summary',
+    () => regulationsApi.getSummary(),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const summary = summarySwr.data ?? null;
+
+  // «Недавно оцифровано» (C4): топ-8 из уже загруженного списка по updatedAt.
+  const recentItems = useMemo(() => {
+    return [...groupedItems]
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      )
+      .slice(0, 8);
+  }, [groupedItems]);
+
   if (isLoading && !data) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;
   if (error) return <AdminError message={error} onRetry={load} />;
@@ -283,17 +336,116 @@ function RegulationsListContent() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-6">
+      <header className="mb-4">
         <h1 className="text-2xl font-semibold">
           Правила, процессы и политики
         </h1>
         <p className="mt-1 text-sm text-fg-secondary">
           Документы, которые Кора извлекла из ваших встреч и обсуждений.
-          Всего: {data.total}. Показано: {data.items.length}.
+          {topTab === 'regulations'
+            ? ` Всего: ${data.total}. Показано: ${data.items.length}.`
+            : ''}
         </p>
       </header>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* Верхний переключатель: регламенты vs шаблоны процессов (C2). */}
+      <div
+        role="tablist"
+        aria-label="Раздел"
+        className="mb-5 flex flex-wrap gap-1 border-b border-border-subtle"
+      >
+        {TOP_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={topTab === t.key}
+            onClick={() => setTopTab(t.key)}
+            className={cn(
+              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition',
+              topTab === t.key
+                ? 'border-accent text-accent'
+                : 'border-transparent text-fg-secondary hover:text-fg-primary',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {topTab === 'process-templates' ? (
+        <ProcessTemplatesClient />
+      ) : (
+        <>
+          {summary ? (
+            <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-secondary">
+              <Chip variant="info" size="sm">
+                {summary.regulations} регламентов
+              </Chip>
+              <Chip variant="lavender" size="sm">
+                {summary.processes} процессов
+              </Chip>
+              <Chip variant="sand" size="sm">
+                {summary.instructions} инструкций
+              </Chip>
+              <Chip variant="warning" size="sm">
+                {summary.policies} политик
+              </Chip>
+              {summary.weekDelta > 0 ? (
+                <Chip variant="success" size="sm">
+                  +{summary.weekDelta} за неделю
+                </Chip>
+              ) : null}
+            </div>
+          ) : null}
+
+          {recentItems.length > 0 ? (
+            <section className="mb-5">
+              <h2 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
+                Недавно оцифровано
+              </h2>
+              <ul className="flex flex-wrap gap-2">
+                {recentItems.map((r) => {
+                  const isSelected =
+                    selected?.id === r.id && selected.kind === r.kind;
+                  return (
+                    <li key={`recent:${r.kind}:${r.id}`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelected({ id: r.id, kind: r.kind })
+                        }
+                        className={cn(
+                          'flex max-w-[18rem] items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-left text-xs transition',
+                          isSelected
+                            ? 'border-accent bg-accent/5'
+                            : 'border-border-subtle bg-bg-card hover:border-border-strong',
+                        )}
+                      >
+                        <Chip
+                          variant={
+                            isDraftExtraction(r.extractionStatus ?? null)
+                              ? 'sand'
+                              : 'success'
+                          }
+                          size="sm"
+                        >
+                          {isDraftExtraction(r.extractionStatus ?? null)
+                            ? 'черновик'
+                            : 'готово'}
+                        </Chip>
+                        <span className="truncate text-fg-primary">
+                          {r.name}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          <div className="mb-3 flex flex-wrap gap-2">
         {KIND_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -495,12 +647,17 @@ function RegulationsListContent() {
                       </dd>
                     </div>
                   ) : null}
-                  <div>
-                    <dt className="inline text-fg-secondary">Источников: </dt>
-                    <dd className="inline">{detail.sourceBlockIds.length}</dd>
-                  </div>
                 </dl>
               </header>
+
+              {/* C3: provenance-аккордеон — дословные цитаты-источники. */}
+              <SourcesAccordion
+                regulationId={detail.id}
+                kind={detail.kind}
+                count={detail.sourceBlockIds.length}
+                open={sourcesOpen}
+                onToggle={() => setSourcesOpen((v) => !v)}
+              />
 
               <section className="space-y-2">
                 <h3 className="text-sm font-medium text-fg-primary">
@@ -684,6 +841,8 @@ function RegulationsListContent() {
         confirmLabel="Заменить"
         onConfirm={handleSupersede}
       />
+        </>
+      )}
     </div>
   );
 }
@@ -713,6 +872,105 @@ function LifecycleChip({
     <Chip variant={STATUS_CHIP[status]} size="sm">
       {REGULATION_STATUS_LABEL[status]}
     </Chip>
+  );
+}
+
+/**
+ * Provenance-аккордеон (C3).
+ *
+ * Заголовок-disclosure показывает число источников; по раскрытию лениво
+ * грузит дословные цитаты через `regulationsApi.getSources` (SWR с ключом
+ * только когда `open` — пока не раскрыт, запроса нет). Каждая цитата ведёт
+ * на встречу-источник, если она известна.
+ */
+function SourcesAccordion({
+  regulationId,
+  kind,
+  count,
+  open,
+  onToggle,
+}: {
+  regulationId: string;
+  kind: RegulationKindApi;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const swr = useSWR(
+    open ? ['regulation-sources', regulationId, kind] : null,
+    async () =>
+      mapRegulationSources(await regulationsApi.getSources(regulationId, kind)),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+  const sources = swr.data;
+
+  return (
+    <section className="rounded-md border border-border-subtle bg-bg-overlay/20">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+      >
+        <span className="flex items-center gap-1.5 text-sm font-medium text-fg-primary">
+          <Quote className="h-4 w-4 text-fg-tertiary" aria-hidden />
+          Источники
+          <span className="text-xs font-normal text-fg-tertiary">
+            · {count}
+          </span>
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-fg-tertiary transition-transform',
+            open ? 'rotate-180' : '',
+          )}
+          aria-hidden
+        />
+      </button>
+      {open ? (
+        <div className="border-t border-border-subtle px-3 py-2">
+          {swr.isLoading ? (
+            <AdminLoading rows={2} />
+          ) : swr.error ? (
+            <p className="text-xs text-fg-tertiary">
+              Не удалось загрузить источники.
+            </p>
+          ) : !sources || sources.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">
+              Дословные цитаты-источники пока недоступны.
+            </p>
+          ) : (
+            <ul className="space-y-2.5">
+              {sources.map((s) => (
+                <li
+                  key={s.blockId}
+                  className="border-l-2 border-border-subtle pl-3"
+                >
+                  <blockquote className="text-sm text-fg-secondary">
+                    «{s.quote}»
+                  </blockquote>
+                  {s.meeting ? (
+                    <Link
+                      href={`/meetings/${s.meeting.id}`}
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                    >
+                      {s.meeting.title}
+                      <span className="text-fg-tertiary">
+                        · {s.meeting.date.toLocaleDateString('ru-RU')}
+                      </span>
+                    </Link>
+                  ) : (
+                    <span className="mt-1 block text-xs text-fg-tertiary">
+                      Источник встречи неизвестен
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

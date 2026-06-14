@@ -226,11 +226,180 @@ function renderMeeting(id) {
   return html;
 }
 
+/* --- Ф4: деталь задачи --- */
+const TASK_STATUS_LABELS = {
+  backlog:  'Бэклог',
+  progress: 'В работе',
+  review:   'На проверке',
+  done:     'Готово',
+};
+function renderTask(id) {
+  const t = ((window.DEMO && window.DEMO.tasks) || []).find(x => x.id === id);
+  if (!t) return '<div class="overlay-stub">Задача не найдена</div>';
+
+  // Шапка: заголовок
+  let html = '';
+  html += '<div class="card-title" style="margin-bottom:6px;">' +
+            '<span class="card-ico" style="background:var(--grad-teal)">' +
+              '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>' +
+            '</span>' +
+            '<h3 style="margin:0;">' + esc(t.title) + '</h3>' +
+          '</div>';
+
+  // Чипы: статус / проект / срок
+  html += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">' +
+            '<span class="chip info"><span class="led"></span>' + esc(TASK_STATUS_LABELS[t.status] || t.status) + '</span>' +
+            (t.project ? '<span class="chip"><span class="led"></span>' + esc(t.project) + '</span>' : '') +
+            (t.due ? '<span class="chip warn"><span class="led"></span>срок: ' + esc(t.due) + '</span>' : '') +
+          '</div>';
+
+  // Исполнитель
+  const p = personById(t.assignee);
+  if (p || t.assignee) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Исполнитель</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">' +
+              '<div class="list-row" style="padding:8px 0; cursor:pointer;" data-action="open-person" data-id="' + esc(t.assignee) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(p ? p.name : t.assignee) + '</div>' +
+                (p && p.role ? '<div class="meta">' + esc(p.role) + '</div>' : '') +
+                '</div>' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dim); flex:none;"><path d="M9 6l6 6-6 6"/></svg>' +
+              '</div>' +
+            '</div>';
+  }
+
+  // Источник — встреча
+  const meeting = ((window.DEMO && window.DEMO.meetings) || []).find(x => x.id === t.sourceMeeting);
+  if (t.sourceMeeting) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Источник</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">' +
+              '<div class="list-row" style="padding:9px 0; cursor:pointer;" data-action="open-meeting" data-id="' + esc(t.sourceMeeting) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(meeting ? meeting.title : t.sourceMeeting) + '</div>' +
+                (meeting && meeting.date ? '<div class="meta">' + esc(meeting.date) + (meeting.type ? ' · ' + esc(meeting.type) : '') + '</div>' : '') +
+                '</div>' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dim); flex:none;"><path d="M9 6l6 6-6 6"/></svg>' +
+              '</div>' +
+            '</div>';
+  }
+
+  // История
+  if (Array.isArray(t.history) && t.history.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">История</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">';
+    t.history.forEach(h => {
+      html += '<div class="tr-row">' +
+                '<span class="tr-time">' + esc(h.when) + '</span>' +
+                '<div class="tr-body"><div class="tr-text">' + esc(h.what) + '</div></div>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Комментарии (если есть)
+  if (Array.isArray(t.comments) && t.comments.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Комментарии</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">';
+    t.comments.forEach(c => {
+      html += '<div class="list-row" style="padding:8px 0;">' +
+                '<div class="body"><div class="meta">' + esc(personName(c.who)) + '</div>' +
+                '<div class="ttl" style="font-size:13px; font-weight:400;">' + esc(c.text) + '</div></div>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Mock-смена статуса
+  html += '<div class="section-h" style="margin-bottom:10px;">Сменить статус</div>';
+  html += '<div style="display:flex; gap:8px; flex-wrap:wrap;">';
+  ['backlog', 'progress', 'review', 'done'].forEach(st => {
+    const cls = (st === t.status) ? 'btn primary' : 'btn';
+    html += '<button class="' + cls + '" data-action="task-status" data-id="' + esc(t.id) + '" data-status="' + esc(TASK_STATUS_LABELS[st]) + '">' + esc(TASK_STATUS_LABELS[st]) + '</button>';
+  });
+  html += '</div>';
+
+  return html;
+}
+
+/* --- Ф4: деталь решения из очереди «Требует вас» --- */
+const DECISION_KIND_LABELS = { goal: 'цель', decision: 'решение', conflict: 'конфликт' };
+const DECISION_KIND_CHIP = { goal: 'warn', decision: 'info', conflict: 'risk' };
+function renderDecision(id) {
+  const all = ((window.DEMO && window.DEMO.decisions) || []).concat((window.DEMO && window.DEMO.decisionsArchive) || []);
+  const d = all.find(x => x.id === id);
+  if (!d) return '<div class="overlay-stub">Решение не найдено</div>';
+
+  let html = '';
+  // Чип типа
+  const chipCls = DECISION_KIND_CHIP[d.kind] || 'info';
+  html += '<div style="margin-bottom:12px;">' +
+            '<span class="chip ' + chipCls + '"><span class="led"></span>' + esc(DECISION_KIND_LABELS[d.kind] || d.kind) + '</span>' +
+          '</div>';
+
+  // Заголовок
+  html += '<div class="card-title" style="margin-bottom:14px;">' +
+            '<span class="card-ico" style="background:var(--grad-amber)">' +
+              '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>' +
+            '</span>' +
+            '<h3 style="margin:0;">' + esc(d.title) + '</h3>' +
+          '</div>';
+
+  // Доп. чипы приоритет / ожидание
+  const metaChips = [];
+  if (d.priority) metaChips.push('<span class="chip warn"><span class="led"></span>' + esc(d.priority) + ' приоритет</span>');
+  if (d.waiting) metaChips.push('<span class="chip" style="color:var(--faint); background:var(--surface-soft)">' + esc(d.waiting) + '</span>');
+  if (d.status) metaChips.push('<span class="chip ok"><span class="led"></span>' + esc(d.status) + '</span>');
+  if (metaChips.length) {
+    html += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">' + metaChips.join('') + '</div>';
+  }
+
+  // Подробность
+  if (d.detail) {
+    html += '<p class="muted" style="font-size:13.5px; line-height:1.6; margin:0 0 18px;">' + esc(d.detail) + '</p>';
+  }
+
+  // Источник — встреча
+  const meeting = ((window.DEMO && window.DEMO.meetings) || []).find(x => x.id === d.sourceMeeting);
+  if (d.sourceMeeting) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Источник</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">' +
+              '<div class="list-row" style="padding:9px 0; cursor:pointer;" data-action="open-meeting" data-id="' + esc(d.sourceMeeting) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(meeting ? meeting.title : d.sourceMeeting) + '</div>' +
+                (meeting && meeting.date ? '<div class="meta">' + esc(meeting.date) + (meeting.type ? ' · ' + esc(meeting.type) : '') + '</div>' : '') +
+                '</div>' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dim); flex:none;"><path d="M9 6l6 6-6 6"/></svg>' +
+              '</div>' +
+            '</div>';
+  }
+
+  // Действия владельца (mock)
+  html += '<div class="section-h" style="margin-bottom:10px;">Ваше решение</div>';
+  html += '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
+            '<button class="btn ok" data-action="decision-accept" data-id="' + esc(d.id) + '">Принять</button>' +
+            '<button class="btn" data-action="decision-return" data-id="' + esc(d.id) + '">Вернуть на доработку</button>' +
+            '<button class="btn ghost" data-action="decision-postpone" data-id="' + esc(d.id) + '">Отложить</button>' +
+          '</div>';
+
+  return html;
+}
+
+/* --- Ф4: mock-действие над решением очереди (без перезагрузки) --- */
+function decisionAction(id, kind) {
+  const labels = { accept: 'Решение принято', return: 'Возвращено на доработку', postpone: 'Отложено' };
+  // убрать все элементы очереди с этим решением из DOM
+  document.querySelectorAll('[data-decision-item="' + id + '"]').forEach(el => el.remove());
+  // уменьшить счётчики очереди
+  document.querySelectorAll('[data-decision-count]').forEach(c => {
+    const n = parseInt(c.textContent, 10);
+    if (!isNaN(n) && n > 0) c.textContent = String(n - 1);
+  });
+  toast(labels[kind] || 'Готово');
+  closeOverlay();
+}
+
 /* --- Рендереры деталей (заглушки Ф0; реальные шаблоны добавят Ф3–Ф6) --- */
 const RENDERERS = {
   meeting:  renderMeeting,
-  task:     (id) => `<div class="overlay-stub">Деталь задачи (${id}) — заполняется в Ф4</div>`,
-  decision: (id) => `<div class="overlay-stub">Деталь решения (${id}) — заполняется в Ф4</div>`,
+  task:     renderTask,
+  decision: renderDecision,
   person:   (id) => `<div class="overlay-stub">Профиль (${id}) — заполняется в Ф5</div>`,
 };
 
@@ -302,6 +471,10 @@ const ACTIONS = {
   'open-task': el => openOverlay('task', el.dataset.id),
   'open-person': el => openOverlay('person', el.dataset.id),
   'open-decision': el => openOverlay('decision', el.dataset.id),
+  'task-status': el => toast('Статус задачи обновлён: ' + el.dataset.status),
+  'decision-accept': el => decisionAction(el.dataset.id, 'accept'),
+  'decision-return': el => decisionAction(el.dataset.id, 'return'),
+  'decision-postpone': el => decisionAction(el.dataset.id, 'postpone'),
   'close-overlay': closeOverlay,
 };
 document.addEventListener('click', (e) => {

@@ -106,11 +106,11 @@
 
 ## B1. Вернуть `/referrals` в меню
 В [nav-config.ts](frontend/src/ui/components/app-shell/nav-config.ts) пункт **«Партнёрка»** `/referrals` (icon Gift/HandCoins), секция СИСТЕМА, все роли. `nav-subset.spec` зелёный.
-**Статус:** [ ]
+**Статус:** [x] — пункт «Партнёрка» (icon Gift) в `SYSTEM_SECTION` (без `roles` → всем). nav-subset зелёный (3/3).
 
 ## B2. Backend: данные для шкалы прогресса
 `GET /api/v1/referrals/me/reward-progress` → `{ hasProfile, activePaying, targetClients, monthlyEarnedKopecks }` (target из `seat.service.ts:43`/`referrals.service.ts:50`). Покрывает pre-profile-кейс (сейчас `stats` отдаёт `null` без профиля, `referrals.controller.ts:201`). Zod-DTO+Swagger, без миграций.
-**Статус:** [ ]
+**Статус:** [x] — `getRewardProgress` в ReferralsService; targetClients = ceil(base/commission) через `SeatService.calculateMonthlyPriceKopecks(0)` (AdminSetting-цена, самонастройка); pre-profile → {false,0,target,0}. BillingModule в imports (цикла нет). Тест 3 кейса. 48/48.
 
 ## B3. Баннер `<ReferralRewardBanner>` (морфит по роли+состоянию)
 **Файлы:** новый `frontend/src/ui/components/app-shell/ReferralRewardBanner.tsx` + хук `useReferralBannerVisibility.ts` (по образцу `useReferralPromoVisibility.ts`, но БЕЗ «прятать при наличии профиля»).
@@ -118,11 +118,11 @@
 - **Руководитель:** нет профиля → «Начни пользоваться Корой бесплатно — приведи 3 компании (×20 000 ₽/мес), подписка окупится. Осталось привести: **3 из 3**»; N<target → живая шкала «осталось {target−N} из {target}»; N≥target → «Подписка окуплена 🎉, дальше чистый заработок».
 - **Рядовой:** «Дополнительный заработок — сделай ссылку, отправь знакомым руководителям, 20 000 ₽/мес с компании».
 - Дизайн: небольшой, заметный, тема-зависимый — парные классы как [IncompleteSetupBanner.tsx:56](frontend/src/ui/components/IncompleteSetupBanner.tsx#L56) или `glass()`; шкала на `--chip-success-bg/fg`. **НЕ** копировать `emerald-*` из старой полосы. Трекинг — `referralsApi.trackPromoEvent`.
-**Статус:** [ ]
+**Статус:** [x] — `ReferralRewardBanner.tsx` + `useReferralBannerVisibility.ts` (whitelist /dashboard,/week,/month,/me; coo→/me решён; persistent, dismiss-TTL 30д). Морфинг в чистой `referralBannerCopy` (4 варианта, тест 6 кейсов). Парные токены (border-accent/30 bg-accent-muted/50, шкала chip-success-bg/fg). Трекинг impression/click/dismiss.
 
 ## B4. Монтирование + ретайр старой полосы
 Смонтировать `<ReferralRewardBanner/>` в [AppShell.tsx:57](frontend/src/ui/components/app-shell/AppShell.tsx#L57) (слот `ReferralPromoStrip`, рендер один раз для всех дашбордов). **Убрать** `ReferralPromoStrip` (нет двойного промо), перенести whitelist в новый хук. Мобильный компакт-вид.
-**Статус:** [ ]
+**Статус:** [x] — смонтирован в AppShell; `ReferralPromoStrip.tsx` + `useReferralPromoVisibility.ts` УДАЛЕНЫ (греп: 0 импортов); мобильный компакт (sr-only CTA, subtitle hidden sm).
 
 ## B5. Кабинет — каркас на modern/
 [ReferralsClient.tsx](frontend/app/(authenticated)/referrals/ReferralsClient.tsx): фон → `MODERN_PAGE_BG`, блоки-обёртки → `glass()`. Сохранить 3 состояния A/B/C (`:36-54`). _(Сейчас кабинет на семантических токенах, но плоский — 0 импортов modern/.)_

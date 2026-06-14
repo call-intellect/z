@@ -11,6 +11,7 @@
  *   GET    /referrals/me/clients        — список приведённых клиентов (маскированный)
  *   GET    /referrals/me/payouts        — все мои начисления
  *   GET    /referrals/me/stats          — расширенная статистика (legacy 5 + 5 новых)
+ *   GET    /referrals/me/reward-progress — шкала прогресса баннера (B2): активные / цель
  *   GET    /referrals/me/income-chart   — 12 месяцев доход + активные клиенты
  *   GET    /referrals/me/funnel         — воронка за период (30d/90d/all)
  *   POST   /referrals/me/promo-event    — трекинг ReferralPromoStrip
@@ -66,6 +67,7 @@ import {
   ReferralClientMaskedDto,
   ReferralStatsExtendedDto,
   ReferralViewDto,
+  RewardProgressDto,
   UpdateReferralBodySchema,
   type CreateReferralBody,
   type FunnelBody,
@@ -75,6 +77,7 @@ import {
   type ReferralClientMaskedBody,
   type ReferralStatsExtendedBody,
   type ReferralViewBody,
+  type RewardProgressBody,
   type UpdateReferralBody,
 } from '../dto/referrals.dto';
 import { AttributionService } from '../services/attribution.service';
@@ -86,6 +89,7 @@ import {
   type MonthlyPoint as MonthlyPointView,
   type ReferralClientMaskedView,
   type ReferralStatsExtended,
+  type RewardProgress as RewardProgressView,
 } from '../services/referrals.service';
 
 @ApiTags('referrals')
@@ -202,6 +206,19 @@ export class ReferralsController {
     if (!ref) return null;
     const stats = await this.referrals.getStats(ref.id);
     return toStatsExtendedBody(stats);
+  }
+
+  @Get('me/reward-progress')
+  @ApiOperation({
+    summary:
+      'Прогресс к награде для шкалы промо-баннера: активных платящих клиентов / цель + доход/мес. Без профиля — hasProfile=false (НЕ null).',
+  })
+  @ApiOkResponse({ type: RewardProgressDto })
+  async rewardProgress(
+    @CurrentUser() user: CurrentUserPayload,
+  ): Promise<RewardProgressBody> {
+    const progress = await this.referrals.getRewardProgress(user.id);
+    return toRewardProgressBody(progress);
   }
 
   @Get('me/income-chart')
@@ -363,6 +380,15 @@ function toStatsExtendedBody(stats: ReferralStatsExtended): ReferralStatsExtende
     firstPayments30d: stats.firstPayments30d,
     conversionClickToPaidPercent: stats.conversionClickToPaidPercent,
     conversionSignupToPaidPercent: stats.conversionSignupToPaidPercent,
+  };
+}
+
+function toRewardProgressBody(progress: RewardProgressView): RewardProgressBody {
+  return {
+    hasProfile: progress.hasProfile,
+    activePaying: progress.activePaying,
+    targetClients: progress.targetClients,
+    monthlyEarnedKopecks: progress.monthlyEarnedKopecks,
   };
 }
 

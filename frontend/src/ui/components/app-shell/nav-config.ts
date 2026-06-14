@@ -46,6 +46,7 @@ import {
   FileText,
   FlaskConical,
   Gauge,
+  Gift,
   Home,
   IdCard,
   Inbox,
@@ -317,6 +318,9 @@ const SYSTEM_SECTION: NavConfigSection = {
     // дубль «Интеграции» из «Чатов» убран в Ф0).
     { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
     { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
+    // Партнёрка — личный кабинет реферальной программы (доступен всем ролям:
+    // ссылку можно создать без ИНН). Раньше входа в меню не было — только промо-полоса.
+    { href: '/referrals', label: 'Партнёрка', icon: Gift, matchPrefix: '/referrals' },
     // «Мои обращения» — личный вход в свои тикеты поддержки (когда деск настроен).
     { href: '/support/my-tickets', label: 'Мои обращения', icon: LifeBuoy, matchPrefix: '/support/my-tickets', requiresDesk: true },
   ],

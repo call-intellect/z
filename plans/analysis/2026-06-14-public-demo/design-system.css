@@ -466,6 +466,9 @@ body[data-theme="light"] .role-switch button.active { color: #fff; }
 /* ===== Демо-интерактив 2026-06-14 ===== */
 /* Курсор для всех интерактивных элементов движка */
 [data-action] { cursor: pointer; }
+/* Скромный hover для кликабельных строк-карточек (не трогает .glass.float и кнопки) */
+.list-row[data-action] { border-radius: 10px; transition: background .15s ease; }
+.list-row[data-action]:hover { background: var(--surface-soft); }
 
 /* Оверлей-слой (slide-in справа на десктопе, fullscreen на мобилке) */
 .overlay {

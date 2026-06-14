@@ -310,24 +310,24 @@
             <span class="more" data-goto="feed">вся активность →</span>
           </div>
           <div class="row-list">
-            <div class="list-row">
-              <span class="avatar" style="background:var(--grad-mint)">МС</span>
-              <div class="body"><div class="ttl">Мария Смирнова завершила задачу «Презентация платформы»</div><div class="meta">15:42 · отдел продаж</div></div>
+            <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-anna">
+              <span class="avatar" style="background:var(--grad-teal)">АК</span>
+              <div class="body"><div class="ttl">Анна Ковалёва завершила задачу «Презентация для Орбиты»</div><div class="meta">15:42 · внедрение</div></div>
               <span class="chip ok" style="flex:none"><span class="led"></span>задача</span>
             </div>
-            <div class="list-row">
-              <span class="avatar" style="background:var(--grad-blue)">ИП</span>
-              <div class="body"><div class="ttl">Иван Петров зафиксировал решение по договору с «Бета»</div><div class="meta">14:15 · внедрение</div></div>
+            <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-serg">
+              <span class="avatar" style="background:var(--grad-violet)">СМ</span>
+              <div class="body"><div class="ttl">Сергей Мазур зафиксировал решение по тарифу для «Орбиты»</div><div class="meta">14:15 · руководство</div></div>
               <span class="chip info" style="flex:none"><span class="led"></span>решение</span>
             </div>
-            <div class="list-row">
-              <span class="avatar" style="background:var(--grad-pink)">АК</span>
-              <div class="body"><div class="ttl">Анна Кузнецова провела встречу с клиентом «Орбита»</div><div class="meta">13:07 · продажи</div></div>
+            <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
+              <span class="avatar" style="background:var(--grad-amber)">ДС</span>
+              <div class="body"><div class="ttl">Дмитрий Соколов провёл демо с клиентом «Орбита»</div><div class="meta">13:07 · продажи</div></div>
               <span class="chip" style="flex:none; color:var(--faint); background:var(--surface-soft)">встреча</span>
             </div>
-            <div class="list-row">
-              <span class="avatar" style="background:var(--grad-amber)">СВ</span>
-              <div class="body"><div class="ttl">Сергей Волков обновил статус задачи «Смета»</div><div class="meta">11:30 · внедрение</div></div>
+            <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-igor">
+              <span class="avatar" style="background:var(--grad-amber)">ИМ</span>
+              <div class="body"><div class="ttl">Игорь Маслов обновил статус задачи «Коннектор Орбиты»</div><div class="meta">11:30 · внедрение</div></div>
               <span class="chip" style="flex:none; color:var(--faint); background:var(--surface-soft)">статус</span>
             </div>
           </div>
@@ -427,14 +427,14 @@
         <h3>Кто отвечает за интеграцию с «Орбитой»?</h3>
       </div>
       <p class="muted" style="font-size:14px; line-height:1.55; margin:0 0 12px;">
-        На встрече задачу вели и Иванов, и Петров — Кора не поняла, за кем закрепить ответственность. Уточните, чтобы напоминания шли нужному человеку.
+        На встрече задачу вели и Соколов, и Маслов — Кора не поняла, за кем закрепить ответственность. Уточните, чтобы напоминания шли нужному человеку.
       </p>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
         <span class="chip info">встреча 11.06 «Планёрка по интеграциям» <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer; margin-left:5px">[34:10]</span></span>
         <span class="chip warn"><span class="led"></span>средний приоритет</span>
         <span class="chip" style="color:var(--faint); background:var(--surface-soft)">ждёт 2 дня</span>
       </div>
-      <textarea placeholder="Ответьте текстом своими словами — например: «Отвечает Петров, Иванов помогает с тестами»" style="width:100%; min-height:64px; resize:vertical; padding:11px 13px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.08); color:var(--text); font-family:var(--font); font-size:13.5px; line-height:1.5;"></textarea>
+      <textarea placeholder="Ответьте текстом своими словами — например: «Отвечает Маслов, Соколов помогает с тестами»" style="width:100%; min-height:64px; resize:vertical; padding:11px 13px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.08); color:var(--text); font-family:var(--font); font-size:13.5px; line-height:1.5;"></textarea>
       <div style="display:flex; gap:8px; margin-top:12px; align-items:center;">
         <button class="btn primary" data-action="decision-accept" data-id="d-owner-orbita-integration">Ответить</button>
         <button class="btn ghost" data-action="decision-postpone" data-id="d-owner-orbita-integration">Пропустить</button>
@@ -645,30 +645,24 @@
             </div>
             <table class="mtable">
               <thead>
-                <tr><th>Сотрудник</th><th>Направление</th><th class="r">Сдержал обещаний</th><th class="r">Статус</th></tr>
+                <tr><th>Сотрудник</th><th>Направление</th><th>Что сделал</th><th class="r">Статус</th></tr>
               </thead>
               <tbody>
-                <tr>
-                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-mint)">АН</span>Анна Носова</div></td>
+                <tr style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ДС</span>Дмитрий Соколов</div></td>
                   <td class="muted">Продажи</td>
-                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">7 из 7</span><span class="progress" style="width:64px"><span style="width:100%"></span></span></div></td>
-                  <td class="r"><span class="chip ok"><span class="led"></span>100%</span></td>
+                  <td class="muted">закрыл всё, что обещал на неделе</td>
+                  <td class="r"><span class="chip ok"><span class="led"></span>опора</span></td>
                 </tr>
-                <tr>
-                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-teal)">ДК</span>Дмитрий Карпов</div></td>
-                  <td class="muted">Разработка</td>
-                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">8 из 9</span><span class="progress" style="width:64px"><span style="width:89%"></span></span></div></td>
-                  <td class="r"><span class="chip ok"><span class="led"></span>89%</span></td>
-                </tr>
-                <tr>
-                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-blue)">СГ</span>Сергей Глебов</div></td>
-                  <td class="muted">Поддержка</td>
-                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">5 из 6</span><span class="progress" style="width:64px"><span style="width:83%"></span></span></div></td>
-                  <td class="r"><span class="chip ok"><span class="led"></span>83%</span></td>
+                <tr style="cursor:pointer;" data-action="open-person" data-id="p-serg">
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-violet)">СМ</span>Сергей Мазур</div></td>
+                  <td class="muted">Руководство</td>
+                  <td class="muted">довёл демо и письма клиентам в срок</td>
+                  <td class="r"><span class="chip ok"><span class="led"></span>держит слово</span></td>
                 </tr>
               </tbody>
             </table>
-            <div class="faint" style="font-size:12px; margin-top:12px;">показано 3 из 4 · <span style="color:var(--cyan); cursor:pointer">показать всех →</span></div>
+            <div class="faint" style="font-size:12px; margin-top:12px;">показано 2 из 6 · <span style="color:var(--cyan); cursor:pointer">показать всех →</span></div>
           </div>
 
           <!-- Зона риска -->
@@ -683,24 +677,30 @@
             </div>
             <table class="mtable">
               <thead>
-                <tr><th>Сотрудник</th><th>Направление</th><th class="r">Сдержал обещаний</th><th class="r">Чем помочь</th></tr>
+                <tr><th>Сотрудник</th><th>Направление</th><th>Что мешает</th><th class="r">Чем помочь</th></tr>
               </thead>
               <tbody>
-                <tr>
-                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ИВ</span>Игорь Власов</div></td>
+                <tr style="cursor:pointer;" data-action="open-person" data-id="p-igor">
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ИМ</span>Игорь Маслов</div></td>
                   <td class="muted">Внедрение</td>
-                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">2 из 5</span><span class="progress warn" style="width:64px"><span style="width:40%"></span></span></div></td>
+                  <td class="muted">обещания сорвались из-за задержки оплаты</td>
                   <td class="r"><span class="chip warn"><span class="led"></span>снять блокер</span></td>
                 </tr>
                 <tr style="cursor:pointer;" data-action="open-person" data-id="p-marina">
                   <td><div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">МР</span>Марина Рыжова</div></td>
                   <td class="muted">Маркетинг</td>
-                  <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">3 из 5</span><span class="progress warn" style="width:64px"><span style="width:60%"></span></span></div></td>
+                  <td class="muted">ведёт три направления сразу — на пределе</td>
                   <td class="r"><span class="chip info"><span class="led"></span>разгрузить</span></td>
+                </tr>
+                <tr style="cursor:pointer;" data-action="open-person" data-id="p-anna">
+                  <td><div class="cell-person"><span class="avatar" style="background:var(--grad-teal)">АК</span>Анна Ковалёва</div></td>
+                  <td class="muted">Внедрение</td>
+                  <td class="muted">тянет «Орбиту» в одиночку, сдвигает задачи</td>
+                  <td class="r"><span class="chip info"><span class="led"></span>дать помощника</span></td>
                 </tr>
               </tbody>
             </table>
-            <div class="faint" style="font-size:12px; margin-top:12px; line-height:1.5;">Не оценка людей, а подсказка где разблокировать. У Игоря 3 обещания сорвались из-за задержки оплаты коннекторов — это блокер, не он.</div>
+            <div class="faint" style="font-size:12px; margin-top:12px; line-height:1.5;">Не оценка людей, а подсказка где разблокировать. У Игоря обещания сорвались из-за задержки оплаты коннекторов — это блокер, не он.</div>
           </div>
         </div>
 
@@ -708,7 +708,7 @@
         <div class="glass mt">
           <div class="card-title">
             <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></span>
-            <h3>Разбор: Анна Носова — план-факт недели</h3>
+            <h3>Разбор: Анна Ковалёва — план-факт недели</h3>
             <span class="more">свернуть ▲</span>
           </div>
           <table class="mtable">
@@ -716,7 +716,7 @@
             <tbody>
               <tr><td>Сделать прайс для «Вектора»</td><td class="muted">к 12.06</td><td><span class="chip ok"><span class="led"></span>сделано</span></td><td class="muted">—</td></tr>
               <tr><td>Подготовить договор «Орбиты»</td><td class="muted">к пятнице</td><td><span class="chip risk"><span class="led"></span>не сделано</span></td><td class="muted">задержка оплаты коннекторов</td></tr>
-              <tr><td>Обещал прислать отчёт Петрову</td><td class="muted">к 13.06</td><td><span class="chip warn"><span class="led"></span>просрочено</span></td><td class="muted">—</td></tr>
+              <tr><td>Обещала прислать отчёт по «Орбите»</td><td class="muted">к 13.06</td><td><span class="chip warn"><span class="led"></span>просрочено</span></td><td class="muted">—</td></tr>
               <tr><td>Чек-ины за неделю</td><td class="muted">5 раб. дней</td><td><span class="chip ok"><span class="led"></span>5 из 5</span></td><td class="muted">—</td></tr>
             </tbody>
           </table>
@@ -2275,7 +2275,7 @@
       <div class="card-title">
         <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
         <h3>Все задачи списком</h3>
-        <span class="chip info" style="margin-left:auto"><span class="led"></span>21 задача</span>
+        <span class="chip info" style="margin-left:auto"><span class="led"></span>20 задач</span>
       </div>
       <table class="mtable">
         <thead><tr><th>Задача</th><th>Проект</th><th>Исполнитель</th><th>Срок</th><th class="r">Статус</th></tr></thead>
@@ -3007,7 +3007,7 @@
       </div>
       <div class="list-row">
         <span class="lead" style="background:var(--ok-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/></svg></span>
-        <div class="body"><div class="ttl">Анна Носова</div><div class="meta">сотрудник · продажи · 12 обещаний · ведёт «Вектор»</div></div>
+        <div class="body"><div class="ttl">Анна Ковалёва</div><div class="meta">сотрудник · внедрение · ведёт «Орбиту» и «Вектор»</div></div>
         <span class="chip info">человек</span>
       </div>
       <div class="list-row">
@@ -3137,7 +3137,7 @@
       </div>
       <div class="list-row" data-filter-card="feed" data-type="Блокеры">
         <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
-        <div class="body"><div class="ttl">Блокер: задержка оплаты коннекторов тормозит внедрение</div><div class="meta">открыт 6 дней · повторяется · блокирует Игоря Власова</div></div>
+        <div class="body"><div class="ttl">Блокер: задержка оплаты коннекторов тормозит внедрение</div><div class="meta">открыт 6 дней · повторяется · блокирует Игоря Маслова</div></div>
         <span class="chip warn">блокер · 6 дн</span>
       </div>
       <div class="list-row" data-filter-card="feed" data-type="Сигналы">
@@ -3172,21 +3172,21 @@
     <table class="mtable">
       <thead><tr><th>Кому</th><th>Вопрос Коры</th><th>Статус ответа</th><th class="r">Висит</th></tr></thead>
       <tbody>
-        <tr>
-          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-blue)">ИП</span>Иван Петров</div></td>
+        <tr style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
+          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ДС</span>Дмитрий Соколов</div></td>
           <td class="muted">Кто отвечает за интеграцию с «Орбитой»?</td>
           <td><span class="chip risk"><span class="led"></span>прочитал, молчит</span></td>
           <td class="r"><b>2 дня</b></td>
         </tr>
-        <tr>
-          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">АК</span>Анна Кузнецова</div></td>
+        <tr style="cursor:pointer;" data-action="open-person" data-id="p-marina">
+          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">МР</span>Марина Рыжова</div></td>
           <td class="muted">Что считаем «платящим клиентом» в цели?</td>
-          <td><span class="chip warn"><span class="led"></span>не открыл</span></td>
+          <td><span class="chip warn"><span class="led"></span>не открыла</span></td>
           <td class="r"><b>1 день</b></td>
         </tr>
-        <tr>
-          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ИВ</span>Игорь Власов</div></td>
-          <td class="muted">Подтверди срок по внедрению «Веги»</td>
+        <tr style="cursor:pointer;" data-action="open-person" data-id="p-igor">
+          <td><div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ИМ</span>Игорь Маслов</div></td>
+          <td class="muted">Подтверди срок по внедрению «Орбиты»</td>
           <td><span class="chip ok"><span class="led"></span>ответил</span></td>
           <td class="r muted">—</td>
         </tr>

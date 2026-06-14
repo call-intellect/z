@@ -609,13 +609,15 @@
         <!-- Вкладки -->
         <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
           <div class="pill-group">
-            <button class="pill active">Сводка</button>
-            <button class="pill">Пульс сейчас</button>
-            <button class="pill">Кто держит слово</button>
+            <button class="pill active" data-action="tab" data-group="week-view" data-tab="summary">Сводка</button>
+            <button class="pill" data-action="tab" data-group="week-view" data-tab="pulse">Пульс сейчас</button>
+            <button class="pill" data-action="tab" data-group="week-view" data-tab="word">Кто держит слово</button>
           </div>
           <span class="faint" style="font-size:12.5px;">Понедельничный разбор · обновлено сегодня 08:30</span>
         </div>
 
+        <!-- ПАНЕЛЬ summary: вердикт недели -->
+        <div data-tabpanel="week-view:summary">
         <!-- 1. Вердикт недели -->
         <div class="verdict-bar">
           <span class="led-lg"></span>
@@ -625,7 +627,10 @@
           </div>
           <button class="btn primary">Открыть разбор →</button>
         </div>
+        </div><!-- /week-view:summary вердикт -->
 
+        <!-- ПАНЕЛЬ word: кто держит слово -->
+        <div data-tabpanel="week-view:word" hidden>
         <!-- 2. КТО ДЕРЖИТ СЛОВО (поднято наверх) -->
         <div class="grid g2">
           <!-- Топ надёжных -->
@@ -717,7 +722,10 @@
           </table>
           <div class="faint" style="font-size:12px; margin-top:12px;">План собран автоматически: обещания + задачи спринта/трекера + утренние чек-ины · без ручного заполнения. Сводится в месячный отчёт (4 недели).</div>
         </div>
+        </div><!-- /week-view:word -->
 
+        <!-- ПАНЕЛЬ summary: KPI недели -->
+        <div data-tabpanel="week-view:summary">
         <!-- 3. KPI недели с дельтами и sparkline -->
         <div class="section-h mt">Пульс недели в цифрах</div>
         <div class="grid g4">
@@ -761,7 +769,10 @@
             <div class="stat-foot"><span class="delta up">↑ 4</span><span class="stat-sub">к прошлой</span></div>
           </div>
         </div>
+        </div><!-- /week-view:summary KPI -->
 
+        <!-- ПАНЕЛЬ pulse: пульс сейчас + что повторялось -->
+        <div data-tabpanel="week-view:pulse" hidden>
         <!-- 4. ПУЛЬС СЕЙЧАС — 3 зоны -->
         <div class="section-h mt">Пульс сейчас</div>
         <div class="grid g3">
@@ -855,15 +866,18 @@
             </div>
           </div>
         </div>
+        </div><!-- /week-view:pulse -->
 
+        <!-- ПАНЕЛЬ summary: температура + цели + инсайт + прогноз -->
+        <div data-tabpanel="week-view:summary">
         <!-- 5. Температура команды — heatmap -->
         <div class="glass mt">
           <div class="card-title">
             <span class="card-ico" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/></svg></span>
             <h3>Температура команды</h3>
             <div class="pill-group" style="margin-left:auto">
-              <button class="pill active">Общая</button>
-              <button class="pill">По людям</button>
+              <button class="pill active" data-action="tab" data-group="week-heat" data-tab="common">Общая</button>
+              <button class="pill" data-action="tab" data-group="week-heat" data-tab="people">По людям</button>
             </div>
           </div>
           <div class="heat">
@@ -997,6 +1011,7 @@
             <div class="cta"><span class="chip info"><span class="led"></span>собрано 1 из 4 недель</span></div>
           </div>
         </div>
+        </div><!-- /week-view:summary хвост -->
 
       </section>
 
@@ -1011,9 +1026,9 @@
     </div>
     <div class="topbar-right">
       <div class="pill-group">
-        <button class="pill active">Май</button>
-        <button class="pill">Апрель</button>
-        <button class="pill">Март</button>
+        <button class="pill active" data-action="tab" data-group="month-period" data-tab="may">Май</button>
+        <button class="pill" data-action="tab" data-group="month-period" data-tab="apr">Апрель</button>
+        <button class="pill" data-action="tab" data-group="month-period" data-tab="mar">Март</button>
       </div>
       <button class="btn">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
@@ -1026,6 +1041,8 @@
     </div>
   </div>
 
+  <!-- ПАНЕЛЬ month-period:may -->
+  <div data-tabpanel="month-period:may">
   <!-- пометка про последний месяц с данными -->
   <div class="verdict-bar" style="margin-bottom:22px">
     <span class="led-lg"></span>
@@ -1300,6 +1317,296 @@
       <div class="cta"><button class="btn primary">Посмотреть итоги мая →</button></div>
     </div>
   </div>
+  </div><!-- /month-period:may -->
+
+  <!-- ПАНЕЛЬ month-period:apr -->
+  <div data-tabpanel="month-period:apr" hidden>
+    <!-- пометка про месяц -->
+    <div class="verdict-bar" style="margin-bottom:22px">
+      <span class="led-lg"></span>
+      <div style="flex:1">
+        <div style="font-weight:600; font-size:14px;">Апрель — месяц разгона перед спринтами.</div>
+        <div class="faint" style="font-size:12px; margin-top:2px;">Собрано 29 встреч · 4 сотрудника · отчёт сформирован Корой автоматически 1 мая</div>
+      </div>
+      <span class="chip info"><span class="led"></span>архив отчёта</span>
+    </div>
+
+    <!-- AI-сводка апреля -->
+    <div class="ai-card">
+      <span class="glow"></span>
+      <div class="ai-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></div>
+      <h3>Сводка месяца от Коры</h3>
+      <p style="font-size:14.5px; line-height:1.62; max-width:760px;">
+        Апрель — месяц настройки процессов. Команда подросла до <b style="color:var(--text)">16 платящих</b> клиентов против 13 в марте, но темп продаж пока неровный.
+        Большую часть встреч заняла разработка (47%), продажи — 28%. На радаре впервые появилась тема молчания поддержки
+        <span class="cite">радар · 2 сигнала</span>. За месяц зафиксировано <b style="color:var(--text)">15 решений</b>, из них <b style="color:var(--text)">9 доведено до внедрения</b>.
+      </p>
+      <button class="ai-cta">Открыть полный разбор месяца →</button>
+    </div>
+
+    <!-- Снятая рутина -->
+    <div class="section-h mt" style="margin-top:24px">Снятая рутина — что Кора сделала за вас в апреле</div>
+    <div class="grid g4" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span></div>
+        <div class="stat-label">Встреч запротоколировано</div>
+        <div class="stat-value">29</div>
+        <div class="stat-foot"><span class="delta up">↑ 6</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/></svg></span></div>
+        <div class="stat-label">Задач извлечено</div>
+        <div class="stat-value">81</div>
+        <div class="stat-foot"><span class="delta up">↑ 19</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span></div>
+        <div class="stat-label">Решений зафиксировано</div>
+        <div class="stat-value">15</div>
+        <div class="stat-foot"><span class="delta up">↑ 3</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="stat-label">Обещаний собрано</div>
+        <div class="stat-value">35</div>
+        <div class="stat-foot"><span class="delta up">↑ 8</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span></div>
+        <div class="stat-label">Статусов собрано</div>
+        <div class="stat-value">66</div>
+        <div class="stat-foot"><span class="delta up">↑ 14</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+        <div class="stat-label">Вопросов отвечено с цитатой</div>
+        <div class="stat-value">149</div>
+        <div class="stat-foot"><span class="delta up">↑ 38</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7zM9 21h6"/></svg></span></div>
+        <div class="stat-label">Идей доведено до дела</div>
+        <div class="stat-value">7</div>
+        <div class="stat-foot"><span class="delta up">↑ 2</span><span class="stat-sub">к марту</span></div>
+      </div>
+      <div class="glass float" style="margin-top:20px; padding:20px; display:flex; flex-direction:column; justify-content:center; background:linear-gradient(180deg, oklch(0.34 0.07 200/.45), oklch(0.22 0.04 230/.45)); border-color:oklch(0.82 0.13 178/.22)">
+        <span class="glow teal"></span>
+        <div class="faint" style="font-size:11.5px; margin-bottom:6px;">Кора сэкономила команде в апреле</div>
+        <div class="hero-num glow-text" style="color:var(--teal); font-size:34px">≈ 450</div>
+        <div class="muted" style="font-size:12.5px; margin-top:4px;">ручных пунктов протоколов и статусов, которые иначе писали бы люди</div>
+      </div>
+    </div>
+
+    <!-- Команда лучше -->
+    <div class="section-h mt" style="margin-top:24px">
+      Команда лучше
+      <span class="chip warn" style="margin-left:8px; vertical-align:1px"><span class="led"></span>оценка Коры, не точная метрика</span>
+    </div>
+    <div class="grid g3">
+      <div class="glass float" style="text-align:center">
+        <span class="glow teal"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <h3>Надёжность обещаний</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">71%</div>
+        <div class="muted" style="font-size:12.5px;">обещаний выполнено в срок</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">25 из 35 · в марте было 66%</div>
+      </div>
+      <div class="glass float" style="text-align:center">
+        <span class="glow"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <h3>Чат помог</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">84%</div>
+        <div class="muted" style="font-size:12.5px;">ответов команда отметила полезными</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">125 из 149 ответов · «полезно»</div>
+      </div>
+      <div class="glass float" style="text-align:center">
+        <span class="glow amber"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span>
+          <h3>Решения доведены</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">60%</div>
+        <div class="muted" style="font-size:12.5px;">решений доведено до внедрения</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">9 из 15 · в марте было 53%</div>
+      </div>
+    </div>
+
+    <!-- Дельта к марту -->
+    <div class="section-h mt" style="margin-top:24px">Апрель к марту — как изменилась компания</div>
+    <div class="grid g3">
+      <div class="glass float">
+        <span class="glow"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 11V3H9M21 3l-9 9M11 21H5a2 2 0 0 1-2-2v-6"/></svg></span>
+          <h3>Платящих клиентов</h3>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <div class="hero-num glow-text" style="color:var(--mint)">16</div>
+          <span class="delta up" style="font-size:15px">↑ 3</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-top:8px;">было 13 в марте · к цели «25» осталось 9</div>
+        <div class="progress" style="margin-top:12px"><span style="width:64%"></span></div>
+      </div>
+      <div class="glass float">
+        <span class="glow teal"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <h3>Обещаний в срок</h3>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <div class="hero-num glow-text" style="color:var(--teal)">71%</div>
+          <span class="delta up" style="font-size:15px">↑ 5 п.п.</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-top:8px;">было 66% · дисциплина подтягивается</div>
+        <div class="progress" style="margin-top:12px"><span style="width:71%"></span></div>
+      </div>
+      <div class="glass float">
+        <span class="glow amber"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+          <h3>Открытых рисков</h3>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:12px;">
+          <div class="hero-num glow-text" style="color:var(--amber)">6</div>
+          <span class="delta up" style="font-size:15px">↑ 1</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-top:8px;">было 5 · добавилось молчание поддержки</div>
+        <div class="progress warn" style="margin-top:12px"><span style="width:50%"></span></div>
+      </div>
+    </div>
+  </div><!-- /month-period:apr -->
+
+  <!-- ПАНЕЛЬ month-period:mar -->
+  <div data-tabpanel="month-period:mar" hidden>
+    <!-- пометка про месяц -->
+    <div class="verdict-bar" style="margin-bottom:22px">
+      <span class="led-lg"></span>
+      <div style="flex:1">
+        <div style="font-weight:600; font-size:14px;">Март — первый месяц на Коре.</div>
+        <div class="faint" style="font-size:12px; margin-top:2px;">Собрано 23 встречи · 4 сотрудника · отчёт сформирован Корой автоматически 1 апреля</div>
+      </div>
+      <span class="chip info"><span class="led"></span>архив отчёта</span>
+    </div>
+
+    <!-- AI-сводка марта -->
+    <div class="ai-card">
+      <span class="glow"></span>
+      <div class="ai-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></div>
+      <h3>Сводка месяца от Коры</h3>
+      <p style="font-size:14.5px; line-height:1.62; max-width:760px;">
+        Март — месяц старта наблюдений. Кора начала собирать встречи с середины месяца, поэтому данных меньше.
+        Платящих клиентов <b style="color:var(--text)">13</b>, основной фокус — разработка продукта (52% встреч). Радар рисков ещё пустой.
+        За месяц зафиксировано <b style="color:var(--text)">12 решений</b>, из них <b style="color:var(--text)">6 доведено до внедрения</b>.
+      </p>
+      <button class="ai-cta">Открыть полный разбор месяца →</button>
+    </div>
+
+    <!-- Снятая рутина -->
+    <div class="section-h mt" style="margin-top:24px">Снятая рутина — что Кора сделала за вас в марте</div>
+    <div class="grid g4" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span></div>
+        <div class="stat-label">Встреч запротоколировано</div>
+        <div class="stat-value">23</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/></svg></span></div>
+        <div class="stat-label">Задач извлечено</div>
+        <div class="stat-value">62</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span></div>
+        <div class="stat-label">Решений зафиксировано</div>
+        <div class="stat-value">12</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span></div>
+        <div class="stat-label">Обещаний собрано</div>
+        <div class="stat-value">27</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></span></div>
+        <div class="stat-label">Статусов собрано</div>
+        <div class="stat-value">52</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+        <div class="stat-label">Вопросов отвечено с цитатой</div>
+        <div class="stat-value">111</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="stat" style="margin-top:20px">
+        <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7zM9 21h6"/></svg></span></div>
+        <div class="stat-label">Идей доведено до дела</div>
+        <div class="stat-value">5</div>
+        <div class="stat-foot"><span class="stat-sub">первый месяц</span></div>
+      </div>
+      <div class="glass float" style="margin-top:20px; padding:20px; display:flex; flex-direction:column; justify-content:center; background:linear-gradient(180deg, oklch(0.34 0.07 200/.45), oklch(0.22 0.04 230/.45)); border-color:oklch(0.82 0.13 178/.22)">
+        <span class="glow teal"></span>
+        <div class="faint" style="font-size:11.5px; margin-bottom:6px;">Кора сэкономила команде в марте</div>
+        <div class="hero-num glow-text" style="color:var(--teal); font-size:34px">≈ 340</div>
+        <div class="muted" style="font-size:12.5px; margin-top:4px;">ручных пунктов протоколов и статусов, которые иначе писали бы люди</div>
+      </div>
+    </div>
+
+    <!-- Команда лучше -->
+    <div class="section-h mt" style="margin-top:24px">
+      Команда лучше
+      <span class="chip warn" style="margin-left:8px; vertical-align:1px"><span class="led"></span>оценка Коры, не точная метрика</span>
+    </div>
+    <div class="grid g3">
+      <div class="glass float" style="text-align:center">
+        <span class="glow teal"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <h3>Надёжность обещаний</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">66%</div>
+        <div class="muted" style="font-size:12.5px;">обещаний выполнено в срок</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">18 из 27 · точка отсчёта</div>
+      </div>
+      <div class="glass float" style="text-align:center">
+        <span class="glow"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <h3>Чат помог</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">80%</div>
+        <div class="muted" style="font-size:12.5px;">ответов команда отметила полезными</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">89 из 111 ответов · «полезно»</div>
+      </div>
+      <div class="glass float" style="text-align:center">
+        <span class="glow amber"></span>
+        <div class="card-title" style="justify-content:center">
+          <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg></span>
+          <h3>Решения доведены</h3>
+        </div>
+        <div style="font-size:42px; font-weight:600; letter-spacing:-0.02em; padding:18px 0 8px;">53%</div>
+        <div class="muted" style="font-size:12.5px;">решений доведено до внедрения</div>
+        <div class="faint" style="font-size:11.5px; margin-top:4px;">6 из 12 · точка отсчёта</div>
+      </div>
+    </div>
+
+    <!-- Сноска для первого месяца -->
+    <div class="glass mt" style="margin-top:24px; border-color:oklch(0.70 0.16 245/.2)">
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/></svg></span>
+        <h3>Это точка отсчёта</h3>
+      </div>
+      <div class="empty">
+        Март — первый месяц наблюдений, сравнивать пока не с чем. Со следующего месяца Кора начинает показывать динамику «было → стало».
+      </div>
+    </div>
+  </div><!-- /month-period:mar -->
 
 </section>
 
@@ -1308,11 +1615,14 @@
   <!-- вкладки: Журнал · Клиенты и сделки -->
   <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:18px;">
     <div class="pill-group">
-      <button class="pill active">Журнал</button>
-      <button class="pill">Клиенты и сделки</button>
+      <button class="pill active" data-action="tab" data-group="meet-view" data-tab="journal">Журнал</button>
+      <button class="pill" data-action="tab" data-group="meet-view" data-tab="clients">Клиенты и сделки</button>
     </div>
     <div class="faint" style="font-size:12px;">28 встреч за месяц · сбор работает · последняя 2 часа назад</div>
   </div>
+
+  <!-- ПАНЕЛЬ meet-view:journal -->
+  <div data-tabpanel="meet-view:journal">
 
   <!-- Поиск по транскриптам + фильтры по типу встречи -->
   <div class="glass float" style="padding:16px 18px; margin-bottom:20px;">
@@ -1593,6 +1903,113 @@
     </div>
 
   </div>
+  </div><!-- /meet-view:journal -->
+
+  <!-- ПАНЕЛЬ meet-view:clients -->
+  <div data-tabpanel="meet-view:clients" hidden>
+    <div class="section-h">Клиенты и сделки — собрано из встреч автоматически</div>
+    <div class="faint" style="font-size:12px; margin-bottom:16px;">Кора связала встречи, обещания и решения по каждому клиенту · 12 активных клиентов</div>
+
+    <div class="grid g3">
+
+      <!-- Орбита -->
+      <div class="glass float">
+        <span class="glow teal"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg></span>
+          <h3>«Орбита»</h3>
+          <span class="chip ok" style="margin-left:auto"><span class="led"></span>сделка идёт</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-bottom:12px;">расширенный тариф · ответственный Михаил</div>
+        <div class="row-list">
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">5 встреч за месяц</div><div class="meta">последняя сегодня 11:30 · демо тарифа</div></div>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">3 обещания в работе</div><div class="meta">видео по импорту · коммерческое · перезвон</div></div>
+            <span class="chip warn">2 в срок</span>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Риск: перенос базы из старой CRM</div><div class="meta">всплыло на 2 встречах</div></div>
+            <span class="chip risk"><span class="led"></span>открыто</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Вектор -->
+      <div class="glass float">
+        <span class="glow"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
+          <h3>«Вектор»</h3>
+          <span class="chip ok" style="margin-left:auto"><span class="led"></span>договор подписан</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-bottom:12px;">платящий с мая · ответственная Анна</div>
+        <div class="row-list">
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">4 встречи за месяц</div><div class="meta">последняя 27.05 · подписание</div></div>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Все обещания закрыты</div><div class="meta">прайс · договор · онбординг</div></div>
+            <span class="chip ok"><span class="led"></span>100%</span>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Жалоба на молчание поддержки</div><div class="meta">упомянуто на 1 встрече</div></div>
+            <span class="chip warn"><span class="led"></span>наблюдаем</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Гелиос -->
+      <div class="glass float">
+        <span class="glow amber"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span>
+          <h3>«Гелиос»</h3>
+          <span class="chip warn" style="margin-left:auto"><span class="led"></span>пауза</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-bottom:12px;">в переговорах · ответственная Анна</div>
+        <div class="row-list">
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">2 встречи за месяц</div><div class="meta">последняя 06.06 · обсуждение цены</div></div>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Согласование с финдиректором</div><div class="meta">клиент взял паузу до пятницы</div></div>
+            <span class="chip warn"><span class="led"></span>ждём</span>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Возражение по цене</div><div class="meta">всплыло на 2 встречах</div></div>
+            <span class="chip info"><span class="led"></span>в работе</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Северянка -->
+      <div class="glass float">
+        <span class="glow blue"></span>
+        <div class="card-title">
+          <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg></span>
+          <h3>«Северянка»</h3>
+          <span class="chip info" style="margin-left:auto"><span class="led"></span>новый лид</span>
+        </div>
+        <div class="faint" style="font-size:12px; margin-bottom:12px;">первый контакт · ответственный Михаил</div>
+        <div class="row-list">
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">1 встреча за месяц</div><div class="meta">последняя 10.06 · знакомство</div></div>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Обещание: прислать кейсы</div><div class="meta">Михаил · до 13 июня</div></div>
+            <span class="chip warn"><span class="led"></span>на грани срока</span>
+          </div>
+          <div class="list-row" style="padding:9px 0;">
+            <div class="body"><div class="ttl" style="font-size:13px;">Интерес к тарифу «Команда»</div><div class="meta">подходит под бету</div></div>
+            <span class="chip ok"><span class="led"></span>тёплый</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /meet-view:clients -->
 
 </section>
 
@@ -1609,40 +2026,44 @@
     <button class="btn primary">Что просрочено →</button>
   </div>
 
-  <!-- ====================== ДОСКА ====================== -->
+  <!-- ====================== ВКЛАДКИ ВИДА ====================== -->
   <div class="card-title" style="margin-bottom:14px;">
     <span class="card-ico" style="background:var(--grad-violet)">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>
     </span>
-    <h3>Доска задач</h3>
+    <h3>Задачи</h3>
     <div class="pill-group" style="margin-left:auto">
-      <button class="pill active">Доска</button>
-      <button class="pill">Список</button>
-      <button class="pill">Спринты</button>
-      <button class="pill">Входящие</button>
-      <button class="pill">Календарь</button>
-      <button class="pill">Архив</button>
+      <button class="pill active" data-action="tab" data-group="tasks-view" data-tab="board">Доска</button>
+      <button class="pill" data-action="tab" data-group="tasks-view" data-tab="list">Список</button>
+      <button class="pill" data-action="tab" data-group="tasks-view" data-tab="sprints">Спринты</button>
+      <button class="pill" data-action="tab" data-group="tasks-view" data-tab="inbox">Входящие</button>
+      <button class="pill" data-action="tab" data-group="tasks-view" data-tab="calendar">Календарь</button>
+      <button class="pill" data-action="tab" data-group="tasks-view" data-tab="archive">Архив</button>
     </div>
   </div>
+
+  <!-- ПАНЕЛЬ tasks-view:board -->
+  <div data-tabpanel="tasks-view:board">
 
   <!-- строка фильтров -->
   <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:18px;">
     <span class="faint" style="font-size:12px;">Фильтры:</span>
     <div class="pill-group">
-      <button class="pill active">Все проекты</button>
-      <button class="pill">Продажи</button>
-      <button class="pill">Внедрение</button>
-      <button class="pill">Поддержка</button>
+      <button class="pill active" data-action="filter" data-filter-group="tasks" data-filter-key="project" data-filter-val="all">Все проекты</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="project" data-filter-val="Продажи">Продажи</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="project" data-filter-val="Внедрение">Внедрение</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="project" data-filter-val="Поддержка">Поддержка</button>
     </div>
     <div class="pill-group">
-      <button class="pill active">Вся команда</button>
-      <button class="pill">Анна Р.</button>
-      <button class="pill">Игорь М.</button>
-      <button class="pill">Лена К.</button>
+      <button class="pill active" data-action="filter" data-filter-group="tasks" data-filter-key="assignee" data-filter-val="all">Вся команда</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="assignee" data-filter-val="Анна">Анна К.</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="assignee" data-filter-val="Игорь">Игорь М.</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="assignee" data-filter-val="Елена">Елена В.</button>
     </div>
     <div class="pill-group">
-      <button class="pill active">Спринт «25 клиентов»</button>
-      <button class="pill">Без спринта</button>
+      <button class="pill active" data-action="filter" data-filter-group="tasks" data-filter-key="sprint" data-filter-val="all">Все спринты</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="sprint" data-filter-val="25 клиентов">Спринт «25 клиентов»</button>
+      <button class="pill" data-action="filter" data-filter-group="tasks" data-filter-key="sprint" data-filter-val="Без спринта">Без спринта</button>
     </div>
     <button class="btn primary" style="margin-left:auto">+ Новая задача</button>
   </div>
@@ -1660,7 +2081,7 @@
       </div>
       <div style="display:flex; flex-direction:column; gap:10px;">
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Внедрение" data-assignee="Елена" data-sprint="Без спринта" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip info"><span class="led"></span>низкий</span>
           </div>
@@ -1671,7 +2092,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Анна" data-sprint="25 клиентов" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip warn"><span class="led"></span>средний</span>
             <span class="chip" style="color:var(--violet); background:oklch(0.66 0.20 300 / 0.14)">из встречи</span>
@@ -1683,7 +2104,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Игорь" data-sprint="Без спринта" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip info"><span class="led"></span>низкий</span>
           </div>
@@ -1694,7 +2115,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Внедрение" data-assignee="Анна" data-sprint="25 клиентов" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip warn"><span class="led"></span>средний</span>
             <span class="chip" style="color:var(--cyan); background:oklch(0.80 0.13 205 / 0.14)">из решения</span>
@@ -1719,7 +2140,7 @@
       </div>
       <div style="display:flex; flex-direction:column; gap:10px;">
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Анна" data-sprint="25 клиентов" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip risk"><span class="led"></span>высокий</span>
             <span class="chip" style="color:var(--violet); background:oklch(0.66 0.20 300 / 0.14)">из встречи</span>
@@ -1732,7 +2153,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Внедрение" data-assignee="Игорь" data-sprint="25 клиентов" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip warn"><span class="led"></span>средний</span>
             <span class="chip" style="color:var(--cyan); background:oklch(0.80 0.13 205 / 0.14)">из решения</span>
@@ -1745,7 +2166,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Поддержка" data-assignee="Елена" data-sprint="Без спринта" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip warn"><span class="led"></span>средний</span>
           </div>
@@ -1770,7 +2191,7 @@
       </div>
       <div style="display:flex; flex-direction:column; gap:10px;">
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Поддержка" data-assignee="Елена" data-sprint="Без спринта" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip warn"><span class="led"></span>средний</span>
           </div>
@@ -1782,7 +2203,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Анна" data-sprint="25 клиентов" style="padding:13px; border-radius:14px;">
           <div style="display:flex; gap:6px; margin-bottom:9px; flex-wrap:wrap;">
             <span class="chip risk"><span class="led"></span>высокий</span>
             <span class="chip" style="color:var(--cyan); background:oklch(0.80 0.13 205 / 0.14)">из решения</span>
@@ -1808,7 +2229,7 @@
       </div>
       <div style="display:flex; flex-direction:column; gap:10px;">
 
-        <div class="glass" style="padding:13px; border-radius:14px; opacity:0.82;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Анна" data-sprint="25 клиентов" style="padding:13px; border-radius:14px; opacity:0.82;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip ok"><span class="led"></span>сдано в срок</span>
           </div>
@@ -1819,7 +2240,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px; opacity:0.82;">
+        <div class="glass" data-filter-card="tasks" data-project="Внедрение" data-assignee="Игорь" data-sprint="25 клиентов" style="padding:13px; border-radius:14px; opacity:0.82;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip ok"><span class="led"></span>сдано в срок</span>
           </div>
@@ -1830,7 +2251,7 @@
           </div>
         </div>
 
-        <div class="glass" style="padding:13px; border-radius:14px; opacity:0.82;">
+        <div class="glass" data-filter-card="tasks" data-project="Продажи" data-assignee="Елена" data-sprint="Без спринта" style="padding:13px; border-radius:14px; opacity:0.82;">
           <div style="display:flex; gap:6px; margin-bottom:9px;">
             <span class="chip ok"><span class="led"></span>сдано</span>
           </div>
@@ -1845,21 +2266,131 @@
     </div>
 
   </div>
+  </div><!-- /tasks-view:board -->
 
+  <!-- ПАНЕЛЬ tasks-view:list -->
+  <div data-tabpanel="tasks-view:list" hidden>
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
+        <h3>Все задачи списком</h3>
+        <span class="chip info" style="margin-left:auto"><span class="led"></span>21 задача</span>
+      </div>
+      <table class="mtable">
+        <thead><tr><th>Задача</th><th>Проект</th><th>Исполнитель</th><th>Срок</th><th class="r">Статус</th></tr></thead>
+        <tbody>
+          <tr><td>Записать видео по импорту базы для «Орбиты»</td><td class="muted">Внедрение</td><td class="muted">Сергей М.</td><td class="muted">16 июня</td><td class="r"><span class="chip info"><span class="led"></span>в работе</span></td></tr>
+          <tr><td>Отправить коммерческое со скидкой за год</td><td class="muted">Внедрение</td><td class="muted">Анна К.</td><td class="muted">сегодня 18:00</td><td class="r"><span class="chip info"><span class="led"></span>в работе</span></td></tr>
+          <tr><td>Прайс для «Вектора»</td><td class="muted">Продажи</td><td class="muted">Анна К.</td><td class="muted">сегодня 18:00</td><td class="r"><span class="chip info"><span class="led"></span>в работе</span></td></tr>
+          <tr><td>Внедрить коннектор «Орбиты»</td><td class="muted">Внедрение</td><td class="muted">Игорь М.</td><td class="muted">26 июня</td><td class="r"><span class="chip warn"><span class="led"></span>заблокирована</span></td></tr>
+          <tr><td>Договор с «Вектором» на согласовании</td><td class="muted">Продажи</td><td class="muted">Анна К.</td><td class="muted">13 июня</td><td class="r"><span class="chip warn"><span class="led"></span>на проверке</span></td></tr>
+          <tr><td>Отчёт по поддержке за май</td><td class="muted">Поддержка</td><td class="muted">Елена В.</td><td class="muted">13 июня</td><td class="r"><span class="chip warn"><span class="led"></span>на проверке</span></td></tr>
+          <tr><td>Подготовить демо для «Вектора»</td><td class="muted">Продажи</td><td class="muted">Дмитрий С.</td><td class="muted">18 июня</td><td class="r"><span class="chip" style="color:var(--dim); background:var(--surface-soft)"><span class="led"></span>бэклог</span></td></tr>
+          <tr><td>Свести единый регламент по сделкам в CRM</td><td class="muted">Продажи</td><td class="muted">Дмитрий С.</td><td class="muted">20 июня</td><td class="r"><span class="chip" style="color:var(--dim); background:var(--surface-soft)"><span class="led"></span>бэклог</span></td></tr>
+          <tr><td>Запустить недельные спринты в команде</td><td class="muted">Руководство</td><td class="muted">Сергей М.</td><td class="muted">16 июня</td><td class="r"><span class="chip info"><span class="led"></span>в работе</span></td></tr>
+          <tr><td>Презентация для «Орбиты»</td><td class="muted">Продажи</td><td class="muted">Анна К.</td><td class="muted">11 июня</td><td class="r"><span class="chip ok"><span class="led"></span>готово</span></td></tr>
+          <tr><td>Ввести дежурство по поддержке</td><td class="muted">Поддержка</td><td class="muted">Елена В.</td><td class="muted">12 июня</td><td class="r"><span class="chip ok"><span class="led"></span>готово</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /tasks-view:list -->
+
+  <!-- ПАНЕЛЬ tasks-view:sprints -->
+  <div data-tabpanel="tasks-view:sprints" hidden>
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-mint)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span>
+        <h3>Спринт «25 платящих клиентов»</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>9–15 июня</span>
+      </div>
+      <div class="verdict-bar" style="margin:0 0 16px;">
+        <span class="led-lg"></span>
+        <div style="flex:1"><div style="font-weight:600; font-size:13.5px;">В спринте 6 задач · 2 готовы · 1 заблокирована</div><div class="faint" style="font-size:12px; margin-top:2px;">Цель недели — довести «Орбиту» до договора и подготовить демо «Вектору»</div></div>
+        <span class="chip info"><span class="led"></span>фокус недели</span>
+      </div>
+      <div class="row-list">
+        <div class="list-row"><span class="chip info" style="flex:none"><span class="led"></span>в работе</span><div class="body"><div class="ttl">Прайс для «Вектора»</div><div class="meta">Анна К. · сегодня 18:00</div></div></div>
+        <div class="list-row"><span class="chip warn" style="flex:none"><span class="led"></span>заблокирована</span><div class="body"><div class="ttl">Внедрить коннектор «Орбиты»</div><div class="meta">Игорь М. · ждёт оплату подрядчику</div></div></div>
+        <div class="list-row"><span class="chip warn" style="flex:none"><span class="led"></span>на проверке</span><div class="body"><div class="ttl">Договор с «Вектором» на согласовании</div><div class="meta">Анна К. · 2-й день</div></div></div>
+        <div class="list-row"><span class="chip" style="flex:none; color:var(--dim); background:var(--surface-soft)"><span class="led"></span>бэклог</span><div class="body"><div class="ttl">Подготовить демо для «Орбиты»</div><div class="meta">Анна К. · 20 июня</div></div></div>
+        <div class="list-row"><span class="chip ok" style="flex:none"><span class="led"></span>готово</span><div class="body"><div class="ttl">Презентация для «Орбиты»</div><div class="meta">Анна К. · сдано 11 июня</div></div></div>
+        <div class="list-row"><span class="chip ok" style="flex:none"><span class="led"></span>готово</span><div class="body"><div class="ttl">Подключить оплату по карте</div><div class="meta">Игорь М. · сдано 10 июня</div></div></div>
+      </div>
+    </div>
+  </div><!-- /tasks-view:sprints -->
+
+  <!-- ПАНЕЛЬ tasks-view:inbox -->
+  <div data-tabpanel="tasks-view:inbox" hidden>
+    <div class="glass float">
+      <span class="glow amber"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 60)" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z"/></svg></span>
+        <h3>Входящие — без проекта и срока</h3>
+        <span class="chip warn" style="margin-left:auto"><span class="led"></span>3 разобрать</span>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.55; margin:0 0 14px;">Кора собрала из встреч задачи, для которых пока не понятен проект, исполнитель или срок. Разберите — и они встанут на доску.</p>
+      <div class="row-list">
+        <div class="list-row"><span class="lead" style="background:var(--warn-bg); font-weight:700; color:var(--amber)">?</span><div class="body"><div class="ttl">Собрать отзывы первых трёх клиентов</div><div class="meta">из синка маркетинга 10.06 · проект и срок не заданы</div></div><button class="btn ghost" style="flex:none">Разобрать</button></div>
+        <div class="list-row"><span class="lead" style="background:var(--warn-bg); font-weight:700; color:var(--amber)">?</span><div class="body"><div class="ttl">Описать регламент онбординга клиента</div><div class="meta">из онбординга «Орбиты» 11.06 · срок не задан</div></div><button class="btn ghost" style="flex:none">Разобрать</button></div>
+        <div class="list-row"><span class="lead" style="background:var(--warn-bg); font-weight:700; color:var(--amber)">?</span><div class="body"><div class="ttl">Зафиксировать критерий «платящего клиента»</div><div class="meta">из стратегической сессии 10.06 · ждёт решения владельца</div></div><button class="btn ghost" style="flex:none">Разобрать</button></div>
+      </div>
+    </div>
+  </div><!-- /tasks-view:inbox -->
+
+  <!-- ПАНЕЛЬ tasks-view:archive -->
+  <div data-tabpanel="tasks-view:archive" hidden>
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></span>
+        <h3>Архив — выполненные задачи</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>5 закрыто</span>
+      </div>
+      <table class="mtable">
+        <thead><tr><th>Задача</th><th>Проект</th><th>Исполнитель</th><th class="r">Закрыта</th></tr></thead>
+        <tbody>
+          <tr><td>Презентация для «Орбиты»</td><td class="muted">Продажи</td><td class="muted">Анна К.</td><td class="r"><span class="chip ok"><span class="led"></span>11 июня</span></td></tr>
+          <tr><td>Подключить оплату по карте</td><td class="muted">Внедрение</td><td class="muted">Игорь М.</td><td class="r"><span class="chip ok"><span class="led"></span>10 июня</span></td></tr>
+          <tr><td>Скрипт первого звонка клиенту</td><td class="muted">Продажи</td><td class="muted">Дмитрий С.</td><td class="r"><span class="chip ok"><span class="led"></span>9 июня</span></td></tr>
+          <tr><td>Ввести дежурство по поддержке</td><td class="muted">Поддержка</td><td class="muted">Елена В.</td><td class="r"><span class="chip ok"><span class="led"></span>12 июня</span></td></tr>
+          <tr><td>Подключить оплату по карте подрядчику</td><td class="muted">Внедрение</td><td class="muted">Игорь М.</td><td class="r"><span class="chip ok"><span class="led"></span>10 июня</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /tasks-view:archive -->
+
+  <!-- ПАНЕЛЬ tasks-view:calendar -->
+  <div data-tabpanel="tasks-view:calendar" hidden>
   <!-- ====================== КАЛЕНДАРЬ ====================== -->
-  <div class="card-title mt" style="margin-bottom:14px;">
+  <div class="card-title" style="margin-bottom:14px;">
     <span class="card-ico" style="background:var(--grad-blue)">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
     </span>
     <h3>Календарь</h3>
     <div class="pill-group" style="margin-left:auto">
-      <button class="pill">День</button>
-      <button class="pill active">Неделя</button>
-      <button class="pill">Месяц</button>
+      <button class="pill" data-action="tab" data-group="tasks-calendar" data-tab="day">День</button>
+      <button class="pill active" data-action="tab" data-group="tasks-calendar" data-tab="week">Неделя</button>
+      <button class="pill" data-action="tab" data-group="tasks-calendar" data-tab="month">Месяц</button>
     </div>
     <button class="btn primary" style="margin-left:10px">+ Событие</button>
   </div>
 
+  <!-- ПАНЕЛЬ tasks-calendar:day -->
+  <div data-tabpanel="tasks-calendar:day" hidden>
+    <div class="glass">
+      <span class="glow blue"></span>
+      <div style="font-size:14px; font-weight:600; margin-bottom:16px;">Понедельник, 16 июня</div>
+      <div class="row-list">
+        <div class="list-row"><span class="chip info" style="flex:none"><span class="led"></span>10:00</span><div class="body"><div class="ttl">Планёрка недели</div><div class="meta">вся команда · 30 мин</div></div></div>
+        <div class="list-row"><span class="chip" style="flex:none; color:var(--violet); background:oklch(0.66 0.20 300 / 0.14)"><span class="led"></span>15:00</span><div class="body"><div class="ttl">Звонок с «Орбитой»</div><div class="meta">Сергей М., Дмитрий С.</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ПАНЕЛЬ tasks-calendar:week -->
+  <div data-tabpanel="tasks-calendar:week">
   <!-- сетка недели -->
   <div class="glass">
     <span class="glow blue"></span>
@@ -1989,12 +2520,46 @@
       <span class="led-lg" style="background:var(--amber); box-shadow:0 0 14px var(--amber)"></span>
       <div style="flex:1">
         <div style="font-weight:600; font-size:13px;">Вторник перегружен: дедлайн прайса «Вектора» и звонок «Орбиты» рядом.</div>
-        <div class="faint" style="font-size:12px; margin-top:2px;">Кора предлагает сдвинуть прайс на среду утром — у Анны Р. освободится время.</div>
+        <div class="faint" style="font-size:12px; margin-top:2px;">Кора предлагает сдвинуть прайс на среду утром — у Анны К. освободится время.</div>
       </div>
       <button class="btn">Перенести</button>
     </div>
 
   </div>
+  </div><!-- /tasks-calendar:week -->
+
+  <!-- ПАНЕЛЬ tasks-calendar:month -->
+  <div data-tabpanel="tasks-calendar:month" hidden>
+    <div class="glass">
+      <span class="glow blue"></span>
+      <div style="font-size:14px; font-weight:600; margin-bottom:16px;">Июнь 2026</div>
+      <div class="grid" style="grid-template-columns:repeat(7,1fr); gap:8px;">
+        <div class="faint" style="font-size:11px; text-align:center;">Пн</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Вт</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Ср</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Чт</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Пт</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Сб</div>
+        <div class="faint" style="font-size:11px; text-align:center;">Вс</div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">9</div><div class="chip info" style="margin-top:4px; font-size:10px; padding:1px 6px;">ретро</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">10</div><div class="chip" style="margin-top:4px; font-size:10px; padding:1px 6px; color:var(--violet); background:oklch(0.66 0.20 300 / 0.14)">цели</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">11</div><div class="chip info" style="margin-top:4px; font-size:10px; padding:1px 6px;">онбординг</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px; border-color:oklch(0.66 0.20 300 / 0.3);"><div style="font-size:11px; font-weight:600;">12</div><div class="chip ok" style="margin-top:4px; font-size:10px; padding:1px 6px;">демо «Орбиты»</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">13</div><div class="chip warn" style="margin-top:4px; font-size:10px; padding:1px 6px;">дедлайны</div></div>
+        <div class="empty" style="padding:8px; font-size:10px;">14</div>
+        <div class="empty" style="padding:8px; font-size:10px;">15</div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">16</div><div class="chip info" style="margin-top:4px; font-size:10px; padding:1px 6px;">планёрка</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">17</div><div class="chip warn" style="margin-top:4px; font-size:10px; padding:1px 6px;">прайс</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">18</div><div class="chip" style="margin-top:4px; font-size:10px; padding:1px 6px; color:var(--violet); background:oklch(0.66 0.20 300 / 0.14)">демо «Вектора»</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">19</div></div>
+        <div class="glass" style="padding:8px; border-radius:10px; min-height:64px;"><div class="faint" style="font-size:11px;">20</div><div class="chip ok" style="margin-top:4px; font-size:10px; padding:1px 6px;">итоги спринта</div></div>
+        <div class="empty" style="padding:8px; font-size:10px;">21</div>
+        <div class="empty" style="padding:8px; font-size:10px;">22</div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /tasks-view:calendar -->
 
 </section>
 
@@ -2011,6 +2576,8 @@
     <span class="faint" style="font-size:12.5px;">Память компании · 3 входа</span>
   </div>
 
+  <!-- ПАНЕЛЬ mem-view:ask — поиск по памяти -->
+  <div data-tabpanel="mem-view:ask">
   <!-- Поиск по памяти — гибридный результат с цитатами и уверенностью -->
   <div class="glass float" style="margin-bottom:20px;">
     <span class="glow blue"></span>
@@ -2049,17 +2616,20 @@
       </div>
     </div>
   </div>
+  </div><!-- /mem-view:ask поиск -->
 
   <!-- Топ-бар вкладок раздела -->
   <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
     <div class="pill-group">
-      <button class="pill active">Спросить</button>
-      <button class="pill">Лента</button>
-      <button class="pill">Реестры</button>
+      <button class="pill active" data-action="tab" data-group="mem-view" data-tab="ask">Спросить</button>
+      <button class="pill" data-action="tab" data-group="mem-view" data-tab="feed">Лента</button>
+      <button class="pill" data-action="tab" data-group="mem-view" data-tab="registers">Реестры</button>
     </div>
     <span class="faint" style="font-size:12px;">3 входа вместо восьми пунктов меню — спрашиваете, читаете, смотрите свод</span>
   </div>
 
+  <!-- ПАНЕЛЬ mem-view:ask — чат-помощник -->
+  <div data-tabpanel="mem-view:ask">
   <!-- ============================ 1. СПРОСИТЬ ============================ -->
   <div class="section-h">Спросить — чат-помощник по памяти компании</div>
   <div class="grid g-1-2">
@@ -2172,7 +2742,10 @@
       </div>
     </div>
   </div>
+  </div><!-- /mem-view:ask чат -->
 
+  <!-- ПАНЕЛЬ mem-view:feed — лента памяти -->
+  <div data-tabpanel="mem-view:feed" hidden>
   <!-- ============================ 2. ЛЕНТА ============================ -->
   <div class="section-h mt">Лента памяти — что прибавилось за сегодня</div>
   <div class="grid g-2-1">
@@ -2277,7 +2850,10 @@
       <div class="faint" style="font-size:11.5px; margin-top:6px;">память растёт 7 дней подряд</div>
     </div>
   </div>
+  </div><!-- /mem-view:feed -->
 
+  <!-- ПАНЕЛЬ mem-view:registers — реестры -->
+  <div data-tabpanel="mem-view:registers" hidden>
   <!-- ============================ 3. РЕЕСТРЫ ============================ -->
   <div class="section-h mt">Реестры — структурированная память по полкам</div>
   <div class="glass float">
@@ -2288,15 +2864,17 @@
       </span>
       <h3>Реестр памяти</h3>
       <div class="pill-group" style="margin-left:auto; padding:3px;">
-        <button class="pill active" style="padding:5px 12px; font-size:12px;">Решения</button>
-        <button class="pill" style="padding:5px 12px; font-size:12px;">Правила</button>
-        <button class="pill" style="padding:5px 12px; font-size:12px;">Темы</button>
-        <button class="pill" style="padding:5px 12px; font-size:12px;">Сущности</button>
-        <button class="pill" style="padding:5px 12px; font-size:12px;">Таблицы</button>
-        <button class="pill" style="padding:5px 12px; font-size:12px;">Идеи</button>
+        <button class="pill active" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="decisions">Решения</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="rules">Правила</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="themes">Темы</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="entities">Сущности</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="tables">Таблицы</button>
+        <button class="pill" style="padding:5px 12px; font-size:12px;" data-action="tab" data-group="mem-reg" data-tab="ideas">Идеи</button>
       </div>
     </div>
 
+    <!-- ПАНЕЛЬ mem-reg:decisions -->
+    <div data-tabpanel="mem-reg:decisions">
     <table class="mtable">
       <thead>
         <tr>
@@ -2353,7 +2931,139 @@
       <span class="chip risk"><span class="led"></span>1 застряло</span>
       <span class="faint" style="margin-left:auto; font-size:12px;">не все решения доходят — Кора показывает где застряло, чтобы помочь сдвинуть</span>
     </div>
+    </div><!-- /mem-reg:decisions -->
+
+    <!-- ПАНЕЛЬ mem-reg:rules -->
+    <div data-tabpanel="mem-reg:rules" hidden>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--mint);box-shadow:0 0 8px var(--mint)"></span></span>
+        <div class="body"><div class="ttl">Прайс без скидки на первый месяц</div><div class="meta">правило по сделкам · выведено из 3 решений · действует</div></div>
+        <span class="chip ok"><span class="led"></span>активно</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--mint);box-shadow:0 0 8px var(--mint)"></span></span>
+        <div class="body"><div class="ttl">Дежурный по поддержке отвечает в течение 2 часов</div><div class="meta">регламент · принято 09.06 · радар сигналов</div></div>
+        <span class="chip ok"><span class="led"></span>активно</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
+        <div class="body"><div class="ttl">Сделка передаётся из продаж во внедрение по единому чек-листу</div><div class="meta">правило · две версии в команде · ждёт сведения</div></div>
+        <span class="chip warn"><span class="led"></span>спорное</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--mint);box-shadow:0 0 8px var(--mint)"></span></span>
+        <div class="body"><div class="ttl">Годовая оплата — скидка 15%</div><div class="meta">правило по тарифам · применяется к «Орбите»</div></div>
+        <span class="chip ok"><span class="led"></span>активно</span>
+      </div>
+    </div>
+    <div class="faint" style="font-size:12px; margin-top:14px;">Правила Кора выводит из повторяющихся решений и фиксирует как корпоративную норму.</div>
+    </div><!-- /mem-reg:rules -->
+
+    <!-- ПАНЕЛЬ mem-reg:themes -->
+    <div data-tabpanel="mem-reg:themes" hidden>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--risk-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--red);box-shadow:0 0 8px var(--red)"></span></span>
+        <div class="body"><div class="ttl">Молчание поддержки</div><div class="meta">9 упоминаний · 3 клиента · растёт 2 недели</div></div>
+        <span class="chip risk">горячая</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
+        <div class="body"><div class="ttl">Оплата коннекторов тормозит внедрение</div><div class="meta">6 упоминаний · блокирует 2 сделки</div></div>
+        <span class="chip warn">активна</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--blue);box-shadow:0 0 8px var(--blue)"></span></span>
+        <div class="body"><div class="ttl">Тарифная сетка и скидки</div><div class="meta">5 упоминаний · у разных клиентов</div></div>
+        <span class="chip info">наблюдаем</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--blue);box-shadow:0 0 8px var(--blue)"></span></span>
+        <div class="body"><div class="ttl">Перегрузка маркетинга</div><div class="meta">3 упоминания · один человек, три направления</div></div>
+        <span class="chip info">наблюдаем</span>
+      </div>
+    </div>
+    <div class="faint" style="font-size:12px; margin-top:14px;">Темы — кластеры близких по смыслу обсуждений, которые граф собирает автоматически.</div>
+    </div><!-- /mem-reg:themes -->
+
+    <!-- ПАНЕЛЬ mem-reg:entities -->
+    <div data-tabpanel="mem-reg:entities" hidden>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h2M9 13h2M9 17h2"/></svg></span>
+        <div class="body"><div class="ttl">«Орбита»</div><div class="meta">клиент · 7 связей · 5 встреч · 3 обещания</div></div>
+        <span class="chip ok">клиент</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14"/></svg></span>
+        <div class="body"><div class="ttl">«Вектор»</div><div class="meta">клиент · 6 связей · договор подписан в мае</div></div>
+        <span class="chip ok">клиент</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2"/></svg></span>
+        <div class="body"><div class="ttl">Анна Носова</div><div class="meta">сотрудник · продажи · 12 обещаний · ведёт «Вектор»</div></div>
+        <span class="chip info">человек</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--warn-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M4 4h16v6H4zM4 14h16v6H4z"/></svg></span>
+        <div class="body"><div class="ttl">Коннекторы (интеграции)</div><div class="meta">продукт · 8 связей · узкое место внедрения</div></div>
+        <span class="chip warn">продукт</span>
+      </div>
+    </div>
+    <div class="faint" style="font-size:12px; margin-top:14px;">Сущности — клиенты, люди, продукты и проекты, которые Кора узнаёт в речи и связывает в граф.</div>
+    </div><!-- /mem-reg:entities -->
+
+    <!-- ПАНЕЛЬ mem-reg:tables -->
+    <div data-tabpanel="mem-reg:tables" hidden>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"/></svg></span>
+        <div class="body"><div class="ttl">Воронка сделок</div><div class="meta">12 строк · собрана из встреч продаж · обновлена сегодня</div></div>
+        <span class="chip ok">актуальна</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M9 3v18"/></svg></span>
+        <div class="body"><div class="ttl">Возражения клиентов</div><div class="meta">9 строк · цена · сроки · перенос данных</div></div>
+        <span class="chip ok">актуальна</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M9 3v18"/></svg></span>
+        <div class="body"><div class="ttl">Открытые обещания по людям</div><div class="meta">23 строки · кто · что · к какому сроку</div></div>
+        <span class="chip warn">2 просрочены</span>
+      </div>
+    </div>
+    <div class="faint" style="font-size:12px; margin-top:14px;">Умные таблицы Кора собирает из встреч сама и держит в актуальном виде — без ручного заполнения.</div>
+    </div><!-- /mem-reg:tables -->
+
+    <!-- ПАНЕЛЬ mem-reg:ideas -->
+    <div data-tabpanel="mem-reg:ideas" hidden>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7zM9 21h6"/></svg></span>
+        <div class="body"><div class="ttl">Видео-инструкция по импорту базы из старой CRM</div><div class="meta">идея с встречи «Орбиты» · доведена до задачи</div></div>
+        <span class="chip ok"><span class="led"></span>в работе</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7zM9 21h6"/></svg></span>
+        <div class="body"><div class="ttl">Тариф «Команда» с пакетом на 5 мест</div><div class="meta">идея из планёрки · бета запущена</div></div>
+        <span class="chip info"><span class="led"></span>проверяем</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10c0-2 2-4 2-7a7 7 0 0 0-7-7z"/></svg></span>
+        <div class="body"><div class="ttl">Дайджест поддержки раз в неделю для клиентов</div><div class="meta">идея с разбора тикетов · на рассмотрении</div></div>
+        <span class="chip warn"><span class="led"></span>копится</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 3 2 5 2 7h10z"/></svg></span>
+        <div class="body"><div class="ttl">Реферальная программа для существующих клиентов</div><div class="meta">идея с встречи маркетинга · пока пауза</div></div>
+        <span class="chip">отложена</span>
+      </div>
+    </div>
+    <div class="faint" style="font-size:12px; margin-top:14px;">Идеи Кора отлавливает в обсуждениях и показывает, какие из них дошли до дела, а какие копятся.</div>
+    </div><!-- /mem-reg:ideas -->
   </div>
+  </div><!-- /mem-view:registers -->
 
 </section>
 
@@ -2363,15 +3073,15 @@
   <!-- переключатель типов -->
   <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
     <div class="pill-group" style="flex-wrap:wrap;">
-      <button class="pill active">Всё</button>
-      <button class="pill">Идеи</button>
-      <button class="pill">Сигналы</button>
-      <button class="pill">Блокеры</button>
-      <button class="pill">Решения</button>
-      <button class="pill">Конфликты</button>
-      <button class="pill">Активность</button>
-      <button class="pill">Вопросы Коры</button>
-      <button class="pill">Вопросы людей</button>
+      <button class="pill active" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="all">Всё</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Идеи">Идеи</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Сигналы">Сигналы</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Блокеры">Блокеры</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Решения">Решения</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Конфликты">Конфликты</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Активность">Активность</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Вопросы Коры">Вопросы Коры</button>
+      <button class="pill" data-action="filter" data-filter-group="feed" data-filter-key="type" data-filter-val="Вопросы людей">Вопросы людей</button>
     </div>
     <span class="faint" style="font-size:12.5px;">Живая лента памяти · обновлено только что</span>
   </div>
@@ -2387,7 +3097,7 @@
 
   <!-- AI-инсайты в формате «оценка % → рекомендация → срок» (возврат из CRM-экрана, без денег) -->
   <div class="grid g2">
-    <div class="ai-card">
+    <div class="ai-card" data-filter-card="feed" data-type="Сигналы">
       <div class="ai-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12c.7.7 1 1.4 1 2h6c0-.6.3-1.3 1-2a7 7 0 0 0-4-12z"/></svg></div>
       <div style="display:flex; align-items:center; gap:10px;">
         <h3 style="margin:0">Высокая вероятность закрытия сделки «Гамма»</h3>
@@ -2396,7 +3106,7 @@
       <p>Клиент проявляет активность на последних встречах. <b style="color:var(--text)">Рекомендация:</b> связаться в ближайшие <b style="color:var(--text)">24 часа</b> <span class="cite">встреча 12.06 [18:20]</span>.</p>
       <button class="ai-cta">Открыть карточку клиента →</button>
     </div>
-    <div class="ai-card warn">
+    <div class="ai-card warn" data-filter-card="feed" data-type="Блокеры">
       <div class="ai-ico" style="background:var(--grad-amber)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.2 0.03 60)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
       <div style="display:flex; align-items:center; gap:10px;">
         <h3 style="margin:0">Риск срыва дедлайна по «Внедрение KORA»</h3>
@@ -2415,40 +3125,45 @@
       <span class="more">за сегодня · 14 событий</span>
     </div>
     <div class="row-list">
-      <div class="list-row">
+      <div class="list-row" data-filter-card="feed" data-type="Идеи">
         <span class="lead" style="background:var(--info-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--blue);box-shadow:0 0 8px var(--blue)"></span></span>
         <div class="body"><div class="ttl">Идея: единый регламент передачи сделки из продаж во внедрение</div><div class="meta">развивает 2 встречи · упомянуто 4 раза · связано с целью «25 клиентов»</div></div>
         <span class="chip info">идея</span>
       </div>
-      <div class="list-row">
+      <div class="list-row" data-filter-card="feed" data-type="Блокеры">
         <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
         <div class="body"><div class="ttl">Блокер: задержка оплаты коннекторов тормозит внедрение</div><div class="meta">открыт 6 дней · повторяется · блокирует Игоря Власова</div></div>
         <span class="chip warn">блокер · 6 дн</span>
       </div>
-      <div class="list-row">
+      <div class="list-row" data-filter-card="feed" data-type="Сигналы">
         <span class="lead" style="background:var(--risk-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--red);box-shadow:0 0 8px var(--red)"></span></span>
         <div class="body"><div class="ttl">Сигнал: клиенты жалуются на молчание поддержки</div><div class="meta">острота высокая · растёт ↑ · 3 упоминания за неделю</div></div>
         <span class="chip risk">риск ухода</span>
       </div>
-      <div class="list-row">
+      <div class="list-row" data-filter-card="feed" data-type="Решения">
         <span class="lead" style="background:var(--ok-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--mint);box-shadow:0 0 8px var(--mint)"></span></span>
         <div class="body"><div class="ttl">Решение: перейти на расширенный тариф для «Орбиты»</div><div class="meta">доведено 60% · 3 из 5 задач закрыты</div></div>
         <span class="chip ok">решение</span>
       </div>
-      <div class="list-row">
-        <span class="avatar" style="background:var(--grad-violet)">МС</span>
-        <div class="body"><div class="ttl">Мария Смирнова завершила задачу «Презентация платформы»</div><div class="meta">15:42 · активность команды</div></div>
+      <div class="list-row" data-filter-card="feed" data-type="Конфликты">
+        <span class="lead" style="background:var(--risk-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--red);box-shadow:0 0 8px var(--red)"></span></span>
+        <div class="body"><div class="ttl">Конфликт: две версии регламента по сорванным сделкам</div><div class="meta">старая — удалять карточку · новая — фиксировать с причиной · ждёт решения</div></div>
+        <span class="chip risk">конфликт</span>
+      </div>
+      <div class="list-row" data-filter-card="feed" data-type="Активность">
+        <span class="avatar" style="background:var(--grad-violet)">ДС</span>
+        <div class="body"><div class="ttl">Дмитрий Соколов закрыл двух клиентов за неделю</div><div class="meta">15:42 · активность команды</div></div>
         <span class="chip" style="color:var(--faint); background:var(--surface-soft)">активность</span>
       </div>
     </div>
   </div>
 
   <!-- Контроль вопросов Коры (ответил/не ответил) -->
-  <div class="section-h mt" style="display:flex; align-items:center; gap:8px;">
+  <div class="section-h mt" data-filter-card="feed" data-type="Вопросы Коры" style="display:flex; align-items:center; gap:8px;">
     <span class="chip warn" style="padding:3px 9px"><span class="led"></span>Контроль вопросов Коры</span>
     <span class="faint" style="font-weight:400">Кора спросила — ответил человек или молчит (контроль сверху)</span>
   </div>
-  <div class="glass">
+  <div class="glass" data-filter-card="feed" data-type="Вопросы Коры">
     <table class="mtable">
       <thead><tr><th>Кому</th><th>Вопрос Коры</th><th>Статус ответа</th><th class="r">Висит</th></tr></thead>
       <tbody>
@@ -2476,11 +3191,11 @@
   </div>
 
   <!-- Вопросы людей без ответа -->
-  <div class="section-h mt" style="display:flex; align-items:center; gap:8px;">
+  <div class="section-h mt" data-filter-card="feed" data-type="Вопросы людей" style="display:flex; align-items:center; gap:8px;">
     <span class="chip info" style="padding:3px 9px"><span class="led"></span>Вопросы людей без ответа</span>
     <span class="faint" style="font-weight:400">Прозвучал вопрос на встрече/в чате — ответа нет 3+ дня</span>
   </div>
-  <div class="glass">
+  <div class="glass" data-filter-card="feed" data-type="Вопросы людей">
     <div class="row-list">
       <div class="list-row">
         <span class="lead" style="background:var(--warn-bg); font-weight:700; color:var(--amber)">?</span>
@@ -2513,12 +3228,15 @@
         <!-- Вкладки раздела -->
         <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
           <div class="pill-group">
-            <button class="pill active">Сотрудники</button>
-            <button class="pill">Отделы</button>
-            <button class="pill">Пульс людей</button>
+            <button class="pill active" data-action="tab" data-group="team-view" data-tab="people">Сотрудники</button>
+            <button class="pill" data-action="tab" data-group="team-view" data-tab="depts">Отделы</button>
+            <button class="pill" data-action="tab" data-group="team-view" data-tab="pulse">Пульс людей</button>
           </div>
           <span class="faint" style="font-size:12px; margin-left:auto;">ООО «Луа» · обновлено сегодня в 10:42</span>
         </div>
+
+        <!-- ПАНЕЛЬ team-view:people -->
+        <div data-tabpanel="team-view:people">
 
         <!-- Карточка-мастер: дедуп и чистка отделов (плавающая, акцентная) -->
         <div class="glass float mt" style="margin-top:0; background:linear-gradient(180deg, oklch(0.34 0.10 295 / 0.5), oklch(0.22 0.04 280 / 0.5)); border-color:oklch(0.66 0.20 300 / 0.28)">
@@ -2696,7 +3414,74 @@
 
         </div>
 
-        <div class="grid g-2-1 mt">
+        </div><!-- /team-view:people -->
+
+        <!-- ПАНЕЛЬ team-view:depts -->
+        <div data-tabpanel="team-view:depts" hidden>
+          <div class="glass float mt" style="margin-top:0">
+            <span class="glow blue"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-blue)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>
+              </span>
+              <h3>Отделы компании</h3>
+              <span class="chip info" style="margin-left:auto"><span class="led"></span>4 отдела</span>
+            </div>
+            <div class="grid g2">
+
+              <div class="glass" style="padding:16px;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                  <span class="card-ico" style="background:var(--grad-violet); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                  <div style="font-weight:600; font-size:14px;">Руководство</div>
+                  <span class="chip ok" style="margin-left:auto"><span class="led"></span>1 человек</span>
+                </div>
+                <p class="muted" style="font-size:12.5px; line-height:1.5; margin:0 0 10px;">Стратегия, цели компании, ключевые сделки.</p>
+                <div class="cell-person"><span class="avatar" style="background:var(--grad-violet)">СМ</span><span>Сергей Мазур <span class="faint" style="font-size:11px;">· руководит</span></span></div>
+              </div>
+
+              <div class="glass" style="padding:16px;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                  <span class="card-ico" style="background:var(--grad-teal); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
+                  <div style="font-weight:600; font-size:14px;">Внедрение</div>
+                  <span class="chip info" style="margin-left:auto"><span class="led"></span>2 человека</span>
+                </div>
+                <p class="muted" style="font-size:12.5px; line-height:1.5; margin:0 0 10px;">Подключение клиентов, коннекторы, онбординг.</p>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div class="cell-person"><span class="avatar" style="background:var(--grad-teal)">АК</span><span>Анна Ковалёва <span class="faint" style="font-size:11px;">· руководит</span></span></div>
+                  <div class="cell-person"><span class="avatar" style="background:var(--grad-blue)">ИМ</span><span>Игорь Маслов</span></div>
+                </div>
+              </div>
+
+              <div class="glass" style="padding:16px;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                  <span class="card-ico" style="background:var(--grad-amber); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 60)" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 3 3 5-6"/></svg></span>
+                  <div style="font-weight:600; font-size:14px;">Продажи</div>
+                  <span class="chip info" style="margin-left:auto"><span class="led"></span>2 человека</span>
+                </div>
+                <p class="muted" style="font-size:12.5px; line-height:1.5; margin:0 0 10px;">Демо, переговоры, договоры, воронка сделок.</p>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <div class="cell-person"><span class="avatar" style="background:var(--grad-amber)">ДС</span><span>Дмитрий Соколов <span class="faint" style="font-size:11px;">· руководит</span></span></div>
+                  <div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">МР</span><span>Марина Рыжова</span></div>
+                </div>
+              </div>
+
+              <div class="glass" style="padding:16px;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                  <span class="card-ico" style="background:var(--grad-pink); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 340)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+                  <div style="font-weight:600; font-size:14px;">Поддержка</div>
+                  <span class="chip warn" style="margin-left:auto"><span class="led"></span>1 не приглашён</span>
+                </div>
+                <p class="muted" style="font-size:12.5px; line-height:1.5; margin:0 0 10px;">Обращения клиентов, тикеты, дежурства.</p>
+                <div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">ЕВ</span><span>Елена Воронина <span class="faint" style="font-size:11px;">· не в Коре</span></span></div>
+              </div>
+
+            </div>
+          </div>
+        </div><!-- /team-view:depts -->
+
+        <!-- ПАНЕЛЬ team-view:pulse -->
+        <div data-tabpanel="team-view:pulse" hidden>
+        <div class="grid g-2-1 mt" style="margin-top:0">
 
           <!-- Пульс людей — мини-гейджи вовлечённости (качественно) -->
           <div class="glass float">
@@ -2813,6 +3598,7 @@
           </div>
 
         </div>
+        </div><!-- /team-view:pulse -->
 
       </section>
 
@@ -2821,11 +3607,11 @@
 
   <!-- вкладки личного кабинета -->
   <div class="pill-group" style="margin-bottom:18px;">
-    <button class="pill active">Обзор</button>
-    <button class="pill">Пульс</button>
-    <button class="pill">Мои обещания</button>
-    <button class="pill">Чем полезен</button>
-    <button class="pill">Помощь коллегам</button>
+    <button class="pill active" data-action="tab" data-group="me-view" data-tab="overview">Обзор</button>
+    <button class="pill" data-action="tab" data-group="me-view" data-tab="pulse">Пульс</button>
+    <button class="pill" data-action="tab" data-group="me-view" data-tab="promises">Мои обещания</button>
+    <button class="pill" data-action="tab" data-group="me-view" data-tab="value">Чем полезен</button>
+    <button class="pill" data-action="tab" data-group="me-view" data-tab="help">Помощь коллегам</button>
   </div>
 
   <!-- приветствие-вердикт -->
@@ -2838,7 +3624,8 @@
     <span class="chip ok" style="flex:none"><span class="led"></span>всё спокойно</span>
   </div>
 
-  <div class="grid g-2-1">
+  <!-- ПАНЕЛЬ me-view:promises -->
+  <div data-tabpanel="me-view:promises" hidden>
     <!-- МОИ ОБЕЩАНИЯ -->
     <div class="glass float">
       <span class="glow teal"></span>
@@ -2897,7 +3684,11 @@
         </div>
       </div>
     </div>
+  </div><!-- /me-view:promises -->
 
+  <!-- ПАНЕЛЬ me-view:pulse -->
+  <div data-tabpanel="me-view:pulse" hidden>
+  <div class="grid g-2-1">
     <!-- Моя неделя в цифрах -->
     <div class="glass float">
       <span class="glow"></span>
@@ -2933,10 +3724,38 @@
         </div>
       </div>
     </div>
+
+    <!-- Мой ритм участия -->
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+        <h3>Мой ритм участия</h3>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.55; margin:0 0 14px;">Кора видит вас активным: ведёте встречи и решения, держите слово в 9 из 10 обещаний. Ритм ровный, без перегруза.</p>
+      <div class="row-list">
+        <div class="list-row" style="padding:10px 0;">
+          <span class="chip ok" style="flex:none"><span class="led"></span>живой</span>
+          <div class="body"><div class="ttl">вовлечённость во встречи</div><div class="meta">активно ведёте обсуждения и решения</div></div>
+        </div>
+        <div class="list-row" style="padding:10px 0;">
+          <span class="chip ok" style="flex:none"><span class="led"></span>9 из 10</span>
+          <div class="body"><div class="ttl">держите слово</div><div class="meta">обещания закрываются в срок</div></div>
+        </div>
+        <div class="list-row" style="padding:10px 0;">
+          <span class="chip info" style="flex:none"><span class="led"></span>ровный</span>
+          <div class="body"><div class="ttl">нагрузка под контролем</div><div class="meta">пауз достаточно, признаков перегруза нет</div></div>
+        </div>
+      </div>
+    </div>
   </div>
+  </div><!-- /me-view:pulse -->
+
+  <!-- ПАНЕЛЬ me-view:value -->
+  <div data-tabpanel="me-view:value" hidden>
 
   <!-- Судьба моих идей -->
-  <div class="glass mt">
+  <div class="glass mt" style="margin-top:0">
     <div class="card-title">
       <span class="card-ico" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.6 1 1.4 1 2.3h6c0-.9.4-1.7 1-2.3A7 7 0 0 0 12 2z"/></svg></span>
       <h3>Судьба моих идей</h3>
@@ -2992,8 +3811,67 @@
       <div class="stat-foot"><span class="delta up">↑ 3</span><span class="stat-sub">точная встреча и минута</span></div>
     </div>
   </div>
+  </div><!-- /me-view:value -->
 
-  <div class="grid g3 mt">
+  <!-- ПАНЕЛЬ me-view:help -->
+  <div data-tabpanel="me-view:help" hidden>
+    <div class="glass float" style="margin-top:0">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-mint)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <h3>Чем я помог коллегам</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>на этой неделе</span>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.55; margin:0 0 16px;">Кора видит, когда ваши знания и решения помогли другим — из встреч, ответов памяти и доведённых обещаний.</p>
+      <div class="row-list">
+        <div class="list-row">
+          <span class="lead" style="background:var(--ok-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <div class="body"><div class="ttl">Снял блокер по оплате коннекторов для Анны и Игоря</div><div class="meta">1:1 с Анной 05.06 · разгрузил внедрение «Орбиты»</div></div>
+          <span class="chip ok" style="flex:none">разблокировал</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--info-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <div class="body"><div class="ttl">Помог Дмитрию отработать возражение по цене на демо «Орбиты»</div><div class="meta">встреча 12.06 [28:55] · показали экономию времени</div></div>
+          <span class="chip info" style="flex:none">подсказал</span>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--ok-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <div class="body"><div class="ttl">Согласовал письмо клиенту по итогам демо</div><div class="meta">коммерческое ушло вовремя · Анна не ждала правок</div></div>
+          <span class="chip ok" style="flex:none">довёл</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кому я могу помочь -->
+    <div class="section-h mt">Кому я могу помочь — повод протянуть руку</div>
+    <div class="grid g2">
+      <div class="glass float">
+        <span class="glow amber"></span>
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <span class="avatar" style="width:40px; height:40px; border-radius:12px; font-size:14px; background:var(--grad-pink)">МР</span>
+          <div><div style="font-weight:600; font-size:14px;">Марина Рыжова</div><div class="faint" style="font-size:12px;">Маркетолог</div></div>
+        </div>
+        <p class="muted" style="font-size:13px; line-height:1.55; margin:0;">Перегружена тремя направлениями сразу и дважды просила о помощи. Можно отдать часть запуска «Команды» на аутсорс.</p>
+        <button class="btn" style="width:100%; margin-top:14px">Предложить помощь →</button>
+      </div>
+      <div class="glass float">
+        <span class="glow blue"></span>
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <span class="avatar" style="width:40px; height:40px; border-radius:12px; font-size:14px; background:var(--grad-blue)">ИМ</span>
+          <div><div style="font-weight:600; font-size:14px;">Игорь Маслов</div><div class="faint" style="font-size:12px;">Инженер внедрения</div></div>
+        </div>
+        <p class="muted" style="font-size:13px; line-height:1.55; margin:0;">3 обещания сорвались из-за внешнего блокера по оплате — не по его вине. Помогите ускорить решение по подрядчику.</p>
+        <button class="btn" style="width:100%; margin-top:14px">Ускорить решение →</button>
+      </div>
+    </div>
+  </div><!-- /me-view:help -->
+
+  <!-- ПАНЕЛЬ me-view:overview -->
+  <div data-tabpanel="me-view:overview">
+
+  <div class="grid g3 mt" style="margin-top:0">
     <!-- Telegram-подключение -->
     <div class="glass float">
       <span class="glow blue"></span>
@@ -3063,6 +3941,7 @@
       </div>
     </div>
   </div>
+  </div><!-- /me-view:overview -->
 
 </section>
 
@@ -3079,8 +3958,17 @@
     <button class="btn primary" data-goto="integrations">Подключить каналы →</button>
   </div>
 
+  <!-- Вкладки настроек -->
+  <div class="pill-group" style="margin:16px 0 18px;">
+    <button class="pill active" data-action="tab" data-group="set-view" data-tab="integrations">Интеграции</button>
+    <button class="pill" data-action="tab" data-group="set-view" data-tab="reference">Справочник</button>
+    <button class="pill" data-action="tab" data-group="set-view" data-tab="admin">Админка</button>
+  </div>
+
+  <!-- ПАНЕЛЬ set-view:reference (Профиль и компания) -->
+  <div data-tabpanel="set-view:reference" hidden>
   <!-- ===== Профиль и компания ===== -->
-  <div class="glass float">
+  <div class="glass float" style="margin-top:0">
     <span class="glow"></span>
     <div class="card-title">
       <span class="card-ico" style="background:var(--grad-violet)">
@@ -3124,9 +4012,12 @@
       <button class="btn ghost">Отменить</button>
     </div>
   </div>
+  </div><!-- /set-view:reference (профиль) -->
 
+  <!-- ПАНЕЛЬ set-view:integrations -->
+  <div data-tabpanel="set-view:integrations">
   <!-- ===== Интеграции ===== -->
-  <div class="glass float mt">
+  <div class="glass float" style="margin-top:0">
     <span class="glow blue"></span>
     <div class="card-title">
       <span class="card-ico" style="background:var(--grad-blue)">
@@ -3286,9 +4177,12 @@
       </div>
     </div>
   </div>
+  </div><!-- /set-view:integrations -->
 
+  <!-- ПАНЕЛЬ set-view:admin (быстрые разделы) -->
+  <div data-tabpanel="set-view:admin" hidden>
   <!-- ===== Быстрые разделы ===== -->
-  <div class="grid g3 mt">
+  <div class="grid g3" style="margin-top:0">
     <div class="glass float">
       <span class="glow amber"></span>
       <div class="card-title">
@@ -3323,9 +4217,12 @@
       <button class="btn" style="width:100%;">Стать партнёром →</button>
     </div>
   </div>
+  </div><!-- /set-view:admin (быстрые разделы) -->
 
+  <!-- ПАНЕЛЬ set-view:reference (справочник) -->
+  <div data-tabpanel="set-view:reference" hidden>
   <!-- ===== Справочник (аккордеон-имитация, развёрнут) ===== -->
-  <div class="glass float mt">
+  <div class="glass float" style="margin-top:0">
     <span class="glow"></span>
     <div class="card-title">
       <span class="card-ico" style="background:var(--grad-pink)">
@@ -3354,9 +4251,12 @@
       <button class="btn ghost">Заполнить недостающее</button>
     </div>
   </div>
+  </div><!-- /set-view:reference (справочник) -->
 
+  <!-- ПАНЕЛЬ set-view:admin (админка компании) -->
+  <div data-tabpanel="set-view:admin" hidden>
   <!-- ===== Админка компании (для владельца) ===== -->
-  <div class="glass float mt" style="background:linear-gradient(180deg, oklch(0.32 0.06 300 / 0.5), oklch(0.22 0.04 280 / 0.5)); border-color:oklch(0.66 0.20 300 / 0.25);">
+  <div class="glass float" style="margin-top:0; background:linear-gradient(180deg, oklch(0.32 0.06 300 / 0.5), oklch(0.22 0.04 280 / 0.5)); border-color:oklch(0.66 0.20 300 / 0.25);">
     <span class="glow"></span>
     <div class="card-title">
       <span class="card-ico" style="background:var(--grad-violet)">
@@ -3388,6 +4288,7 @@
       <button class="btn primary">Открыть админку компании →</button>
     </div>
   </div>
+  </div><!-- /set-view:admin (админка компании) -->
 
 </section>
 

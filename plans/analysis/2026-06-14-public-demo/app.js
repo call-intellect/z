@@ -140,9 +140,34 @@ function activateTab(el) {
   });
 }
 
+/* --- Generic-фильтр: реальная фильтрация карточек по data-* (Ф2b) --- */
+function applyFilter(el) {
+  const grp = el.dataset.filterGroup, key = el.dataset.filterKey;
+  if (!grp || !key) return;
+  // переключить active среди кнопок той же группы+ключа
+  document.querySelectorAll('[data-action="filter"][data-filter-group="' + grp + '"][data-filter-key="' + key + '"]').forEach(b => {
+    b.classList.toggle('active', b === el);
+  });
+  // собрать активные фильтры группы (по каждому ключу)
+  const active = {};
+  document.querySelectorAll('[data-action="filter"][data-filter-group="' + grp + '"].active').forEach(b => {
+    active[b.dataset.filterKey] = b.dataset.filterVal;
+  });
+  // карточка видна, если совпадает по ВСЕМ активным ключам (val 'all' = не фильтрует)
+  document.querySelectorAll('[data-filter-card="' + grp + '"]').forEach(card => {
+    let show = true;
+    for (const k in active) {
+      const v = active[k];
+      if (v !== 'all' && card.dataset[k] !== v) { show = false; break; }
+    }
+    card.hidden = !show;
+  });
+}
+
 /* --- Делегированный диспетчер: один слушатель на document --- */
 const ACTIONS = {
   'tab': activateTab,
+  'filter': applyFilter,
   'open-meeting': el => openOverlay('meeting', el.dataset.id),
   'open-task': el => openOverlay('task', el.dataset.id),
   'open-person': el => openOverlay('person', el.dataset.id),

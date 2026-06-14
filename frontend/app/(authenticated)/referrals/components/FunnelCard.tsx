@@ -1,14 +1,22 @@
 'use client';
 
-import { ChevronRight, Filter } from 'lucide-react';
+import {
+  CreditCard,
+  Filter,
+  MousePointerClick,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 
 import {
   funnelConversion,
   funnelPeriodLabel,
   type FunnelDomain,
   type FunnelPeriod,
+  type FunnelRow,
 } from '@/domain/referral';
-import { Card } from '@/ui/shadcn/card';
+import { CardTitle, GRAD, glass } from '@/ui/components/dashboard/modern';
 import {
   Select,
   SelectContent,
@@ -23,40 +31,36 @@ interface Props {
   onPeriodChange: (p: FunnelPeriod) => void;
 }
 
+/** Иконка + градиент для каждой ступени воронки. */
+const STEP_VISUAL: Record<FunnelRow['key'], { icon: LucideIcon; grad: string }> = {
+  clicks: { icon: MousePointerClick, grad: GRAD.violet },
+  signups: { icon: UserPlus, grad: GRAD.blue },
+  firstPayments: { icon: CreditCard, grad: GRAD.teal },
+  activeNow: { icon: Users, grad: GRAD.amber },
+};
+
 /**
- * FunnelCard — воронка партнёра за выбранный период (ТЗ §8.1 C).
+ * FunnelCard — воронка партнёра за выбранный период (ТЗ §8.1 C), редизайн B8.
  *
- * 4 строки:
- *   1. Кликов  (без конверсии).
- *   2. Регистраций  + % от кликов.
- *   3. Первых оплат + % от регистраций.
- *   4. Активных сейчас + % от первых оплат.
+ * 4 ступени горизонтальными градиент-барами, ширина пропорциональна значению
+ * относительно первого шага (кликов). У каждой ступени — иконка на градиенте
+ * и процент конверсии «от предыдущего» парным статус-токеном.
  *
  * Период выбирается селектом (30d / 90d / all) — это передаётся в SWR-ключ
  * родителем (`ReferralsClient`), поэтому смена периода триггерит refetch.
+ * Контракт пропсов НЕ меняется.
  */
 export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
   const rows = funnelConversion(funnel);
+  // Масштаб ширины бара: относительно максимума (первый шаг — кликов).
+  const max = Math.max(...rows.map((r) => r.value), 1);
 
   return (
-    <Card className="space-y-4 p-6">
+    <div style={glass()} className="p-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-muted text-accent"
-            aria-hidden="true"
-          >
-            <Filter className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-fg-primary">
-              Воронка партнёра
-            </h2>
-            <p className="text-xs text-fg-tertiary">
-              От кликов по ссылке до активных клиентов сейчас.
-            </p>
-          </div>
-        </div>
+        <CardTitle icon={<Filter className="h-4 w-4" />} grad={GRAD.violet}>
+          Воронка партнёра
+        </CardTitle>
         <Select
           value={period}
           onValueChange={(v) => onPeriodChange(v as FunnelPeriod)}
@@ -72,32 +76,59 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
         </Select>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {rows.map((row, idx) => (
-          <div
-            key={row.key}
-            className="rounded-md border border-border-subtle bg-bg-base/40 p-4"
-          >
-            <div className="flex items-center gap-1 text-xs uppercase tracking-wide text-fg-tertiary">
-              {idx > 0 && (
-                <ChevronRight
-                  className="h-3 w-3 shrink-0 text-fg-tertiary"
-                  aria-hidden="true"
-                />
-              )}
-              <span>{row.label}</span>
+      <p className="mt-1 text-xs text-fg-tertiary">
+        От кликов по ссылке до активных клиентов сейчас.
+      </p>
+
+      <div className="mt-5 space-y-3">
+        {rows.map((row, idx) => {
+          const visual = STEP_VISUAL[row.key];
+          const Icon = visual.icon;
+          // Минимум 6% ширины, чтобы ненулевая ступень была видна.
+          const widthPct =
+            row.value > 0 ? Math.max((row.value / max) * 100, 6) : 0;
+
+          return (
+            <div key={row.key} className="flex items-center gap-3">
+              <span
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
+                style={{ background: visual.grad, color: 'oklch(0.99 0.005 280)' }}
+                aria-hidden="true"
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs uppercase tracking-wide text-fg-tertiary">
+                    {row.label}
+                  </span>
+                  <span className="text-base font-semibold text-fg-primary">
+                    {row.value.toLocaleString('ru-RU')}
+                  </span>
+                </div>
+
+                {/* Пропорциональный градиент-бар на «вдавленной» дорожке. */}
+                <div
+                  className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full"
+                  style={{ background: 'var(--surface-inset)' }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${widthPct}%`, background: visual.grad }}
+                  />
+                </div>
+              </div>
+
+              <span className="w-24 shrink-0 text-right text-xs text-fg-secondary">
+                {idx > 0 && row.conversionPercent !== null
+                  ? `${row.conversionPercent}% от пред.`
+                  : ''}
+              </span>
             </div>
-            <div className="mt-2 text-2xl font-semibold text-fg-primary">
-              {row.value}
-            </div>
-            <div className="mt-1 h-4 text-xs text-fg-secondary">
-              {row.conversionPercent !== null
-                ? `${row.conversionPercent}% от предыдущего`
-                : ' '}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-    </Card>
+    </div>
   );
 }

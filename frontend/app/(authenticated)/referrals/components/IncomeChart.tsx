@@ -1,147 +1,226 @@
 'use client';
 
 import { TrendingUp } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
 } from 'recharts';
 
 import {
   monthLabel,
   type MonthlyPointDomain,
 } from '@/domain/referral';
-import { Card } from '@/ui/shadcn/card';
+import {
+  CardTitle,
+  CHART,
+  ChartTip,
+  GlassCard,
+  GRAD,
+} from '@/ui/components/dashboard/modern';
 
 interface Props {
   points: MonthlyPointDomain[];
 }
 
+type Mode = 'monthly' | 'cumulative';
+
 /**
- * IncomeChart — график дохода и активных клиентов за 12 месяцев (ТЗ §8.1 C).
+ * IncomeChart — доход партнёра за 12 месяцев (ТЗ §8.1 C), редизайн B7 (modern).
  *
- * Двойная ось Y:
- *   - Левая (тёплый accent) — доход в рублях.
- *   - Правая (бирюзовый) — количество активных клиентов.
+ * Стеклянная карточка с крупным hero-числом «заработано всего» + дельта
+ * (последний месяц к предыдущему) и переключателем режима:
+ *   - «по месяцам»  → столбцы (BarChart) с градиентом cyan→violet;
+ *   - «накопительно» → нарастающая area-кривая.
  *
  * 12 точек гарантированно приходят с backend (`getIncomeChart`),
  * включая месяцы с нулями — это сразу нормализованный для recharts
- * datapoint, дополнительные преобразования не нужны.
+ * datapoint. `incomeRub` — уже в рублях.
  *
- * Цвета взяты как CSS-переменные, чтобы переключение темы работало.
+ * Проп-контракт `{ points }` НЕ меняется — только внутренний рендер.
  */
 export function IncomeChart({ points }: Props) {
-  const data = points.map((p) => ({
-    month: p.month,
-    label: monthLabel(p.month),
-    income: p.incomeRub,
-    active: p.activeClients,
-  }));
+  const [mode, setMode] = useState<Mode>('monthly');
+
+  const monthly = useMemo(
+    () =>
+      points.map((p) => ({
+        month: p.month,
+        label: monthLabel(p.month),
+        income: p.incomeRub,
+        active: p.activeClients,
+      })),
+    [points],
+  );
+
+  const cumulative = useMemo(() => {
+    let acc = 0;
+    return monthly.map((p) => {
+      acc += p.income;
+      return { ...p, income: acc };
+    });
+  }, [monthly]);
+
+  const data = mode === 'monthly' ? monthly : cumulative;
+
+  // Hero: всего заработано + дельта последнего месяца к предыдущему.
+  const totalEarned = useMemo(
+    () => monthly.reduce((sum, p) => sum + p.income, 0),
+    [monthly],
+  );
+  const last = monthly.at(-1)?.income ?? 0;
+  const prev = monthly.at(-2)?.income ?? 0;
+  const delta = last - prev;
+
+  const fmt = (v: number) => `${v.toLocaleString('ru-RU')} ₽`;
 
   return (
-    <Card className="space-y-4 p-6">
-      <header className="flex items-center gap-2">
-        <span
-          className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-muted text-accent"
-          aria-hidden="true"
-        >
-          <TrendingUp className="h-4 w-4" />
-        </span>
+    <GlassCard>
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-fg-primary">
-            Доход и активные клиенты за 12 месяцев
-          </h2>
-          <p className="text-xs text-fg-tertiary">
-            Слева — доход в рублях, справа — сколько клиентов платят.
+          <CardTitle icon={<TrendingUp className="h-4 w-4" />} grad={GRAD.violet}>
+            Доход за 12 месяцев
+          </CardTitle>
+          <div className="mt-2 flex items-end gap-3">
+            <span className="text-[32px] font-semibold leading-none tracking-tight text-fg-primary">
+              {fmt(totalEarned)}
+            </span>
+            {delta !== 0 && (
+              <span
+                className="pb-1 text-sm"
+                style={{
+                  color:
+                    delta > 0
+                      ? 'var(--chip-success-fg)'
+                      : 'var(--chip-danger-fg)',
+                }}
+              >
+                {delta > 0 ? '+' : '−'}
+                {Math.abs(delta).toLocaleString('ru-RU')} ₽ за месяц
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-fg-tertiary">
+            {mode === 'monthly'
+              ? 'Сколько заработал в каждом месяце.'
+              : 'Накопленный доход нарастающим итогом.'}
           </p>
         </div>
-      </header>
 
-      <div className="h-[280px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={data}
-            margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
+        {/* Переключатель режима — парные токены и градиент активной вкладки. */}
+        <div
+          className="flex shrink-0 rounded-xl p-1"
+          style={{ background: 'var(--surface-inset)' }}
+          role="tablist"
+          aria-label="Режим графика дохода"
+        >
+          <ModeTab
+            active={mode === 'monthly'}
+            onClick={() => setMode('monthly')}
           >
-            <CartesianGrid stroke="var(--border-subtle)" strokeDasharray="3 3" />
-            <XAxis
-              dataKey="label"
-              stroke="var(--text-tertiary)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={{ stroke: 'var(--border-subtle)' }}
-            />
-            <YAxis
-              yAxisId="left"
-              stroke="var(--accent)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={{ stroke: 'var(--border-subtle)' }}
-              tickFormatter={(v: number) =>
-                v >= 1000 ? `${(v / 1000).toFixed(0)} тыс` : String(v)
-              }
-              width={56}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              stroke="var(--info)"
-              fontSize={11}
-              tickLine={false}
-              axisLine={{ stroke: 'var(--border-subtle)' }}
-              allowDecimals={false}
-              width={32}
-            />
-            <Tooltip
-              contentStyle={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-              labelStyle={{ color: 'var(--text-primary)' }}
-              formatter={(value, name) => {
-                const num = typeof value === 'number' ? value : Number(value);
-                const label = String(name);
-                if (label === 'Доход') {
-                  return [`${num.toLocaleString('ru-RU')} ₽`, label];
-                }
-                return [String(num), label];
-              }}
-            />
-            <Legend
-              wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }}
-              iconType="circle"
-            />
-            <Line
-              yAxisId="left"
-              type="monotone"
-              dataKey="income"
-              name="Доход"
-              stroke="var(--accent)"
-              strokeWidth={2.5}
-              dot={{ r: 3, fill: 'var(--accent)' }}
-              activeDot={{ r: 5 }}
-            />
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="active"
-              name="Активные клиенты"
-              stroke="var(--info)"
-              strokeWidth={2}
-              strokeDasharray="4 4"
-              dot={{ r: 3, fill: 'var(--info)' }}
-              activeDot={{ r: 5 }}
-            />
-          </LineChart>
+            По месяцам
+          </ModeTab>
+          <ModeTab
+            active={mode === 'cumulative'}
+            onClick={() => setMode('cumulative')}
+          >
+            Накопительно
+          </ModeTab>
+        </div>
+      </div>
+
+      <div className="mt-4 h-[280px] w-full">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          {mode === 'monthly' ? (
+            <BarChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+              <defs>
+                <linearGradient id="referral-income-bar" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART.cyan} />
+                  <stop offset="100%" stopColor={CHART.violet} stopOpacity={0.7} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: CHART.faint, fontSize: 12 }}
+              />
+              <Tooltip
+                content={<ChartTip />}
+                cursor={{ fill: 'var(--surface-inset)' }}
+              />
+              <Bar
+                dataKey="income"
+                name="Доход"
+                radius={[8, 8, 0, 0]}
+                fill="url(#referral-income-bar)"
+                maxBarSize={34}
+              />
+            </BarChart>
+          ) : (
+            <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+              <defs>
+                <linearGradient id="referral-income-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART.violet} stopOpacity={0.45} />
+                  <stop offset="100%" stopColor={CHART.violet} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: CHART.faint, fontSize: 12 }}
+              />
+              <Tooltip
+                content={<ChartTip />}
+                cursor={{ stroke: 'var(--border-strong)' }}
+              />
+              <Area
+                type="monotone"
+                dataKey="income"
+                name="Доход нарастающим итогом"
+                stroke={CHART.violet}
+                strokeWidth={2.5}
+                fill="url(#referral-income-area)"
+                dot={false}
+              />
+            </AreaChart>
+          )}
         </ResponsiveContainer>
       </div>
-    </Card>
+    </GlassCard>
+  );
+}
+
+/** Таб переключателя режима графика — активный на градиентной подложке. */
+function ModeTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+      style={
+        active
+          ? { background: GRAD.violet, color: 'oklch(0.99 0.005 280)' }
+          : { color: 'var(--text-secondary)' }
+      }
+    >
+      {children}
+    </button>
   );
 }

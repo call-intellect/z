@@ -20,9 +20,8 @@ import {
   type ReferralDomain,
   type ReferralLegalForm,
 } from '@/domain/referral';
-import { Badge } from '@/ui/shadcn/badge';
+import { GRAD, STATUS_TONE, glass } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
 import {
@@ -51,26 +50,30 @@ type PayoutStatus = 'empty' | 'unverified' | 'verified';
  * Карточка свёрнута по умолчанию в состоянии `verified` (там нечего
  * делать). В состоянии `empty` и `unverified` — развёрнута, чтобы
  * подтолкнуть к действию.
+ *
+ * Редизайн B10: стеклянная обёртка `glass()`, заголовок и статус-бейдж в
+ * новом языке. ИНН-гейт, валидация и логика статусов — без изменений.
  */
 export function PayoutDetailsCard({ referral, onUpdated }: Props) {
   const status: PayoutStatus = computeStatus(referral);
   const [expanded, setExpanded] = useState<boolean>(status !== 'verified');
 
   return (
-    <Card>
-      <header className="flex items-center justify-between gap-3 border-b border-border-subtle px-6 py-4">
-        <div className="flex items-center gap-2">
+    <div style={glass()} className="overflow-hidden">
+      <header className="flex items-center justify-between gap-3 px-6 py-4">
+        <div className="flex items-center gap-2.5">
           <span
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-muted text-accent"
+            className="grid h-8 w-8 place-items-center rounded-xl"
+            style={{ background: GRAD.amber, color: 'oklch(0.99 0.005 280)' }}
             aria-hidden="true"
           >
             <Wallet className="h-4 w-4" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-fg-primary">
+            <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
               Реквизиты для вывода
             </h2>
-            <p className="text-xs text-fg-tertiary">
+            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
               ИНН, форма ведения деятельности и банковский счёт. Нужны для
               выплаты 10-го числа.
             </p>
@@ -96,9 +99,11 @@ export function PayoutDetailsCard({ referral, onUpdated }: Props) {
       </header>
 
       {expanded && (
-        <PayoutDetailsForm referral={referral} onUpdated={onUpdated} />
+        <div style={{ borderTop: '1px solid var(--border-inset)' }}>
+          <PayoutDetailsForm referral={referral} onUpdated={onUpdated} />
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -108,28 +113,33 @@ function computeStatus(ref: ReferralDomain): PayoutStatus {
   return 'verified';
 }
 
+/**
+ * Статус-бейдж реквизитов в стиле `StatusPill` (парные токены `STATUS_TONE`),
+ * но с осмысленной подписью и иконкой по состоянию.
+ */
 function StatusBadge({ status }: { status: PayoutStatus }) {
-  if (status === 'verified') {
-    return (
-      <Badge variant="success">
-        <CheckCircle2 className="h-3 w-3" />
-        Готово
-      </Badge>
-    );
-  }
-  if (status === 'unverified') {
-    return (
-      <Badge variant="warning">
-        <AlertTriangle className="h-3 w-3" />
-        Не подтверждены
-      </Badge>
-    );
-  }
+  const map: Record<
+    PayoutStatus,
+    { tone: 'ok' | 'warning' | 'risk'; label: string; icon: typeof CheckCircle2 }
+  > = {
+    verified: { tone: 'ok', label: 'Готово', icon: CheckCircle2 },
+    unverified: { tone: 'warning', label: 'Не подтверждены', icon: AlertTriangle },
+    empty: {
+      tone: 'risk',
+      label: 'Не заполнены — вывод недоступен',
+      icon: AlertTriangle,
+    },
+  };
+  const { tone, label, icon: Icon } = map[status];
+  const t = STATUS_TONE[tone];
   return (
-    <Badge variant="danger">
-      <AlertTriangle className="h-3 w-3" />
-      Не заполнены — вывод недоступен
-    </Badge>
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium"
+      style={{ color: t.c, background: t.bg }}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
   );
 }
 

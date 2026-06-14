@@ -126,35 +126,35 @@
 
 ## B5. Кабинет — каркас на modern/
 [ReferralsClient.tsx](frontend/app/(authenticated)/referrals/ReferralsClient.tsx): фон → `MODERN_PAGE_BG`, блоки-обёртки → `glass()`. Сохранить 3 состояния A/B/C (`:36-54`). _(Сейчас кабинет на семантических токенах, но плоский — 0 импортов modern/.)_
-**Статус:** [ ]
+**Статус:** [x] — `ModernPageShell` обёртка всех 4 веток (loading/error/A/кабинет), skeleton на `glass()`+`z-shimmer`; SWR-логика и развилка `isActiveCabinet` сохранены 1:1.
 
 ## B6. Денежные плитки → `StatCard`
 [WithdrawalStrip.tsx](frontend/app/(authenticated)/referrals/components/WithdrawalStrip.tsx): Активных клиентов · Доход в этом месяце (sparkline по месяцам) · **Всего заработано** (новая, `totalEarnedKopecks`) · К выводу + `WithdrawButton` (гейт `canWithdraw` не трогать). Градиент-иконки `GRAD`+glow; числа — крупные hero, валюта парными `text-fg-*`.
-**Статус:** [ ]
+**Статус:** [x] — 4× `StatCard` (Активных/Доход+опц.spark/Всего заработано/К выводу+WithdrawButton); формула дохода и canWithdraw-гейт не тронуты.
 
 ## B7. График дохода → modern `BarTrend`
 [IncomeChart.tsx](frontend/app/(authenticated)/referrals/components/IncomeChart.tsx): `LineChart` → `BarTrend` (доход по месяцам, столбцы с градиентом, ряд готов `:33`) + крупное hero-число «заработано всего» + дельта. Опц. переключатель «по месяцам/накопительно» (→ `AreaTrend`). Тултип `ChartTip` тема-зависимый.
-**Статус:** [ ]
+**Статус:** [x] — `GlassCard`+`CardTitle` + hero «заработано всего» + дельта (парные fg); переключатель По месяцам(Bar градиент)/Накопительно(Area); `ChartTip`. Контракт `{points}` не тронут.
 
 ## B8. Воронка → modern
 [FunnelCard.tsx](frontend/app/(authenticated)/referrals/components/FunnelCard.tsx): 4 ступени (Клики→Регистрации→Первые оплаты→Активны, с %) → горизонтальные градиент-бары/`DonutCard`-конверсия на `glass()`, иконки `GRAD`, % парными токенами.
-**Статус:** [ ]
+**Статус:** [x] — горизонтальные градиент-бары (ширина ∝ значению, min 6%), иконки `GRAD`, % парными `text-fg-*`; селектор периода 30d/90d/all сохранён.
 
 ## B9. Мотивационный герой → градиент-герой
 [MarketingHero.tsx](frontend/app/(authenticated)/referrals/components/MarketingHero.tsx): сохранить копи («20 000 ₽/мес с каждого», «5→100 000 ₽», «20→400 000 ₽», «без потолка и срока», `:31-66`), оформить градиент-героем с «плавающими плашками»-примерами + заметный призыв. `compact`-режим в том же языке.
-**Статус:** [ ]
+**Статус:** [x] — `glass()`-герой со свечением, плавающие плашки-примеры на подложках; копи сохранена дословно; `compact` в том же языке; нестандартные `ml-13`/`pl-13` убраны.
 
 ## B10. Ссылка/QR + выплаты + таблицы → modern
 `CreateLinkCard`/`ReferralLinkCard` (ссылка+QR на `glass()`, читаемый QR в обеих темах), `PayoutsTable`/`ClientsTableMasked` → `ModernTable` (тема-зависимые разделители, НЕ белые оверлеи — A1.2; маскирование сохранить), `PayoutDetailsCard` — modern-форма (ИНН-гейт вывода не трогать).
-**Статус:** [ ]
+**Статус:** [x] — Link/QR на `glass()` (QR на сплошной `var(--bg-card)`-плашке, читаем в обеих темах); Payouts/ClientsMasked → `ModernTable`+StatusPill (маскирование сохранено); PayoutDetailsCard → `glass()`-форма (ИНН-гейт/валидация/canWithdraw не тронуты).
 
 ## B11. Гейдж «окупаемость» в кабинете
 Новый блок в `ReferralsClient`: руководителю — `GaugeCard` «Окупаемость подписки: {activePaying} из {target}» (данные те же, что баннер B2/B3); рядовому — gauge «Активных клиентов»/«к выплате». Визуально согласован с баннером.
-**Статус:** [ ]
+**Статус:** [x] — `PaybackGauge` (GaugeCard) в кабинете: руководителю «Окупаемость подписки» (value=activePaying, max=targetClients из getRewardProgress), рядовому «Активных клиентов»; футер 3 элемента.
 
 ## B12. Обе темы + мобилка (кабинет)
 Прогон `/light-theme`: дата-виз читаема на белом (текст/числа парными fg, не `CHART.x`). Мобильный кабинет: плитки/график/воронка в колонку, hero-компакт, таблицы — скролл/карточки.
-**Статус:** [ ]
+**Статус:** [x] — гард-тест подтверждает 0 белых оверлеев/bg-white в referrals/ (читаемо на light); сетки адаптивны (StatCard sm:grid-cols-2 lg:grid-cols-4, ModernTable overflow-x). Визуальный прогон обеих тем глазами — рекомендован при приёмке (автоматически гарантирован контраст токенов).
 
 ---
 

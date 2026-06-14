@@ -538,3 +538,49 @@ body[data-theme="light"] .role-switch button.active { color: #fff; }
 @media (max-width: 640px) {
   .overlay-panel { width: 100%; border-left: none; border-radius: 0; }
 }
+
+/* ===== Ф3: деталь встречи — транскрипт + секции отчёта ===== */
+/* Транскрипт-таймлайн */
+.tr-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 9px 0;
+  border-top: 1px solid var(--surface-line);
+}
+.tr-row:first-child { border-top: none; }
+.tr-time {
+  flex: none;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--cyan);
+  background: var(--surface-soft);
+  border-radius: 8px;
+  padding: 3px 8px;
+  margin-top: 1px;
+}
+.tr-body { flex: 1; min-width: 0; }
+.tr-who { font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.tr-text { font-size: 13px; line-height: 1.55; color: var(--dim); }
+
+/* Секции AI-отчёта */
+.report-sec {
+  padding: 11px 14px;
+  border: 1px solid var(--surface-line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  margin-bottom: 10px;
+}
+.report-sec:last-child { margin-bottom: 0; }
+.report-sec-h {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.report-sec-body { font-size: 13px; line-height: 1.55; color: var(--text); }
+.report-list { margin: 4px 0 0; padding-left: 18px; }
+.report-list li { font-size: 13px; line-height: 1.55; color: var(--text); margin-bottom: 4px; }

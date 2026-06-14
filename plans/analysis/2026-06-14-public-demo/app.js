@@ -96,9 +96,139 @@ function toast(text) {
   _toastTimer = setTimeout(() => { t.hidden = true; }, 2500);
 }
 
+/* --- Хелперы рендеринга (общие для Ф3–Ф6) --- */
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function personById(id) {
+  return ((window.DEMO && window.DEMO.people) || []).find(p => p.id === id) || null;
+}
+function personName(id) {
+  const p = personById(id);
+  return p ? p.name : id;
+}
+
+/* --- Ф3: деталь встречи --- */
+function renderMeeting(id) {
+  const m = ((window.DEMO && window.DEMO.meetings) || []).find(x => x.id === id);
+  if (!m) return '<div class="overlay-stub">Встреча не найдена</div>';
+
+  // Шапка: заголовок + чипы тип/дата
+  let html = '';
+  html += '<div class="card-title" style="margin-bottom:6px;">' +
+            '<span class="card-ico" style="background:var(--grad-violet)">' +
+              '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>' +
+            '</span>' +
+            '<h3 style="margin:0;">' + esc(m.title) + '</h3>' +
+          '</div>';
+  html += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">' +
+            '<span class="chip info"><span class="led"></span>' + esc(m.type) + '</span>' +
+            (m.date ? '<span class="chip"><span class="led"></span>' + esc(m.date) + '</span>' : '') +
+            (m.duration ? '<span class="chip"><span class="led"></span>' + esc(m.duration) + '</span>' : '') +
+          '</div>';
+
+  // Участники
+  if (Array.isArray(m.participants) && m.participants.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Участники</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">';
+    m.participants.forEach(pid => {
+      const p = personById(pid);
+      html += '<div class="list-row" style="padding:8px 0; cursor:pointer;" data-action="open-person" data-id="' + esc(pid) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(p ? p.name : pid) + '</div>' +
+                (p && p.role ? '<div class="meta">' + esc(p.role) + '</div>' : '') +
+                '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  // Краткое содержание
+  if (m.summary) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Краткое содержание</div>';
+    html += '<p class="muted" style="font-size:13.5px; line-height:1.6; margin:0 0 18px;">' + esc(m.summary) + '</p>';
+  }
+
+  // Транскрипт-таймлайн
+  if (Array.isArray(m.transcript) && m.transcript.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Транскрипт</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">';
+    m.transcript.forEach(line => {
+      html += '<div class="tr-row">' +
+                '<span class="tr-time">' + esc(line.t) + '</span>' +
+                '<div class="tr-body">' +
+                  '<div class="tr-who">' + esc(line.who) + '</div>' +
+                  '<div class="tr-text">' + esc(line.text) + '</div>' +
+                '</div>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+
+  // AI-отчёт (обобщённо по ключам объекта report)
+  if (m.report && typeof m.report === 'object') {
+    const keys = Object.keys(m.report);
+    if (keys.length) {
+      html += '<div class="section-h" style="margin-bottom:10px;">AI-отчёт</div>';
+      html += '<div style="margin-bottom:18px;">';
+      keys.forEach(k => {
+        const val = m.report[k];
+        html += '<div class="report-sec">';
+        html += '<div class="report-sec-h">' + esc(k) + '</div>';
+        if (Array.isArray(val)) {
+          html += '<ul class="report-list">';
+          val.forEach(item => { html += '<li>' + esc(item) + '</li>'; });
+          html += '</ul>';
+        } else {
+          html += '<div class="report-sec-body">' + esc(val) + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // Извлечённые задачи
+  const allTasks = (window.DEMO && window.DEMO.tasks) || [];
+  if (Array.isArray(m.tasks) && m.tasks.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Извлечённые задачи</div>';
+    html += '<div class="row-list" style="margin-bottom:18px;">';
+    m.tasks.forEach(tid => {
+      const t = allTasks.find(x => x.id === tid);
+      html += '<div class="list-row" style="padding:9px 0; cursor:pointer;" data-action="open-task" data-id="' + esc(tid) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(t ? t.title : tid) + '</div>' +
+                (t && t.assignee ? '<div class="meta">' + esc(personName(t.assignee)) + (t.due ? ' · ' + esc(t.due) : '') + '</div>' : '') +
+                '</div>' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dim); flex:none;"><path d="M9 6l6 6-6 6"/></svg>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Извлечённые решения
+  const allDecisions = ((window.DEMO && window.DEMO.decisions) || []).concat((window.DEMO && window.DEMO.decisionsArchive) || []);
+  if (Array.isArray(m.decisions) && m.decisions.length) {
+    html += '<div class="section-h" style="margin-bottom:10px;">Извлечённые решения</div>';
+    html += '<div class="row-list" style="margin-bottom:4px;">';
+    m.decisions.forEach(did => {
+      const d = allDecisions.find(x => x.id === did);
+      html += '<div class="list-row" style="padding:9px 0; cursor:pointer;" data-action="open-decision" data-id="' + esc(did) + '">' +
+                '<div class="body"><div class="ttl" style="font-size:13px;">' + esc(d ? d.title : did) + '</div>' +
+                (d && d.status ? '<div class="meta">' + esc(d.status) + '</div>' : '') +
+                '</div>' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--dim); flex:none;"><path d="M9 6l6 6-6 6"/></svg>' +
+              '</div>';
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
 /* --- Рендереры деталей (заглушки Ф0; реальные шаблоны добавят Ф3–Ф6) --- */
 const RENDERERS = {
-  meeting:  (id) => `<div class="overlay-stub">Деталь встречи (${id}) — заполняется в Ф3</div>`,
+  meeting:  renderMeeting,
   task:     (id) => `<div class="overlay-stub">Деталь задачи (${id}) — заполняется в Ф4</div>`,
   decision: (id) => `<div class="overlay-stub">Деталь решения (${id}) — заполняется в Ф4</div>`,
   person:   (id) => `<div class="overlay-stub">Профиль (${id}) — заполняется в Ф5</div>`,

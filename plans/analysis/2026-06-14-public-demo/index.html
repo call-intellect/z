@@ -161,12 +161,12 @@
             </div>
             <p class="muted" style="font-size:14px; line-height:1.6; margin:0 0 14px;">
               Прошло 3 встречи. Главное: клиент «Орбита» подтвердил переход на расширенный тариф —
-              <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">встреча 12.06 [01:57]</span>.
+              <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer" data-action="open-meeting" data-id="m-orbita-demo">встреча 12.06 [01:57]</span>.
               Появилось 2 новых блокера, критичный — задержка оплаты коннекторов. Принято 4 решения,
               одно требует вашего внимания — выбор подрядчика на внедрение.
             </p>
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <span class="chip ok"><span class="led"></span>3 встречи</span>
+              <span class="chip ok" style="cursor:pointer" data-action="open-meeting" data-id="m-orbita-demo"><span class="led"></span>3 встречи</span>
               <span class="chip warn"><span class="led"></span>2 блокера</span>
               <span class="chip info"><span class="led"></span>4 решения</span>
               <span class="chip risk"><span class="led"></span>1 решение ждёт вас</span>
@@ -1649,7 +1649,7 @@
       <!-- Сегодня -->
       <div class="section-h">Сегодня</div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-orbita-demo">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-amber); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>
@@ -1673,7 +1673,7 @@
         </div>
       </div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-sales-plan">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-violet); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87"/></svg>
@@ -1701,7 +1701,7 @@
       <!-- На неделе -->
       <div class="section-h mt">На неделе</div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-support-vector">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-red); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1724,7 +1724,7 @@
         </div>
       </div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-hire-sales">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-teal); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M16 4l4-2M8 4 4 2"/></svg>
@@ -1749,7 +1749,7 @@
       <!-- Ранее -->
       <div class="section-h mt">Ранее</div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-vector-negotiation">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-blue); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>
@@ -1771,7 +1771,7 @@
         </div>
       </div>
 
-      <div class="glass float" style="padding:16px 18px; margin-bottom:12px;">
+      <div class="glass float" style="padding:16px 18px; margin-bottom:12px; cursor:pointer;" data-action="open-meeting" data-id="m-1on1-anna">
         <div style="display:flex; align-items:center; gap:14px;">
           <span class="card-ico" style="background:var(--grad-pink); width:38px; height:38px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>

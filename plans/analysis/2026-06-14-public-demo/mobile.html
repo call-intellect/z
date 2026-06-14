@@ -3,944 +3,476 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Кора — мобильная версия</title>
+  <title>Кора — мобильная версия (интерактив)</title>
   <link rel="stylesheet" href="design-system.css">
+  <style>
+    /* Движок экранов — как в index.html: go() переключает .screen.active */
+    .screen { display: none; }
+    .screen.active { display: block; }
+    /* Один телефон по центру страницы */
+    .phone-wrap { display: flex; justify-content: center; padding: 8px 0 40px; }
+    /* На мобильном вьюпорте телефон занимает весь экран без рамки */
+    @media (max-width: 640px) {
+      .phone { width: 100%; max-width: 100%; border-radius: 0; padding: 0; box-shadow: none; }
+      .phone-screen { border-radius: 0; height: 100vh; }
+      .phone-wrap { padding: 0; }
+      .page-intro { display: none; }
+    }
+  </style>
 </head>
 <body>
   <div style="max-width:1280px; margin:0 auto; padding:40px 28px 80px;">
 
-    <h1 style="font-size:34px; font-weight:600; letter-spacing:-0.025em; margin:0 0 12px;">Кора — мобильная версия <span class="muted" style="font-weight:400; font-size:22px;">(быстрый взгляд)</span></h1>
-    <p class="muted" style="font-size:15px; line-height:1.65; max-width:760px; margin:0 0 44px;">
-      Мобильная Кора — это не весь кабинет, а быстрый взгляд по роли с телефона. Только три вещи под рукой: дашборды-сводки,
-      чек-ин «как дела» и «спросить память». Полная работа (встречи, очередь решений целиком, регламенты, настройки) —
-      на десктопе. Нижние табы зависят от роли: у владельца — пульс компании и очередь решений, у сотрудника — свои обещания и чек-ин.
-    </p>
-
-    <!-- ====================================================================== -->
-    <!-- ВЛАДЕЛЕЦ                                                                -->
-    <!-- ====================================================================== -->
-    <h2 style="font-size:22px; font-weight:600; letter-spacing:-0.02em; margin:0 0 6px; display:flex; align-items:center; gap:12px;">
-      <span style="width:34px; height:34px; border-radius:11px; display:grid; place-items:center; background:var(--grad-violet); box-shadow:0 8px 22px -8px oklch(0.6 0.2 300 / 0.9);">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>
-      </span>
-      Владелец
-    </h2>
-    <p class="faint" style="font-size:13px; margin:0 0 26px;">Сергей · ООО «Луа» · 4 сотрудника · цель «25 платящих клиентов»</p>
-
-    <div style="display:flex; flex-wrap:wrap; gap:40px 32px;">
-
-      <!-- ============ ВЛАДЕЛЕЦ · СЕГОДНЯ ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Кора</div>
-                <div class="faint" style="font-size:10.5px;">Сегодня · 13 июня</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px;"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- Вердикт дня -->
-            <div class="verdict-bar" style="margin:0; padding:13px 15px;">
-              <span class="led-lg"></span>
-              <div style="flex:1; min-width:0;">
-                <div style="font-weight:600; font-size:13.5px;">Компания в норме</div>
-                <div class="faint" style="font-size:11px; margin-top:2px;">сбор данных работает · встреча 2 ч назад</div>
-              </div>
-            </div>
-
-            <!-- Требует вас -->
-            <div class="glass float" style="padding:18px; background:linear-gradient(180deg, oklch(0.32 0.06 55/.5), oklch(0.22 0.04 50/.5)); border-color:oklch(0.84 0.16 80/.25)">
-              <span class="glow amber"></span>
-              <div class="card-title" style="margin-bottom:8px;">
-                <span class="card-ico" style="background:var(--grad-amber); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-                </span>
-                <h3>Требует вас</h3>
-              </div>
-              <div class="hero-num glow-text" style="color:var(--amber); font-size:34px;">6</div>
-              <div class="faint" style="font-size:11px; margin:5px 0 12px;">решений в очереди · старейшее 2 дня</div>
-              <div class="row-list">
-                <div class="list-row" style="padding:7px 0; border:none;">
-                  <span class="chip warn" style="flex:none"><span class="led"></span>цель</span>
-                  <div class="body"><div class="ttl" style="font-size:12.5px;">Принять цель «10 на тесты»</div></div>
-                </div>
-                <div class="list-row" style="padding:7px 0;">
-                  <span class="chip info" style="flex:none"><span class="led"></span>выбор</span>
-                  <div class="body"><div class="ttl" style="font-size:12.5px;">Подрядчик внедрения</div></div>
-                </div>
-              </div>
-              <button class="btn" style="width:100%; margin-top:11px;">Разобрать →</button>
-            </div>
-
-            <!-- Польза за неделю компактно -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow teal"></span>
-              <div class="card-title" style="margin-bottom:14px;">
-                <span class="card-ico" style="background:var(--grad-mint); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 7-8"/><path d="M16 8h4v4"/></svg>
-                </span>
-                <h3>Польза за неделю</h3>
-              </div>
-              <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px;">
-                <div>
-                  <div class="hero-num" style="font-size:26px; color:var(--cyan);">13</div>
-                  <div class="faint" style="font-size:10.5px; margin-top:2px;">встреч записано</div>
-                </div>
-                <div>
-                  <div class="hero-num" style="font-size:26px; color:var(--mint);">27</div>
-                  <div class="faint" style="font-size:10.5px; margin-top:2px;">задач извлечено</div>
-                </div>
-                <div>
-                  <div class="hero-num" style="font-size:26px; color:var(--blue);">48</div>
-                  <div class="faint" style="font-size:10.5px; margin-top:2px;">ответов из памяти</div>
-                </div>
-                <div>
-                  <div class="hero-num" style="font-size:26px; color:var(--amber);">9</div>
-                  <div class="faint" style="font-size:10.5px; margin-top:2px;">обещаний сдержано</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Вектор-компас мини -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow"></span>
-              <div class="card-title" style="margin-bottom:6px;">
-                <span class="card-ico" style="background:var(--grad-teal); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-6"/></svg>
-                </span>
-                <h3>Вектор к цели</h3>
-              </div>
-              <div style="display:flex; align-items:center; gap:14px;">
-                <svg width="96" height="96" viewBox="0 0 170 170" style="flex:none;">
-                  <defs><linearGradient id="needle-m1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.85 0.15 165)"/><stop offset="1" stop-color="oklch(0.66 0.20 300)"/></linearGradient></defs>
-                  <circle cx="85" cy="85" r="74" fill="none" stroke="oklch(1 0 0 / 0.06)" stroke-width="3"/>
-                  <circle cx="85" cy="85" r="56" fill="none" stroke="oklch(1 0 0 / 0.05)" stroke-width="2" stroke-dasharray="3 6"/>
-                  <text x="85" y="22" fill="var(--mint)" font-size="13" text-anchor="middle">к цели</text>
-                  <text x="85" y="160" fill="var(--red)" font-size="13" text-anchor="middle">против</text>
-                  <g transform="rotate(-32 85 85)">
-                    <line x1="85" y1="85" x2="85" y2="26" stroke="url(#needle-m1)" stroke-width="7" stroke-linecap="round"/>
-                    <circle cx="85" cy="26" r="8" fill="oklch(0.85 0.15 165)" filter="drop-shadow(0 0 8px oklch(0.85 0.15 165 / 0.8))"/>
-                  </g>
-                  <circle cx="85" cy="85" r="9" fill="oklch(0.66 0.20 300)"/>
-                </svg>
-                <div>
-                  <div style="font-weight:600; font-size:14px; color:var(--mint);">Движемся к цели</div>
-                  <div class="faint" style="font-size:11.5px; margin-top:3px;">активность высокая · расхождение слов и цели</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-              <span>Неделя</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-              <span>Требует</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Память</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-              <span>Я</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ ВЛАДЕЛЕЦ · НЕДЕЛЯ ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Кора</div>
-                <div class="faint" style="font-size:10.5px;">Неделя · 9–13 июня</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px;"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- Температура компании -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow blue"></span>
-              <div class="card-title" style="margin-bottom:14px;">
-                <span class="card-ico" style="background:var(--grad-blue); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0z"/></svg>
-                </span>
-                <h3>Температура недели</h3>
-              </div>
-              <div style="display:flex; align-items:flex-end; gap:8px; height:74px; margin-bottom:10px;">
-                <div class="bar-col"><div class="bar" style="height:46px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Пн</span></div>
-                <div class="bar-col"><div class="bar" style="height:58px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Вт</span></div>
-                <div class="bar-col"><div class="bar" style="height:34px; background:var(--grad-amber);"></div><span class="faint" style="font-size:10px;">Ср</span></div>
-                <div class="bar-col"><div class="bar" style="height:50px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Чт</span></div>
-                <div class="bar-col"><div class="bar" style="height:62px; background:var(--grad-teal);"></div><span class="faint" style="font-size:10px;">Пт</span></div>
-              </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="chip ok"><span class="led"></span>настроение ровное</span>
-                <span class="chip warn"><span class="led"></span>среда просела</span>
-              </div>
-            </div>
-
-            <!-- Кто держит слово -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow teal"></span>
-              <div class="card-title" style="margin-bottom:6px;">
-                <span class="card-ico" style="background:var(--grad-teal); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                </span>
-                <h3>Кто держит слово</h3>
-              </div>
-              <div class="faint" style="font-size:11px; margin-bottom:8px;">доля сдержанных обещаний за неделю</div>
-              <div class="row-list">
-                <div class="list-row" style="padding:10px 0; border:none;">
-                  <span class="avatar" style="background:var(--grad-mint);">АК</span>
-                  <div class="body">
-                    <div class="ttl" style="font-size:13px;">Анна Котова</div>
-                    <div class="meta">8 из 8 обещаний</div>
-                  </div>
-                  <div class="progress" style="width:64px;"><span style="width:100%"></span></div>
-                </div>
-                <div class="list-row" style="padding:10px 0;">
-                  <span class="avatar" style="background:var(--grad-teal);">ДС</span>
-                  <div class="body">
-                    <div class="ttl" style="font-size:13px;">Дмитрий Седов</div>
-                    <div class="meta">6 из 7 обещаний</div>
-                  </div>
-                  <div class="progress" style="width:64px;"><span style="width:86%"></span></div>
-                </div>
-                <div class="list-row" style="padding:10px 0;">
-                  <span class="avatar" style="background:var(--grad-amber);">МЛ</span>
-                  <div class="body">
-                    <div class="ttl" style="font-size:13px;">Мария Лагода</div>
-                    <div class="meta">3 из 6 · чем помочь?</div>
-                  </div>
-                  <div class="progress warn" style="width:64px;"><span style="width:50%"></span></div>
-                </div>
-                <div class="list-row" style="padding:10px 0;">
-                  <span class="avatar" style="background:var(--grad-blue);">ИП</span>
-                  <div class="body">
-                    <div class="ttl" style="font-size:13px;">Игорь Панов</div>
-                    <div class="meta">5 из 6 обещаний</div>
-                  </div>
-                  <div class="progress" style="width:64px;"><span style="width:83%"></span></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Сводка Коры -->
-            <div class="ai-card" style="padding:18px;">
-              <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              </div>
-              <h3 style="font-size:14px;">Итог недели</h3>
-              <p style="font-size:12.5px;">
-                Команда ускорилась на продажах: клиент <b style="color:var(--text)">«Орбита»</b> перешёл на расширенный тариф. Риск — поддержка: трое клиентов упомянули молчание
-                <span class="cite">Радар · 3 сигнала</span>. Один блокер висит дольше пяти дней.
-              </p>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-              <span>Неделя</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-              <span>Требует</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Память</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-              <span>Я</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ ВЛАДЕЛЕЦ · ТРЕБУЕТ ВАС ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Кора</div>
-                <div class="faint" style="font-size:10.5px;">Очередь решений</div>
-              </div>
-            </div>
-            <span class="chip warn" style="font-size:12px;"><span class="led"></span>6 ждут</span>
-          </div>
-
-          <div class="m-body">
-            <div class="section-h" style="margin-bottom:0;">Разберите по одному — каждое решение освобождает команду</div>
-
-            <!-- решение 1 -->
-            <div class="glass float" style="padding:16px;">
-              <span class="glow amber"></span>
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                <span class="chip warn"><span class="led"></span>цель</span>
-                <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 2 дня</span>
-              </div>
-              <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Принять цель «10 компаний на тесты»</div>
-              <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
-                Команда обсуждает этот ориентир на трёх встречах подряд, но в целях он не закреплён
-                <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5);">встреча 11.06</span>.
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn ok" style="flex:1;">Принять</button>
-                <button class="btn" style="flex:1;">Отложить</button>
-              </div>
-            </div>
-
-            <!-- решение 2 -->
-            <div class="glass float" style="padding:16px;">
-              <span class="glow blue"></span>
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                <span class="chip info"><span class="led"></span>выбор</span>
-                <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 1 день</span>
-              </div>
-              <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Выбрать подрядчика внедрения</div>
-              <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
-                Два варианта обсуждались на планёрке: «Вектор» дешевле, второй — быстрее старт.
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn primary" style="flex:1;">Решить</button>
-                <button class="btn" style="flex:1;">Отложить</button>
-              </div>
-            </div>
-
-            <!-- решение 3 -->
-            <div class="glass float" style="padding:16px;">
-              <span class="glow"></span>
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                <span class="chip risk"><span class="led"></span>конфликт</span>
-                <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 3 часа</span>
-              </div>
-              <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Две версии регламента по сделкам</div>
-              <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
-                Анна и Дмитрий описали порядок передачи сделки по-разному. Кора нашла расхождение.
-              </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn primary" style="flex:1;">Сверить</button>
-                <button class="btn" style="flex:1;">Позже</button>
-              </div>
-            </div>
-
-            <button class="btn ghost" style="width:100%; color:var(--dim);">Показать ещё 3 →</button>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-              <span>Неделя</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-              <span>Требует</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Память</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-              <span>Я</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ ВЛАДЕЛЕЦ · ПАМЯТЬ (спросить) ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Память компании</div>
-                <div class="faint" style="font-size:10.5px;">спросите — Кора помнит за всех</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px;"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- ответ Коры на прошлый вопрос -->
-            <div class="ai-card" style="padding:18px;">
-              <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              </div>
-              <h3 style="font-size:14px;">О чём договорились с «Орбитой»?</h3>
-              <p style="font-size:12.5px;">
-                Клиент <b style="color:var(--text)">«Орбита»</b> переходит на расширенный тариф с июля. Анна обещала прислать договор до пятницы
-                <span class="cite">встреча 12.06 [01:57]</span>. Открытый вопрос — кто настроит коннекторы.
-              </p>
-            </div>
-
-            <!-- поле ввода -->
-            <div class="glass float" style="padding:14px;">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <input type="text" placeholder="Спросите что угодно…" style="flex:1; background:none; border:none; color:var(--text); font-size:13.5px; font-family:var(--font); outline:none;">
-                <button class="icon-btn" style="width:34px; height:34px; flex:none;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-                </button>
-                <button class="icon-btn" style="width:34px; height:34px; flex:none; background:var(--grad-violet); border:none;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- быстрые вопросы -->
-            <div>
-              <div class="section-h" style="margin-bottom:10px;">Быстрые вопросы</div>
-              <div class="row-list">
-                <div class="list-row" style="padding:11px 0; border:none;">
-                  <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Что решили вчера?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--warn-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Какие блокеры открыты?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--ok-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Кто отвечает за внедрение?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-              <span>Неделя</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-              <span>Требует</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Память</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-              <span>Я</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ ВЛАДЕЛЕЦ · Я ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Профиль</div>
-                <div class="faint" style="font-size:10.5px;">личный кабинет</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-body">
-            <!-- карточка профиля -->
-            <div class="glass float" style="padding:20px; text-align:center;">
-              <span class="glow"></span>
-              <div style="width:72px; height:72px; border-radius:999px; margin:0 auto 12px; background:var(--grad-violet); display:grid; place-items:center; font-weight:800; font-size:26px; box-shadow:0 12px 30px -10px oklch(0.6 0.2 300 / 0.9);">СР</div>
-              <div style="font-weight:600; font-size:17px;">Сергей Рябов</div>
-              <div class="faint" style="font-size:12.5px; margin-top:3px;">Основатель · ООО «Луа»</div>
-              <div style="display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap:wrap;">
-                <span class="chip ok"><span class="led"></span>владелец</span>
-                <span class="chip info"><span class="led"></span>видит всё</span>
-              </div>
-            </div>
-
-            <!-- мои уведомления -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow amber"></span>
-              <div class="card-title" style="margin-bottom:6px;">
-                <span class="card-ico" style="background:var(--grad-amber); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-                </span>
-                <h3>Уведомления</h3>
-              </div>
-              <div class="row-list">
-                <div class="list-row" style="padding:11px 0; border:none;">
-                  <div class="body"><div class="ttl" style="font-size:13px;">Утренняя сводка в Telegram</div><div class="meta">каждый день в 09:00</div></div>
-                  <span class="chip ok"><span class="led"></span>вкл</span>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <div class="body"><div class="ttl" style="font-size:13px;">Срочное — сразу</div><div class="meta">риск ухода клиента, блокер 5+ дней</div></div>
-                  <span class="chip ok"><span class="led"></span>вкл</span>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <div class="body"><div class="ttl" style="font-size:13px;">Итог недели в пятницу</div><div class="meta">короткая выжимка 18:00</div></div>
-                  <span class="chip ok"><span class="led"></span>вкл</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- быстрые действия -->
-            <div class="glass float" style="padding:14px;">
-              <div class="row-list">
-                <div class="list-row" style="padding:12px 4px; border:none;">
-                  <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 1-.1 1.3l2 1.6-2 3.5-2.4-1a7 7 0 0 1-2.2 1.3l-.3 2.5h-4l-.3-2.5a7 7 0 0 1-2.2-1.3l-2.4 1-2-3.5 2-1.6A7 7 0 0 1 5 12"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Полные настройки</div><div class="meta">доступно на десктопе</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-                <div class="list-row" style="padding:12px 4px;">
-                  <span class="lead" style="background:var(--risk-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Выйти</div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-              <span>Неделя</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
-              <span>Требует</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Память</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-              <span>Я</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div class="page-intro">
+      <h1 style="font-size:34px; font-weight:600; letter-spacing:-0.025em; margin:0 0 12px;">Кора — мобильная версия <span class="muted" style="font-weight:400; font-size:22px;">(интерактив)</span></h1>
+      <p class="muted" style="font-size:15px; line-height:1.65; max-width:760px; margin:0 0 32px;">
+        Один телефон, живая навигация: нижние табы переключают экраны, карточки открываются на весь экран,
+        «Спросить Кору» отвечает из памяти компании. Откройте на телефоне (или сузьте окно) — рамка исчезнет, и это станет полноценным мобильным кабинетом владельца.
+      </p>
     </div>
 
     <!-- ====================================================================== -->
-    <!-- СОТРУДНИК                                                               -->
+    <!-- ЕДИНЫЙ ИНТЕРАКТИВНЫЙ ТЕЛЕФОН (движок app.js)                            -->
     <!-- ====================================================================== -->
-    <h2 style="font-size:22px; font-weight:600; letter-spacing:-0.02em; margin:60px 0 6px; display:flex; align-items:center; gap:12px;">
-      <span style="width:34px; height:34px; border-radius:11px; display:grid; place-items:center; background:var(--grad-teal); box-shadow:0 8px 22px -8px oklch(0.82 0.13 178 / 0.8);">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-      </span>
-      Сотрудник
-    </h2>
-    <p class="faint" style="font-size:13px; margin:0 0 26px;">Анна Котова · менеджер по продажам · ООО «Луа»</p>
-
-    <div style="display:flex; flex-wrap:wrap; gap:40px 32px;">
-
-      <!-- ============ СОТРУДНИК · СЕГОДНЯ ============ -->
+    <div class="phone-wrap">
       <div class="phone">
         <div class="phone-screen">
+
+          <!-- Шапка (sticky) -->
           <div class="m-head">
             <div style="display:flex; align-items:center; gap:10px;">
               <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
               <div>
                 <div style="font-weight:700; font-size:15px;">Кора</div>
-                <div class="faint" style="font-size:10.5px;">Доброе утро, Анна</div>
+                <div class="faint" style="font-size:10.5px;">ООО «Луа» · Сергей</div>
               </div>
             </div>
-            <button class="avatar-btn" style="width:34px; height:34px; background:var(--grad-mint);"></button>
+            <button class="avatar-btn" style="width:34px; height:34px;" data-goto="me" aria-label="Профиль"></button>
           </div>
 
-          <div class="m-body">
-            <!-- личный вердикт -->
-            <div class="verdict-bar" style="margin:0; padding:13px 15px;">
-              <span class="led-lg"></span>
-              <div style="flex:1; min-width:0;">
-                <div style="font-weight:600; font-size:13.5px;">У вас 3 обещания на сегодня</div>
-                <div class="faint" style="font-size:11px; margin-top:2px;">одно созвон в 15:00 · всё под контролем</div>
-              </div>
-            </div>
-
-            <!-- мои обещания -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow teal"></span>
-              <div class="card-title" style="margin-bottom:6px;">
-                <span class="card-ico" style="background:var(--grad-teal); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                </span>
-                <h3>Мои обещания</h3>
-                <span class="chip ok" style="margin-left:auto;"><span class="led"></span>1 из 3</span>
-              </div>
-              <div class="row-list">
-                <div class="list-row" style="padding:11px 0; border:none;">
-                  <span class="lead" style="background:var(--ok-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px; text-decoration:line-through; color:var(--faint);">Отправить КП клиенту «Вектор»</div><div class="meta">сделано в 11:20</div></div>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--warn-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Прислать договор «Орбите»</div><div class="meta">обещано до пятницы · из встречи 12.06</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.6a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.5-1.2a2 2 0 0 1 2.1-.4c.8.3 1.7.6 2.6.7a2 2 0 0 1 1.7 2z"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Перезвонить «Орбите» по коннекторам</div><div class="meta">обещано сегодня</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- одна встреча -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow blue"></span>
-              <div class="card-title" style="margin-bottom:14px;">
-                <span class="card-ico" style="background:var(--grad-blue); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="10" rx="2"/><path d="m17 9 5-3v12l-5-3"/></svg>
-                </span>
-                <h3>Встреча сегодня</h3>
-              </div>
-              <div style="display:flex; align-items:center; gap:12px;">
-                <div style="text-align:center; flex:none;">
-                  <div class="hero-num glow-text" style="font-size:26px; color:var(--cyan);">15:00</div>
-                  <div class="faint" style="font-size:10px; margin-top:2px;">через 2 часа</div>
-                </div>
+          <!-- ============ ЭКРАН: СЕГОДНЯ ============ -->
+          <section class="screen active" id="screen-today">
+            <div class="m-body">
+              <!-- Вердикт дня -->
+              <div class="verdict-bar" style="margin:0; padding:13px 15px;">
+                <span class="led-lg"></span>
                 <div style="flex:1; min-width:0;">
-                  <div style="font-weight:600; font-size:13.5px;">Демо для клиента «Орбита»</div>
-                  <div class="faint" style="font-size:11.5px; margin-top:3px;">с Дмитрием · тип: демонстрация продукта</div>
+                  <div style="font-weight:600; font-size:13.5px;">Компания в норме</div>
+                  <div class="faint" style="font-size:11px; margin-top:2px;">сбор данных работает · встреча 2 ч назад</div>
                 </div>
               </div>
-              <button class="btn primary" style="width:100%; margin-top:14px;">Войти во встречу →</button>
-            </div>
-          </div>
 
-          <div class="m-tabbar" style="grid-template-columns:repeat(4,1fr);">
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-              <span>Чек-ин</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Спросить</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <span>Дела</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ СОТРУДНИК · ЧЕК-ИН ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Чек-ин</div>
-                <div class="faint" style="font-size:10.5px;">как прошёл день?</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px; background:var(--grad-mint);"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- вопрос дня -->
-            <div class="ai-card" style="padding:20px;">
-              <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              </div>
-              <h3 style="font-size:15px;">Как прошёл день, Анна?</h3>
-              <p style="font-size:12.5px;">Отметьте настроение — это видите только вы и руководитель. Кора подскажет, если кому-то нужна помощь.</p>
-            </div>
-
-            <!-- три состояния -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow teal"></span>
-              <div class="section-h" style="margin-bottom:12px;">Сегодня я чувствую себя</div>
-              <div style="display:flex; flex-direction:column; gap:10px;">
-                <button class="glass" style="padding:14px 16px; display:flex; align-items:center; gap:12px; cursor:pointer; border-radius:14px; border-color:oklch(0.85 0.15 165/.4); background:var(--ok-bg);">
-                  <span style="width:30px; height:30px; border-radius:999px; background:var(--grad-mint); display:grid; place-items:center; flex:none;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2.2"><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/><circle cx="12" cy="12" r="9"/></svg>
+              <!-- Требует вас -->
+              <div class="glass float" style="padding:18px; background:linear-gradient(180deg, oklch(0.32 0.06 55/.5), oklch(0.22 0.04 50/.5)); border-color:oklch(0.84 0.16 80/.25); cursor:pointer;" data-goto="requires">
+                <span class="glow amber"></span>
+                <div class="card-title" style="margin-bottom:8px;">
+                  <span class="card-ico" style="background:var(--grad-amber); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
                   </span>
-                  <div style="text-align:left;"><div style="font-weight:600; font-size:14px; color:var(--mint);">Всё отлично</div><div class="faint" style="font-size:11px;">в потоке, всё идёт по плану</div></div>
-                </button>
-                <button class="glass" style="padding:14px 16px; display:flex; align-items:center; gap:12px; cursor:pointer; border-radius:14px;">
-                  <span style="width:30px; height:30px; border-radius:999px; background:var(--grad-amber); display:grid; place-items:center; flex:none;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2.2"><path d="M8 15h8M9 9h.01M15 9h.01"/><circle cx="12" cy="12" r="9"/></svg>
-                  </span>
-                  <div style="text-align:left;"><div style="font-weight:600; font-size:14px;">Есть сложности</div><div class="faint" style="font-size:11px;">что-то тормозит, но справляюсь</div></div>
-                </button>
-                <button class="glass" style="padding:14px 16px; display:flex; align-items:center; gap:12px; cursor:pointer; border-radius:14px;">
-                  <span style="width:30px; height:30px; border-radius:999px; background:var(--grad-red); display:grid; place-items:center; flex:none;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2.2"><path d="M16 16s-1.5-2-4-2-4 2-4 2M9 9h.01M15 9h.01"/><circle cx="12" cy="12" r="9"/></svg>
-                  </span>
-                  <div style="text-align:left;"><div style="font-weight:600; font-size:14px;">Нужна помощь</div><div class="faint" style="font-size:11px;">застрял, нужна рука</div></div>
-                </button>
-              </div>
-            </div>
-
-            <!-- поле / голос -->
-            <div class="glass float" style="padding:14px;">
-              <div class="faint" style="font-size:11.5px; margin-bottom:10px;">Хотите добавить пару слов? (не обязательно)</div>
-              <div style="display:flex; align-items:center; gap:10px;">
-                <input type="text" placeholder="Расскажите своими словами…" style="flex:1; background:none; border:none; color:var(--text); font-size:13px; font-family:var(--font); outline:none;">
-                <button class="icon-btn" style="width:34px; height:34px; flex:none; background:var(--grad-violet); border:none;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(4,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-              <span>Чек-ин</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Спросить</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <span>Дела</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ СОТРУДНИК · СПРОСИТЬ ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Спросить Кору</div>
-                <div class="faint" style="font-size:10.5px;">память команды под рукой</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px; background:var(--grad-mint);"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- ответ Коры -->
-            <div class="ai-card" style="padding:18px;">
-              <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              </div>
-              <h3 style="font-size:14px;">Что обещал Дмитрий по демо?</h3>
-              <p style="font-size:12.5px;">
-                Дмитрий подготовит сценарий демонстрации для <b style="color:var(--text)">«Орбиты»</b> и проверит коннекторы до встречи в 15:00
-                <span class="cite">планёрка 13.06 [08:40]</span>. Если что-то не успеет — обещал предупредить с утра.
-              </p>
-            </div>
-
-            <!-- поле ввода -->
-            <div class="glass float" style="padding:14px;">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <input type="text" placeholder="Спросите о работе команды…" style="flex:1; background:none; border:none; color:var(--text); font-size:13.5px; font-family:var(--font); outline:none;">
-                <button class="icon-btn" style="width:34px; height:34px; flex:none;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-                </button>
-                <button class="icon-btn" style="width:34px; height:34px; flex:none; background:var(--grad-violet); border:none;">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- быстрые вопросы -->
-            <div>
-              <div class="section-h" style="margin-bottom:10px;">Спросите быстро</div>
-              <div class="row-list">
-                <div class="list-row" style="padding:11px 0; border:none;">
-                  <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Что я обещала на этой неделе?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  <h3>Требует вас</h3>
                 </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--ok-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">О чём договорились с «Орбитой»?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--warn-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Какой регламент передачи сделки?</div></div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="m-tabbar" style="grid-template-columns:repeat(4,1fr);">
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
-              <span>Сегодня</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-              <span>Чек-ин</span>
-            </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Спросить</span>
-            </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <span>Дела</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ============ СОТРУДНИК · ДЕЛА ============ -->
-      <div class="phone">
-        <div class="phone-screen">
-          <div class="m-head">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <span style="width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px; color:oklch(0.2 0.03 200); background:var(--grad-teal); box-shadow:0 6px 16px -6px oklch(0.82 0.13 178 / 0.8);">К</span>
-              <div>
-                <div style="font-weight:700; font-size:15px;">Мои дела</div>
-                <div class="faint" style="font-size:10.5px;">собрано из встреч и чатов</div>
-              </div>
-            </div>
-            <button class="avatar-btn" style="width:34px; height:34px; background:var(--grad-mint);"></button>
-          </div>
-
-          <div class="m-body">
-            <!-- сводка -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow teal"></span>
-              <div style="display:flex; align-items:center; gap:14px;">
-                <div style="position:relative; flex:none;">
-                  <svg width="76" height="76" viewBox="0 0 80 80">
-                    <circle cx="40" cy="40" r="32" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="8"/>
-                    <circle cx="40" cy="40" r="32" fill="none" stroke="url(#ring-done)" stroke-width="8" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="74" transform="rotate(-90 40 40)"/>
-                    <defs><linearGradient id="ring-done" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.85 0.15 165)"/><stop offset="1" stop-color="oklch(0.74 0.13 205)"/></linearGradient></defs>
-                  </svg>
-                  <div style="position:absolute; inset:0; display:grid; place-items:center;">
-                    <div style="text-align:center;"><div style="font-weight:600; font-size:18px; color:var(--mint);">63%</div></div>
+                <div class="hero-num glow-text" style="color:var(--amber); font-size:34px;" data-decision-count>6</div>
+                <div class="faint" style="font-size:11px; margin:5px 0 12px;">решений в очереди · старейшее 2 дня</div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:7px 0; border:none; cursor:pointer;" data-action="open-decision" data-id="d-accept-goal">
+                    <span class="chip warn" style="flex:none"><span class="led"></span>цель</span>
+                    <div class="body"><div class="ttl" style="font-size:12.5px;">Принять цель «10 на тесты»</div></div>
+                  </div>
+                  <div class="list-row" style="padding:7px 0; cursor:pointer;" data-action="open-decision" data-id="d-connector-vendor">
+                    <span class="chip info" style="flex:none"><span class="led"></span>выбор</span>
+                    <div class="body"><div class="ttl" style="font-size:12.5px;">Подрядчик внедрения</div></div>
                   </div>
                 </div>
-                <div>
-                  <div style="font-weight:600; font-size:15px;">7 из 11 закрыто</div>
-                  <div class="faint" style="font-size:11.5px; margin-top:3px;">осталось 4 на этой неделе · 1 просрочено</div>
+                <button class="btn" style="width:100%; margin-top:11px;" data-goto="requires">Разобрать →</button>
+              </div>
+
+              <!-- Польза за неделю -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow teal"></span>
+                <div class="card-title" style="margin-bottom:14px;">
+                  <span class="card-ico" style="background:var(--grad-mint); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 7-8"/><path d="M16 8h4v4"/></svg>
+                  </span>
+                  <h3>Польза за неделю</h3>
+                </div>
+                <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px;">
+                  <div><div class="hero-num" style="font-size:26px; color:var(--cyan);">13</div><div class="faint" style="font-size:10.5px; margin-top:2px;">встреч записано</div></div>
+                  <div><div class="hero-num" style="font-size:26px; color:var(--mint);">27</div><div class="faint" style="font-size:10.5px; margin-top:2px;">задач извлечено</div></div>
+                  <div><div class="hero-num" style="font-size:26px; color:var(--blue);">48</div><div class="faint" style="font-size:10.5px; margin-top:2px;">ответов из памяти</div></div>
+                  <div><div class="hero-num" style="font-size:26px; color:var(--amber);">9</div><div class="faint" style="font-size:10.5px; margin-top:2px;">обещаний сдержано</div></div>
+                </div>
+              </div>
+
+              <!-- Встречи сегодня (drill-down) -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow blue"></span>
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span class="card-ico" style="background:var(--grad-blue); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="10" rx="2"/><path d="m17 9 5-3v12l-5-3"/></svg>
+                  </span>
+                  <h3>Встречи сегодня</h3>
+                </div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:11px 0; border:none; cursor:pointer;" data-action="open-meeting" data-id="m-orbita-demo">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Демо для «Орбиты» — расширенный тариф</div><div class="meta">Демо клиенту · 47 мин</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="open-meeting" data-id="m-sales-plan">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Планёрка продаж — план на неделю</div><div class="meta">Планёрка · 28 мин</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                </div>
+                <button class="btn ghost" style="width:100%; margin-top:10px; color:var(--dim);" data-goto="week">Все 13 встреч за неделю →</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ ЭКРАН: НЕДЕЛЯ ============ -->
+          <section class="screen" id="screen-week">
+            <div class="m-body">
+              <!-- Температура недели -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow blue"></span>
+                <div class="card-title" style="margin-bottom:14px;">
+                  <span class="card-ico" style="background:var(--grad-blue); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V5a2 2 0 0 0-4 0v9.76a4 4 0 1 0 4 0z"/></svg>
+                  </span>
+                  <h3>Температура недели</h3>
+                </div>
+                <div style="display:flex; align-items:flex-end; gap:8px; height:74px; margin-bottom:10px;">
+                  <div class="bar-col"><div class="bar" style="height:46px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Пн</span></div>
+                  <div class="bar-col"><div class="bar" style="height:58px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Вт</span></div>
+                  <div class="bar-col"><div class="bar" style="height:34px; background:var(--grad-amber);"></div><span class="faint" style="font-size:10px;">Ср</span></div>
+                  <div class="bar-col"><div class="bar" style="height:50px; background:var(--grad-mint);"></div><span class="faint" style="font-size:10px;">Чт</span></div>
+                  <div class="bar-col"><div class="bar" style="height:62px; background:var(--grad-teal);"></div><span class="faint" style="font-size:10px;">Пт</span></div>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <span class="chip ok"><span class="led"></span>настроение ровное</span>
+                  <span class="chip warn"><span class="led"></span>среда просела</span>
+                </div>
+              </div>
+
+              <!-- Кто держит слово (drill-down людей) -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow teal"></span>
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span class="card-ico" style="background:var(--grad-teal); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  </span>
+                  <h3>Кто держит слово</h3>
+                </div>
+                <div class="faint" style="font-size:11px; margin-bottom:8px;">доля сдержанных обещаний за неделю</div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:10px 0; border:none; cursor:pointer;" data-action="open-person" data-id="p-dmit">
+                    <span class="avatar" style="background:var(--grad-mint);">ДС</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Дмитрий Соколов</div><div class="meta">7 из 7 обещаний</div></div>
+                    <div class="progress" style="width:64px;"><span style="width:100%"></span></div>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-person" data-id="p-serg">
+                    <span class="avatar" style="background:var(--grad-violet);">СМ</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Сергей Мазур</div><div class="meta">9 из 10 обещаний</div></div>
+                    <div class="progress" style="width:64px;"><span style="width:90%"></span></div>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-person" data-id="p-anna">
+                    <span class="avatar" style="background:var(--grad-amber);">АК</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Анна Ковалёва</div><div class="meta">5 из 7 · нужна помощь</div></div>
+                    <div class="progress warn" style="width:64px;"><span style="width:71%"></span></div>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-person" data-id="p-igor">
+                    <span class="avatar" style="background:var(--grad-blue);">ИМ</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Игорь Маслов</div><div class="meta">2 из 5 · заблокирован</div></div>
+                    <div class="progress warn" style="width:64px;"><span style="width:40%"></span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Все встречи недели (drill-down) -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow"></span>
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span class="card-ico" style="background:var(--grad-violet); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg>
+                  </span>
+                  <h3>Встречи недели</h3>
+                </div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:10px 0; border:none; cursor:pointer;" data-action="open-meeting" data-id="m-vector-negotiation">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Переговоры с «Вектором»</div><div class="meta">6 июня · Переговоры</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-meeting" data-id="m-regulation-deal">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Регламент передачи сделки</div><div class="meta">9 июня · Разбор</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-meeting" data-id="m-goals-quarter">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Цели квартала</div><div class="meta">10 июня · Стратегическая сессия</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Итог недели -->
+              <div class="ai-card" style="padding:18px;">
+                <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
+                </div>
+                <h3 style="font-size:14px;">Итог недели</h3>
+                <p style="font-size:12.5px;">
+                  Команда ускорилась на продажах: клиент <b style="color:var(--text)">«Орбита»</b> перешёл на расширенный тариф. Риск — поддержка: трое клиентов упомянули молчание
+                  <span class="cite">Радар · 3 сигнала</span>. Один блокер висит дольше пяти дней.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============ ЭКРАН: ТРЕБУЕТ ВАС (очередь решений) ============ -->
+          <section class="screen" id="screen-requires">
+            <div class="m-body">
+              <div class="section-h" style="margin-bottom:0;">Разберите по одному — каждое решение освобождает команду</div>
+
+              <!-- решение 1 -->
+              <div class="glass float" style="padding:16px;" data-decision-item="d-accept-goal">
+                <span class="glow amber"></span>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                  <span class="chip warn"><span class="led"></span>цель</span>
+                  <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 2 дня</span>
+                </div>
+                <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Принять цель «10 компаний на тесты»</div>
+                <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
+                  Команда обсуждает этот ориентир на трёх встречах подряд, но в целях он не закреплён.
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn ok" style="flex:1;" data-action="decision-accept" data-id="d-accept-goal">Принять</button>
+                  <button class="btn" style="flex:1;" data-action="open-decision" data-id="d-accept-goal">Подробнее</button>
+                </div>
+              </div>
+
+              <!-- решение 2 -->
+              <div class="glass float" style="padding:16px;" data-decision-item="d-connector-vendor">
+                <span class="glow blue"></span>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                  <span class="chip info"><span class="led"></span>выбор</span>
+                  <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 2 дня</span>
+                </div>
+                <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Выбрать подрядчика на внедрение коннекторов</div>
+                <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
+                  Текущий подрядчик задерживает работы из-за неоплаты — нужно сменить или ускорить оплату.
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn ok" style="flex:1;" data-action="decision-accept" data-id="d-connector-vendor">Решить</button>
+                  <button class="btn" style="flex:1;" data-action="open-decision" data-id="d-connector-vendor">Подробнее</button>
+                </div>
+              </div>
+
+              <!-- решение 3 -->
+              <div class="glass float" style="padding:16px;" data-decision-item="d-deal-regulation">
+                <span class="glow"></span>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                  <span class="chip risk"><span class="led"></span>конфликт</span>
+                  <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 2 дня</span>
+                </div>
+                <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Две версии регламента по сделкам</div>
+                <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
+                  Память нашла два противоречащих правила по сорванным сделкам. Выберите, что оставить.
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn ok" style="flex:1;" data-action="decision-accept" data-id="d-deal-regulation">Сверить</button>
+                  <button class="btn" style="flex:1;" data-action="open-decision" data-id="d-deal-regulation">Подробнее</button>
+                </div>
+              </div>
+
+              <!-- решение 4 -->
+              <div class="glass float" style="padding:16px;" data-decision-item="d-define-paying">
+                <span class="glow blue"></span>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                  <span class="chip warn"><span class="led"></span>цель</span>
+                  <span class="faint" style="font-size:11px; margin-left:auto;">в очереди 1 день</span>
+                </div>
+                <div style="font-weight:600; font-size:14px; margin-bottom:5px;">Что считаем «платящим клиентом»</div>
+                <div class="muted" style="font-size:12px; line-height:1.5; margin-bottom:13px;">
+                  Звучит и «оплатил счёт», и «подписал договор» — счётчик прыгает. Уточните критерий.
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <button class="btn ok" style="flex:1;" data-action="decision-accept" data-id="d-define-paying">Определить</button>
+                  <button class="btn" style="flex:1;" data-action="open-decision" data-id="d-define-paying">Подробнее</button>
                 </div>
               </div>
             </div>
+          </section>
 
-            <!-- активные дела -->
-            <div class="glass float" style="padding:18px;">
-              <span class="glow amber"></span>
-              <div class="card-title" style="margin-bottom:6px;">
-                <span class="card-ico" style="background:var(--grad-amber); width:28px; height:28px;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                </span>
-                <h3>Активные</h3>
+          <!-- ============ ЭКРАН: ПАМЯТЬ (спросить) ============ -->
+          <section class="screen" id="screen-memory">
+            <div class="m-body">
+              <!-- ответ Коры на прошлый вопрос -->
+              <div class="ai-card" style="padding:18px;">
+                <div class="ai-ico" style="width:42px; height:42px; border-radius:12px; margin-bottom:11px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 280)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
+                </div>
+                <h3 style="font-size:14px;">О чём договорились с «Орбитой»?</h3>
+                <p style="font-size:12.5px;">
+                  Клиент <b style="color:var(--text)">«Орбита»</b> переходит на расширенный тариф с июля. Анна обещала прислать договор до пятницы
+                  <span class="cite">встреча 12.06 [01:57]</span>. Открытый вопрос — кто настроит коннекторы.
+                </p>
               </div>
-              <div class="row-list">
-                <div class="list-row" style="padding:11px 0; border:none;">
-                  <span class="lead" style="background:var(--risk-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M12 9v4M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Прислать договор «Орбите»</div><div class="meta">просрочено на 1 день</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--warn-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Перезвонить по коннекторам</div><div class="meta">сегодня · из встречи 12.06</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 17l5-5 4 4 7-8"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Обновить воронку по «Вектору»</div><div class="meta">до четверга</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
-                </div>
-                <div class="list-row" style="padding:11px 0;">
-                  <span class="lead" style="background:var(--surface-soft);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-                  <div class="body"><div class="ttl" style="font-size:13px;">Составить отчёт по встрече</div><div class="meta">до пятницы</div></div>
-                  <button class="btn ok" style="padding:6px 11px;">Готово</button>
+
+              <!-- кнопка открыть чат -->
+              <button class="btn primary" style="width:100%;" data-action="ask-kora">
+                Спросить память компании →
+              </button>
+
+              <!-- быстрые вопросы (открывают чат с ответом) -->
+              <div>
+                <div class="section-h" style="margin-bottom:10px;">Быстрые вопросы</div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:11px 0; border:none; cursor:pointer;" data-action="chat-suggest" data-q="Что решили по тарифам?">
+                    <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Что решили по тарифам?</div></div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="chat-suggest" data-q="Какие сейчас риски по клиентам?">
+                    <span class="lead" style="background:var(--warn-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Какие сейчас риски по клиентам?</div></div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="chat-suggest" data-q="Кто отвечает за коннекторы и интеграцию «Орбиты»?">
+                    <span class="lead" style="background:var(--ok-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Кто отвечает за коннекторы?</div></div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="chat-suggest" data-q="Что такое Кора?">
+                    <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Что такое Кора?</div></div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
                 </div>
               </div>
             </div>
+          </section>
 
-            <!-- подсказка Коры -->
-            <div class="glass float" style="padding:14px; border-color:oklch(0.85 0.15 165/.25); background:linear-gradient(180deg, oklch(0.30 0.05 165/.35), oklch(0.22 0.03 178/.35));">
-              <span class="glow teal"></span>
-              <div style="display:flex; align-items:center; gap:10px;">
-                <span class="card-ico" style="background:var(--grad-mint); width:28px; height:28px; flex:none;">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>
-                </span>
-                <div style="font-size:12px; line-height:1.45;" class="muted">Договор «Орбите» просрочен — Кора напомнит руководителю только если попросите помощь сами.</div>
+          <!-- ============ ЭКРАН: Я (профиль) ============ -->
+          <section class="screen" id="screen-me">
+            <div class="m-body">
+              <!-- карточка профиля -->
+              <div class="glass float" style="padding:20px; text-align:center; cursor:pointer;" data-action="open-person" data-id="p-serg">
+                <span class="glow"></span>
+                <div style="width:72px; height:72px; border-radius:999px; margin:0 auto 12px; background:var(--grad-violet); display:grid; place-items:center; font-weight:800; font-size:26px; box-shadow:0 12px 30px -10px oklch(0.6 0.2 300 / 0.9);">СМ</div>
+                <div style="font-weight:600; font-size:17px;">Сергей Мазур</div>
+                <div class="faint" style="font-size:12.5px; margin-top:3px;">Генеральный директор · ООО «Луа»</div>
+                <div style="display:flex; gap:8px; justify-content:center; margin-top:14px; flex-wrap:wrap;">
+                  <span class="chip ok"><span class="led"></span>владелец</span>
+                  <span class="chip info"><span class="led"></span>видит всё</span>
+                </div>
+              </div>
+
+              <!-- команда (drill-down людей) -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow teal"></span>
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span class="card-ico" style="background:var(--grad-teal); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M19 20a6 6 0 0 0-3-5"/></svg>
+                  </span>
+                  <h3>Команда</h3>
+                </div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:10px 0; border:none; cursor:pointer;" data-action="open-person" data-id="p-anna">
+                    <span class="avatar" style="background:var(--grad-amber);">АК</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Анна Ковалёва</div><div class="meta">Руководитель внедрения</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-person" data-id="p-dmit">
+                    <span class="avatar" style="background:var(--grad-mint);">ДС</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Дмитрий Соколов</div><div class="meta">Менеджер по продажам</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:10px 0; cursor:pointer;" data-action="open-person" data-id="p-marina">
+                    <span class="avatar" style="background:var(--grad-blue);">МР</span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Марина Рыжова</div><div class="meta">Маркетолог · перегружена</div></div>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- уведомления -->
+              <div class="glass float" style="padding:18px;">
+                <span class="glow amber"></span>
+                <div class="card-title" style="margin-bottom:6px;">
+                  <span class="card-ico" style="background:var(--grad-amber); width:28px; height:28px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+                  </span>
+                  <h3>Уведомления</h3>
+                </div>
+                <div class="row-list">
+                  <div class="list-row" style="padding:11px 0; border:none;">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Утренняя сводка в Telegram</div><div class="meta">каждый день в 09:00</div></div>
+                    <span class="chip ok"><span class="led"></span>вкл</span>
+                  </div>
+                  <div class="list-row" style="padding:11px 0;">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Срочное — сразу</div><div class="meta">риск ухода клиента, блокер 5+ дней</div></div>
+                    <span class="chip ok"><span class="led"></span>вкл</span>
+                  </div>
+                  <div class="list-row" style="padding:11px 0;">
+                    <div class="body"><div class="ttl" style="font-size:13px;">Итог недели в пятницу</div><div class="meta">короткая выжимка 18:00</div></div>
+                    <span class="chip ok"><span class="led"></span>вкл</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- быстрые действия -->
+              <div class="glass float" style="padding:14px;">
+                <div class="row-list">
+                  <div class="list-row" style="padding:12px 4px; border:none;">
+                    <span class="lead" style="background:var(--info-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 1-.1 1.3l2 1.6-2 3.5-2.4-1a7 7 0 0 1-2.2 1.3l-.3 2.5h-4l-.3-2.5a7 7 0 0 1-2.2-1.3l-2.4 1-2-3.5 2-1.6A7 7 0 0 1 5 12"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Полные настройки</div><div class="meta">доступно на десктопе</div></div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </div>
+                  <div class="list-row" style="padding:12px 4px;">
+                    <span class="lead" style="background:var(--risk-bg);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></span>
+                    <div class="body"><div class="ttl" style="font-size:13px;">Выйти</div></div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div class="m-tabbar" style="grid-template-columns:repeat(4,1fr);">
-            <div class="m-tab">
+          <!-- Нижний таб-бар (sticky) -->
+          <div class="m-tabbar" style="grid-template-columns:repeat(5,1fr);">
+            <div class="m-tab active" data-goto="today">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12"/></svg>
               <span>Сегодня</span>
             </div>
-            <div class="m-tab">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
-              <span>Чек-ин</span>
+            <div class="m-tab" data-goto="week">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+              <span>Неделя</span>
             </div>
-            <div class="m-tab">
+            <div class="m-tab" data-goto="requires">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+              <span>Требует</span>
+            </div>
+            <div class="m-tab" data-goto="memory">
               <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6 3 3 0 0 0 4 3 3 3 0 0 0 4-3 3 3 0 0 0 0-6V7a4 4 0 0 0-4-4z"/></svg>
-              <span>Спросить</span>
+              <span>Память</span>
             </div>
-            <div class="m-tab active">
-              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <span>Дела</span>
+            <div class="m-tab" data-goto="me">
+              <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span>Я</span>
             </div>
           </div>
+
         </div>
       </div>
-
     </div>
 
   </div>
+
+  <script src="demo-data.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Мобильная подсветка таб-бара (app.js go() переключает .screen, но .m-tab не .nav-item)
+    document.addEventListener('click', function(e){
+      var t = e.target.closest('.m-tab[data-goto]');
+      if (!t) return;
+      document.querySelectorAll('.m-tab').forEach(function(x){ x.classList.toggle('active', x === t); });
+    });
+  </script>
 </body>
 </html>

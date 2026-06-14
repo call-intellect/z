@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   FileCheck2,
@@ -32,6 +33,8 @@ type ValueCell = {
   tone: string;
   label: string;
   value: number;
+  /** Маршрут до источника счётчика (вся ячейка кликабельна). */
+  href: string;
 };
 
 export function ValueStripWidget({
@@ -47,6 +50,7 @@ export function ValueStripWidget({
       tone: CHART.violet,
       label: 'Встречи запротоколированы',
       value: data.meetingsProtocoled,
+      href: '/meetings',
     },
     {
       key: 'tasks',
@@ -55,6 +59,7 @@ export function ValueStripWidget({
       tone: CHART.blue,
       label: 'Задачи извлечены',
       value: data.tasksExtracted,
+      href: '/tasks',
     },
     {
       key: 'decisions',
@@ -63,6 +68,7 @@ export function ValueStripWidget({
       tone: CHART.teal,
       label: 'Решения зафиксированы',
       value: data.decisionsExtracted,
+      href: '/decisions',
     },
     {
       key: 'answered',
@@ -71,6 +77,7 @@ export function ValueStripWidget({
       tone: CHART.amber,
       label: 'Вопросов отвечено памятью',
       value: data.questionsAnsweredByMemory,
+      href: '/memory',
     },
     {
       key: 'commitments',
@@ -79,6 +86,7 @@ export function ValueStripWidget({
       tone: CHART.pink,
       label: 'Договорённостей удержано',
       value: data.commitmentsKept,
+      href: '/me/promises',
     },
   ];
 
@@ -92,9 +100,11 @@ export function ValueStripWidget({
       </p>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {cells.map((cell) => (
-          <div
+          <Link
             key={cell.key}
-            className="rounded-2xl p-4"
+            href={cell.href}
+            aria-label={`${cell.label}: ${cell.value} — открыть источник`}
+            className="block cursor-pointer rounded-2xl p-4 transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ background: 'var(--surface-inset)' }}
           >
             <div
@@ -116,7 +126,7 @@ export function ValueStripWidget({
             <div className="mt-1.5 text-[12px]" style={{ color: CHART.dim }}>
               {cell.label}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>

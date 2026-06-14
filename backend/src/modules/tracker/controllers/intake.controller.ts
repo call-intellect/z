@@ -72,7 +72,9 @@ export class IntakeController {
   ): Promise<ListIntakeResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.svc.findAll(t, query);
+    // A4 (2026-06-14): передаём userId — findAll исключает из pending-вида
+    // карточки, отложенные этим пользователем в очереди /actions (snooze-зеркало).
+    return this.svc.findAll(t, query, user.id);
   }
 
   @Post('intake')

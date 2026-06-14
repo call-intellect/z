@@ -62,7 +62,7 @@
 
 ## A4. intake — снять двойной учёт (Входящие ↔ Подтверждения)
 **Корень:** Ф4 обещал «`/intake` = вкладка-зеркало», но [pending-actions.service.ts:83-99](backend/src/modules/pending-actions/services/pending-actions.service.ts#L83) считает intake в очереди И жив самостоятельный `/intake` — двойной счёт (потерян, нет в не-сделано). Сделать `/intake` зеркалом провайдера, учитывать intake один раз.
-**Статус:** [ ]
+**Статус:** [x] — реальный корень: snooze-рассинхрон (отложенное через /actions пишет PendingActionSnooze, не меняя IntakeIssue.status → исчезало из /actions, оставалось на /intake). `intake.service.findAll` стал snooze-aware для pending-вида (исключает активные PendingActionSnooze source='intake', как провайдер); явный status=accepted историю не режет. Триаж/RBAC не тронуты. Тест 5 кейсов; 74 теста зелёные.
 
 ## A5. ack «✓ записано в память» на чек-ине (и заметке)
 **Корень:** ТЗ Ф5б требовал dump+чек-ин+заметку; сделан только dump ([DumpClient.tsx:52](frontend/app/(authenticated)/dump/DumpClient.tsx#L52)). [MyCheckInsClient.tsx:91](frontend/app/(authenticated)/me/check-ins/MyCheckInsClient.tsx#L91): «Чек-ин сохранён» → «✓ записано в память».
@@ -75,15 +75,15 @@
 ## A7. Б-2 автотест-инвариант + valueStrip кликабельность
 - **A7.1** — автотест «число Требует вас на Сегодня == счётчик `/actions`» (cross-surface; сейчас [director-dashboard.requires-action.test.ts](frontend/src/domain/__tests__/director-dashboard.requires-action.test.ts) — только маппинг).
 - **A7.2** — [ValueStripWidget.tsx:94](frontend/app/(authenticated)/dashboard/widgets/ValueStripWidget.tsx#L94): 5 счётчиков обычные `<div>` → обернуть в `Link` (встречи/задачи/решения/память/обещания), §90 «кликабельны до источника».
-**Статус:** [ ]
+**Статус:** [x] — A7.1: cross-surface тест (одинаковые данные → requiresAction.total == mapPendingActionsCount.total, bySource совпадает, инвариант total==Σ bySource), 11 тестов. A7.2: 5 счётчиков → `Link` (/meetings·/tasks·/decisions·/memory·/me/promises), hover/focus/aria. Удалён мёртвый импорт RequiresActionTile.
 
 ## A8. /week — блок «Висят без ответа ≥3 дней»
 **Корень:** Ф2 п.1bis обещал, перенесён в Ф8.6, на `/week` не появился (на Сегодня плашка есть). В [WeekDesktopClient.tsx](frontend/app/(authenticated)/week/WeekDesktopClient.tsx) добавить блок поверх `GET /probe/control` + лента `open_question`. Тема-зависимо.
-**Статус:** [ ]
+**Статус:** [x] — новый `StaleQuestionsWidget` (вкладка «Сводка», под WeekVerdictBar): `probeControlApi.list` → фильтр `waitingDays>=3` → таблица вопрос/кому/висит/статус; доступ owner/admin/coo; empty-state; парные токены/GlassCard.
 
 ## A9. F8.5 — экспорт построчной таблицы для планёрки
 **Корень:** коммит `10bd217e` заявил «+ export», кода нет. [WeeklyPerPersonWidget.tsx](frontend/app/(authenticated)/dashboard/operations/weekly/WeeklyPerPersonWidget.tsx): кнопка «Скачать для планёрки» → CSV (Человек·Что·План·Факт·Что мешало), клиентский blob.
-**Статус:** [ ]
+**Статус:** [x] — кнопка «Скачать для планёрки» → подгрузка items по всем людям (батчи по 6) → CSV (Человек·Что·План·Факт·Что мешало, BOM, переиспользует buildCsv/escapeCsvCell), blob `planerka-{weekStart}.csv`. Чистая `buildPlanerkaCsv` + тест 10 кейсов.
 
 ## A10. Петля next-step → `sourceBlockIds` + `DecisionTaskLink` (миграция)
 - Миграция `IntakeIssue.sourceBlockIds String[]` (аддитивно, nullable). При next-step→intake писать `sourceBlockIds`; при создании Issue из IntakeIssue линковать `DecisionTaskLink` (`linkType='derived'`) → `getDecisionThroughput` засчитает встречные решения. Снять строку из `04_не-сделано`.

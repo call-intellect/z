@@ -247,15 +247,42 @@ export class IntakeService {
     );
   }
 
-  /** Список intake-карточек. Доступ: admin / project_manager. */
+  /**
+   * Список intake-карточек. Доступ: admin / project_manager.
+   *
+   * Зеркало очереди подтверждений (A4, 2026-06-14): экран `/intake` — это
+   * детальный триаж-вид той же pending-секции, что агрегирует
+   * `IntakePendingProvider` в `/actions`. Чтобы число «требует разбора» на
+   * `/intake` совпадало со вкладом intake в счётчик `/actions`, дефолтный вид
+   * (status='pending' ИЛИ статус не задан явно) исключает карточки, которые
+   * пользователь отложил через единую очередь (`PendingActionSnooze`,
+   * source='intake', активный snoozedUntil) — ровно тем же фильтром, что
+   * провайдер. Явный `status=accepted|rejected|...` snooze НЕ применяет —
+   * история разобранных остаётся полной. snooze привязан к пользователю,
+   * поэтому исключение работает только когда передан `userId` (вызов из
+   * REST-контроллера); без userId (внутренние вызовы) — поведение прежнее.
+   */
   async findAll(
     tenantId: string,
     query: ListIntakeQuery,
+    userId?: string,
   ): Promise<ListIntakeResponse> {
     const where: Prisma.IntakeIssueWhereInput = { tenantId };
     if (query.status) where.status = query.status;
     if (query.source) where.source = query.source;
     if (query.projectId) where.projectId = query.projectId;
+
+    // snooze-aware «требует разбора»: исключаем карточки, отложенные этим
+    // пользователем через очередь /actions. Только для pending-вида (явный
+    // status='pending' либо статус не задан) — иначе ломали бы историю.
+    const pendingDefaultView = query.status === undefined || query.status === 'pending';
+    if (pendingDefaultView && userId) {
+      const snoozedIds = await this.loadSnoozedIntakeIds(tenantId, userId);
+      if (snoozedIds.length > 0) {
+        where.id = { notIn: snoozedIds };
+      }
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.intakeIssue.findMany({
         where,
@@ -272,6 +299,29 @@ export class IntakeService {
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Активные snooze пользователя для intake-карточек (PendingActionSnooze,
+   * source='intake', snoozedUntil ещё в будущем). Возвращает resourceId'ы —
+   * id IntakeIssue, которые надо исключить из pending-вида. Тот же критерий,
+   * что `PendingActionsService.loadSnoozedBySource` → `IntakePendingProvider`,
+   * чтобы число pending на /intake совпадало с очередью /actions.
+   */
+  private async loadSnoozedIntakeIds(
+    tenantId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.pendingActionSnooze.findMany({
+      where: {
+        tenantId,
+        userId,
+        source: 'intake',
+        snoozedUntil: { gt: new Date() },
+      },
+      select: { resourceId: true },
+    });
+    return rows.map((r) => r.resourceId);
   }
 
   /**

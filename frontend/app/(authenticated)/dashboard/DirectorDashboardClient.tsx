@@ -48,7 +48,6 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
 import { CompassWidget } from '@/ui/components/dashboard/CompassWidget';
 import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
-import { RequiresActionTile } from '@/ui/components/dashboard/RequiresActionTile';
 import {
   CardTitle as ModernCardTitle,
   CHART,

@@ -227,6 +227,210 @@ describe('IntakeService.findAll — резолв имён suggested*', () => {
 });
 
 /**
+ * A4 (2026-06-14) — `/intake` как зеркало pending-секции `/actions`.
+ *
+ * Инвариант: дефолтный «требует разбора»-вид (status='pending' или статус не
+ * задан) исключает карточки, отложенные пользователем через очередь
+ * (PendingActionSnooze, source='intake', активный snoozedUntil) — тем же
+ * фильтром, что IntakePendingProvider. Явный status=accepted историю не режет.
+ *
+ * Мок Prisma учитывает where.id.notIn в intakeIssue.findMany/count и
+ * pendingActionSnooze.findMany по (tenantId, userId, source, snoozedUntil>now).
+ */
+describe('IntakeService.findAll — зеркало snooze очереди /actions (A4)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const USER = 'user-snooze';
+
+  type SnoozeRow = {
+    tenantId: string;
+    userId: string;
+    source: string;
+    resourceId: string;
+    snoozedUntil: Date;
+  };
+
+  function makeMirrorPrisma(opts: {
+    intakes: IntakeRow[];
+    snoozes: SnoozeRow[];
+  }): { prisma: PrismaService; snoozeQueries: number } {
+    const counter = { n: 0 };
+    const applyWhere = (where: {
+      status?: string;
+      id?: { notIn: string[] };
+    }): IntakeRow[] => {
+      const notIn = new Set(where.id?.notIn ?? []);
+      return opts.intakes.filter((i) => {
+        if (where.status && i.status !== where.status) return false;
+        if (notIn.has(i.id)) return false;
+        return true;
+      });
+    };
+    const prisma = {
+      intakeIssue: {
+        findMany: vi.fn(async (args: { where: { status?: string; id?: { notIn: string[] } } }) =>
+          applyWhere(args.where),
+        ),
+        count: vi.fn(async (args: { where: { status?: string; id?: { notIn: string[] } } }) =>
+          applyWhere(args.where).length,
+        ),
+      },
+      pendingActionSnooze: {
+        findMany: vi.fn(
+          async (args: {
+            where: {
+              tenantId: string;
+              userId: string;
+              source: string;
+              snoozedUntil: { gt: Date };
+            };
+          }) => {
+            counter.n += 1;
+            const now = args.where.snoozedUntil.gt;
+            return opts.snoozes
+              .filter(
+                (s) =>
+                  s.tenantId === args.where.tenantId &&
+                  s.userId === args.where.userId &&
+                  s.source === args.where.source &&
+                  s.snoozedUntil > now,
+              )
+              .map((s) => ({ resourceId: s.resourceId }));
+          },
+        ),
+      },
+      // suggested*-резолв не задействован (нет suggested-полей в фикстурах).
+      project: { findMany: vi.fn(async () => []) },
+      goal: { findMany: vi.fn(async () => []) },
+      person: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaService;
+    return { prisma, snoozeQueries: counter.n };
+  }
+
+  const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const PENDING_QUERY = { page: 1, limit: 50, status: 'pending' } as never;
+  const DEFAULT_QUERY = { page: 1, limit: 50 } as never;
+  const ACCEPTED_QUERY = { page: 1, limit: 50, status: 'accepted' } as never;
+
+  it('pending-вид с userId исключает отложенную в очереди карточку (== вклад в /actions)', async () => {
+    const a = makeIntake({ id: 'i-a', status: 'pending' });
+    const b = makeIntake({ id: 'i-b', status: 'pending' }); // эту отложили
+    const { prisma } = makeMirrorPrisma({
+      intakes: [a, b],
+      snoozes: [
+        {
+          tenantId: TENANT,
+          userId: USER,
+          source: 'intake',
+          resourceId: 'i-b',
+          snoozedUntil: future,
+        },
+      ],
+    });
+    const svc = makeService(prisma);
+
+    const res = await svc.findAll(TENANT, PENDING_QUERY, USER);
+
+    expect(res.total).toBe(1);
+    expect(res.items.map((i) => i.id)).toEqual(['i-a']);
+  });
+
+  it('дефолтный вид (без status) тоже snooze-aware', async () => {
+    const a = makeIntake({ id: 'i-a', status: 'pending' });
+    const b = makeIntake({ id: 'i-b', status: 'pending' });
+    const { prisma } = makeMirrorPrisma({
+      intakes: [a, b],
+      snoozes: [
+        {
+          tenantId: TENANT,
+          userId: USER,
+          source: 'intake',
+          resourceId: 'i-a',
+          snoozedUntil: future,
+        },
+      ],
+    });
+    const svc = makeService(prisma);
+
+    const res = await svc.findAll(TENANT, DEFAULT_QUERY, USER);
+
+    expect(res.items.map((i) => i.id)).toEqual(['i-b']);
+  });
+
+  it('истёкший snooze не исключает карточку', async () => {
+    const a = makeIntake({ id: 'i-a', status: 'pending' });
+    const { prisma } = makeMirrorPrisma({
+      intakes: [a],
+      snoozes: [
+        {
+          tenantId: TENANT,
+          userId: USER,
+          source: 'intake',
+          resourceId: 'i-a',
+          snoozedUntil: past, // уже истёк
+        },
+      ],
+    });
+    const svc = makeService(prisma);
+
+    const res = await svc.findAll(TENANT, PENDING_QUERY, USER);
+
+    expect(res.items.map((i) => i.id)).toEqual(['i-a']);
+  });
+
+  it('явный status=accepted НЕ применяет snooze (история разобранных полна)', async () => {
+    const accepted = makeIntake({ id: 'i-acc', status: 'accepted' });
+    const { prisma } = makeMirrorPrisma({
+      intakes: [accepted],
+      snoozes: [
+        {
+          tenantId: TENANT,
+          userId: USER,
+          source: 'intake',
+          resourceId: 'i-acc',
+          snoozedUntil: future,
+        },
+      ],
+    });
+    const svc = makeService(prisma);
+
+    const res = await svc.findAll(TENANT, ACCEPTED_QUERY, USER);
+
+    // snooze-запрос не должен исключать разобранную карточку
+    expect(res.items.map((i) => i.id)).toEqual(['i-acc']);
+    expect(
+      (prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>),
+    ).not.toHaveBeenCalled();
+  });
+
+  it('без userId snooze не применяется (внутренние вызовы — поведение прежнее)', async () => {
+    const a = makeIntake({ id: 'i-a', status: 'pending' });
+    const b = makeIntake({ id: 'i-b', status: 'pending' });
+    const { prisma } = makeMirrorPrisma({
+      intakes: [a, b],
+      snoozes: [
+        {
+          tenantId: TENANT,
+          userId: USER,
+          source: 'intake',
+          resourceId: 'i-b',
+          snoozedUntil: future,
+        },
+      ],
+    });
+    const svc = makeService(prisma);
+
+    const res = await svc.findAll(TENANT, PENDING_QUERY); // без userId
+
+    expect(res.items.map((i) => i.id)).toEqual(['i-a', 'i-b']);
+    expect(
+      (prisma.pendingActionSnooze.findMany as ReturnType<typeof vi.fn>),
+    ).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * Редизайн кабинета Ф5а (2026-06-13) — next-step отчёта → кандидат в задачу.
  *
  * Покрытие:

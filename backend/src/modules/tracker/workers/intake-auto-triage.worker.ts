@@ -27,6 +27,7 @@ import {
   type IntakeAutoTriageJobData,
   TRACKER_QUEUE_NAMES,
 } from '../queues';
+import { linkDerivedDecisionsForIssue } from '../services/decision-task-link.util';
 import { IssuesService } from '../services/issues.service';
 import { ProjectsService } from '../services/projects.service';
 
@@ -554,10 +555,37 @@ export class IntakeAutoTriageWorker
         labelIds: [],
         externalSource: intake.externalSource ?? intake.source,
         externalId: intake.externalId,
+        // A10 (2026-06-14) — провенанс intake → Issue.
+        sourceBlockIds: intake.sourceBlockIds,
       },
       tenantId,
       systemUserId,
     );
+    // A10 — замыкание петли: пересечение sourceBlockIds задачи с
+    // Decision.sourceBlockIds той же Org → DecisionTaskLink('derived').
+    // Best-effort: ошибка не должна откатывать уже принятый intake.
+    try {
+      const links = await linkDerivedDecisionsForIssue(this.prisma, {
+        tenantId,
+        issueId: created.id,
+        sourceBlockIds: intake.sourceBlockIds,
+      });
+      if (links > 0) {
+        this.logger.debug(
+          { intakeIssueId: intake.id, issueId: created.id, links },
+          'intake-auto-triage: создано DecisionTaskLink(derived)',
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        {
+          intakeIssueId: intake.id,
+          issueId: created.id,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'intake-auto-triage: линковка derived-решений упала (best-effort)',
+      );
+    }
     await this.prisma.intakeIssue.update({
       where: { id: intake.id },
       data: {

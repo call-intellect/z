@@ -185,6 +185,11 @@ export class IssuesService {
           goalId: dto.goalId ?? null,
           // Tracker Boards (2026-05-27) — boardId резолвится выше.
           boardId,
+          // A10 (2026-06-14) — провенанс из intake (см. промоут intake→Issue):
+          // прокидывается для последующего DecisionTaskLink('derived').
+          ...(dto.sourceBlockIds && dto.sourceBlockIds.length > 0
+            ? { sourceBlockIds: dto.sourceBlockIds }
+            : {}),
           externalSource: dto.externalSource ?? null,
           externalId: dto.externalId ?? null,
           createdById: userId,

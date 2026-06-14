@@ -111,5 +111,13 @@ export interface MergeDepartmentResultDto {
     persons: number;
     childDepartments: number;
     domainLinks: number;
+    /** KPI-метрики, привязанные к отделу (Metric.attachedToDepartmentId). */
+    metrics: number;
+    /** Карта handoff'ов (Interaction.counterpartDepartmentId). */
+    interactions: number;
+    /** Структурные подразделения (OrgUnit.parentDepartmentId). */
+    orgUnits: number;
+    /** Перенесена ли связка с Entity (Department.entityId): 0 или 1. */
+    entity: number;
   };
 }

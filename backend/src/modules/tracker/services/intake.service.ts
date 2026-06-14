@@ -12,6 +12,7 @@ import { Prisma, type IntakeIssue } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { BlockFetchService } from '../../knowledge-core/services/block-fetch.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import type {
   CreateIntakeDto,
@@ -23,6 +24,7 @@ import type {
 } from '../dto/intake/triage-intake.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
+import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
 import { TrackerEventsService } from './tracker-events.service';
@@ -54,6 +56,8 @@ export interface IntakeResponseDto {
   suggestedPriority: string | null;
   suggestedDueDate: string | null;
   suggestedLabels: string[];
+  /** A10 (2026-06-14) — IdeaBlock-источники кандидата (провенанс). */
+  sourceBlockIds: string[];
   confidence: string | null;
   triagedByUserId: string | null;
   triagedAt: string | null;
@@ -113,6 +117,14 @@ export class IntakeService {
     @Optional()
     @Inject(IntakeAutoTriageQueueService)
     private readonly autoTriageQueue?: IntakeAutoTriageQueueService,
+    // A10 (2026-06-14) — резолв провенанса (canonical-блоки встречи) для
+    // next-step → intake. @Optional: BlockFetchService — из @Global
+    // KnowledgeCoreModule (как TaskAssigneeResolverService в
+    // meeting-extract-actions); в unit-тестах IntakeService его не передают —
+    // тогда провенанс резолвится в пустой массив (best-effort, не падаем).
+    @Optional()
+    @Inject(BlockFetchService)
+    private readonly blockFetch?: BlockFetchService,
   ) {}
 
   /** Создать intake-карточку. Не требует userId — может вызвать webhook-адаптер. */
@@ -137,6 +149,8 @@ export class IntakeService {
         suggestedPriority: dto.suggestedPriority ?? null,
         suggestedDueDate: dto.suggestedDueDate ?? null,
         suggestedLabels: dto.suggestedLabels,
+        // A10 (2026-06-14) — провенанс кандидата (IdeaBlock-источники).
+        sourceBlockIds: dto.sourceBlockIds,
         confidence:
           dto.confidence != null
             ? new Prisma.Decimal(dto.confidence)
@@ -188,12 +202,20 @@ export class IntakeService {
    * tenant-изоляция: проверяем, что встреча принадлежит tenantId (404 иначе) —
    * без зависимости от MeetingsService (разрыв цикла meetings↔tracker).
    *
-   * Полная петля sourceBlockIds + DecisionTaskLink — Ф8.1 (здесь не делаем).
+   * A10 (2026-06-14) — петля провенанса замкнута. `sourceBlockIds` либо
+   * передаёт FE явно (если знает блоки-источники), либо backend резолвит их по
+   * canonical-блокам встречи (BlockFetchService) — берём action-несущие сигналы
+   * (commitment / plan_item / task_created / decision), которые и порождают
+   * next-step в отчёте и пересекаются с `Decision.sourceBlockIds`. Резолв
+   * best-effort: при отсутствии BlockFetchService / RawEvent / блоков пишем
+   * пустой массив, не падаем. Дальше при промоуте в Issue эти блоки рождают
+   * `DecisionTaskLink(linkType='derived')`.
    */
   async createFromMeetingNextStep(args: {
     meetingId: string;
     text: string;
     description?: string | null;
+    sourceBlockIds?: string[] | null;
     tenantId: string;
   }): Promise<IntakeResponseDto> {
     const { meetingId, tenantId } = args;
@@ -233,6 +255,16 @@ export class IntakeService {
       return this.toResponse(existing);
     }
 
+    // A10 — провенанс: явный список от FE имеет приоритет, иначе резолвим по
+    // canonical-блокам встречи (best-effort, пустой массив при сбое).
+    const explicit = (args.sourceBlockIds ?? []).filter(
+      (s): s is string => typeof s === 'string' && s.length > 0,
+    );
+    const sourceBlockIds =
+      explicit.length > 0
+        ? explicit
+        : await this.resolveMeetingSourceBlockIds(meetingId, tenantId);
+
     return this.create(
       {
         source: 'meeting',
@@ -242,9 +274,50 @@ export class IntakeService {
         externalSource: 'meeting',
         externalId,
         suggestedLabels: [],
+        sourceBlockIds,
       },
       tenantId,
     );
+  }
+
+  /**
+   * A10 (2026-06-14) — провенанс next-step → canonical-блоки встречи.
+   * Берём action-несущие сигналы (commitment / plan_item / task_created /
+   * decision): именно из них формируются «следующие шаги» в отчёте и именно
+   * они пересекаются с `Decision.sourceBlockIds` (→ DecisionTaskLink derived).
+   * Best-effort: нет BlockFetchService / RawEvent / блоков → пустой массив.
+   * Никогда не бросает — провенанс необязателен, intake создаётся в любом случае.
+   */
+  private async resolveMeetingSourceBlockIds(
+    meetingId: string,
+    tenantId: string,
+  ): Promise<string[]> {
+    if (!this.blockFetch) return [];
+    try {
+      const blocks = await this.blockFetch.getCanonicalBlocksForMeeting(
+        meetingId,
+        tenantId,
+      );
+      const ACTION_SIGNALS = new Set([
+        'commitment',
+        'plan_item',
+        'task_created',
+        'decision',
+      ]);
+      const ids = blocks
+        .filter((b) => ACTION_SIGNALS.has(b.signalType))
+        .map((b) => b.id);
+      return ids.slice(0, 64);
+    } catch (e) {
+      this.logger.warn(
+        {
+          meetingId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'intake from next-step: резолв sourceBlockIds упал — пустой провенанс',
+      );
+      return [];
+    }
   }
 
   /**
@@ -498,9 +571,19 @@ export class IntakeService {
           labelIds: [], // matching label ids — Sprint 2 (resolve по suggestedLabels)
           externalSource: intake.externalSource ?? intake.source,
           externalId: intake.externalId,
+          // A10 (2026-06-14) — провенанс intake → Issue.
+          sourceBlockIds: intake.sourceBlockIds,
         },
         tenantId,
         userId,
+      );
+      // A10 — замыкание петли: пересечение sourceBlockIds задачи с
+      // Decision.sourceBlockIds той же Org → DecisionTaskLink('derived').
+      // Best-effort: ошибка не должна откатывать уже созданную задачу.
+      await this.linkDerivedDecisions(
+        tenantId,
+        createdIssue.id,
+        intake.sourceBlockIds,
       );
     } else if (dto.decision === 'snooze' && !dto.snoozedUntil) {
       throw new BadRequestException({
@@ -571,6 +654,38 @@ export class IntakeService {
     return result;
   }
 
+  /**
+   * A10 (2026-06-14) — связывает созданную из intake задачу с пересекающимися
+   * по `sourceBlockIds` Decision'ами (linkType='derived'). Тонкая обёртка над
+   * общим хелпером `linkDerivedDecisionsForIssue` (тот же код, что в
+   * IntakeAutoTriageWorker). Best-effort: лог + продолжаем, чтобы сбой линковки
+   * не откатывал уже принятый intake / созданную задачу.
+   */
+  private async linkDerivedDecisions(
+    tenantId: string,
+    issueId: string,
+    sourceBlockIds: string[],
+  ): Promise<void> {
+    try {
+      const created = await linkDerivedDecisionsForIssue(this.prisma, {
+        tenantId,
+        issueId,
+        sourceBlockIds,
+      });
+      if (created > 0) {
+        this.logger.debug(
+          { issueId, created },
+          'intake triage: создано DecisionTaskLink(derived)',
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        { issueId, err: e instanceof Error ? e.message : String(e) },
+        'intake triage: линковка derived-решений упала (best-effort)',
+      );
+    }
+  }
+
   private async requireIntake(
     id: string,
     tenantId: string,
@@ -620,6 +735,7 @@ export class IntakeService {
       suggestedPriority: i.suggestedPriority,
       suggestedDueDate: i.suggestedDueDate?.toISOString() ?? null,
       suggestedLabels: i.suggestedLabels,
+      sourceBlockIds: i.sourceBlockIds,
       confidence: i.confidence?.toString() ?? null,
       triagedByUserId: i.triagedByUserId,
       triagedAt: i.triagedAt?.toISOString() ?? null,

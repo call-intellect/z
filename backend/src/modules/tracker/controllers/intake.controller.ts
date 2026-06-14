@@ -127,6 +127,8 @@ export class IntakeController {
       meetingId,
       text: body.text,
       description: body.description ?? null,
+      // A10 — явный провенанс от FE (если знает), иначе backend резолвит по встрече.
+      sourceBlockIds: body.sourceBlockIds ?? null,
       tenantId: t,
     });
   }

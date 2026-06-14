@@ -9587,6 +9587,14 @@ model IntakeIssue {
   suggestedDueDate    DateTime?
   suggestedLabels     String[]
 
+  /// A10 (2026-06-14) — провенанс: IdeaBlock'и, на которых построен кандидат.
+  /// Для intake из next-step отчёта / авто-экстракции встречи резолвится по
+  /// canonical-блокам встречи. При промоуте в Issue прокидывается в
+  /// `Issue.sourceBlockIds`; пересечение с `Decision.sourceBlockIds` той же Org
+  /// рождает `DecisionTaskLink(linkType='derived')` (замыкание петли
+  /// next-step → задача → решение). Пустой массив — провенанс неизвестен.
+  sourceBlockIds      String[]  @default([])
+
   confidence Decimal? @db.Decimal(4, 3)
 
   // Триаж

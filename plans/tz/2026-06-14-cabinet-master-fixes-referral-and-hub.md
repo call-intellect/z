@@ -53,7 +53,7 @@
 
 ## A2. merge отделов — полный перенос FK
 **Корень:** [departments.service.ts:432-523](backend/src/modules/departments/services/departments.service.ts#L432) пропускает FK; источник soft-deleted → `SetNull` не срабатывает → висячие ссылки. Дополнить переносом: `Metric.attachedToDepartmentId` (`schema:6089`), `Interaction.counterpartDepartmentId` (`:5420`), `Project.departmentId` (`:8797`), `Person.primaryDepartmentId`, `DepartmentHead`, `Entity`(DepartmentEntity), `PersonRole`, дочерние `parentDepartmentId` (`:4693`). + регресс-тест «после merge 0 ссылок на источник».
-**Статус:** [ ]
+**Статус:** [x] — добавлен перенос `Metric.attachedToDepartmentId`, `Interaction.counterpartDepartmentId`, мягкой `OrgUnit.parentDepartmentId`, `Department.entityId` (с обходом @unique: source.entityId=null ДО target.entityId=source). `DepartmentHead`/`PersonRole.departmentId` — таких полей нет (head = headPersonId, уже переносился). ForecastSnapshot.scopeId не переносим (пересоздаётся кронами). Мок расширен, регресс-тест «0 висячих ссылок»; 10 тестов.
 
 ## A3. env.schema — оживить рубильник + убрать raw process.env
 - `DASHBOARD_THEME_SILENCE_ENABLED` отсутствует в `env.schema.ts` → ENV-kill-switch мёртв (живёт только AdminSetting). Добавить.
@@ -87,7 +87,7 @@
 
 ## A10. Петля next-step → `sourceBlockIds` + `DecisionTaskLink` (миграция)
 - Миграция `IntakeIssue.sourceBlockIds String[]` (аддитивно, nullable). При next-step→intake писать `sourceBlockIds`; при создании Issue из IntakeIssue линковать `DecisionTaskLink` (`linkType='derived'`) → `getDecisionThroughput` засчитает встречные решения. Снять строку из `04_не-сделано`.
-**Статус:** [ ]
+**Статус:** [x] — миграция `20260614110154_add_intake_source_block_ids` (`TEXT[] DEFAULT ARRAY[]`). Резолв sourceBlockIds для next-step через `BlockFetchService.getCanonicalBlocksForMeeting` (сигналы commitment/plan_item/task_created/decision; нет `next_step` в enum) + опц. явный sourceBlockIds в DTO. Промоут (ручной accept + авто-triage) пишет Issue.sourceBlockIds и создаёт `DecisionTaskLink('derived')` через общий хелпер `decision-task-link.util` (пересечение как backfill, skipDuplicates, пересчёт linkedTaskCount). README строка → архив. Тесты 3 кейса; 267 tracker.
 
 ## A11. Доводка (med/low)
 - **A11.1** — `weekly-per-person.service` PLAN: добавить «задача в активном Cycle недели» ([weekly-per-person.service.ts:176](backend/src/modules/operations/services/weekly-per-person.service.ts#L176)).

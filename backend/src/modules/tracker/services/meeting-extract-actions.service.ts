@@ -27,6 +27,7 @@ import {
   TASKS_TOOL_NAME,
 } from '../../ai/services/prompts/tasks';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
+import { BlockFetchService } from '../../knowledge-core/services/block-fetch.service';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 
@@ -81,6 +82,14 @@ export class MeetingExtractActionsService implements OnModuleInit {
     @Optional()
     @Inject(IntakeAutoTriageQueueService)
     private readonly autoTriageQueue?: IntakeAutoTriageQueueService,
+    // A10 (2026-06-14) — провенанс автозадач: canonical-блоки встречи →
+    // IntakeIssue.sourceBlockIds → DecisionTaskLink('derived') при авто-приёме.
+    // @Optional (как в IntakeService) — best-effort, без него провенанс пуст.
+    // Стоит ПОСЛЕДНИМ в списке, чтобы не сдвигать позиционные аргументы в
+    // существующих unit-тестах (они конструируют сервис вручную).
+    @Optional()
+    @Inject(BlockFetchService)
+    private readonly blockFetch?: BlockFetchService,
   ) {}
 
   onModuleInit(): void {
@@ -136,6 +145,14 @@ export class MeetingExtractActionsService implements OnModuleInit {
     // сотрудников). Используются для жёсткого резолва исполнителя задачи:
     // матч имени/userId ТОЛЬКО среди тех, кто реально был на встрече.
     const participants = await this.participantContext.loadForMeeting(meetingId);
+
+    // 2c. A10 (2026-06-14) — провенанс автозадач (canonical action-блоки
+    // встречи). Резолвим один раз на встречу; пишем в каждый IntakeIssue, чтобы
+    // при авто-приёме родился DecisionTaskLink('derived'). Best-effort.
+    const meetingSourceBlockIds = await this.resolveMeetingSourceBlockIds(
+      meetingId,
+      tenantId,
+    );
 
     // 3. Промпт + LLM.
     const prompt = buildMeetingExtractActionsPrompt(
@@ -336,6 +353,8 @@ export class MeetingExtractActionsService implements OnModuleInit {
           suggestedPriority,
           suggestedDueDate,
           suggestedLabels: [],
+          // A10 (2026-06-14) — провенанс встречи (для DecisionTaskLink derived).
+          sourceBlockIds: meetingSourceBlockIds,
           confidence: confidenceDecimal,
           // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
           // pending-intake после TTL (cfg.pendingActions.intakeTtlDays).
@@ -439,6 +458,41 @@ export class MeetingExtractActionsService implements OnModuleInit {
     if (!m) return null;
     const d = new Date(`${m[1]}T00:00:00.000Z`);
     return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  /**
+   * A10 (2026-06-14) — провенанс автозадач: action-несущие canonical-блоки
+   * встречи (commitment / plan_item / task_created / decision), которые и
+   * пересекаются с `Decision.sourceBlockIds`. Best-effort: нет BlockFetchService
+   * / RawEvent / блоков → пустой массив, не бросает (analyze.worker не падает).
+   */
+  private async resolveMeetingSourceBlockIds(
+    meetingId: string,
+    tenantId: string,
+  ): Promise<string[]> {
+    if (!this.blockFetch) return [];
+    try {
+      const blocks = await this.blockFetch.getCanonicalBlocksForMeeting(
+        meetingId,
+        tenantId,
+      );
+      const ACTION_SIGNALS = new Set([
+        'commitment',
+        'plan_item',
+        'task_created',
+        'decision',
+      ]);
+      return blocks
+        .filter((b) => ACTION_SIGNALS.has(b.signalType))
+        .map((b) => b.id)
+        .slice(0, 64);
+    } catch (e) {
+      this.logger.warn(
+        { meetingId, err: e instanceof Error ? e.message : String(e) },
+        'meeting-extract-actions: резолв sourceBlockIds упал — пустой провенанс',
+      );
+      return [];
+    }
   }
 
 }

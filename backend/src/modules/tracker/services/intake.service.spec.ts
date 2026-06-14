@@ -35,6 +35,7 @@ type IntakeRow = {
   suggestedPriority: string | null;
   suggestedDueDate: Date | null;
   suggestedLabels: string[];
+  sourceBlockIds: string[];
   confidence: null;
   triagedByUserId: string | null;
   triagedAt: Date | null;
@@ -65,6 +66,7 @@ function makeIntake(overrides: Partial<IntakeRow>): IntakeRow {
     suggestedPriority: null,
     suggestedDueDate: null,
     suggestedLabels: [],
+    sourceBlockIds: [],
     confidence: null,
     triagedByUserId: null,
     triagedAt: null,
@@ -513,5 +515,178 @@ describe('IntakeService.createFromMeetingNextStep', () => {
     });
     expect(create).not.toHaveBeenCalled();
     expect(res.id).toBe('dup-1');
+  });
+});
+
+/**
+ * A10 (2026-06-14) — замыкание петли next-step → IntakeIssue.sourceBlockIds →
+ * Issue → DecisionTaskLink('derived').
+ *
+ * Покрытие (детерминизм: мок Prisma, без сети/времени):
+ *   (а) triage accept с непустым sourceBlockIds + пересекающийся Decision →
+ *       создаётся DecisionTaskLink(linkType='derived') + пересчёт linkedTaskCount;
+ *       в Issue прокидываются sourceBlockIds;
+ *   (б) пустой sourceBlockIds → линк НЕ создаётся (no-op, decision.findMany не зван);
+ *   (в) идемпотентность: повторный accept → createMany(skipDuplicates), не падает.
+ */
+describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const ACCEPT_DTO = {
+    decision: 'accept',
+    targetProjectId: 'proj-1',
+  } as never;
+
+  function build(opts: {
+    intake: IntakeRow;
+    /** Decision'ы, чьи sourceBlockIds пересекаются с задачей (мок findMany). */
+    matchingDecisions: { id: string }[];
+    /** createMany.count (число фактически созданных строк). */
+    createdLinks: number;
+  }): {
+    svc: IntakeService;
+    issuesCreate: ReturnType<typeof vi.fn>;
+    decisionFindMany: ReturnType<typeof vi.fn>;
+    decisionTaskLinkCreateMany: ReturnType<typeof vi.fn>;
+    decisionUpdate: ReturnType<typeof vi.fn>;
+  } {
+    const issuesCreate = vi.fn(async () => ({ id: 'issue-created-1' }));
+    const decisionFindMany = vi.fn(async () => opts.matchingDecisions);
+    const decisionTaskLinkCreateMany = vi.fn(async () => ({
+      count: opts.createdLinks,
+    }));
+    const decisionTaskLinkGroupBy = vi.fn(async () =>
+      opts.matchingDecisions.map((d) => ({
+        decisionId: d.id,
+        _count: { _all: 1 },
+      })),
+    );
+    const decisionUpdate = vi.fn(async () => ({}));
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi.fn(async () => opts.intake),
+        update: vi.fn(async ({ data }: { data: Partial<IntakeRow> }) => ({
+          ...opts.intake,
+          ...data,
+        })),
+      },
+      decision: {
+        findMany: decisionFindMany,
+        update: decisionUpdate,
+      },
+      decisionTaskLink: {
+        createMany: decisionTaskLinkCreateMany,
+        groupBy: decisionTaskLinkGroupBy,
+      },
+    } as unknown as PrismaService;
+    const issues = { create: issuesCreate };
+    const events = { publishIntakeTriaged: vi.fn() };
+    const webhooks = { dispatch: vi.fn(async () => undefined) };
+    const cfg = { pendingActions: { intakeTtlDays: 14 } };
+    const svc = new IntakeService(
+      prisma,
+      issues as never,
+      events as never,
+      webhooks as never,
+      cfg as never,
+    );
+    return {
+      svc,
+      issuesCreate,
+      decisionFindMany,
+      decisionTaskLinkCreateMany,
+      decisionUpdate,
+    };
+  }
+
+  it('(а) accept + пересекающийся Decision → DecisionTaskLink derived + пересчёт', async () => {
+    const intake = makeIntake({
+      id: 'i-acc',
+      status: 'pending',
+      projectId: 'proj-1',
+      sourceBlockIds: ['blk-1', 'blk-2'],
+    });
+    const {
+      svc,
+      issuesCreate,
+      decisionFindMany,
+      decisionTaskLinkCreateMany,
+      decisionUpdate,
+    } = build({
+      intake,
+      matchingDecisions: [{ id: 'dec-1' }],
+      createdLinks: 1,
+    });
+
+    await svc.triage('i-acc', ACCEPT_DTO, TENANT, 'user-1');
+
+    // Issue получил провенанс.
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    const issueDto = issuesCreate.mock.calls[0]![1] as {
+      sourceBlockIds?: string[];
+    };
+    expect(issueDto.sourceBlockIds).toEqual(['blk-1', 'blk-2']);
+
+    // Пересечение → createMany linkType='derived'.
+    expect(decisionFindMany).toHaveBeenCalledTimes(1);
+    expect(decisionTaskLinkCreateMany).toHaveBeenCalledTimes(1);
+    const createArg = decisionTaskLinkCreateMany.mock.calls[0]![0] as {
+      data: { decisionId: string; issueId: string; linkType: string }[];
+      skipDuplicates: boolean;
+    };
+    expect(createArg.skipDuplicates).toBe(true);
+    expect(createArg.data).toEqual([
+      { decisionId: 'dec-1', issueId: 'issue-created-1', linkType: 'derived' },
+    ]);
+    // Пересчёт linkedTaskCount.
+    expect(decisionUpdate).toHaveBeenCalledWith({
+      where: { id: 'dec-1' },
+      data: { linkedTaskCount: 1 },
+    });
+  });
+
+  it('(б) пустой sourceBlockIds → линк НЕ создаётся (no-op)', async () => {
+    const intake = makeIntake({
+      id: 'i-empty',
+      status: 'pending',
+      projectId: 'proj-1',
+      sourceBlockIds: [],
+    });
+    const { svc, issuesCreate, decisionFindMany, decisionTaskLinkCreateMany } =
+      build({ intake, matchingDecisions: [], createdLinks: 0 });
+
+    await svc.triage('i-empty', ACCEPT_DTO, TENANT, 'user-1');
+
+    expect(issuesCreate).toHaveBeenCalledTimes(1);
+    // Без блоков — даже не ходим в decision.findMany.
+    expect(decisionFindMany).not.toHaveBeenCalled();
+    expect(decisionTaskLinkCreateMany).not.toHaveBeenCalled();
+  });
+
+  it('(в) идемпотентность: повторный accept → createMany(skipDuplicates), не падает', async () => {
+    const intake = makeIntake({
+      id: 'i-idem',
+      status: 'pending',
+      projectId: 'proj-1',
+      sourceBlockIds: ['blk-1'],
+    });
+    // Повтор: пересечение есть, но createMany ничего не создал (count=0) —
+    // skipDuplicates съел дубликат. Пересчёт счётчика пропускается (count=0).
+    const { svc, decisionTaskLinkCreateMany, decisionUpdate } = build({
+      intake,
+      matchingDecisions: [{ id: 'dec-1' }],
+      createdLinks: 0,
+    });
+
+    await expect(
+      svc.triage('i-idem', ACCEPT_DTO, TENANT, 'user-1'),
+    ).resolves.toBeDefined();
+
+    const createArg = decisionTaskLinkCreateMany.mock.calls[0]![0] as {
+      skipDuplicates: boolean;
+    };
+    expect(createArg.skipDuplicates).toBe(true);
+    // count=0 → пересчёт linkedTaskCount не запускается.
+    expect(decisionUpdate).not.toHaveBeenCalled();
   });
 });

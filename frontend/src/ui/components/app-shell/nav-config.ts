@@ -472,9 +472,13 @@ export function isDesktopNavReachable(href: string): boolean {
 // ─────────────────────────── Мобильные табы ──────────────────────
 // ТЗ Ф9. Единый источник: те же href, что и в десктопе (гард mobile ⊆ desktop).
 //   EXEC (owner/admin):  Сегодня /dashboard · Неделя /week · Требует вас /actions
-//                        · Память /chat · Я /me
+//                        · Память /memory · Я /me
 //   MANAGER (остальные): Сегодня /me · Чек-ин /me/check-ins · Спросить /chat
 //                        · Дела /me/inbox
+// Паритет «Память» (A11.2): таб EXEC «Память» ведёт на /memory — тот же URL и
+// смысл, что у десктоп-пункта «Память» (виден EXEC). Раньше вёл на /chat
+// («Спросить»), который у EXEC на десктопе скрыт (roles: ['manager']) — это
+// рассинхрон label↔URL и доступ к разделу вне десктоп-меню EXEC.
 
 export interface MobileNavTab {
   key: string;
@@ -487,7 +491,7 @@ export const MOBILE_EXEC_TABS: readonly MobileNavTab[] = [
   { key: 'today', href: '/dashboard', label: 'Сегодня', icon: Home },
   { key: 'week', href: '/week', label: 'Неделя', icon: CalendarRange },
   { key: 'requires', href: '/actions', label: 'Требует вас', icon: AlertTriangle },
-  { key: 'ask', href: '/chat', label: 'Память', icon: MessageCircle },
+  { key: 'memory', href: '/memory', label: 'Память', icon: Brain },
   { key: 'me', href: '/me', label: 'Я', icon: UserRound },
 ] as const;
 

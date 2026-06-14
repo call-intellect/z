@@ -341,6 +341,13 @@ export type DirectorDashboardApi = {
    * первого экрана. Опц. — UI падает до `true`.
    */
   mainReworkEnabled?: boolean;
+  /**
+   * A11.5 — частичная деградация ответа (200 + `degraded:true`): часть
+   * виджетов не собралась (например, отвал источника), но дашборд отдан.
+   * UI подсвечивает VerdictBar «показатели могут быть неполными».
+   * Опц. для backward-compat со старым backend; UI падает до `false`.
+   */
+  degraded?: boolean;
 };
 
 // ─── Domain-модели ──────────────────────────────────────────────────────────
@@ -464,6 +471,11 @@ export type DirectorDashboardDomain = {
   valueStrip: DirectorDashboardValueStripDomain;
   /** ТЗ-3 Ф2 — новая компоновка главной включена. Дефолт `true`. */
   mainReworkEnabled: boolean;
+  /**
+   * A11.5 — частичная деградация ответа: часть виджетов не собралась, но
+   * дашборд отдан (200). UI подсвечивает VerdictBar. Дефолт `false`.
+   */
+  degraded: boolean;
 };
 
 // ─── Mappers ────────────────────────────────────────────────────────────────
@@ -662,6 +674,7 @@ export function directorDashboardFromApi(
     isEmpty: api.isEmpty ?? false,
     valueStrip: valueStripFromApi(api.valueStrip),
     mainReworkEnabled: api.mainReworkEnabled ?? true,
+    degraded: api.degraded ?? false,
   };
 }
 

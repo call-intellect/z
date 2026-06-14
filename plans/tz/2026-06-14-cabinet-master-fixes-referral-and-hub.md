@@ -96,7 +96,7 @@
 - **A11.4** — «Активность команды» (7bis) на Сегодня (`recognition`/`task`/`decision`, топ-5) в [DirectorDashboardClient.tsx](frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx).
 - **A11.5** — VerdictBar degraded-state: пробросить backend `degraded` ([director-dashboard.dto.ts:284](backend/src/modules/dashboard/dto/director-dashboard.dto.ts#L284)) в domain → не только `collectorDown`.
 - **A11.6** — свести `primary-nav.ts` + `nav-config.ts` к одному источнику мобайл-нав (low).
-**Статус:** [ ]
+**Статус:** [x] (кроме A11.6 — стаб) — A11.1: Issue в активных Cycle недели → PLAN (вариант а, без миграции; ловушка: Issue без assigneeUserId → IssueAssignee M:M, без status → completedAt; дедуп multi-assignee; 418 тестов). A11.2: гард `nav-subset` расширен на `MOBILE_EXEC_TABS/MANAGER_TABS ⊆ desktop` + паритет «Память» EXEC `/chat→/memory` (icon Brain). A11.3: /month мобильная подсказка «откройте на компьютере» (md:hidden). A11.4: `TeamActivityWidget` на Сегодня (источник `coraFeedApi type=activity` = recognition/task). A11.5: `degraded` проброшен в ApiDto+Domain+маппер → `collectorDown` ловит частичную деградацию. **A11.6 (low) — стаб в `04_не-сделано`** (рискованный nav-рефактор; риск расхождения закрыт гардом A11.2).
 
 ---
 
@@ -184,7 +184,7 @@
 
 ## C5. Долг Instruction — строка в реестре
 Добавить в `second-brain/04_не-сделано/README.md`: «Instruction — версии/триаж/CardVersion + цитаты не дотянуты (упрощённый `upsertInstruction`, `specialist-3-1-regulations.service.ts:1103`)». Сверить устаревшую строку 34 (A7-компилятор).
-**Статус:** [ ]
+**Статус:** [x] — строка про долг Instruction (нет CardVersion-истории→getHistory пуст, нет KNN-дедупа/триажа, нет instructionCount в structure) добавлена в «Открыто»; сверена со строкой A7-компилятора (актуальна, тот же next-wave-слой версионной обвязки).
 
 ---
 

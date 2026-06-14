@@ -59,6 +59,16 @@ interface DeptRow {
   id: string;
   name: string;
 }
+/** A11.1 — активный цикл недели. */
+interface CycleRow {
+  id: string;
+}
+/** A11.1 — задача трекера в цикле (исполнители — M:M через assignees). */
+interface IssueRow {
+  id: string;
+  completedAt: Date | null;
+  assignees: Array<{ userId: string }>;
+}
 
 function buildService(opts: {
   commitments?: CommitmentRow[];
@@ -72,6 +82,10 @@ function buildService(opts: {
   plannedTasks?: TaskRow[];
   checkIns?: CheckInRow[];
   departments?: DeptRow[];
+  /** A11.1 — активные циклы недели (Cycle.findMany). */
+  cycles?: CycleRow[];
+  /** A11.1 — задачи трекера в активных циклах (Issue.findMany). */
+  cycleIssues?: IssueRow[];
   cacheValue?: string | null;
   cacheGetError?: Error;
   cacheSetError?: Error;
@@ -89,6 +103,8 @@ function buildService(opts: {
     task: { findMany: ReturnType<typeof vi.fn> };
     dailyCheckIn: { findMany: ReturnType<typeof vi.fn> };
     department: { findMany: ReturnType<typeof vi.fn> };
+    cycle: { findMany: ReturnType<typeof vi.fn> };
+    issue: { findMany: ReturnType<typeof vi.fn> };
   };
   redisGet: ReturnType<typeof vi.fn>;
   redisSet: ReturnType<typeof vi.fn>;
@@ -109,6 +125,9 @@ function buildService(opts: {
     },
     dailyCheckIn: { findMany: vi.fn(async () => opts.checkIns ?? []) },
     department: { findMany: vi.fn(async () => opts.departments ?? []) },
+    // A11.1 — задачи трекера в активном цикле недели (план по циклу).
+    cycle: { findMany: vi.fn(async () => opts.cycles ?? []) },
+    issue: { findMany: vi.fn(async () => opts.cycleIssues ?? []) },
   };
 
   const redisGet = vi.fn(async () => {
@@ -641,6 +660,105 @@ describe('WeeklyPerPersonService', () => {
       const p1 = dto.rows.find((r) => r.personId === 'P1')!;
       expect(p1.tasksPlanned).toBe(0);
       expect(p1.tasksNotDone).toBe(0); // max(0, 0 − 0)
+    });
+  });
+
+  // ─────────────── A11.1 — задачи трекера (Issue) в активном цикле недели ────
+
+  describe('A11.1 — Issue в активном цикле недели добавляется в PLAN', () => {
+    it('задача трекера в активном цикле увеличивает tasksPlanned (аддитивно к Task)', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      // Task-план по сроку: 1 задача (open).
+      const plannedTasks: TaskRow[] = [
+        { assigneeUserId: 'U1', status: 'open', dueDate: dayInWeek('2026-06-03') },
+      ];
+      // Issue в активном цикле: 2 задачи (одна done, одна нет) — план по циклу.
+      const cycles: CycleRow[] = [{ id: 'C1' }];
+      const cycleIssues: IssueRow[] = [
+        { id: 'I1', completedAt: dayInWeek('2026-06-04'), assignees: [{ userId: 'U1' }] },
+        { id: 'I2', completedAt: null, assignees: [{ userId: 'U1' }] },
+      ];
+      const { service } = buildService({ commitments, persons, plannedTasks, cycles, cycleIssues });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      // 1 Task-план + 2 Issue = 3 запланировано.
+      expect(p1.tasksPlanned).toBe(3);
+      // Сделано из плана: Task open(0) + Issue done(1) = 1 → notDone = 3 − 1 = 2.
+      expect(p1.tasksNotDone).toBe(2);
+    });
+
+    it('Issue, назначенный нескольким, считается каждому ровно один раз (дедуп)', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+        { id: 'b2', commitmentAuthorPersonId: 'P2', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+        { id: 'P2', name: 'Борис', userId: 'U2', primaryDepartmentId: null },
+      ];
+      const plannedTasks: TaskRow[] = []; // только Issue-план
+      const cycles: CycleRow[] = [{ id: 'C1' }];
+      const cycleIssues: IssueRow[] = [
+        // один Issue на двух исполнителей → по 1 каждому
+        { id: 'I1', completedAt: null, assignees: [{ userId: 'U1' }, { userId: 'U2' }] },
+      ];
+      const { service } = buildService({ commitments, persons, plannedTasks, cycles, cycleIssues });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const byId = new Map(dto.rows.map((r) => [r.personId, r]));
+      expect(byId.get('P1')!.tasksPlanned).toBe(1);
+      expect(byId.get('P2')!.tasksPlanned).toBe(1);
+    });
+
+    it('нет активных циклов → Issue не выбираются, tasksPlanned не растёт', async () => {
+      const commitments: CommitmentRow[] = [
+        { id: 'b1', commitmentAuthorPersonId: 'P1', commitmentStatus: 'fulfilled', commitmentDueDate: dayInWeek('2026-06-02') },
+      ];
+      const persons: PersonRow[] = [
+        { id: 'P1', name: 'Алиса', userId: 'U1', primaryDepartmentId: null },
+      ];
+      const plannedTasks: TaskRow[] = [
+        { assigneeUserId: 'U1', status: 'open', dueDate: dayInWeek('2026-06-03') },
+      ];
+      // cycles пуст → issue.findMany не должен вызываться.
+      const { service, prisma } = buildService({ commitments, persons, plannedTasks, cycles: [] });
+      const dto = await service.compute(
+        { tenantId: 't-1', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const p1 = dto.rows.find((r) => r.personId === 'P1')!;
+      expect(p1.tasksPlanned).toBe(1); // только Task-план
+      expect(prisma.issue.findMany).not.toHaveBeenCalled();
+    });
+
+    it('Cycle.findMany — tenant-скоуп, completedAt=null, окно недели пересекается', async () => {
+      const { service, prisma } = buildService({ ...baseFixture(), cycles: [{ id: 'C1' }] });
+      await service.compute(
+        { tenantId: 't-42', weekStart: WEEK_START, limit: 100, offset: 0, sort: 'reliability' },
+        NOW,
+      );
+      const cycleCall = prisma.cycle.findMany.mock.calls[0]![0];
+      expect(cycleCall.where.tenantId).toBe('t-42');
+      expect(cycleCall.where.completedAt).toBeNull();
+      // пересечение окна: startDate <= weekEnd И endDate >= weekStart
+      expect(cycleCall.where.startDate.lte).toBeInstanceOf(Date);
+      expect(cycleCall.where.endDate.gte).toBeInstanceOf(Date);
+
+      const issueCall = prisma.issue.findMany.mock.calls[0]![0];
+      expect(issueCall.where.tenantId).toBe('t-42');
+      expect(issueCall.where.deletedAt).toBeNull();
+      expect(issueCall.where.archivedAt).toBeNull();
+      expect(issueCall.where.cycleId).toEqual({ in: ['C1'] });
     });
   });
 

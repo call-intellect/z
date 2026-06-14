@@ -57,6 +57,7 @@ function makeDirector(
       commitmentsKept: 0,
     },
     mainReworkEnabled: true,
+    degraded: false,
     ...over,
   };
 }

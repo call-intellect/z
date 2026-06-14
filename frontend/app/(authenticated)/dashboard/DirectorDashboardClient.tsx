@@ -57,6 +57,7 @@ import {
   glass,
 } from '@/ui/components/dashboard/modern';
 import { DigitizedSummaryWidget } from './widgets/DigitizedSummaryWidget';
+import { TeamActivityWidget } from './widgets/TeamActivityWidget';
 import { ValueStripWidget } from './widgets/ValueStripWidget';
 import { VerdictBar } from './widgets/VerdictBar';
 
@@ -257,8 +258,9 @@ export function DirectorDashboardClient() {
   }
 
   // ─── Вердикт: сбор данных не работает? (Б-6 сбой) ────────────────────────
-  // degraded из directorView ИЛИ полный сбой загрузки (error при отсутствии data).
-  const collectorDown = !!error && data === null;
+  // A11.5 — полный сбой загрузки (error при отсутствии data) ИЛИ частичная
+  // деградация ответа (200 + degraded:true): часть виджетов не собралась.
+  const collectorDown = (!!error && data === null) || data?.degraded === true;
   const digest = digestSwr.data ?? null;
   const checkin = checkinSwr.data ?? null;
 
@@ -443,9 +445,12 @@ export function DirectorDashboardClient() {
           <DigitizedSummaryWidget orgId={currentOrgId} />
         </div>
 
-        {/* ── 6. Лента дня (свёрнуто) + плашка «Вопросов Коры без ответа» ─ */}
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        {/* ── 6. Активность команды (кто что сделал) + Лента дня + плашка ─ */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <TeamActivityWidget orgId={currentOrgId} />
           <DayFeedCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+        </div>
+        <div className="mb-6">
           <ProbeUnansweredPill count={probeUnanswered} />
         </div>
 

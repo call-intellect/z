@@ -80,6 +80,25 @@ describe('directorDashboardFromApi — requiresAction', () => {
   });
 });
 
+// ─── A11.5 — passthrough флага частичной деградации ──────────────────────────
+
+describe('directorDashboardFromApi — degraded (A11.5)', () => {
+  it('degraded:true в DTO → true в Domain', () => {
+    const dto = directorDashboardFromApi({ ...baseApi(), degraded: true });
+    expect(dto.degraded).toBe(true);
+  });
+
+  it('degraded отсутствует в DTO → false в Domain (backward-compat)', () => {
+    const dto = directorDashboardFromApi(baseApi());
+    expect(dto.degraded).toBe(false);
+  });
+
+  it('degraded:false в DTO → false в Domain', () => {
+    const dto = directorDashboardFromApi({ ...baseApi(), degraded: false });
+    expect(dto.degraded).toBe(false);
+  });
+});
+
 describe('requiresActionTone', () => {
   it('null → none', () => {
     expect(requiresActionTone(null)).toBe('none');

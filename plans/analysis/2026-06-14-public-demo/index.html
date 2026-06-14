@@ -692,7 +692,7 @@
                   <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">2 из 5</span><span class="progress warn" style="width:64px"><span style="width:40%"></span></span></div></td>
                   <td class="r"><span class="chip warn"><span class="led"></span>снять блокер</span></td>
                 </tr>
-                <tr>
+                <tr style="cursor:pointer;" data-action="open-person" data-id="p-marina">
                   <td><div class="cell-person"><span class="avatar" style="background:var(--grad-pink)">МР</span>Марина Рыжова</div></td>
                   <td class="muted">Маркетинг</td>
                   <td class="r"><div style="display:flex; align-items:center; gap:9px; justify-content:flex-end;"><span class="muted" style="font-size:12px;">3 из 5</span><span class="progress warn" style="width:64px"><span style="width:60%"></span></span></div></td>
@@ -3287,7 +3287,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
+              <tr style="cursor:pointer;" data-action="open-person" data-id="p-serg">
                 <td>
                   <span class="cell-person">
                     <span class="avatar" style="background:var(--grad-violet)">СМ</span>
@@ -3298,7 +3298,7 @@
                 <td class="muted">Руководство</td>
                 <td class="r"><span class="chip ok"><span class="led"></span>активен</span></td>
               </tr>
-              <tr>
+              <tr style="cursor:pointer;" data-action="open-person" data-id="p-anna">
                 <td>
                   <span class="cell-person">
                     <span class="avatar" style="background:var(--grad-teal)">АК</span>
@@ -3309,7 +3309,7 @@
                 <td class="muted">Внедрение</td>
                 <td class="r"><span class="chip ok"><span class="led"></span>активна</span></td>
               </tr>
-              <tr>
+              <tr style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
                 <td>
                   <span class="cell-person">
                     <span class="avatar" style="background:var(--grad-amber)">ДС</span>
@@ -3320,7 +3320,7 @@
                 <td class="muted">Продажи</td>
                 <td class="r"><span class="chip ok"><span class="led"></span>активен</span></td>
               </tr>
-              <tr>
+              <tr style="cursor:pointer;" data-action="open-person" data-id="p-elena">
                 <td>
                   <span class="cell-person">
                     <span class="avatar" style="background:var(--grad-pink)">ЕВ</span>
@@ -3358,7 +3358,7 @@
         <div class="section-h mt">Кому помочь — повод для короткого разговора</div>
         <div class="grid g3">
 
-          <div class="glass float">
+          <div class="glass float" style="cursor:pointer;" data-action="open-person" data-id="p-anna">
             <span class="glow amber"></span>
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
               <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-teal)">АК</span>
@@ -3376,7 +3376,7 @@
             <button class="btn" style="width:100%; margin-top:14px">Договориться о 1:1 →</button>
           </div>
 
-          <div class="glass float">
+          <div class="glass float" style="cursor:pointer;" data-action="open-person" data-id="p-elena">
             <span class="glow blue"></span>
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
               <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-pink)">ЕВ</span>
@@ -3394,7 +3394,7 @@
             <button class="btn" style="width:100%; margin-top:14px">Повторить приглашение →</button>
           </div>
 
-          <div class="glass float">
+          <div class="glass float" style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
             <span class="glow teal"></span>
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
               <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-amber)">ДС</span>
@@ -3429,7 +3429,7 @@
             </div>
             <div class="grid g2">
 
-              <div class="glass" style="padding:16px;">
+              <div class="glass" style="padding:16px; cursor:pointer;" data-action="open-dept" data-id="dep-mgmt">
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
                   <span class="card-ico" style="background:var(--grad-violet); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
                   <div style="font-weight:600; font-size:14px;">Руководство</div>
@@ -3439,7 +3439,7 @@
                 <div class="cell-person"><span class="avatar" style="background:var(--grad-violet)">СМ</span><span>Сергей Мазур <span class="faint" style="font-size:11px;">· руководит</span></span></div>
               </div>
 
-              <div class="glass" style="padding:16px;">
+              <div class="glass" style="padding:16px; cursor:pointer;" data-action="open-dept" data-id="dep-impl">
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
                   <span class="card-ico" style="background:var(--grad-teal); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
                   <div style="font-weight:600; font-size:14px;">Внедрение</div>
@@ -3452,7 +3452,7 @@
                 </div>
               </div>
 
-              <div class="glass" style="padding:16px;">
+              <div class="glass" style="padding:16px; cursor:pointer;" data-action="open-dept" data-id="dep-sales">
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
                   <span class="card-ico" style="background:var(--grad-amber); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 60)" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 3 3 5-6"/></svg></span>
                   <div style="font-weight:600; font-size:14px;">Продажи</div>
@@ -3465,7 +3465,7 @@
                 </div>
               </div>
 
-              <div class="glass" style="padding:16px;">
+              <div class="glass" style="padding:16px; cursor:pointer;" data-action="open-dept" data-id="dep-support">
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
                   <span class="card-ico" style="background:var(--grad-pink); width:34px; height:34px;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 340)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                   <div style="font-weight:600; font-size:14px;">Поддержка</div>
@@ -3497,7 +3497,7 @@
             <div class="row-list">
 
               <!-- Сергей -->
-              <div class="list-row">
+              <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-serg">
                 <span class="avatar" style="background:var(--grad-violet)">СМ</span>
                 <div class="body">
                   <div class="ttl">Сергей Мазур</div>
@@ -3512,7 +3512,7 @@
               </div>
 
               <!-- Анна -->
-              <div class="list-row">
+              <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-anna">
                 <span class="avatar" style="background:var(--grad-teal)">АК</span>
                 <div class="body">
                   <div class="ttl">Анна Ковалёва</div>
@@ -3526,7 +3526,7 @@
               </div>
 
               <!-- Дмитрий -->
-              <div class="list-row">
+              <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-dmit">
                 <span class="avatar" style="background:var(--grad-amber)">ДС</span>
                 <div class="body">
                   <div class="ttl">Дмитрий Соколов</div>
@@ -3540,7 +3540,7 @@
               </div>
 
               <!-- Елена -->
-              <div class="list-row">
+              <div class="list-row" style="cursor:pointer;" data-action="open-person" data-id="p-elena">
                 <span class="avatar" style="background:var(--grad-pink)">ЕВ</span>
                 <div class="body">
                   <div class="ttl">Елена Воронина</div>
@@ -3642,7 +3642,7 @@
           <tr><th>Что обещал</th><th>Кому</th><th>Срок</th><th class="r">Действие</th></tr>
         </thead>
         <tbody>
-          <tr>
+          <tr style="cursor:pointer;" data-action="open-task" data-id="t-price-vector">
             <td>Подготовить прайс на расширенный тариф</td>
             <td><span class="muted">«Вектор»</span></td>
             <td><span class="chip warn"><span class="led"></span>к пятнице</span></td>
@@ -3904,12 +3904,12 @@
           <div class="body"><div class="ttl">Планёрка отдела</div><div class="meta">сегодня в 15:00 · с командой</div></div>
           <span class="chip warn" style="flex:none">сегодня</span>
         </div>
-        <div class="list-row" style="padding:11px 0;">
+        <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="open-meeting" data-id="m-vector-negotiation">
           <span class="lead" style="background:var(--ok-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
           <div class="body"><div class="ttl">Звонок с «Вектором»</div><div class="meta">вчера 16:30 · отчёт готов</div></div>
           <span class="chip ok" style="flex:none">разобрана</span>
         </div>
-        <div class="list-row" style="padding:11px 0;">
+        <div class="list-row" style="padding:11px 0; cursor:pointer;" data-action="open-meeting" data-id="m-orbita-demo">
           <span class="lead" style="background:var(--ok-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
           <div class="body"><div class="ttl">Демо для «Орбиты»</div><div class="meta">11.06 · отчёт готов</div></div>
           <span class="chip ok" style="flex:none">разобрана</span>

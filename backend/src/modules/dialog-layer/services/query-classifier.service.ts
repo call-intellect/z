@@ -29,10 +29,13 @@ import {
  *     резерв.
  *
  * Intent ∈ { factual | exploratory | analytical | clone_roleplay |
- *            daily_plan_morning | daily_report_evening | note | task |
- *            show_tasks }.
+ *            daily_plan_morning | daily_report_evening | note }.
  */
 
+// ТЗ 2026-06-14 channels-sync — интенты `task` / `show_tasks` УБРАНЫ (9→7):
+// постановку и показ задач из Telegram/MAX теперь закрывает AI-помощник
+// (assistant_turn → concierge → create_task / search_tasks), отдельная
+// классификация задач в боте больше не нужна.
 export type DialogIntent =
   | 'factual'
   | 'exploratory'
@@ -40,12 +43,7 @@ export type DialogIntent =
   | 'clone_roleplay'
   | 'daily_plan_morning'
   | 'daily_report_evening'
-  | 'note'
-  // ТЗ 2026-06-10 §2 — Telegram-бот: поставить задачу / показать мои задачи.
-  // В web chat-v2 эти intent'ы сводятся к 'factual' (narrowToChatIntent) —
-  // обычный запрос, без регрессии. Перехватываются только в bot-адаптере.
-  | 'task'
-  | 'show_tasks';
+  | 'note';
 
 /**
  * Узкий подтип «классические chat-интенты» — 4 категории, на которые
@@ -66,13 +64,12 @@ export type ChatDialogIntent =
   | 'clone_roleplay';
 
 /**
- * Сужает 9-категорийный DialogIntent до 4-категорийного ChatDialogIntent
+ * Сужает 7-категорийный DialogIntent до 4-категорийного ChatDialogIntent
  * для legacy-потребителей. Не-chat intent'ы (daily_plan_morning /
- * daily_report_evening / note / task / show_tasks) маппятся в 'factual' —
- * это безопасный дефолт для chat-pipeline'а (не выбирает агрессивный режим
- * типа analytical/judgmental). На практике bot-adapter перехватывает эти
- * intent'ы раньше, и они никогда не доходят до chat-v2/clones (web —
- * без регрессии: task/show_tasks в вебе = обычный запрос → factual).
+ * daily_report_evening / note) маппятся в 'factual' — это безопасный дефолт
+ * для chat-pipeline'а (не выбирает агрессивный режим типа analytical/
+ * judgmental). На практике bot-adapter перехватывает чек-ин-intent'ы раньше,
+ * и они никогда не доходят до chat-v2/clones.
  */
 export function narrowToChatIntent(intent: DialogIntent): ChatDialogIntent {
   switch (intent) {
@@ -340,20 +337,9 @@ function mapRawIntent(raw: string): DialogIntent | null {
     case 'daily_plan_morning':
     case 'daily_report_evening':
     case 'note':
-    case 'task':
-    case 'show_tasks':
       return raw;
-    // task-alias'ы (ТЗ 2026-06-10 §2)
-    case 'create_task':
-    case 'new_task':
-    case 'todo':
-      return 'task';
-    // show_tasks-alias'ы
-    case 'list_tasks':
-    case 'my_tasks':
-    case 'show_my_tasks':
-    case 'tasks':
-      return 'show_tasks';
+    // ТЗ 2026-06-14 channels-sync — task/show_tasks и их алиасы убраны:
+    // постановку/показ задач из каналов закрывает AI-помощник.
     // clone alias'ы (legacy)
     case 'clone-roleplay':
     case 'clone style':

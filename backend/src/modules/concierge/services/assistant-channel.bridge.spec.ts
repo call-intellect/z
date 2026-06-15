@@ -424,6 +424,13 @@ describe('AssistantChannelBridge — Ф6 канальный whitelist', () => {
     expect(args.toolWhitelist).toEqual([...CHANNEL_TOOL_WHITELIST_SELF]);
     expect(args.toolWhitelist).not.toContain('get_person_pulse');
     expect(args.toolWhitelist).not.toContain('get_team_health');
+    // ТЗ 2026-06-14 channels-sync: SELF теперь без search_knowledge (память —
+    // только ask_chat_v2), с create_task/search_tasks/ingest_note.
+    expect(args.toolWhitelist).not.toContain('search_knowledge');
+    expect(args.toolWhitelist).toContain('ask_chat_v2');
+    expect(args.toolWhitelist).toContain('create_task');
+    expect(args.toolWhitelist).toContain('search_tasks');
+    expect(args.toolWhitelist).toContain('ingest_note');
     expect(args.confirmHold).toBe(true);
   });
 

@@ -1469,8 +1469,6 @@ const ProcessTemplateSchema = z.object({
  *   - DIALOG_LAYER_ENABLED — master-флаг. False → fallback на raw userMessage.
  *   - ANSWER_CACHE_TTL_SECONDS — TTL финального ответа (24h по умолчанию).
  *   - RETRIEVAL_CACHE_TTL_SECONDS — TTL blockIds (1h по умолчанию).
- *   - CONTEXTUALIZER_CONFIDENCE_MIN — порог confidence ниже которого
- *     fallback на raw userMessage.
  *   - SUMMARIZER_MESSAGE_THRESHOLD — порог числа messages, при котором
  *     ConversationSummarizerCron сжимает старую часть в summary.
  *   - MULTI_QUERY_EXPANSION_ENABLED — мастер-флаг 3-way query expansion
@@ -1486,7 +1484,6 @@ const DialogLayerSchema = z.object({
   DIALOG_LAYER_ENABLED: zBool(true),
   ANSWER_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   RETRIEVAL_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
-  CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
   SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
   MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
   // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — kill-switch извлечения

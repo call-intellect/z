@@ -77,7 +77,12 @@ export interface QueryPlanResult {
 export interface QueryPlanExtractInput {
   tenantId: string;
   userId: string;
-  question: string;
+  /**
+   * ТЗ 2026-06-14: ТРИ самодостаточных формулировки запроса (выход модуля
+   * понимания запроса) — извлекатель собирает по ним ОБЪЕДИНЁННЫЙ план. Может
+   * быть и меньше 3 (если расширитель выключен/упал — отдаётся что есть).
+   */
+  questions: string[];
   /** ISO момента «сейчас» (для детерминированного резолва периода). */
   todayIso: string;
   orgTimezone: string | null;
@@ -147,7 +152,7 @@ export class QueryPlanExtractorService {
       // оборачиваем guard'ом, user-вопрос — маркерами данных. Гард включён
       // безусловно: для извлекателя это безопасно и проще, чем тянуть cfg.
       const rawUser = buildExtractPlanUserPrompt({
-        question: input.question,
+        questions: input.questions,
         todayIso: input.todayIso,
         orgTimezone,
       });
@@ -163,7 +168,7 @@ export class QueryPlanExtractorService {
         maxTokens: 800,
         responseFormat: {
           type: 'json_schema',
-          name: 'dialog_extract_plan_response',
+          name: 'dialog_extract_plan_v2',
           strict: true,
           schema: EXTRACT_PLAN_JSON_SCHEMA,
         },

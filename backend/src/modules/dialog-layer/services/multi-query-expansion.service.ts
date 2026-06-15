@@ -14,19 +14,25 @@ import {
   buildMultiQueryCloneUserPrompt,
 } from '../prompts/multi-query-clone.prompt';
 import {
-  DIALOG_MULTI_QUERY_JSON_SCHEMA,
-  DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
-  buildMultiQueryUserPrompt,
-} from '../prompts/multi-query.prompt';
+  DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA,
+  DIALOG_QUERY_UNDERSTAND_SYSTEM_PROMPT,
+  buildQueryUnderstandUserPrompt,
+} from '../prompts/query-understand.prompt';
 
 import type { DialogIntent } from './query-classifier.service';
 
 /**
- * SBA α-5 dialog-layer — MultiQueryExpansionService.
+ * dialog-layer — MultiQueryExpansionService = «модуль понимания запроса»
+ * (org-режим) + расширитель клона (clone-режим). ТЗ 2026-06-14.
  *
- * Расширяет 1 вопрос → 3 переформулировки (синонимы / перспектива /
- * конкретизация). Запускается ТОЛЬКО для intent ∈ {exploratory, analytical},
- * чтобы не тратить cost на factual.
+ * Org-режим (слитый агент): на вход — summary + история диалога + сырая
+ * реплика; контекстуализирует («это/он/там» → имена из истории) и возвращает
+ * 3 самодостаточных разноплановых вопроса. Запускается ВСЕГДА при включённом
+ * флаге (intent-гейтинг убран — раз агент теперь и контекстуализирует, он
+ * обязан работать и на factual-follow-up'ах).
+ *
+ * Clone-режим (ТЗ 2026-05-25 §9.4.4): три формулировки разного типа (точная /
+ * ситуационный аналог / общий принцип) через отдельный route. Без изменений.
  *
  * Возвращает массив `[originalQuestion, ...expansions]` — оригинал всегда
  * первый, чтобы caller мог использовать первую формулировку как fallback
@@ -40,13 +46,22 @@ export interface MultiQueryInput {
   intent: DialogIntent;
   conversationId: string | null;
   /**
+   * Краткое содержание диалога (Conversation.summary). Опционально — для
+   * контекстуализации follow-up'ов в org-режиме. clone-вызовы и старые тесты
+   * могут не передавать.
+   */
+  summary?: string | null;
+  /**
+   * Последние сообщения диалога (для контекстуализации follow-up'ов в
+   * org-режиме). Опционально — clone-вызовы и старые тесты могут не передавать.
+   */
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /**
    * ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — режим
-   * расширения. 'org' (default) — три синонимические переформулировки
-   * (общий dialog-multi-query). 'clone' — три формулировки разного типа
+   * расширения. 'org' (default) — модуль понимания запроса (история → 3
+   * самодостаточных вопроса). 'clone' — три формулировки разного типа
    * (точная / ситуационный аналог / общий принцип) через отдельный
-   * route `dialog-multi-query-clone`. Когда `mode='clone'`, intent
-   * игнорируется (расширение запускается всегда — для клона аналоги нужны
-   * даже на factual-вопрос, если judgmental).
+   * route `dialog-multi-query-clone`.
    */
   mode?: 'org' | 'clone';
 }
@@ -85,15 +100,13 @@ export class MultiQueryExpansionService {
     const startedAt = Date.now();
     const enabled = this.cfg.dialogLayer.multiQueryExpansionEnabled;
     const mode: 'org' | 'clone' = input.mode ?? 'org';
-    // В режиме `clone` расширяем всегда — для клона аналоги полезны и на
-    // factual-вопросах. В режиме `org` — только exploratory/analytical
-    // (исторический gating).
-    const intentNeedsExpansion =
-      mode === 'clone' ||
-      input.intent === 'exploratory' ||
-      input.intent === 'analytical';
+    // ТЗ 2026-06-14: intent-гейтинг убран. Org-режим теперь и
+    // контекстуализирует follow-up'ы по истории, поэтому обязан запускаться
+    // всегда (иначе factual «сколько это стоит» снова теряет контекст).
+    // Clone-режим и так всегда. Единственный гейт — глобальный kill-switch.
+    const shouldRun = enabled;
 
-    if (!enabled || !intentNeedsExpansion) {
+    if (!shouldRun) {
       const durationSeconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeDialogProcessingDuration({
         step: 'multi-query',
@@ -129,12 +142,14 @@ export class MultiQueryExpansionService {
             }
           : {
               taskType: 'dialog-multi-query' as const,
-              systemPrompt: DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
-              jsonSchema: DIALOG_MULTI_QUERY_JSON_SCHEMA,
-              userPrompt: buildMultiQueryUserPrompt({
+              systemPrompt: DIALOG_QUERY_UNDERSTAND_SYSTEM_PROMPT,
+              jsonSchema: DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA,
+              userPrompt: buildQueryUnderstandUserPrompt({
+                summary: input.summary ?? null,
+                history: input.history ?? [],
                 question: input.question,
               }),
-              responseFormatName: 'dialog_multi_query_response',
+              responseFormatName: 'dialog_multi_query_v2',
             };
       const systemText = guardOn
         ? withInjectionGuard(cfgByMode.systemPrompt)

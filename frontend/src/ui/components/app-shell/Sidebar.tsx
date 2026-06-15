@@ -538,9 +538,16 @@ function SidebarNavLink({
   return <li>{linkNode}</li>;
 }
 
+/** Русские ярлыки выбранной темы (для подписи в меню аккаунта). */
+const THEME_LABEL: Record<'dark' | 'light' | 'system', string> = {
+  dark: 'Тёмная',
+  light: 'Светлая',
+  system: 'Системная',
+};
+
 function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
   const { user, logout } = useAuth();
-  const { setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -597,8 +604,8 @@ function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             Тема
-            <span className="ml-auto pr-1 text-xs text-fg-tertiary capitalize">
-              {resolvedTheme}
+            <span className="ml-auto pr-1 text-xs text-fg-tertiary">
+              {THEME_LABEL[theme]}
             </span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>

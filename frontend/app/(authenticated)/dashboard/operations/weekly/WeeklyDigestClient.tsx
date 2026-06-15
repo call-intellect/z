@@ -17,6 +17,8 @@ import rehypeSanitize from 'rehype-sanitize';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
+import { IDEA_STATUS_LABEL, type IdeaStatus } from '@/domain/idea';
+import { INSIGHT_KIND_LABEL, type InsightKind } from '@/domain/insight';
 import {
   weeklyDigestApi,
   type WeeklyDeltaApi,
@@ -492,7 +494,7 @@ function InsightsSection({
                 className="rounded px-2 py-0.5 text-xs"
                 style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               >
-                {it.kind}
+                {insightKindLabelRu(it.kind)}
               </span>
               <span className="flex-1" style={{ color: CHART.text }}>
                 {it.statement}
@@ -970,26 +972,22 @@ function IdeasSection({
   );
 }
 
-/** ТЗ-2 Ф3 — русские лейблы статуса идеи. */
+/**
+ * ТЗ-2 Ф3 — русский лейбл статуса идеи. Переиспользуем единый словарь
+ * `IDEA_STATUS_LABEL` (frontend/src/domain/idea.ts); типобезопасно страхуем
+ * неизвестные значения (API отдаёт `status: string`).
+ */
 function ideaStatusLabel(status: string): string {
-  switch (status) {
-    case 'captured':
-      return 'зафиксирована';
-    case 'in_discussion':
-      return 'в обсуждении';
-    case 'accepted':
-      return 'принята';
-    case 'in_progress':
-      return 'в работе';
-    case 'shipped':
-      return 'внедрена';
-    case 'rejected':
-      return 'отклонена';
-    case 'archived':
-      return 'в архиве';
-    default:
-      return status;
-  }
+  return IDEA_STATUS_LABEL[status as IdeaStatus] ?? status;
+}
+
+/**
+ * Русский лейбл типа сигнала. Переиспользуем единый словарь
+ * `INSIGHT_KIND_LABEL` (frontend/src/domain/insight.ts); API отдаёт
+ * `kind: string`, поэтому страхуем неизвестные значения fallback'ом.
+ */
+function insightKindLabelRu(kind: string): string {
+  return INSIGHT_KIND_LABEL[kind as InsightKind] ?? kind;
 }
 
 /**

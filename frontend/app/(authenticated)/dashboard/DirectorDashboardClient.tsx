@@ -22,7 +22,7 @@ import { humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
 import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { orgsApi } from '@/api/orgs.api';
+import { onboardingApi } from '@/api/onboarding.api';
 import { useAuth } from '@/contexts/auth-context';
 import { useSubscription } from '@/contexts/subscription-context';
 import { useMemberships } from '@/hooks/useMemberships';
@@ -212,36 +212,23 @@ export function DirectorDashboardClient() {
     window.location.href = '/dashboard';
   }, [referenceMembership]);
 
-  const orgSwr = useSWR(
+  // QA B6 (2026-06-15) — прогресс настройки берём с бэка (setup-progress),
+  // который считает вехи по принципу «timestamp ИЛИ факт существования
+  // сущности». Раньше прогресс считался только по Org.*CompletedAt, поэтому
+  // отделы/должности, заведённые вне мастера, давали «0 из 6».
+  const setupProgressSwr = useSWR(
     isPageEmpty && isOwnerOrAdmin && currentOrgId
-      ? ['main-empty-org', currentOrgId]
+      ? ['main-setup-progress', currentOrgId]
       : null,
-    () => orgsApi.byId(currentOrgId!),
+    () => onboardingApi.getSetupProgress(currentOrgId!),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const setupProgress = useMemo(() => {
     if (!isOwnerOrAdmin) return undefined;
-    const org = orgSwr.data?.org as
-      | {
-          welcomeCompletedAt?: string | null;
-          companyInfoCompletedAt?: string | null;
-          departmentsCompletedAt?: string | null;
-          rolesCompletedAt?: string | null;
-          teamInvitedAt?: string | null;
-          firstMeetingCreatedAt?: string | null;
-          firstSprintCreatedAt?: string | null;
-        }
-      | undefined;
-    if (!org) return undefined;
-    let n = 0;
-    if (org.welcomeCompletedAt) n++;
-    if (org.companyInfoCompletedAt) n++;
-    if (org.departmentsCompletedAt) n++;
-    if (org.rolesCompletedAt) n++;
-    if (org.teamInvitedAt) n++;
-    if (org.firstMeetingCreatedAt || org.firstSprintCreatedAt) n++;
-    return { completed: n, total: 6 };
-  }, [orgSwr.data, isOwnerOrAdmin]);
+    const p = setupProgressSwr.data;
+    if (!p) return undefined;
+    return { completed: p.completed, total: p.total };
+  }, [setupProgressSwr.data, isOwnerOrAdmin]);
 
   if (isPageEmpty) {
     return (

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -27,7 +28,7 @@ import {
   type UpdateCompanyRoleBody,
 } from './dto/update-company-role.dto';
 import { WelcomePatchSchema, type WelcomePatchBody } from './dto/welcome-patch.dto';
-import { OnboardingService } from './onboarding.service';
+import { OnboardingService, type SetupProgressDto } from './onboarding.service';
 
 @ApiTags('onboarding')
 @ApiBearerAuth()
@@ -77,6 +78,22 @@ export class OnboardingController {
   ): Promise<{ ok: true; redirectTo: string }> {
     await this.requireOwnerOrAdmin(user.id, orgId);
     return this.svc.completeWelcome({ orgId: tenantId ?? orgId, userId: user.id });
+  }
+
+  @Get('orgs/:orgId/setup-progress')
+  @UseGuards(TenantGuard)
+  @ApiOperation({
+    summary:
+      'Прогресс настройки компании: 6 вех по принципу «timestamp ИЛИ факт существования сущности» (QA B6)',
+  })
+  @ApiOkResponse({ description: '{ completed, total, steps }' })
+  async getSetupProgress(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<SetupProgressDto> {
+    await this.requireOwnerOrAdmin(user.id, orgId);
+    return this.svc.getSetupProgress(tenantId ?? orgId);
   }
 
   @Post('orgs/:orgId/setup/complete')

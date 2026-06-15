@@ -18,13 +18,12 @@ import {
   LlmRouterService,
   type LlmCallResult,
 } from '../../ai/services/llm-router.service';
-import {
-  DialogService,
-  type DialogProcessResult,
-} from '../../dialog-layer/services/dialog.service';
-import type { DialogIntent } from '../../dialog-layer/services/query-classifier.service';
 import { QuotaExceededError } from '../../quotas/quota.errors';
 import type { PageContextDto } from '../dto/concierge.dto';
+import {
+  CONCIERGE_RESPOND_SYSTEM_PROMPT,
+  buildConciergeUserPrompt,
+} from '../prompts/concierge-respond.prompt';
 
 import { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import { ConciergeQuotaService } from './concierge-quota.service';
@@ -58,7 +57,15 @@ import { ToolRouterService } from './tool-router.service';
  */
 
 const MAX_TOOL_LOOP_ITERATIONS = 5;
-const K_RECENT_MESSAGES = 6;
+
+/**
+ * ТЗ 2026-06-14 — дефолты крутилок помощника (AdminSetting / getDynamic).
+ * Дублируют значения seed-скрипта `seed-admin-setting-concierge.ts`; служат
+ * code-fallback'ом, если AdminSetting не отвечает (а также в unit-тестах с
+ * cfg-моком без `getDynamic`).
+ */
+const DEFAULT_HISTORY_PAIRS = 4;
+const DEFAULT_CLARIFY_MIN_CONFIDENCE = 80;
 
 export interface ProcessInput {
   userMessage: string;
@@ -101,147 +108,13 @@ export interface ProcessInput {
 }
 
 /**
- * Pure helper: собирает «user message» для одной итерации tool-loop.
- *
- * Экспортируется отдельно от класса, чтобы покрыть unit-тестами без
- * необходимости поднимать NestJS DI / PrismaService.
- *
- * F1 cache-friendly (мастер-промпт-флот 2026-06-10): предварительные
- * результаты поиска (`preHits`) переехали сюда из SYSTEM — это переменные
- * данные на каждый запрос, а SYSTEM должен оставаться стабильным
- * (см. `buildSystemPrompt`).
- *
- * Структура output (в порядке появления):
- *   1. `КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:` + summary (если задан)
- *   2. `История диалога:` + последние N сообщений (если есть)
- *   3. `Результаты последних tool вызовов:` (если есть)
- *   4. `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` + preHits (если есть)
- *   5. `Новый запрос пользователя: <userMessage>`
+ * ТЗ 2026-06-14 (assistant-router-dedup) — системный промпт помощника
+ * вынесен в `prompts/concierge-respond.prompt.ts`
+ * (`CONCIERGE_RESPOND_SYSTEM_PROMPT`), сборка user-блока — в
+ * `buildConciergeUserPrompt`. Прежние module-level `buildSystemPrompt` /
+ * `composeUserMessageForIteration` (с легаси-JSON-инструкцией и предпоиском)
+ * удалены вместе с понимаем/предпоиском в помощнике.
  */
-/**
- * Pure helper (ТЗ 2026-05-27 Фаза 5): собирает СИСТЕМНЫЙ промпт.
- *
- * Вынесен из метода класса, чтобы покрыть snapshot-тестами без поднятия
- * NestJS DI. `toolFragment` передаётся параметром (раньше брался через
- * `this.serviceMap.buildToolUsePromptFragment()`).
- *
- * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8):
- * предварительные результаты поиска (`preHits`) — это ПЕРЕМЕННЫЕ данные на
- * каждый запрос, поэтому они БОЛЬШЕ НЕ в SYSTEM. SYSTEM держим стабильным
- * (контекст пользователя + tool-fragment + принципы), а preHits переехали в
- * user-сообщение (`composeUserMessageForIteration`, блок
- * `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===`). Это держит SYSTEM-префикс
- * стабильным → prompt-cache hit ≈99% (см. feedback
- * `LLM-промпты — обязательно cache-friendly`).
- *
- * Структура output (в порядке появления):
- *   1. Преамбула (роль ассистента).
- *   2. `=== КОНТЕКСТ ===` + contextBlock (или fallback).
- *   3. `=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===` + tool-use инструкции + toolFragment
- *      (только при `nativeTools !== true` — legacy regex-эмуляция); при
- *      native function-calling (Ф3 assistant-channels, 2026-06-11) вместо
- *      него — две стабильные строки про инструменты (tools уходят провайдеру
- *      через `LlmCallParams.tools`, SYSTEM остаётся cache-friendly).
- *   4. Принципы.
- */
-export function buildSystemPrompt(args: {
-  contextBlock: string;
-  toolFragment: string;
-  /**
-   * Ф3 assistant-channels (2026-06-11) — native function-calling. При `true`
-   * SYSTEM собирается БЕЗ JSON-инструкции `{"tool_call"}` и БЕЗ списка
-   * инструментов (`toolFragment` игнорируется): tools передаются провайдеру
-   * нативно. Опционально — legacy-вызовы без поля работают как раньше.
-   */
-  nativeTools?: boolean;
-}): string {
-  const parts: string[] = [
-    'Ты — Concierge, AI-помощник в кабинете компании Z (Кора).',
-    'Отвечай по-русски, кратко и по делу.',
-    '',
-    '=== КОНТЕКСТ ===',
-    args.contextBlock || '(контекст недоступен)',
-    '',
-  ];
-  if (args.nativeTools === true) {
-    parts.push(
-      'Тебе доступны инструменты через function-calling.',
-      'Вызывай инструмент, когда запрос требует действия или данных; иначе отвечай текстом.',
-      '',
-    );
-  } else {
-    parts.push(
-      '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
-      'Если запрос требует действия — верни ОДНУ строку строго в формате JSON:',
-      '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
-      'Если действие не требуется — верни просто текст ответа без JSON.',
-      'Имя инструмента ДОЛЖНО быть из списка ниже:',
-      args.toolFragment,
-      '',
-    );
-  }
-  parts.push(
-    'Принципы:',
-    '- Никогда не выдумывай данные. Если не знаешь — используй search_knowledge или ask_chat_v2.',
-    '- Если в пользовательском сообщении есть блок «=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===» — опирайся на него; если данных достаточно, отвечай без новых вызовов search_knowledge.',
-    '- Для создания/изменения ресурсов — предпочитай tools с undoableVia (их можно отменить).',
-    '- Если необходимо подтверждение пользователя — добавь в текст ответа явный вопрос.',
-  );
-  return parts.join('\n');
-}
-
-export function composeUserMessageForIteration(args: {
-  userMessage: string;
-  toolMessages: Array<{ role: 'tool'; content: string }>;
-  history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
-  summary: string | null;
-  /**
-   * F1 cache-friendly — предварительные результаты поиска (pre-retrieval).
-   * Переехали из SYSTEM в user (см. `buildSystemPrompt`). Опционально:
-   * legacy-вызовы без preHits продолжают работать (старые snapshot-тесты).
-   */
-  preHits?: Array<{ query: string; result: unknown }>;
-}): string {
-  const parts: string[] = [];
-  if (args.summary != null && args.summary.trim() !== '') {
-    parts.push('КРАТКОЕ СОДЕРЖАНИЕ ПРЕДЫДУЩИХ СООБЩЕНИЙ:');
-    parts.push(args.summary);
-    parts.push('');
-  }
-  if (args.history.length > 0) {
-    parts.push('История диалога:');
-    for (const m of args.history) {
-      const role =
-        m.role === 'user'
-          ? 'Пользователь'
-          : m.role === 'assistant'
-            ? 'Ассистент'
-            : 'Tool';
-      parts.push(`[${role}] ${m.content.slice(0, 500)}`);
-    }
-    parts.push('');
-  }
-  if (args.toolMessages.length > 0) {
-    parts.push('Результаты последних tool вызовов:');
-    for (const tm of args.toolMessages) {
-      parts.push(`- ${tm.content}`);
-    }
-    parts.push('');
-  }
-  // ТЗ 2026-05-27 Фаза 3 (pre-retrieval) + F1 cache-friendly (2026-06-10):
-  // блок предварительных результатов теперь в user, не в SYSTEM.
-  if (args.preHits != null && args.preHits.length > 0) {
-    parts.push('=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===');
-    parts.push(
-      'Вот что нашлось в графе компании по этому вопросу. Если этого достаточно — отвечай по этим данным без дополнительных вызовов. Если данных мало — ты можешь вызвать search_knowledge сам.',
-    );
-    parts.push('');
-    parts.push(JSON.stringify(args.preHits, null, 2));
-    parts.push('');
-  }
-  parts.push(`Новый запрос пользователя: ${args.userMessage}`);
-  return parts.join('\n');
-}
 
 export type ConciergeStreamEvent =
   | { type: 'started'; conversationId: string }
@@ -281,7 +154,16 @@ export type ConciergeStreamEvent =
       /** Человекочитаемое превью: русское название действия + ключевые параметры. */
       preview: string;
     }
-  | { type: 'message'; text: string }
+  | {
+      type: 'message';
+      text: string;
+      /**
+       * ТЗ 2026-06-14 — цитаты chat-v2 при терминальном (passthrough)
+       * `ask_chat_v2`: ответ из памяти отдаётся напрямую с источниками.
+       * Присутствует только когда turn = чистый вопрос к памяти.
+       */
+      citations?: unknown[];
+    }
   | { type: 'done'; messageId: string }
   | { type: 'error'; code: string; message: string }
   | {
@@ -342,20 +224,15 @@ export class ConciergeService {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     /**
-     * ТЗ 2026-05-27 Фаза 2 — dialog-layer фасад. `@Optional()` — фича
-     * включается флагом `CONCIERGE_DIALOG_LAYER_ENABLED` (default false);
-     * существующие unit-тесты, мокающие конструктор без 11-го аргумента,
-     * остаются совместимыми. `DialogLayerModule` @Global — явный import
-     * в `ConciergeModule` не требуется.
-     */
-    @Optional()
-    @Inject(DialogService)
-    private readonly dialog: DialogService | null = null,
-    /**
      * Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow).
      * `@Optional()` — фича включается флагом `CONCIERGE_PRM_SHADOW_ENABLED`
      * (default false). Существующие unit-тесты, мокающие конструктор без
-     * 12-го аргумента, остаются совместимыми.
+     * последнего аргумента, остаются совместимыми.
+     *
+     * ТЗ 2026-06-14 (assistant-router-dedup) — инъекция `DialogService`
+     * УБРАНА: помощник больше не владеет пониманием запроса (нет
+     * `dialog.process()`/предпоиска). Понимание-цепочка и синтез считаются
+     * один раз внутри chat-v2 (терминальный `ask_chat_v2`).
      */
     @Optional()
     @Inject(ConciergeStepScorerService)
@@ -418,138 +295,28 @@ export class ConciergeService {
       content: input.userMessage,
     });
 
-    // ТЗ 2026-05-27 Фаза 2 — dialog-layer препроцессор (за флагом).
-    // Контекстуализирует вопрос (follow-up'ы → standalone), классифицирует
-    // intent и проверяет AnswerCache. При cache-hit возвращаем ответ без
-    // LLM-вызова (short-circuit ниже).
-    let dialogResult: DialogProcessResult | null = null;
-    if (this.isDialogLayerEnabled()) {
-      try {
-        dialogResult = await this.dialog!.process({
-          tenantId: input.tenantId,
-          userId: input.userId,
-          userMessage: input.userMessage,
-          conversationId: conversation.id,
-          scope: 'concierge',
-          scopeRefId: conversation.id,
-          validAt: null,
-        });
-      } catch (err) {
-        this.logger.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          'concierge dialog-layer process failed (fallback to legacy)',
-        );
-        dialogResult = null;
-      }
+    // ТЗ 2026-06-14 (assistant-router-dedup) — помощник БОЛЬШЕ НЕ
+    // контекстуализирует и не ищет заранее. Понимание-цепочка и синтез
+    // считаются один раз внутри chat-v2 (терминальный `ask_chat_v2`).
+    // Ушли: `dialog.process()`, предпоиск (`preRetrieve`), preHits, cache-
+    // short-circuit, метрики dialog-layer/pre-retrieval. Запрос идёт в LLM
+    // как есть.
+    const effectiveQuestion = input.userMessage;
 
-      // ТЗ 2026-05-27 Фаза 4 — метрика+лог dialog-layer применения.
-      if (dialogResult != null) {
-        this.metrics.incConciergeDialogLayerUsed?.({
-          intent: dialogResult.intent,
-        });
-        this.logger.debug(
-          {
-            feature: 'concierge',
-            stage: 'dialog-layer',
-            intent: dialogResult.intent,
-            confidence: dialogResult.confidence,
-            queriesCount: dialogResult.queries.length,
-            cacheHit: dialogResult.cachedAnswer !== null,
-            conversationId: conversation.id,
-          },
-          'dialog-layer applied',
-        );
-      }
-
-      // Cache short-circuit: AnswerCache hit — отдаём ответ без LLM-цикла.
-      if (dialogResult?.cachedAnswer != null) {
-        // ТЗ 2026-05-27 Фаза 4 — метрика cache-hit.
-        this.metrics.incConciergeCacheHit?.();
-        yield { type: 'thinking', text: 'Нашёл ответ в кэше' };
-        const cachedText = dialogResult.cachedAnswer.text;
-        const cachedMsg = await this.appendMessage({
-          conversationId: conversation.id,
-          role: 'assistant',
-          content: cachedText,
-          toolCalls: {
-            dialogLayer: {
-              enabled: true,
-              intent: dialogResult.intent,
-              confidence: dialogResult.confidence,
-              queriesCount: dialogResult.queries.length,
-              cacheHit: true,
-            },
-          },
-        });
-        yield { type: 'message', text: cachedText };
-        yield { type: 'done', messageId: cachedMsg.id };
-        // audit С24 (2026-05-29): defense-in-depth — updateMany с tenantId,
-        // чтобы даже при race (mutated conversation.id) не апдейтить чужую
-        // запись. updateMany возвращает count=0 без throw, что безопасно.
-        await this.prisma.conciergeConversation.updateMany({
-          where: { id: conversation.id, tenantId: input.tenantId },
-          data: { lastMessageAt: new Date() },
-        });
-        return;
-      }
-    }
-
-    const effectiveQuestion = dialogResult?.standaloneQuestion ?? input.userMessage;
-
-    // ТЗ 2026-05-27 Фаза 3 — pre-retrieval: параллельный поиск по `queries[]`
-    // через ToolRouter ДО первой LLM-итерации. Результаты подмешиваются в
-    // системный промпт (один на весь loop), не дублируются в follow-up'ах.
-    const preRetrievalAttempted = dialogResult != null && !dialogResult.cachedAnswer;
-    const preRetrievalStart = preRetrievalAttempted ? Date.now() : 0;
-    const preHits = preRetrievalAttempted
-      ? await this.preRetrieve({
-          queries: dialogResult!.queries,
-          intent: dialogResult!.intent,
-          userId: input.userId,
-          tenantId: input.tenantId,
-          ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
-          ...(input.authMode ? { authMode: input.authMode } : {}),
-          ...(input.authCookie ? { authCookie: input.authCookie } : {}),
-        })
-      : [];
-
-    // ТЗ 2026-05-27 Фаза 4 — метрики+логи pre-retrieval.
-    let totalHits = 0;
-    let uniqueIdsCount = 0;
-    if (preRetrievalAttempted) {
-      const seenIds = new Set<string>();
-      for (const hit of preHits) {
-        const items = this.extractItems(hit.result);
-        totalHits += items.length;
-        for (const item of items) {
-          const id = this.extractId(item);
-          if (id != null) seenIds.add(id);
-        }
-      }
-      uniqueIdsCount = seenIds.size;
-      this.metrics.observeConciergePreRetrievalHits?.(totalHits);
-      this.logger.debug(
-        {
-          feature: 'concierge',
-          stage: 'pre-retrieval',
-          intent: dialogResult!.intent,
-          queriesCount: dialogResult!.queries.length,
-          queriesUsed: preHits.length,
-          hits: totalHits,
-          uniqueIds: uniqueIdsCount,
-          durationMs: Date.now() - preRetrievalStart,
-          conversationId: conversation.id,
-        },
-        'pre-retrieval done',
-      );
-    }
-
-    if (preHits.length > 0) {
-      yield {
-        type: 'thinking',
-        text: `Нашёл ${totalHits} релевантных записей в графе`,
-      };
-    }
+    // ТЗ 2026-06-14 — порог самооценки понимания (крутилка AdminSetting).
+    // Читаем для будущего тюнинга/возможной передачи в контекст; жёсткий
+    // numeric-gate НЕ строим (уточнение управляется промптом, Приложение A,
+    // + валидацией required-параметров в ToolRouter).
+    const clarifyMinConfidence = await this.getClarifyMinConfidence();
+    this.logger.debug(
+      {
+        feature: 'concierge',
+        stage: 'clarify-threshold',
+        clarifyMinConfidence,
+        conversationId: conversation.id,
+      },
+      'concierge clarify threshold loaded',
+    );
 
     // Build context.
     const contextBlock = await this.contextBuilder.build({
@@ -569,12 +336,26 @@ export class ConciergeService {
       ? this.serviceMap.toLlmTools(input.toolWhitelist)
       : [];
 
-    // F1 cache-friendly — SYSTEM стабилен (без preHits); preHits едут в user.
-    const rawSystemPrompt = this.buildSystemPrompt(
-      contextBlock,
-      nativeTools,
-      input.toolWhitelist,
-    );
+    // ТЗ 2026-06-14 — SYSTEM = стабильный промпт помощника (Приложение A).
+    // Cache-friendly: SYSTEM не зависит от запроса (provider кэширует
+    // префикс ≈99%). Все переменные (контекст пользователя / summary /
+    // история / сообщение) едут в КОНЦЕ user-блока. Native (прод-дефолт):
+    // tools уходят провайдеру отдельно (`LlmCallParams.tools`), SYSTEM —
+    // ровно константа. Legacy regex-путь (kill-switch OFF): дописываем
+    // JSON-инструкцию `{"tool_call"}` + список инструментов (иначе модель не
+    // знает, как звать инструмент). Это OFF-ветка — кэш на ней не критичен.
+    const rawSystemPrompt = nativeTools
+      ? CONCIERGE_RESPOND_SYSTEM_PROMPT
+      : [
+          CONCIERGE_RESPOND_SYSTEM_PROMPT,
+          '',
+          '=== ДОСТУПНЫЕ ИНСТРУМЕНТЫ ===',
+          'Если нужно действие или данные — верни ОДНУ строку строго в формате JSON:',
+          '{"tool_call": {"name": "<имя>", "arguments": { ... }}}',
+          'Если инструмент не нужен — верни просто текст ответа без JSON.',
+          'Имя инструмента ДОЛЖНО быть из списка ниже:',
+          this.serviceMap.buildToolUsePromptFragment(input.toolWhitelist),
+        ].join('\n');
 
     // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Concierge
     // дёргает мутирующие tools, поэтому пользовательский ввод обязан идти в LLM
@@ -592,21 +373,33 @@ export class ConciergeService {
     const systemPrompt = guardOn
       ? withInjectionGuard(rawSystemPrompt)
       : rawSystemPrompt;
-    const history = await this.loadRecentHistory(conversation.id, K_RECENT_MESSAGES);
+    // История — 4 пары (8 сообщений) через крутилку `concierge.history_pairs`.
+    const historyTake = await this.getHistoryMessagesCount();
+    const history = await this.loadRecentHistory(conversation.id, historyTake);
+
+    // ТЗ 2026-06-14 — passthrough ask_chat_v2: считаем имена инструментов,
+    // исполненных за turn. Если за весь turn исполнен РОВНО один инструмент и
+    // это успешный `ask_chat_v2` (вопрос к памяти) — итоговый ответ помощника
+    // = захваченный ответ chat-v2 (текст + цитаты) напрямую, без второго
+    // синтеза. Смешанный turn (ask_chat_v2 + действие) → модель финализирует.
+    const executedTools: string[] = [];
+    let askChatV2Capture: { text: string; citations: unknown[] } | null = null;
 
     // Tool-use loop (эмулируется через JSON в ответе LLM).
     let toolMessages: Array<{ role: 'tool'; content: string }> = [];
     let finalText = '';
 
     for (let i = 0; i < MAX_TOOL_LOOP_ITERATIONS; i++) {
-      const rawUserBlock = composeUserMessageForIteration({
-        userMessage: effectiveQuestion,
-        toolMessages,
-        history,
+      // ТЗ 2026-06-14 — user-блок по Приложению A: контекст пользователя
+      // (per-request, поэтому в user) + summary + последние пары + сообщение.
+      // Результаты исполненных инструментов прокидываем тем же помощником как
+      // дополнительный блок (модель финализирует поверх них).
+      const rawUserBlock = this.composeConciergeUserBlock({
+        contextBlock,
         summary: conversation.summary,
-        // F1 cache-friendly — pre-retrieval результаты теперь в user-блоке
-        // (раньше вшивались в SYSTEM на каждый запрос, ломая prompt-cache).
-        preHits,
+        history,
+        toolMessages,
+        message: effectiveQuestion,
       });
       // E2 — обернуть весь user-блок в маркеры данных (идемпотентно, system
       // уже несёт INJECTION_GUARD_NOTE; см. systemPrompt выше).
@@ -734,7 +527,8 @@ export class ConciergeService {
         userId: input.userId,
         effectiveQuestion,
         history,
-        preHits,
+        // ТЗ 2026-06-14 — предпоиск убран; PRM-скореру отдаём пустой контекст.
+        preHits: [],
       });
 
       // Execute через ToolRouter. Ф5: authMode/baseUrl опциональны —
@@ -748,6 +542,15 @@ export class ConciergeService {
         ...(input.authMode ? { authMode: input.authMode } : {}),
         ...(input.authCookie ? { authCookie: input.authCookie } : {}),
       });
+
+      // ТЗ 2026-06-14 — учёт исполненных инструментов для passthrough
+      // ask_chat_v2. Захватываем текст+цитаты успешного chat-v2 (вопрос к
+      // памяти). Решение «отдать напрямую» принимается ПОСЛЕ цикла — только
+      // если ask_chat_v2 был ЕДИНСТВЕННЫМ исполненным инструментом за turn.
+      executedTools.push(toolName);
+      if (toolName === 'ask_chat_v2' && execResult.ok) {
+        askChatV2Capture = this.extractChatV2Answer(execResult.result);
+      }
 
       let undoLogId: string | undefined;
       // readOnly-инструменты в undo-log не пишутся — откатывать нечего.
@@ -820,34 +623,46 @@ export class ConciergeService {
       }
     }
 
+    // ТЗ 2026-06-14 — терминальный ask_chat_v2 (passthrough). Если за весь
+    // turn исполнен РОВНО один инструмент и это успешный `ask_chat_v2`
+    // (чистый вопрос к памяти) — итоговый ответ помощника = ответ chat-v2
+    // (текст + цитаты) НАПРЯМУЮ, без второго синтеза. Смешанный turn
+    // («узнать → сделать») сюда не попадает: executedTools.length > 1 →
+    // финализирует модель. Не глотаем ответ, если за ask_chat_v2 следовало
+    // действие.
+    let citations: unknown[] = [];
+    const passthrough =
+      executedTools.length === 1 &&
+      executedTools[0] === 'ask_chat_v2' &&
+      askChatV2Capture !== null;
+    if (passthrough && askChatV2Capture) {
+      finalText = askChatV2Capture.text;
+      citations = askChatV2Capture.citations;
+    }
+
     if (!finalText) {
-      finalText =
-        'Готово. Если нужно — уточните, что сделать дальше.';
+      finalText = 'Готово. Если нужно — уточните, что сделать дальше.';
     }
 
     const assistantMsg = await this.appendMessage({
       conversationId: conversation.id,
       role: 'assistant',
       content: finalText,
-      toolCalls: dialogResult
+      ...(passthrough
         ? {
-            dialogLayer: {
-              enabled: true,
-              intent: dialogResult.intent,
-              confidence: dialogResult.confidence,
-              queriesCount: dialogResult.queries.length,
-              cacheHit: false,
-            },
-            preRetrieval: {
-              hits: totalHits,
-              uniqueIds: uniqueIdsCount,
-              queriesUsed: preHits.length,
+            toolCalls: {
+              askChatV2Passthrough: true,
+              citationsCount: citations.length,
             },
           }
-        : undefined,
+        : {}),
     });
 
-    yield { type: 'message', text: finalText };
+    yield {
+      type: 'message',
+      text: finalText,
+      ...(citations.length > 0 ? { citations } : {}),
+    };
     yield { type: 'done', messageId: assistantMsg.id };
 
     // Bump lastMessageAt — defense-in-depth (С24): updateMany с tenantId.
@@ -860,28 +675,101 @@ export class ConciergeService {
   // ──────────────────────────── private ────────────────────────────────
 
   /**
-   * ТЗ 2026-05-27 Фаза 2: dialog-layer запускается только при включённом
-   * флаге `CONCIERGE_DIALOG_LAYER_ENABLED` И при инджекте `DialogService`
-   * (опциональный — старые unit-тесты передают `null`).
-   *
-   * `try/catch` на чтении геттера — защита от случаев, когда мок
-   * `TypedConfigService` в тестах не предоставляет `concierge.*`.
+   * ТЗ 2026-06-14 — глубина истории диалога: крутилка `concierge.history_pairs`
+   * (AdminSetting, дефолт 4 пары). Возвращает количество СООБЩЕНИЙ (= пары×2).
+   * Defensive try/catch — в unit-тестах cfg-мок может не иметь `getDynamic`.
    */
-  private isDialogLayerEnabled(): boolean {
+  private async getHistoryMessagesCount(): Promise<number> {
+    let pairs: number;
     try {
-      return this.cfg.concierge.dialogLayerEnabled === true && this.dialog !== null;
-    } catch (err) {
-      // audit С23 (2026-05-29): раньше первый catch молча возвращал false —
-      // если cfg в проде ломался, dialog-layer тихо отключался без алертов.
-      // Логируем (warn — не error, т.к. не блокирует запрос) и инкрементим
-      // counter `concierge_config_error_total{reason}` для Grafana-алерта.
-      this.metrics.incConciergeConfigError?.({ reason: 'dialog_layer_enabled' });
-      this.logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'concierge: не удалось прочитать cfg.concierge.dialogLayerEnabled — fallback=false',
+      pairs = await this.cfg.getDynamic<number>(
+        'concierge.history_pairs',
+        undefined,
+        DEFAULT_HISTORY_PAIRS,
       );
-      return false;
+    } catch {
+      pairs = DEFAULT_HISTORY_PAIRS;
     }
+    const safePairs = Number.isFinite(pairs) && pairs > 0 ? pairs : DEFAULT_HISTORY_PAIRS;
+    return safePairs * 2;
+  }
+
+  /**
+   * ТЗ 2026-06-14 — порог самооценки понимания (0–100), крутилка
+   * `concierge.clarify_min_confidence` (AdminSetting, дефолт 80 — с креном в
+   * вопрос). Читается для будущего тюнинга/возможной передачи в контекст;
+   * ЖЁСТКИЙ numeric-gate в коде НЕ строится (уточнение управляется промптом
+   * Приложения A + валидацией required-параметров в ToolRouter). Defensive
+   * try/catch — cfg-мок в тестах может не иметь `getDynamic`.
+   */
+  private async getClarifyMinConfidence(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'concierge.clarify_min_confidence',
+        undefined,
+        DEFAULT_CLARIFY_MIN_CONFIDENCE,
+      );
+    } catch {
+      return DEFAULT_CLARIFY_MIN_CONFIDENCE;
+    }
+  }
+
+  /**
+   * ТЗ 2026-06-14 — сборка user-блока помощника. Контекст пользователя
+   * (per-request, поэтому в user — SYSTEM остаётся стабильным/кэшируемым) +
+   * Приложение A (summary / последние пары / сообщение). Результаты
+   * исполненных за turn инструментов подмешиваются отдельным блоком, чтобы
+   * модель финализировала поверх них.
+   */
+  private composeConciergeUserBlock(args: {
+    contextBlock: string;
+    summary: string | null;
+    history: Array<Pick<ConciergeMessage, 'role' | 'content'>>;
+    toolMessages: Array<{ role: 'tool'; content: string }>;
+    message: string;
+  }): string {
+    const parts: string[] = [];
+    if (args.contextBlock.trim() !== '') {
+      parts.push('Контекст:');
+      parts.push(args.contextBlock);
+      parts.push('');
+    }
+    parts.push(
+      buildConciergeUserPrompt({
+        summary: args.summary,
+        recentMessages: args.history.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+        message: args.message,
+      }),
+    );
+    if (args.toolMessages.length > 0) {
+      parts.push('');
+      parts.push('Результаты последних вызовов инструментов:');
+      for (const tm of args.toolMessages) {
+        parts.push(`- ${tm.content}`);
+      }
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * ТЗ 2026-06-14 — извлекает текст+цитаты из результата `ask_chat_v2`
+   * (`POST /api/v1/chat-v2/messages` → `{ text, citations, ... }`). Терпим к
+   * форме: если поля нет — пустые значения. Используется для passthrough
+   * (терминальный ask_chat_v2 на чистом вопросе к памяти).
+   */
+  private extractChatV2Answer(
+    result: unknown,
+  ): { text: string; citations: unknown[] } {
+    if (typeof result === 'object' && result !== null) {
+      const obj = result as Record<string, unknown>;
+      const text = typeof obj.text === 'string' ? obj.text : '';
+      const citations = Array.isArray(obj.citations) ? obj.citations : [];
+      return { text, citations };
+    }
+    return { text: '', citations: [] };
   }
 
   /**
@@ -953,39 +841,6 @@ export class ConciergeService {
   }
 
   /**
-   * ТЗ 2026-05-27 Фаза 5: делегирует pure-функции `buildSystemPrompt`
-   * (module-level export). Имена совпадают — вызов через `this.` снимает
-   * неоднозначность, локальный shadow не возникает.
-   *
-   * F1 cache-friendly (2026-06-10): SYSTEM больше не зависит от preHits —
-   * предварительные результаты поиска подмешиваются в user-сообщение
-   * (`composeUserMessageForIteration`), чтобы SYSTEM-префикс был стабилен
-   * и кэшировался провайдером.
-   *
-   * Ф3 assistant-channels (2026-06-11): при `nativeTools=true` SYSTEM
-   * собирается без JSON-инструкции и без toolFragment (tools уходят
-   * провайдеру нативно через `LlmCallParams.tools`).
-   *
-   * Ф6 assistant-channels (2026-06-11): опц. `toolWhitelist` сужает legacy
-   * toolFragment до канального списка (native-путь сужается отдельно через
-   * `toLlmTools(names)`). Для web-чата whitelist не задан — SYSTEM прежний
-   * и стабильный (cache-friendly).
-   */
-  private buildSystemPrompt(
-    contextBlock: string,
-    nativeTools: boolean,
-    toolWhitelist?: string[],
-  ): string {
-    return buildSystemPrompt({
-      contextBlock,
-      toolFragment: nativeTools
-        ? ''
-        : this.serviceMap.buildToolUsePromptFragment(toolWhitelist),
-      nativeTools,
-    });
-  }
-
-  /**
    * Ф6 — человекочитаемое превью отложенного действия для текстового
    * подтверждения: русское название инструмента + до 3 ключевых параметров.
    * Используется в событии `confirm_required` и в assistant-сообщении
@@ -1022,8 +877,8 @@ export class ConciergeService {
    * Default true (Ship-On) живёт в `TypedConfigService.concierge` (ENV
    * `CONCIERGE_NATIVE_TOOLS_ENABLED`, пустое значение → true). Здесь —
    * строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
-   * остаются на legacy regex-пути; defensive try/catch — по образцу
-   * `isDialogLayerEnabled` (cfg может сломаться в проде).
+   * остаются на legacy regex-пути; defensive try/catch (cfg может сломаться
+   * в проде).
    */
   private isNativeToolsEnabled(): boolean {
     try {
@@ -1106,117 +961,6 @@ export class ConciergeService {
     } catch {
       return '(нечитаемый ответ)';
     }
-  }
-
-  /**
-   * ТЗ 2026-05-27 Фаза 3 — pre-retrieval.
-   *
-   * До первой LLM-итерации параллельно бьёт `search_knowledge` по
-   * `dialogResult.queries[]`, дедуплицирует по `id` и обрезает Top-K.
-   * Никаких записей в `ConciergeMessage`/`ConciergeUndoLog` — это служебный
-   * вызов, нужен только чтобы подложить контекст в системный промпт.
-   *
-   * Skip для intent'ов не из {factual, exploratory, analytical} —
-   * например `clone_roleplay` не нуждается в графовом поиске.
-   */
-  private async preRetrieve(args: {
-    queries: string[];
-    intent: DialogIntent;
-    userId: string;
-    tenantId: string;
-    /** Ф5: опционален — в service-режиме ToolRouter резолвит loopbackBaseUrl. */
-    baseUrl?: string;
-    authMode?: 'cookie' | 'service';
-    authCookie?: string;
-  }): Promise<Array<{ query: string; result: unknown }>> {
-    if (!['factual', 'exploratory', 'analytical'].includes(args.intent)) {
-      return [];
-    }
-    const topK = this.cfg.concierge.preRetrievalTopK;
-    const timeoutMs = this.cfg.concierge.preRetrievalTimeoutMs;
-
-    const uniqueQueries = Array.from(
-      new Set(args.queries.filter((q) => q.trim())),
-    ).slice(0, 3);
-    const results = await Promise.all(
-      uniqueQueries.map(async (q) => {
-        const exec = this.toolRouter.execute({
-          toolName: 'search_knowledge',
-          args: { q },
-          userId: args.userId,
-          tenantId: args.tenantId,
-          ...(args.baseUrl ? { baseUrl: args.baseUrl } : {}),
-          ...(args.authMode ? { authMode: args.authMode } : {}),
-          ...(args.authCookie ? { authCookie: args.authCookie } : {}),
-        });
-        const timeout = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), timeoutMs),
-        );
-        try {
-          const out = await Promise.race([exec, timeout]);
-          if (!out) return null;
-          if (!out.ok) return null;
-          return { query: q, result: out.result };
-        } catch (err) {
-          this.logger.warn(
-            { err: err instanceof Error ? err.message : String(err), query: q },
-            'preRetrieve: search_knowledge failed',
-          );
-          return null;
-        }
-      }),
-    );
-    const hits = results.filter(
-      (x): x is { query: string; result: unknown } => x !== null,
-    );
-    // Дедуп по id внутри result (если есть массив items).
-    const seenIds = new Set<string>();
-    const dedupHits: Array<{ query: string; result: unknown }> = [];
-    for (const hit of hits) {
-      const items = this.extractItems(hit.result);
-      const filtered = items.filter((item) => {
-        const id = this.extractId(item);
-        if (id == null) return true;
-        if (seenIds.has(id)) return false;
-        seenIds.add(id);
-        return true;
-      });
-      if (filtered.length > 0) {
-        dedupHits.push({ query: hit.query, result: filtered });
-      }
-    }
-    // Top-K cumulative.
-    let total = 0;
-    const capped: typeof dedupHits = [];
-    for (const h of dedupHits) {
-      const items = Array.isArray(h.result) ? h.result : [];
-      if (total >= topK) break;
-      const remaining = topK - total;
-      const slice = items.slice(0, remaining);
-      capped.push({ query: h.query, result: slice });
-      total += slice.length;
-    }
-    return capped;
-  }
-
-  private extractItems(result: unknown): unknown[] {
-    if (Array.isArray(result)) return result;
-    if (typeof result === 'object' && result !== null) {
-      const obj = result as Record<string, unknown>;
-      if (Array.isArray(obj.items)) return obj.items;
-      if (Array.isArray(obj.results)) return obj.results;
-      if (Array.isArray(obj.data)) return obj.data;
-    }
-    return [];
-  }
-
-  private extractId(item: unknown): string | null {
-    if (typeof item === 'object' && item !== null) {
-      const obj = item as Record<string, unknown>;
-      if (typeof obj.id === 'string') return obj.id;
-      if (typeof obj.id === 'number') return String(obj.id);
-    }
-    return null;
   }
 
   private tenantTop(tenantId: string): string {

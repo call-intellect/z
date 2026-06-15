@@ -97,6 +97,64 @@ describe('ServiceMapGeneratorService', () => {
     expect(svc.findTool('infer_table_schema')?.readOnly).toBeUndefined();
   });
 
+  // ───────────────── ТЗ 2026-06-14 (assistant-router) — состав реестра ─────────────────
+
+  it('search_knowledge УДАЛЁН из реестра помощника', () => {
+    expect(svc.findTool('search_knowledge')).toBeNull();
+    expect(svc.getTools().map((t) => t.name)).not.toContain('search_knowledge');
+  });
+
+  it('create_task — POST /me/tasks, issue/write, title required, без undoableVia', () => {
+    const t = svc.findTool('create_task');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/me/tasks');
+    expect(t?.rbacResource).toBe('issue');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['title']);
+    // Мутирующий без undoableVia → потребует подтверждения (Ф6/web).
+    expect(t?.undoableVia).toBeUndefined();
+    expect(t?.readOnly).toBeUndefined();
+    expect(t?.description).toContain('Используй');
+  });
+
+  it('search_tasks — GET /me/inbox, issue/read, readOnly', () => {
+    const t = svc.findTool('search_tasks');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('GET');
+    expect(t?.path).toBe('/api/v1/me/inbox');
+    expect(t?.rbacResource).toBe('issue');
+    expect(t?.rbacAction).toBe('read');
+    expect(t?.readOnly).toBe(true);
+    expect(t?.description).toContain('Используй');
+  });
+
+  it('ingest_note — POST /me/notifications/free-note, БЕЗ rbacResource, readOnly, text required', () => {
+    const t = svc.findTool('ingest_note');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/me/notifications/free-note');
+    // self-scoped — без rbacResource; readOnly чтобы не требовать подтверждения.
+    expect(t?.rbacResource).toBeUndefined();
+    expect(t?.readOnly).toBe(true);
+    expect(t?.parameters.required).toEqual(['text']);
+    expect(t?.description).toContain('Используй');
+  });
+
+  it('list_tasks — описание отделяет действия-задачи из встреч от трекера (search_tasks)', () => {
+    const t = svc.findTool('list_tasks');
+    expect(t).not.toBeNull();
+    expect(t?.path).toBe('/api/v1/tasks');
+    expect(t?.description).toContain('Используй');
+    expect(t?.description).toContain('search_tasks');
+  });
+
+  it('у create_meeting/cancel_meeting/ask_chat_v2 — внятное «Используй для…»', () => {
+    expect(svc.findTool('create_meeting')?.description).toContain('Используй');
+    expect(svc.findTool('cancel_meeting')?.description).toContain('Используй');
+    expect(svc.findTool('ask_chat_v2')?.description).toContain('Используй');
+  });
+
   it('delete_event uses DELETE method and event_card.delete RBAC', () => {
     const t = svc.findTool('delete_event');
     expect(t?.method).toBe('DELETE');
@@ -194,10 +252,10 @@ describe('ServiceMapGeneratorService', () => {
     const all = svc.toLlmTools();
     expect(all).toHaveLength(svc.getTools().length);
 
-    const narrowed = svc.toLlmTools(['list_tasks', 'search_knowledge']);
+    const narrowed = svc.toLlmTools(['list_tasks', 'ask_chat_v2']);
     expect(narrowed.map((t) => t.name).sort()).toEqual([
+      'ask_chat_v2',
       'list_tasks',
-      'search_knowledge',
     ]);
   });
 

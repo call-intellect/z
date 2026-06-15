@@ -164,6 +164,68 @@ export class ProjectsService {
     return this.toResponse(project);
   }
 
+  /**
+   * ТЗ#3 (2026-06-15) — per-tenant дефолт-проект «Входящие» (find-or-create).
+   *
+   * Общий дом логики, которую исторически держал приватно `IntakeService`
+   * (там же помечено TODO «вынести в общий ProjectsService.ensureInboxProject»)
+   * и `intake-auto-triage.worker` (resolveInboxProjectId). Сюда сходятся
+   * ручной/авто-триаж входящих и self-постановка задачи из помощника
+   * (`POST /api/v1/me/tasks`) — все в ОДНУ папку «Входящие», без дублей.
+   *
+   * Владелец проекта = владелец Org (как у авто-приёма). Если у Org нет
+   * владельца — вернуть null (вызывающий решает, что делать; в self-tasks это
+   * 400 inbox_project_unavailable).
+   *
+   * Идемпотентно: findFirst по имени → create → при гонке (P2002 и пр.)
+   * повторный findFirst. network=0 (приватный), создаётся «как Кора».
+   */
+  static readonly INBOX_PROJECT_NAME = 'Входящие';
+
+  async ensureInboxProjectId(tenantId: string): Promise<string | null> {
+    const findExisting = (): Promise<{ id: string } | null> =>
+      this.prisma.project.findFirst({
+        where: {
+          tenantId,
+          name: ProjectsService.INBOX_PROJECT_NAME,
+          deletedAt: null,
+          archivedAt: null,
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    const existing = await findExisting();
+    if (existing) return existing.id;
+    const org = await this.prisma.org.findUnique({
+      where: { id: tenantId },
+      select: { ownerId: true },
+    });
+    const ownerId = org?.ownerId ?? null;
+    if (!ownerId) return null;
+    try {
+      const created = await this.create(
+        {
+          name: ProjectsService.INBOX_PROJECT_NAME,
+          description:
+            'Задачи из внешних каналов без определённого проекта. Создан Корой автоматически (авто-приём входящих).',
+          network: 0,
+          timezone: 'Europe/Moscow',
+          cycleViewEnabled: true,
+          intakeViewEnabled: true,
+          gantViewEnabled: false,
+          timeTrackingEnabled: false,
+        },
+        tenantId,
+        ownerId,
+      );
+      return created.id;
+    } catch {
+      // Гонка: параллельный accept/воркер/self-task уже создал «Входящие».
+      const retry = await findExisting();
+      return retry?.id ?? null;
+    }
+  }
+
   /** Список проектов tenant'а с фильтрами includeArchived/ownerId/q. */
   async findAll(
     tenantId: string,

@@ -21,7 +21,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CONFIDENCE_CALIBRATION, type PromptInput } from './common';
+import {
+  CONFIDENCE_CALIBRATION,
+  NOT_A_TASK_DISCRIMINATOR,
+  type PromptInput,
+} from './common';
 import {
   buildMeetingExtractActionsPrompt,
   buildTasksPrompt,
@@ -315,6 +319,37 @@ describe('buildTasksPromptUnified — system', () => {
     });
     expect(out.system).toContain('ТОЛЬКО валидный JSON-массив');
     expect(out.system).not.toContain('Вызови инструмент');
+  });
+
+  // Ф7 (интент): негативный класс «не задача» приклеен в конец system для
+  // ЛЮБЫХ опций (enriched / structured / legacy), чтобы вопросы/команды не
+  // становились кандидатами в задачи.
+  it('всегда содержит NOT_A_TASK_DISCRIMINATOR (Ф7) — legacy', () => {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {});
+    expect(out.system).toContain(NOT_A_TASK_DISCRIMINATOR);
+  });
+
+  it('всегда содержит NOT_A_TASK_DISCRIMINATOR (Ф7) — enriched+confidence', () => {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      enriched: true,
+      withConfidence: true,
+      withSourceQuote: true,
+    });
+    expect(out.system).toContain(NOT_A_TASK_DISCRIMINATOR);
+    // Блок — в самом хвосте: идёт ПОСЛЕ калибровки confidence.
+    expect(out.system.indexOf(NOT_A_TASK_DISCRIMINATOR)).toBeGreaterThan(
+      out.system.indexOf(CONFIDENCE_CALIBRATION),
+    );
+  });
+
+  it('всегда содержит NOT_A_TASK_DISCRIMINATOR (Ф7) — structured (useAssigneeRaw)', () => {
+    const out = buildTasksPromptUnified(SAMPLE_INPUT, {
+      useAssigneeRaw: true,
+      withFragmentBounds: true,
+      withSourceQuote: true,
+      withConfidence: true,
+    });
+    expect(out.system).toContain(NOT_A_TASK_DISCRIMINATOR);
   });
 
   it('roomChat → withRoomChatNote применён', () => {

@@ -1,7 +1,7 @@
 ---
 title: «Моя карта должности» на /me пуста — /me/profile не отдаёт summaryCache
 type: tz
-status: not-implemented — ожидает продуктового решения владельца (контракт-баг + маппер summaryCache→blocks не существует)
+status: done (Вариант 1 — полная карта роли) — реализовано 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит 8f2a6f73. Владелец выбрал Вариант 1. Чинено через рабочий Role Map (RoleMapBuilderService), а не несуществующий summaryCache→blocks; попутно починен тот же баг на /roles/[id] overview.
 date: 2026-06-15
 owner: Сергей (sergrv80@gmail.com)
 discovered_during: plans/tz/2026-06-15-cabinet-qa-bugfixes.md (Ф2 — должность в «Я»)

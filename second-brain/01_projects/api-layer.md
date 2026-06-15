@@ -440,6 +440,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 |---|---|---|
 | GET | `/api/v1/orgs/:orgId/demo-seed-status` | статус авто-заливки демо (`pending`/`in_progress`/`completed`/`failed`) для loading-экрана `/onboarding/welcome/complete` |
 | POST | `/api/v1/orgs/:orgId/demo-workspace/ensure` | **fallback**: если Org в DEMO, но синтетики нет (старые Org / неудавшийся seed) — ставит свежий seed-job. Идемпотентно (`{status, enqueued}`). Дёргается `SubscriptionContext` один раз при DEMO. |
+| GET | `/api/v1/orgs/:orgId/setup-progress` | прогресс «Настройка компании»: 6 вех `{completed,total,steps}` по принципу «timestamp ИЛИ факт существования сущности» (QA B6, 2026-06-15). Главная берёт прогресс отсюда, а не из `Org.*CompletedAt`. |
 
 ### Content (Фаза 5)
 | Метод | Путь | Назначение |

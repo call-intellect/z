@@ -189,8 +189,11 @@ export class ChatV2FeedbackService {
         COUNT(*)::bigint AS answered,
         COUNT(*) FILTER (
           WHERE "citations" IS NOT NULL
-            AND jsonb_typeof("citations") = 'array'
-            AND jsonb_array_length("citations") > 0
+            AND CASE
+                  WHEN jsonb_typeof("citations") = 'array'
+                  THEN jsonb_array_length("citations") > 0
+                  ELSE false
+                END
         )::bigint AS answered_with_citation,
         COUNT(*) FILTER (WHERE "helpful" IS NOT NULL)::bigint AS rated,
         COUNT(*) FILTER (WHERE "helpful" = 'up')::bigint AS helped_up

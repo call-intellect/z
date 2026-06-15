@@ -835,7 +835,9 @@ export class DirectorDashboardService {
    *   - `questionsAnsweredByMemory` — assistant-сообщения `ChatV2Message` с непустым
    *                                   citations-массивом (та же техника, что у
    *                                   `ChatV2FeedbackService.getChatUsageStats`:
-   *                                   jsonb_typeof='array' AND jsonb_array_length>0);
+   *                                   CASE WHEN jsonb_typeof='array' THEN
+   *                                   jsonb_array_length>0 ELSE false — guard от
+   *                                   22023 на скалярных citations, QA B2);
    *   - `commitmentsKept`           — `IdeaBlock` signalType='commitment' AND
    *                                   commitmentStatus='fulfilled', созданные в окне.
    */
@@ -885,8 +887,11 @@ export class DirectorDashboardService {
           AND m."role" = 'assistant'
           AND m."createdAt" >= ${since}
           AND m."citations" IS NOT NULL
-          AND jsonb_typeof(m."citations") = 'array'
-          AND jsonb_array_length(m."citations") > 0
+          AND CASE
+                WHEN jsonb_typeof(m."citations") = 'array'
+                THEN jsonb_array_length(m."citations") > 0
+                ELSE false
+              END
       `,
       this.prisma.ideaBlock.count({
         where: {

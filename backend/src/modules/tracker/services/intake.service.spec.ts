@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -688,5 +688,142 @@ describe('IntakeService.triage — DecisionTaskLink(derived) (A10)', () => {
     expect(createArg.skipDuplicates).toBe(true);
     // count=0 → пересчёт linkedTaskCount не запускается.
     expect(decisionUpdate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * QA B1 (2026-06-15) — fallback «Входящие» при accept без проекта.
+ * Решение владельца: задача без привязки к проекту не должна выдавать ошибку
+ * «не указан проект» — кладётся в общую папку «Входящие» tenant'а (тот же
+ * проект, что использует авто-приём входящих: find-or-create по имени,
+ * владелец = владелец Org).
+ *
+ * Покрытие (детерминизм: мок Prisma/ProjectsService):
+ *   (а) accept без проекта, «Входящие» нет → создаётся (name=«Входящие»,
+ *       network=0, owner=Org.ownerId) и Issue кладётся в него;
+ *   (б) accept без проекта, «Входящие» уже есть → переиспользуется (create НЕ зван);
+ *   (в) negative: ProjectsService недоступен (DI без него) → прежняя ошибка
+ *       target_project_required (обратная совместимость).
+ */
+describe('IntakeService.triage — fallback «Входящие» (QA B1)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const ACCEPT_NO_PROJECT = { decision: 'accept' } as never;
+
+  function build(opts: {
+    intake: IntakeRow;
+    /** Существующий дефолт-проект «Входящие» (project.findFirst), либо null. */
+    existingDefault: { id: string } | null;
+    /** Подключён ли ProjectsService (false = DI без него, как в проде нельзя). */
+    withProjects?: boolean;
+  }): {
+    svc: IntakeService;
+    issuesCreate: ReturnType<typeof vi.fn>;
+    projectsCreate: ReturnType<typeof vi.fn>;
+    projectFindFirst: ReturnType<typeof vi.fn>;
+  } {
+    const issuesCreate = vi.fn(async () => ({ id: 'issue-created-1' }));
+    const projectsCreate = vi.fn(async () => ({ id: 'inbox-created' }));
+    const projectFindFirst = vi.fn(async () => opts.existingDefault);
+    const prisma = {
+      intakeIssue: {
+        findFirst: vi.fn(async () => opts.intake),
+        update: vi.fn(async ({ data }: { data: Partial<IntakeRow> }) => ({
+          ...opts.intake,
+          ...data,
+        })),
+      },
+      project: { findFirst: projectFindFirst },
+      org: { findUnique: vi.fn(async () => ({ ownerId: 'org-owner' })) },
+    } as unknown as PrismaService;
+    const issues = { create: issuesCreate };
+    const events = { publishIntakeTriaged: vi.fn() };
+    const webhooks = { dispatch: vi.fn(async () => undefined) };
+    const cfg = { pendingActions: { intakeTtlDays: 14 } };
+    const projects = opts.withProjects === false ? undefined : { create: projectsCreate };
+    const svc = new IntakeService(
+      prisma,
+      issues as never,
+      events as never,
+      webhooks as never,
+      cfg as never,
+      undefined, // autoTriageQueue
+      undefined, // blockFetch
+      projects as never, // ProjectsService (@Optional)
+    );
+    return { svc, issuesCreate, projectsCreate, projectFindFirst };
+  }
+
+  it('(а) accept без проекта, «Входящие» нет → создаёт (network=0, owner=Org) и кладёт задачу', async () => {
+    const intake = makeIntake({
+      id: 'i-noproj',
+      status: 'pending',
+      projectId: null,
+      suggestedProjectId: null,
+      sourceBlockIds: [],
+    });
+    const { svc, issuesCreate, projectsCreate } = build({
+      intake,
+      existingDefault: null,
+    });
+
+    await svc.triage('i-noproj', ACCEPT_NO_PROJECT, TENANT, 'user-1');
+
+    expect(projectsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Входящие', network: 0 }),
+      TENANT,
+      'org-owner', // владелец дефолт-проекта = владелец Org, не принявший
+    );
+    // Issue создан в свежесозданном дефолт-проекте «Входящие».
+    expect(issuesCreate).toHaveBeenCalledWith(
+      'inbox-created',
+      expect.anything(),
+      TENANT,
+      'user-1',
+    );
+  });
+
+  it('(б) accept без проекта, «Входящие» уже есть → переиспользует, create НЕ зван', async () => {
+    const intake = makeIntake({
+      id: 'i-noproj2',
+      status: 'pending',
+      projectId: null,
+      suggestedProjectId: null,
+      sourceBlockIds: [],
+    });
+    const { svc, issuesCreate, projectsCreate } = build({
+      intake,
+      existingDefault: { id: 'inbox-existing' },
+    });
+
+    await svc.triage('i-noproj2', ACCEPT_NO_PROJECT, TENANT, 'user-1');
+
+    expect(projectsCreate).not.toHaveBeenCalled();
+    expect(issuesCreate).toHaveBeenCalledWith(
+      'inbox-existing',
+      expect.anything(),
+      TENANT,
+      'user-1',
+    );
+  });
+
+  it('(в) negative: ProjectsService недоступен → target_project_required', async () => {
+    const intake = makeIntake({
+      id: 'i-noproj3',
+      status: 'pending',
+      projectId: null,
+      suggestedProjectId: null,
+      sourceBlockIds: [],
+    });
+    const { svc, issuesCreate } = build({
+      intake,
+      existingDefault: null,
+      withProjects: false,
+    });
+
+    await expect(
+      svc.triage('i-noproj3', ACCEPT_NO_PROJECT, TENANT, 'user-1'),
+    ).rejects.toThrow(BadRequestException);
+    expect(issuesCreate).not.toHaveBeenCalled();
   });
 });

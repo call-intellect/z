@@ -27,6 +27,7 @@ import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
+import { ProjectsService } from './projects.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -125,7 +126,80 @@ export class IntakeService {
     @Optional()
     @Inject(BlockFetchService)
     private readonly blockFetch?: BlockFetchService,
+    // QA B1 (2026-06-15) — fallback-проект «Входящие» при accept без проекта
+    // (решение владельца: не заставлять выбирать проект, класть в общую папку,
+    // а пользователь позже вручную перенесёт задачу в нужный проект).
+    // @Optional: в unit-тестах IntakeService строится без ProjectsService —
+    // тогда дефолт-проект не создаётся и сохраняется прежняя 400-семантика
+    // (тесты accept всегда передают targetProjectId, путь не задевается).
+    @Optional()
+    @Inject(ProjectsService)
+    private readonly projects?: ProjectsService,
   ) {}
+
+  /**
+   * QA B1 (2026-06-15) — per-tenant дефолт-проект «Входящие» для задач без
+   * привязки к конкретному проекту. Решение владельца: accept без проекта не
+   * должен выдавать ошибку — задача кладётся в общую папку «Входящие».
+   *
+   * ВАЖНО — тот же проект, что использует авто-приём входящих
+   * (`intake-auto-triage.worker.ts` → resolveInboxProjectId): find-or-create по
+   * имени INBOX_PROJECT_NAME, владелец = владелец Org, network=0. Так ручной и
+   * авто-триаж сходятся в ОДНУ папку (без дублей дефолт-проектов). Логику стоит
+   * вынести в общий ProjectsService.ensureInboxProject при следующем касании
+   * воркера (сейчас не трогаем W4-воркер и его тесты).
+   *
+   * Идемпотентно: findFirst по имени → create → при гонке повторный findFirst.
+   * Возвращает null, если ProjectsService недоступен (DI без него — только
+   * unit-тесты) или у Org нет владельца; вызывающий код тогда сохраняет прежнее
+   * поведение (ошибка target_project_required).
+   */
+  private static readonly INBOX_PROJECT_NAME = 'Входящие';
+
+  private async ensureInboxProjectId(tenantId: string): Promise<string | null> {
+    if (!this.projects) return null;
+    const findExisting = (): Promise<{ id: string } | null> =>
+      this.prisma.project.findFirst({
+        where: {
+          tenantId,
+          name: IntakeService.INBOX_PROJECT_NAME,
+          deletedAt: null,
+          archivedAt: null,
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    const existing = await findExisting();
+    if (existing) return existing.id;
+    const org = await this.prisma.org.findUnique({
+      where: { id: tenantId },
+      select: { ownerId: true },
+    });
+    const ownerId = org?.ownerId ?? null;
+    if (!ownerId) return null;
+    try {
+      const created = await this.projects.create(
+        {
+          name: IntakeService.INBOX_PROJECT_NAME,
+          description:
+            'Задачи из внешних каналов без определённого проекта. Создан Корой автоматически (авто-приём входящих).',
+          network: 0,
+          timezone: 'Europe/Moscow',
+          cycleViewEnabled: true,
+          intakeViewEnabled: true,
+          gantViewEnabled: false,
+          timeTrackingEnabled: false,
+        },
+        tenantId,
+        ownerId,
+      );
+      return created.id;
+    } catch {
+      // Гонка: параллельный accept/воркер уже создал «Входящие» — переиспользуем.
+      const retry = await findExisting();
+      return retry?.id ?? null;
+    }
+  }
 
   /** Создать intake-карточку. Не требует userId — может вызвать webhook-адаптер. */
   async create(
@@ -518,12 +592,18 @@ export class IntakeService {
     const triagedAt = new Date();
 
     if (dto.decision === 'accept') {
+      // QA B1 (2026-06-15) — порядок выбора проекта: явный выбор → привязка
+      // кандидата → AI-предложение → fallback «Входящие». Решение владельца:
+      // задача без проекта не должна выдавать ошибку — кладём в общую папку,
+      // а пользователь позже вручную перенесёт её в нужный проект.
       const targetProjectId =
         dto.targetProjectId ??
         intake.projectId ??
         intake.suggestedProjectId ??
-        null;
+        (await this.ensureInboxProjectId(tenantId));
       if (!targetProjectId) {
+        // Сюда попадаем только если ProjectsService недоступен (unit-тесты DI
+        // без него); в проде дефолт-проект гарантирован выше.
         throw new BadRequestException({
           ok: false,
           error: {

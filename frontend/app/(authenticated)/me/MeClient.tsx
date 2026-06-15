@@ -20,6 +20,10 @@ import {
   MODERN_PAGE_BG,
   ModernPageShell,
 } from '@/ui/components/dashboard/modern';
+import {
+  RoleMapGrid,
+  isRoleMapEmpty,
+} from '@/ui/components/role-map/RoleMapCards';
 
 import {
   AdminEmpty,
@@ -33,14 +37,6 @@ import { MemoryHelpedMeWidget } from './widgets/MemoryHelpedMeWidget';
 import { MyIdeasFateWidget } from './widgets/MyIdeasFateWidget';
 import { MyWeeklyPlanFactWidget } from './widgets/MyWeeklyPlanFactWidget';
 import { RecognitionInboxWidget } from './widgets/RecognitionInboxWidget';
-
-const BLOCK_TITLES: Record<string, string> = {
-  responsibilities: 'Обязанности',
-  skills: 'Навыки',
-  decision_patterns: 'Решения, которые принимаю',
-  common_pitfalls: 'Типичные грабли',
-  style_profile: 'Стиль работы',
-};
 
 export function MeClient() {
   const { currentOrgId, user, isLoading } = useAuth();
@@ -298,6 +294,13 @@ function ProfileHeader({
   );
 }
 
+/**
+ * «Моя карта должности» на /me. Рендерит полную карту роли пользователя
+ * (`roleProfile.roleMap`, формат `RoleMapApi`) теми же 6 категориями, что и
+ * `/roles/[id]/map` — через общий `RoleMapGrid`. Fallback-заглушка показывается,
+ * когда: нет primaryRole (карты), карта недоступна/`null` (мягкая деградация),
+ * карта в форминге (`isForming`) или ещё пустая (все 6 категорий без элементов).
+ */
 function RoleProfileBlock({
   loading,
   profile,
@@ -305,47 +308,56 @@ function RoleProfileBlock({
   loading: boolean;
   profile: MyProfileApi | null;
 }) {
+  const role = profile?.primaryRole ?? null;
+  const map = profile?.roleProfile?.roleMap ?? null;
+  const hasMap = map !== null && !map.isForming && !isRoleMapEmpty(map);
+  const completenessPct = map ? Math.round(map.completeness * 100) : null;
+
   return (
     <div className="mb-6">
       <GlassCard>
-        <CardTitle icon={<IdCard size={16} />} grad={GRAD.violet}>
-          Моя карта должности
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle icon={<IdCard size={16} />} grad={GRAD.violet}>
+            Моя карта должности
+          </CardTitle>
+          {role && (
+            <Link
+              href={`/roles/${encodeURIComponent(role.id)}/map`}
+              className="text-xs font-medium hover:underline"
+              style={{ color: CHART.violet }}
+            >
+              Открыть полностью
+            </Link>
+          )}
+        </div>
         <div className="mt-4">
           {loading ? (
             <Skeleton className="h-24 w-full" />
-          ) : !profile?.roleProfile || !profile.roleProfile.summaryCache ? (
+          ) : !role ? (
+            <p className="text-sm" style={{ color: CHART.faint }}>
+              Должность не назначена. Укажите её в карточке ниже, чтобы Кора
+              собрала карту вашей роли.
+            </p>
+          ) : !hasMap ? (
             <p className="text-sm" style={{ color: CHART.faint }}>
               Карта формируется. Заполнится автоматически по мере встреч,
               документов и дампов.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {profile.roleProfile.summaryCache.blocks.map((block) => (
-                <div key={block.key}>
-                  <h3
-                    className="mb-1 text-xs font-medium uppercase tracking-wider"
-                    style={{ color: CHART.faint }}
-                  >
-                    {block.title ?? BLOCK_TITLES[block.key] ?? block.key}
-                  </h3>
-                  {block.items.length === 0 ? (
-                    <p className="text-sm" style={{ color: CHART.faint }}>
-                      —
-                    </p>
-                  ) : (
-                    <ul
-                      className="list-disc space-y-1 pl-5 text-sm"
-                      style={{ color: CHART.text }}
-                    >
-                      {block.items.map((it, i) => (
-                        <li key={i}>{it}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ))}
-            </div>
+            <>
+              {completenessPct !== null && (
+                <p
+                  className="mb-4 text-xs"
+                  style={{ color: CHART.faint }}
+                >
+                  Полнота карты: {completenessPct}%
+                </p>
+              )}
+              <RoleMapGrid
+                map={map}
+                className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              />
+            </>
           )}
         </div>
       </GlassCard>

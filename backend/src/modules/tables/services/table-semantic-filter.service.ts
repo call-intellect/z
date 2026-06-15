@@ -14,6 +14,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { buildTableSemanticFilterPrompt } from '../../ai/services/prompts/table-semantic-filter.prompt';
 import {
+  rowMatchesConditions,
   type TableFilterCondition,
   TableFilterConditionsSchema,
   validateFilters,
@@ -122,7 +123,87 @@ export class TableSemanticFilterService {
     return { filters, cached: false };
   }
 
+  /**
+   * Chat-v2 как параллельный источник (ТЗ 2026-06-15 §7, ЧАСТЬ B) — применяет
+   * набор условий фильтра к строкам таблицы НА СЕРВЕРЕ и возвращает совпавшие
+   * строки (для подмешивания в контекст AI-чата).
+   *
+   * Раньше фильтр применялся только на фронте (клиент-сайд). chat_v2 не может
+   * полагаться на фронт → считаем здесь. Оператор eq/in/empty можно было бы
+   * протолкнуть в JSONB-предикат (GIN `table_row_cells_gin`), но строк/таблиц у
+   * тенанта немного, а остальные операторы (gt/lt/before/after/older_than/
+   * contains) всё равно требуют TS-семантики → берём живые строки таблицы по
+   * `tableId` и фильтруем в TS через `rowMatchesConditions` (единый источник
+   * семантики операторов с фронтом, см. table-filter.dto).
+   *
+   * `conditions` ожидаются УЖЕ валидированными (`validateFilters`) — но даже
+   * сырые не опасны: `rowMatchesConditions` молча не-матчит кривые условия.
+   * Пустой `conditions` → строка проходит (нет фильтра) → вернём первые `limit`
+   * живых строк таблицы.
+   *
+   * Fail-safe (R-INV): любая ошибка БД/приведения → лог + `[]` (ветка таблиц
+   * НЕ должна валить графовый ответ chat_v2).
+   */
+  async applyFilterToRows(args: {
+    tenantId: string;
+    tableId: string;
+    conditions: ReadonlyArray<TableFilterCondition>;
+    limit: number;
+  }): Promise<
+    Array<{ id: string; entityId: string | null; cells: Record<string, unknown> }>
+  > {
+    const cap = Math.max(0, Math.floor(args.limit));
+    if (cap === 0) return [];
+    try {
+      // Живые строки таблицы (не архив / не soft-deleted), под tenant-scope.
+      // Берём с запасом (cap * 10, но не более 2000): фильтр в TS отсеет лишнее,
+      // а ограничивать выборку ДО фильтра нельзя (потеряем релевантные строки).
+      const fetchCap = Math.min(2000, Math.max(cap * 10, cap));
+      const rows = await this.prisma.tableRow.findMany({
+        where: {
+          tableId: args.tableId,
+          tenantId: args.tenantId,
+          archivedAt: null,
+          deletedAt: null,
+        },
+        select: { id: true, entityId: true, cells: true },
+        orderBy: { order: 'asc' },
+        take: fetchCap,
+      });
+
+      const out: Array<{
+        id: string;
+        entityId: string | null;
+        cells: Record<string, unknown>;
+      }> = [];
+      for (const row of rows) {
+        const cells = this.asCells(row.cells);
+        if (!rowMatchesConditions(cells, args.conditions)) continue;
+        out.push({ id: row.id, entityId: row.entityId ?? null, cells });
+        if (out.length >= cap) break;
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(
+        {
+          tableId: args.tableId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'table-semantic-filter.applyFilterToRows: сбой — возвращаем [] (fail-safe)',
+      );
+      return [];
+    }
+  }
+
   // ──────────────────────────── private ────────────────────────────────────
+
+  /** Безопасное приведение JSONB `cells` к `Record<string, unknown>`. */
+  private asCells(raw: unknown): Record<string, unknown> {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as Record<string, unknown>;
+    }
+    return {};
+  }
 
   /** Нормализация запроса для ключа кэша: trim + lower + схлопывание пробелов. */
   private normalizeQuery(q: string): string {

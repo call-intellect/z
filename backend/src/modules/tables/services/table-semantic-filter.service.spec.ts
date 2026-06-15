@@ -6,7 +6,9 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
+  cellMatchesCondition,
   isOpCompatible,
+  rowMatchesConditions,
   validateFilters,
   type TableFilterCondition,
 } from '../dto/table-filter.dto';
@@ -356,5 +358,165 @@ describe('validateFilters (таблица совместимости op×type)',
 
   it('несуществующий propertyId отбрасывается', () => {
     expect(keep([{ propertyId: 'nope', op: 'eq', value: 'x' }])).toEqual([]);
+  });
+});
+
+// ─── ЧАСТЬ B (ТЗ 2026-06-15 §7) — server-side применение фильтра к строкам ───
+
+describe('cellMatchesCondition / rowMatchesConditions (семантика операторов)', () => {
+  it('eq / neq — свободное равенство по строковому представлению', () => {
+    expect(cellMatchesCondition('100', { propertyId: 'p', op: 'eq', value: 100 })).toBe(true);
+    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'eq', value: 'Москва' })).toBe(true);
+    expect(cellMatchesCondition('Питер', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(true);
+    expect(cellMatchesCondition('Москва', { propertyId: 'p', op: 'neq', value: 'Москва' })).toBe(false);
+  });
+
+  it('empty — пусто/[]/undefined', () => {
+    expect(cellMatchesCondition(undefined, { propertyId: 'p', op: 'empty' })).toBe(true);
+    expect(cellMatchesCondition('', { propertyId: 'p', op: 'empty' })).toBe(true);
+    expect(cellMatchesCondition([], { propertyId: 'p', op: 'empty' })).toBe(true);
+    expect(cellMatchesCondition('x', { propertyId: 'p', op: 'empty' })).toBe(false);
+  });
+
+  it('in — скаляр или массив ячейки против needles', () => {
+    expect(cellMatchesCondition('active', { propertyId: 'p', op: 'in', value: ['active', 'lead'] })).toBe(true);
+    expect(cellMatchesCondition(['a', 'b'], { propertyId: 'p', op: 'in', value: ['b'] })).toBe(true);
+    expect(cellMatchesCondition('closed', { propertyId: 'p', op: 'in', value: ['active'] })).toBe(false);
+  });
+
+  it('contains — подстрока без учёта регистра', () => {
+    expect(cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'ромашка' })).toBe(true);
+    expect(cellMatchesCondition('ООО Ромашка', { propertyId: 'p', op: 'contains', value: 'дуб' })).toBe(false);
+  });
+
+  it('gt / lt — числа и даты', () => {
+    expect(cellMatchesCondition(150000, { propertyId: 'p', op: 'gt', value: 100000 })).toBe(true);
+    expect(cellMatchesCondition('50', { propertyId: 'p', op: 'lt', value: 100 })).toBe(true);
+    expect(cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'gt', value: '2026-01-01' })).toBe(true);
+    // несравнимое (текст) → false
+    expect(cellMatchesCondition('дорого', { propertyId: 'p', op: 'gt', value: 10 })).toBe(false);
+  });
+
+  it('before / after / older_than — даты', () => {
+    expect(cellMatchesCondition('2026-01-01', { propertyId: 'p', op: 'before', value: '2026-05-01' })).toBe(true);
+    expect(cellMatchesCondition('2026-06-01', { propertyId: 'p', op: 'after', value: '2026-05-01' })).toBe(true);
+    const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    expect(cellMatchesCondition(old, { propertyId: 'p', op: 'older_than', value: 30 })).toBe(true);
+    expect(cellMatchesCondition(recent, { propertyId: 'p', op: 'older_than', value: 30 })).toBe(false);
+  });
+
+  it('rowMatchesConditions — AND по всем условиям; пустой фильтр → проходит', () => {
+    const cells = { city: 'Москва', amount: 150000 };
+    expect(rowMatchesConditions(cells, [])).toBe(true);
+    expect(
+      rowMatchesConditions(cells, [
+        { propertyId: 'city', op: 'eq', value: 'Москва' },
+        { propertyId: 'amount', op: 'gt', value: 100000 },
+      ]),
+    ).toBe(true);
+    expect(
+      rowMatchesConditions(cells, [
+        { propertyId: 'city', op: 'eq', value: 'Москва' },
+        { propertyId: 'amount', op: 'gt', value: 200000 },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe('TableSemanticFilterService.applyFilterToRows (server-side)', () => {
+  const TENANT = 'org-1';
+  const TABLE = 'tbl-1';
+
+  let findMany: ReturnType<typeof vi.fn>;
+  let svc: TableSemanticFilterService;
+
+  const ROWS = [
+    { id: 'r1', entityId: 'e1', cells: { city: 'Москва', amount: 150000 } },
+    { id: 'r2', entityId: null, cells: { city: 'Питер', amount: 50000 } },
+    { id: 'r3', entityId: 'e3', cells: { city: 'Москва', amount: 80000 } },
+  ];
+
+  beforeEach(() => {
+    findMany = vi.fn().mockResolvedValue(ROWS);
+    const prisma = {
+      tableRow: { findMany },
+    } as unknown as PrismaService;
+    const llm = { call: vi.fn() } as unknown as LlmRouterService;
+    const redis = {
+      client: { get: vi.fn(), set: vi.fn() },
+    } as unknown as RedisService;
+    svc = new TableSemanticFilterService(llm, prisma, redis);
+  });
+
+  it('eq — отбирает только совпавшие строки', async () => {
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [{ propertyId: 'city', op: 'eq', value: 'Москва' }],
+      limit: 20,
+    });
+    expect(out.map((r) => r.id)).toEqual(['r1', 'r3']);
+    expect(out[0]).toEqual({ id: 'r1', entityId: 'e1', cells: { city: 'Москва', amount: 150000 } });
+    // tenant-scope + живые строки.
+    const where = (findMany.mock.calls[0]?.[0] as { where: unknown }).where;
+    expect(where).toMatchObject({
+      tableId: TABLE,
+      tenantId: TENANT,
+      archivedAt: null,
+      deletedAt: null,
+    });
+  });
+
+  it('gt — числовое сравнение', async () => {
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [{ propertyId: 'amount', op: 'gt', value: 100000 }],
+      limit: 20,
+    });
+    expect(out.map((r) => r.id)).toEqual(['r1']);
+  });
+
+  it('in — несколько значений', async () => {
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [{ propertyId: 'city', op: 'in', value: ['Питер', 'Казань'] }],
+      limit: 20,
+    });
+    expect(out.map((r) => r.id)).toEqual(['r2']);
+  });
+
+  it('empty — пустой результат когда ничего не подходит', async () => {
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [{ propertyId: 'city', op: 'empty' }],
+      limit: 20,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('limit=0 → [] без запроса к БД', async () => {
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [],
+      limit: 0,
+    });
+    expect(out).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('fail-safe: ошибка БД → [] (не бросает)', async () => {
+    findMany.mockRejectedValueOnce(new Error('db down'));
+    const out = await svc.applyFilterToRows({
+      tenantId: TENANT,
+      tableId: TABLE,
+      conditions: [{ propertyId: 'city', op: 'eq', value: 'Москва' }],
+      limit: 20,
+    });
+    expect(out).toEqual([]);
   });
 });

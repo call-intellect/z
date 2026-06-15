@@ -24,6 +24,7 @@ import {
   type ChatV2Scope,
   type RankedBlockId,
 } from './chat-v2-retrieval.service';
+import { ChatV2TableContextService } from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { ReasoningChainService } from './reasoning-chain.service';
 
@@ -83,6 +84,18 @@ export interface ChatV2Input {
    * Ф2 только переносит до RetrievalInput; SQL-фильтрацию делает Ф3.
    */
   structuralFilters?: StructuralRetrievalFilters | null;
+  /**
+   * ЧАСТЬ B (ТЗ 2026-06-15 §7) — обогащённое понимание для ПАРАЛЛЕЛЬНОЙ ветки
+   * поиска в умных таблицах. Все поля опциональны: если их нет (старый
+   * chat-модуль / dialog-layer выключен) — табличная ветка НЕ запускается
+   * (tableRows=[], граф отвечает как раньше).
+   *  - `tableEntityHints` — имена-подсказки (клиенты/проекты/темы) для выбора таблицы;
+   *  - `tableEntityIds` — резолвнутые сущности графа (entity-bridge по TableRow.entityId);
+   *  - `tableAggregation` — счётный/агрегирующий вопрос («сколько…») → больше строк.
+   */
+  tableEntityHints?: ReadonlyArray<string>;
+  tableEntityIds?: ReadonlyArray<string>;
+  tableAggregation?: boolean;
   /**
    * SBA α-5 dialog-layer — заранее посчитанные blockIds (RetrievalCache hit).
    * Если задан — retrieval НЕ запускается, сразу loadContextBlocks.
@@ -561,6 +574,12 @@ export class ChatV2Service {
     @Optional()
     @Inject(ReasoningChainService)
     private readonly reasoningChain?: ReasoningChainService,
+    // ЧАСТЬ B (ТЗ 2026-06-15 §7) — таблицы как параллельный источник. @Optional —
+    // старые тесты без этого DI и worker-процесс продолжают работать (ветка
+    // таблиц просто не запускается, tableRows=[]).
+    @Optional()
+    @Inject(ChatV2TableContextService)
+    private readonly tableContext?: ChatV2TableContextService,
   ) {}
 
   /**
@@ -611,62 +630,48 @@ export class ChatV2Service {
       /* колбэк прогресса не критичен — не ломаем синтез */
     }
 
-    // 1) Retrieval blockId'ов под scope.
+    // 1) Retrieval blockId'ов под scope — ПАРАЛЛЕЛЬНО с веткой умных таблиц.
     //
     // SBA α-5 dialog-layer:
     //  - precomputedBlockIds (RetrievalCache HIT) → пропускаем fetchCandidates.
     //  - queries[] (multi-query expansion) → fetchCandidates по каждой,
     //    blockIds объединяются с приоритетом первого запроса.
     //  - validAt → temporal-фильтр на pool + graph (см. ChatV2RetrievalService).
-    let rankedBlockIds: string[];
-    if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
-      rankedBlockIds = [...input.precomputedBlockIds].slice(0, topK);
-    } else {
-      const queries: string[] =
-        input.queries && input.queries.length > 0
-          ? [...input.queries]
-          : [query];
-      // Per-query topK берём поменьше для multi-query expansion'а, чтобы
-      // total после merge ≈ topK * 1.5 (не раздувать LLM-контекст).
-      const perQueryLimit =
-        queries.length > 1
-          ? Math.max(4, Math.ceil(topK / queries.length) + 2)
-          : topK;
-      const merged = new Map<string, number>();
-      for (let i = 0; i < queries.length; i++) {
-        const q = queries[i] ?? '';
-        if (!q || q.length === 0) continue;
-        const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
-          tenantId,
-          scope,
-          scopeId: scopeId ?? null,
-          query: q,
-          limit: perQueryLimit,
-          graphHops,
-          validAt: input.validAt ?? null,
-          accessWhere,
-          // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
-          dateFrom: input.structuralFilters?.dateFrom ?? null,
-          dateTo: input.structuralFilters?.dateTo ?? null,
-          signalTypes: input.structuralFilters?.signalTypes,
-          entityIds: input.structuralFilters?.entityIds,
-          themeBranches: input.structuralFilters?.themeBranches,
-          bitemporalActiveOnly: input.structuralFilters?.bitemporalActiveOnly ?? false,
-        });
-        // Приоритет первой query (originalOrStandalone): её score
-        // повышается за счёт rank-boost'а.
-        const boost = i === 0 ? 0.05 : 0;
-        for (const r of ranked) {
-          const prev = merged.get(r.blockId) ?? -Infinity;
-          const adj = r.score + boost;
-          if (adj > prev) merged.set(r.blockId, adj);
-        }
-      }
-      rankedBlockIds = [...merged.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, topK)
-        .map(([id]) => id);
+    //
+    // ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка (fetchTableContext) идёт
+    // ОДНОВРЕМЕННО с графовым retrieval через Promise.allSettled: по времени
+    // почти не дороже. Падение ветки таблиц НЕ валит ответ (граф отвечает).
+    const [retrievalSettled, tableSettled] = await Promise.allSettled([
+      this.runRetrieval(input, {
+        tenantId,
+        scope,
+        scopeId: scopeId ?? null,
+        query,
+        topK,
+        graphHops,
+        accessWhere,
+      }),
+      this.runTableBranch(input, tenantId),
+    ]);
+
+    const rankedBlockIds: string[] =
+      retrievalSettled.status === 'fulfilled' ? retrievalSettled.value : [];
+    if (retrievalSettled.status === 'rejected') {
+      // Графовый retrieval упал — это критично для chat-v2, но не роняем процесс:
+      // дальше contextBlocks будет пустым → честный «недостаточно данных».
+      this.logger.warn(
+        {
+          err:
+            retrievalSettled.reason instanceof Error
+              ? retrievalSettled.reason.message
+              : String(retrievalSettled.reason),
+        },
+        'chat-v2 ask: графовый retrieval упал',
+      );
     }
+    // tableRows — fail-safe: ветка таблиц никогда не должна валить ответ.
+    const tableRows: Array<{ tableName: string; cells: string }> =
+      tableSettled.status === 'fulfilled' ? tableSettled.value : [];
 
     // 2) Выгружаем сами блоки + первую evidence из встреч + meeting title.
     //    Ф4 — главный выходной шлюз доступа (см. loadContextBlocks).
@@ -681,7 +686,10 @@ export class ChatV2Service {
     // 3) Если контекст пуст — отвечаем без LLM.
     //    Ф4 (R10): если применялся структурный фильтр — отвечаем честно,
     //    называя условия, а не общим «Недостаточно данных».
-    if (contextBlocks.length === 0) {
+    //    ЧАСТЬ B (ТЗ 2026-06-15 §7): но если граф пуст, А ТАБЛИЦЫ дали строки
+    //    (например «сколько клиентов из Москвы») — НЕ возвращаем заглушку, а идём
+    //    в синтез с одними табличными данными (счётный вопрос считается по строкам).
+    if (contextBlocks.length === 0 && tableRows.length === 0) {
       const desc = input.structuralFilters
         ? describeStructuralFilters(input.structuralFilters)
         : '';
@@ -749,6 +757,9 @@ export class ChatV2Service {
       {
         conversationSummary: input.conversationSummary ?? null,
         history: input.history,
+        // ЧАСТЬ B — строки умных таблиц (параллельная ветка). Пусто → секция
+        // «Данные из таблиц» не выводится.
+        tableRows,
       },
     );
 
@@ -854,6 +865,113 @@ export class ChatV2Service {
   }
 
   // ─────────────────────────── private ───────────────────────────
+
+  /**
+   * Графовый retrieval blockId'ов под scope (вынесен из ask() для запуска
+   * ПАРАЛЛЕЛЬНО с табличной веткой, ЧАСТЬ B ТЗ 2026-06-15 §7). Логика та же:
+   * precomputedBlockIds → multi-query merge → topK. Возвращает ranked blockIds.
+   */
+  private async runRetrieval(
+    input: ChatV2Input,
+    ctx: {
+      tenantId: string;
+      scope: ChatV2Scope;
+      scopeId: string | null;
+      query: string;
+      topK: number;
+      graphHops: number;
+      accessWhere: Record<string, unknown> | undefined;
+    },
+  ): Promise<string[]> {
+    const { tenantId, scope, scopeId, query, topK, graphHops, accessWhere } = ctx;
+
+    if (input.precomputedBlockIds && input.precomputedBlockIds.length > 0) {
+      return [...input.precomputedBlockIds].slice(0, topK);
+    }
+
+    const queries: string[] =
+      input.queries && input.queries.length > 0 ? [...input.queries] : [query];
+    // Per-query topK поменьше для multi-query expansion'а, чтобы total после
+    // merge ≈ topK * 1.5 (не раздувать LLM-контекст).
+    const perQueryLimit =
+      queries.length > 1
+        ? Math.max(4, Math.ceil(topK / queries.length) + 2)
+        : topK;
+    const merged = new Map<string, number>();
+    for (let i = 0; i < queries.length; i++) {
+      const q = queries[i] ?? '';
+      if (!q || q.length === 0) continue;
+      const ranked: RankedBlockId[] = await this.retrieval.fetchCandidates({
+        tenantId,
+        scope,
+        scopeId: scopeId ?? null,
+        query: q,
+        limit: perQueryLimit,
+        graphHops,
+        validAt: input.validAt ?? null,
+        accessWhere,
+        // Query Understanding Волна 1 (Ф3 consume) — структурные фильтры.
+        dateFrom: input.structuralFilters?.dateFrom ?? null,
+        dateTo: input.structuralFilters?.dateTo ?? null,
+        signalTypes: input.structuralFilters?.signalTypes,
+        entityIds: input.structuralFilters?.entityIds,
+        themeBranches: input.structuralFilters?.themeBranches,
+        bitemporalActiveOnly:
+          input.structuralFilters?.bitemporalActiveOnly ?? false,
+      });
+      // Приоритет первой query (originalOrStandalone): её score boost'ится.
+      const boost = i === 0 ? 0.05 : 0;
+      for (const r of ranked) {
+        const prev = merged.get(r.blockId) ?? -Infinity;
+        const adj = r.score + boost;
+        if (adj > prev) merged.set(r.blockId, adj);
+      }
+    }
+    return [...merged.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topK)
+      .map(([id]) => id);
+  }
+
+  /**
+   * ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка: ищет строки умных таблиц на
+   * обогащённом понимании запроса (delegated to ChatV2TableContextService).
+   * Запускается ПАРАЛЛЕЛЬНО с графовым retrieval (allSettled в ask()).
+   *
+   * Не запускаем (→ []), если:
+   *  - сервис недоступен (@Optional → undefined; worker / частичная сборка), ИЛИ
+   *  - нет обогащённого понимания (нет ни entityIds, ни entityHints, ни queries) —
+   *    значит вызов идёт из старого chat-модуля без dialog-layer'а.
+   * Никогда не бросает — fail-safe внутри сервиса; здесь дополнительный try.
+   */
+  private async runTableBranch(
+    input: ChatV2Input,
+    tenantId: string,
+  ): Promise<Array<{ tableName: string; cells: string }>> {
+    if (!this.tableContext) return [];
+    const entityIds = input.tableEntityIds ?? [];
+    const entityHints = input.tableEntityHints ?? [];
+    const queries = input.queries && input.queries.length > 0 ? input.queries : [];
+    // Нет обогащённого понимания — ветку не запускаем (см. ТЗ §7).
+    if (entityIds.length === 0 && entityHints.length === 0 && queries.length === 0) {
+      return [];
+    }
+    try {
+      return await this.tableContext.fetchTableContext({
+        tenantId,
+        queries: [...queries],
+        entityIds: [...entityIds],
+        entityHints: [...entityHints],
+        aggregation: input.tableAggregation ?? false,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 runTableBranch: сбой — возвращаем [] (граф отвечает)',
+      );
+      return [];
+    }
+  }
 
   /**
    * Выгружает блоки + первую evidence (привязанную к meeting RawEvent).

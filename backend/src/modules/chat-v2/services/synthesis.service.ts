@@ -57,6 +57,15 @@ export interface SynthesisInput {
   validAt?: Date | null;
   /** Query Understanding Волна 1 — резолвнутые структурные фильтры (Ф3 consume). */
   structuralFilters?: StructuralRetrievalFilters | null;
+  /**
+   * ЧАСТЬ B (ТЗ 2026-06-15 §7) — обогащённое понимание для параллельной ветки
+   * умных таблиц (выбор таблицы + entity-bridge). Все опциональны: нет → ветка
+   * таблиц не запускается. entityIds берётся из structuralFilters.entityIds в
+   * оркестраторе; entityHints/aggregation — из queryPlan.filters.
+   */
+  tableEntityHints?: ReadonlyArray<string>;
+  tableEntityIds?: ReadonlyArray<string>;
+  tableAggregation?: boolean;
   /** SBA α-5 dialog-layer — сжатая старая часть диалога. */
   conversationSummary?: string | null;
   /** SBA α-5 dialog-layer — intent (для metrics / mode-prompt routing). */
@@ -229,6 +238,11 @@ export class SynthesisService {
       queries: input.queries ?? undefined,
       validAt: input.validAt ?? null,
       structuralFilters: input.structuralFilters ?? null,
+      // ЧАСТЬ B (ТЗ 2026-06-15 §7) — проброс обогащённого понимания для
+      // параллельной ветки умных таблиц.
+      tableEntityHints: input.tableEntityHints,
+      tableEntityIds: input.tableEntityIds,
+      tableAggregation: input.tableAggregation,
       intent: input.intent ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,

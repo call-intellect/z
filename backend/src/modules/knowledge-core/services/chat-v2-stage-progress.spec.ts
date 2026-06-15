@@ -27,7 +27,11 @@ function makeService(): {
   svc: ChatV2Service;
   llmCall: ReturnType<typeof vi.fn>;
 } {
-  const prisma = {} as unknown as PrismaService;
+  // ТЗ 2026-06-15 — ask() читает CompanyProfile для хвоста «О компании».
+  // Здесь профиля нет (findUnique→null) → секция опускается.
+  const prisma = {
+    companyProfile: { findUnique: vi.fn().mockResolvedValue(null) },
+  } as unknown as PrismaService;
 
   const cfg = {
     knowledgeCore: {

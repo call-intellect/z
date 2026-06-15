@@ -52,14 +52,14 @@ export function MyWeeklyPlanFactWidget() {
           <div className="space-y-3">
             <div
               className="h-16 animate-pulse rounded-2xl"
-              style={{ background: 'oklch(1 0 0 / 0.05)' }}
+              style={{ background: 'var(--surface-inset)' }}
             />
             <div className="grid grid-cols-3 gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={i}
                   className="h-16 animate-pulse rounded-2xl"
-                  style={{ background: 'oklch(1 0 0 / 0.05)' }}
+                  style={{ background: 'var(--surface-inset)' }}
                 />
               ))}
             </div>
@@ -72,7 +72,7 @@ export function MyWeeklyPlanFactWidget() {
           <>
             <div
               className="flex items-center justify-between rounded-2xl px-4 py-3"
-              style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              style={{ background: 'var(--surface-inset)' }}
             >
               <span className="text-sm" style={{ color: CHART.dim }}>
                 Надёжность обещаний
@@ -203,10 +203,10 @@ function Stat({
   label: string;
 }) {
   return (
-    <div className="rounded-2xl p-3" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+    <div className="rounded-2xl p-3" style={{ background: 'var(--surface-inset)' }}>
       <div
         className="grid h-8 w-8 place-items-center rounded-lg"
-        style={{ background: 'oklch(1 0 0 / 0.06)', color: tone }}
+        style={{ background: 'var(--surface-inset)', color: tone }}
       >
         {icon}
       </div>

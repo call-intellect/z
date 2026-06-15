@@ -96,8 +96,8 @@ export class ServiceMapGeneratorService implements OnModuleInit {
    *
    * Маппинг whitelist `ToolSchema` → `LlmTool` для `LlmCallParams.tools`:
    * провайдер получает tools нативно (tool_choice='auto' ставится адаптером),
-   * а SYSTEM собирается без JSON-инструкции и списка инструментов
-   * (см. `buildSystemPrompt` в concierge.service.ts). `parameters` уже в
+   * а SYSTEM — стабильный `CONCIERGE_RESPOND_SYSTEM_PROMPT` без списка
+   * инструментов (см. `concierge-respond.prompt.ts`). `parameters` уже в
    * формате JSON Schema `{type:'object', properties, required?}` — переносим
    * как есть в `input_schema`.
    *
@@ -157,7 +157,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       {
         name: 'create_meeting',
         description:
-          'Создать новую встречу с заданной темой (title) и типом (type ∈ standup|sales|interview|brainstorm|...). Возвращает URL комнаты.',
+          'Используй для создания новой видеовстречи Коры по теме (title) и типу (type ∈ standup|sales|interview|brainstorm|...). Возвращает ссылку на комнату. Для записи события в календарь (с датой/временем) используй create_event.',
         method: 'POST',
         path: '/api/v1/meetings',
         parameters: {
@@ -174,7 +174,8 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       },
       {
         name: 'cancel_meeting',
-        description: 'Отменить (мягко удалить) встречу по id.',
+        description:
+          'Используй для отмены встречи Коры по её идентификатору. Откатывает create_meeting.',
         method: 'POST',
         path: '/api/v1/meetings/:id/cancel',
         parameters: {
@@ -188,25 +189,9 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacAction: 'delete',
       },
       {
-        name: 'search_knowledge',
-        description:
-          'Полнотекстовый поиск по карточкам, встречам, задачам, документам, отделам, должностям. Использовать для общих вопросов «найди X».',
-        method: 'GET',
-        path: '/api/v1/search',
-        parameters: {
-          type: 'object',
-          properties: {
-            q: { type: 'string', description: 'Строка поиска' },
-          },
-          required: ['q'],
-        },
-        rbacResource: 'block',
-        rbacAction: 'read',
-      },
-      {
         name: 'ask_chat_v2',
         description:
-          'Задать развёрнутый вопрос AI-чату компании поверх IdeaBlock-графа (chat-v2). Возвращает ответ с цитатами. Использовать для смысловых вопросов «что мы решили по проекту X».',
+          'Используй для смыслового ВОПРОСА к памяти компании: «что мы решили / обсуждали по проекту X», «почему так сделали», «кто за что отвечает». Отвечает из графа знаний компании с ссылками на источники. Его ответ отдавай пользователю как есть, не переписывай.',
         method: 'POST',
         path: '/api/v1/chat-v2/messages',
         parameters: {
@@ -222,9 +207,84 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         // это «задать вопрос» — отмена бессмысленна, confirm не нужен.
         readOnly: true,
       },
+      // ТЗ 2026-06-14 (assistant-router) — постановка задачи СЕБЕ в трекер
+      // (self-эндпоинт `POST /me/tasks`, проект «Входящие»). Мутирующий, без
+      // undoableVia → требует подтверждения (Ф6/web). RBAC issue/write —
+      // рядовой может ставить задачи себе.
+      {
+        name: 'create_task',
+        description:
+          'Используй для постановки задачи СЕБЕ в трекер (в проект «Входящие»). Когда сотрудник просит поставить/создать задачу/дело/напоминание. Перед постановкой убедись, что ясны суть и (если нужно) срок.',
+        method: 'POST',
+        path: '/api/v1/me/tasks',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: {
+              type: 'string',
+              description: 'Краткая суть задачи (что нужно сделать).',
+            },
+            description: {
+              type: 'string',
+              description: 'Подробности задачи. Опц.',
+            },
+            dueDate: {
+              type: 'string',
+              description: 'Срок в формате ISO-8601 (например, 2026-06-20). Опц.',
+            },
+          },
+          required: ['title'],
+        },
+        rbacResource: 'issue',
+        rbacAction: 'write',
+      },
+      // ТЗ 2026-06-14 — поиск/показ МОИХ задач в трекере. Возвращает задачи с
+      // идентификаторами (можно потом закрыть/переназначить). Отличать от
+      // list_tasks (legacy — действия-задачи из встреч).
+      {
+        name: 'search_tasks',
+        description:
+          'Используй для показа/поиска МОИХ задач в трекере (мои открытые дела, задачи на мне). Возвращает задачи с идентификаторами.',
+        method: 'GET',
+        path: '/api/v1/me/inbox',
+        parameters: {
+          type: 'object',
+          properties: {
+            cursor: { type: 'string', description: 'Курсор пагинации. Опц.' },
+            limit: { type: 'number', description: 'Сколько задач вернуть. Опц.' },
+          },
+        },
+        rbacResource: 'issue',
+        rbacAction: 'read',
+        readOnly: true,
+      },
+      // ТЗ 2026-06-14 — «запомнить»: занести мысль/идею/наблюдение/факт в память
+      // компании (RawEvent → граф). Не вопрос и не команда. self-scoped, без
+      // rbacResource; readOnly:true чтобы НЕ требовать подтверждения (как
+      // ask_chat_v2 — для пользователя это не мутация, а «сохрани мою мысль»).
+      {
+        name: 'ingest_note',
+        description:
+          'Используй, когда сотрудник ДЕЛИТСЯ мыслью/идеей/наблюдением/фактом о клиенте или проекте (НЕ вопрос и НЕ команда) — занеси это в память компании. После — коротко подтверди «записал в память».',
+        method: 'POST',
+        path: '/api/v1/me/notifications/free-note',
+        parameters: {
+          type: 'object',
+          properties: {
+            text: {
+              type: 'string',
+              description:
+                'Текст заметки/идеи/наблюдения дословно — то, чем поделился сотрудник.',
+            },
+          },
+          required: ['text'],
+        },
+        readOnly: true,
+      },
       {
         name: 'list_tasks',
-        description: 'Получить мои активные задачи (по умолчанию — top 20).',
+        description:
+          'Используй для показа действий-задач, извлечённых ИЗ ВСТРЕЧ (поручения и пункты, которые AI достал из расшифровки встречи). Это НЕ задачи трекера — для моих задач в трекере используй search_tasks.',
         method: 'GET',
         path: '/api/v1/tasks',
         parameters: {

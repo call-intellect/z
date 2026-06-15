@@ -65,15 +65,17 @@ function channelConfirmKey(channelBindingId: string): string {
  * Ф6 (2026-06-11) — канальный whitelist инструментов помощника.
  *
  * SELF — рядовой сотрудник в Telegram/MAX: личный календарь/задачи/встречи,
- * поиск и AI-чат. Руководительские инструменты (карточка человека, здоровье
+ * заметки и AI-чат. Руководительские инструменты (карточка человека, здоровье
  * команды, обещания, спринт, чужой календарь) НЕ видны.
  *
- * `create_task` из контракта ТЗ НЕ включён: в реестре ServiceMapGenerator
- * инструмента постановки задачи нет, а единственный семантически подходящий
- * REST (`POST /api/v1/intake`, «попадёт в авто-триаж») закрыт RBAC
- * `intake_issue/write` = owner/admin/coo — для рядового (основная аудитория
- * SELF) вызов всегда 403, а менять policy.csv в этой фазе запрещено.
- * Блокер зафиксирован в отчёте фазы — решение за оркестратором.
+ * Синхронизация с ТЗ помощника (2026-06-14, channels-sync): теперь к памяти
+ * компании ведёт только `ask_chat_v2` (прежний `search_knowledge` удалён из
+ * реестра ServiceMapGenerator). Постановка/чтение задач — через `create_task`
+ * (POST /api/v1/me/tasks) и `search_tasks` (GET /api/v1/me/inbox), свободная
+ * заметка в граф — через `ingest_note` (POST /api/v1/me/notifications/
+ * free-note). Все три инструмента доступны рядовому (личные REST `/me/*`, без
+ * RBAC-эскалации), поэтому task-сообщения из Telegram/MAX теперь идут через
+ * помощника (assistant_turn → concierge → create_task), а не отдельной веткой.
  *
  * Экспортируются для unit-тестов моста.
  */
@@ -84,7 +86,9 @@ export const CHANNEL_TOOL_WHITELIST_SELF: readonly string[] = [
   'create_event',
   'create_meeting',
   'find_free_slot',
-  'search_knowledge',
+  'create_task',
+  'search_tasks',
+  'ingest_note',
   'ask_chat_v2',
 ];
 

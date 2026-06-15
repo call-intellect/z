@@ -22,7 +22,7 @@ import { humanizeApiError } from '@/api/api-error';
 import { dashboardApi } from '@/api/dashboard.api';
 import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
 import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { orgsApi } from '@/api/orgs.api';
+import { onboardingApi } from '@/api/onboarding.api';
 import { useAuth } from '@/contexts/auth-context';
 import { useSubscription } from '@/contexts/subscription-context';
 import { useMemberships } from '@/hooks/useMemberships';
@@ -48,7 +48,6 @@ import { cn } from '@/ui/shadcn/lib/utils';
 import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
 import { CompassWidget } from '@/ui/components/dashboard/CompassWidget';
 import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
-import { RequiresActionTile } from '@/ui/components/dashboard/RequiresActionTile';
 import {
   CardTitle as ModernCardTitle,
   CHART,
@@ -57,6 +56,8 @@ import {
   MODERN_PAGE_BG,
   glass,
 } from '@/ui/components/dashboard/modern';
+import { DigitizedSummaryWidget } from './widgets/DigitizedSummaryWidget';
+import { TeamActivityWidget } from './widgets/TeamActivityWidget';
 import { ValueStripWidget } from './widgets/ValueStripWidget';
 import { VerdictBar } from './widgets/VerdictBar';
 
@@ -74,7 +75,8 @@ import { VerdictBar } from './widgets/VerdictBar';
  *   2. Грид: «Что было вчера» (daily-digest.shortSummary) + «Требует вас» (якорь).
  *   3. «Польза за неделю» (valueStrip, 5 stat).
  *   4. Грид: «Вектор к цели» (CompassWidget ← pulse.goalVector) + «Сводка Коры».
- *   5. «Самое острое» (радар топ-3 ← newSignals, затухание по свежести).
+ *   5. Грид: «Самое острое» (радар топ-3 ← newSignals, затухание по свежести)
+ *      + «Оцифровано» (счётчики regulations/summary, CTA → /regulations).
  *   6. «Лента дня» (свёрнуто, топ-5 ← daily-digest.eventsToday) + плашка
  *      «Вопросов Коры без ответа: N».
  *   7. «Дисциплина чек-инов сегодня» (checkin-discipline, from=to=сегодня).
@@ -210,36 +212,23 @@ export function DirectorDashboardClient() {
     window.location.href = '/dashboard';
   }, [referenceMembership]);
 
-  const orgSwr = useSWR(
+  // QA B6 (2026-06-15) — прогресс настройки берём с бэка (setup-progress),
+  // который считает вехи по принципу «timestamp ИЛИ факт существования
+  // сущности». Раньше прогресс считался только по Org.*CompletedAt, поэтому
+  // отделы/должности, заведённые вне мастера, давали «0 из 6».
+  const setupProgressSwr = useSWR(
     isPageEmpty && isOwnerOrAdmin && currentOrgId
-      ? ['main-empty-org', currentOrgId]
+      ? ['main-setup-progress', currentOrgId]
       : null,
-    () => orgsApi.byId(currentOrgId!),
+    () => onboardingApi.getSetupProgress(currentOrgId!),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const setupProgress = useMemo(() => {
     if (!isOwnerOrAdmin) return undefined;
-    const org = orgSwr.data?.org as
-      | {
-          welcomeCompletedAt?: string | null;
-          companyInfoCompletedAt?: string | null;
-          departmentsCompletedAt?: string | null;
-          rolesCompletedAt?: string | null;
-          teamInvitedAt?: string | null;
-          firstMeetingCreatedAt?: string | null;
-          firstSprintCreatedAt?: string | null;
-        }
-      | undefined;
-    if (!org) return undefined;
-    let n = 0;
-    if (org.welcomeCompletedAt) n++;
-    if (org.companyInfoCompletedAt) n++;
-    if (org.departmentsCompletedAt) n++;
-    if (org.rolesCompletedAt) n++;
-    if (org.teamInvitedAt) n++;
-    if (org.firstMeetingCreatedAt || org.firstSprintCreatedAt) n++;
-    return { completed: n, total: 6 };
-  }, [orgSwr.data, isOwnerOrAdmin]);
+    const p = setupProgressSwr.data;
+    if (!p) return undefined;
+    return { completed: p.completed, total: p.total };
+  }, [setupProgressSwr.data, isOwnerOrAdmin]);
 
   if (isPageEmpty) {
     return (
@@ -256,8 +245,9 @@ export function DirectorDashboardClient() {
   }
 
   // ─── Вердикт: сбор данных не работает? (Б-6 сбой) ────────────────────────
-  // degraded из directorView ИЛИ полный сбой загрузки (error при отсутствии data).
-  const collectorDown = !!error && data === null;
+  // A11.5 — полный сбой загрузки (error при отсутствии data) ИЛИ частичная
+  // деградация ответа (200 + degraded:true): часть виджетов не собралась.
+  const collectorDown = (!!error && data === null) || data?.degraded === true;
   const digest = digestSwr.data ?? null;
   const checkin = checkinSwr.data ?? null;
 
@@ -285,7 +275,7 @@ export function DirectorDashboardClient() {
             <Link
               href="/week"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               aria-label="Открыть Неделю"
             >
               <Calendar size={14} strokeWidth={1.75} className="shrink-0" />
@@ -294,7 +284,7 @@ export function DirectorDashboardClient() {
             <Link
               href="/month"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               aria-label="Открыть Итоги месяца"
             >
               <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
@@ -433,17 +423,21 @@ export function DirectorDashboardClient() {
           </div>
         </div>
 
-        {/* ── 5. Самое острое — радар топ-3 ────────────────────────────── */}
-        <div className="mb-6">
+        {/* ── 5. Грид: «Самое острое» (радар топ-3) + «Оцифровано» ──────── */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           <SharpRadarCard
             signals={sharpSignals}
             loading={loading && data === null}
           />
+          <DigitizedSummaryWidget orgId={currentOrgId} />
         </div>
 
-        {/* ── 6. Лента дня (свёрнуто) + плашка «Вопросов Коры без ответа» ─ */}
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        {/* ── 6. Активность команды (кто что сделал) + Лента дня + плашка ─ */}
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <TeamActivityWidget orgId={currentOrgId} />
           <DayFeedCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+        </div>
+        <div className="mb-6">
           <ProbeUnansweredPill count={probeUnanswered} />
         </div>
 
@@ -474,7 +468,7 @@ function PeriodSwitch({
   return (
     <div
       className="inline-flex items-center rounded-md p-0.5 text-sm"
-      style={{ background: 'oklch(1 0 0 / 0.06)' }}
+      style={{ background: 'var(--surface-inset)' }}
     >
       {(['week', 'month'] as const).map((p) => (
         <button
@@ -629,7 +623,7 @@ function RequiresAnchorCard({
                 <li key={s} className="flex items-center gap-2 text-sm">
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.dim }}
+                    style={{ background: 'var(--surface-inset-strong)', color: CHART.dim }}
                   >
                     {REQUIRES_SOURCE_LABEL[s]}
                   </span>
@@ -643,7 +637,7 @@ function RequiresAnchorCard({
           <Link
             href="/actions"
             className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium transition-transform hover:translate-y-[-1px]"
-            style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.text }}
+            style={{ background: 'var(--surface-inset-strong)', color: CHART.text }}
           >
             Открыть очередь
             <ArrowRight size={15} />
@@ -733,7 +727,7 @@ function SharpRadarCard({
               <li key={s.id} style={{ opacity }}>
                 <Link
                   href={href}
-                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <span
                     className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
@@ -826,11 +820,11 @@ function DayFeedCard({
               <li key={`${e.kind}:${e.id}`}>
                 <Link
                   href={e.link || '/meetings'}
-                  className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+                  className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <span
                     className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'oklch(1 0 0 / 0.08)', color: CHART.faint }}
+                    style={{ background: 'var(--surface-inset-strong)', color: CHART.faint }}
                   >
                     {EVENT_KIND_LABEL[e.kind] ?? e.kind}
                   </span>
@@ -910,7 +904,7 @@ function CheckinDisciplineTodayPill({
         <div className="flex items-center gap-2.5">
           <span
             className="grid h-8 w-8 place-items-center rounded-xl"
-            style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.faint }}
+            style={{ background: 'var(--surface-inset)', color: CHART.faint }}
           >
             <ClipboardCheck size={16} />
           </span>

@@ -169,8 +169,8 @@ export function ValueRecapDashboardClient() {
                   disabled={exporting}
                   className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                   style={{
-                    background: 'oklch(1 0 0 / 0.06)',
-                    border: '1px solid oklch(1 0 0 / 0.1)',
+                    background: 'var(--surface-inset)',
+                    border: '1px solid var(--border-inset)',
                     color: CHART.text,
                   }}
                 >
@@ -182,8 +182,8 @@ export function ValueRecapDashboardClient() {
                   onClick={handlePrint}
                   className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium"
                   style={{
-                    background: 'oklch(1 0 0 / 0.06)',
-                    border: '1px solid oklch(1 0 0 / 0.1)',
+                    background: 'var(--surface-inset)',
+                    border: '1px solid var(--border-inset)',
                     color: CHART.text,
                   }}
                 >
@@ -255,7 +255,7 @@ function ValueRecapBody({ domain }: { domain: ValueRecapDomain }) {
             <div
               key={cell.key}
               className="rounded-xl p-4"
-              style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              style={{ background: 'var(--surface-inset)' }}
             >
               <div
                 className="text-[28px] font-semibold leading-none tracking-tight"
@@ -360,7 +360,7 @@ function TeamLayer({ team }: { team: ValueRecapTeamApi }) {
           <div
             key={it.label}
             className="rounded-xl p-4"
-            style={{ background: 'oklch(1 0 0 / 0.04)' }}
+            style={{ background: 'var(--surface-inset)' }}
           >
             <div className="text-xs" style={{ color: CHART.dim }}>
               {it.label}
@@ -414,7 +414,7 @@ function DecisionsBlock({ domain }: { domain: ValueRecapDomain }) {
                 {decisions.map((d) => (
                   <tr
                     key={d.id}
-                    style={{ borderTop: '1px solid oklch(1 0 0 / 0.06)' }}
+                    style={{ borderTop: '1px solid var(--border-inset)' }}
                   >
                     <td className="py-3 pr-3" style={{ color: CHART.text }}>
                       {d.statement}
@@ -531,7 +531,7 @@ function DecisionProgress({ decision }: { decision: ValueRecapDecision }) {
     <div className="flex items-center justify-end gap-2.5">
       <div
         className="h-1.5 w-24 overflow-hidden rounded-full"
-        style={{ background: 'oklch(1 0 0 / 0.08)' }}
+        style={{ background: 'var(--surface-inset-strong)' }}
       >
         <div
           className="h-full rounded-full"
@@ -616,8 +616,8 @@ function PeriodSelector({
     <div
       className="inline-flex items-center gap-1 rounded-xl p-1"
       style={{
-        background: 'oklch(1 0 0 / 0.06)',
-        border: '1px solid oklch(1 0 0 / 0.1)',
+        background: 'var(--surface-inset)',
+        border: '1px solid var(--border-inset)',
       }}
     >
       <button

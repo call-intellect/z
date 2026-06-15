@@ -45,6 +45,7 @@ import { Badge } from '@/ui/shadcn/badge';
 import { Textarea } from '@/ui/shadcn/textarea';
 import { Progress } from '@/ui/shadcn/progress';
 
+import { humanizeApiError } from '@/api/api-error';
 import { useAuth } from '@/contexts/auth-context';
 import { usePendingActions } from '@/hooks/usePendingActions';
 import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
@@ -512,8 +513,13 @@ export function ActionsClient() {
       await confirm(action, resolve);
       await mutateCount();
       toast.success('Готово.');
-    } catch {
-      toast.error('Не удалось — возможно, уже решено. Обновите страницу.');
+    } catch (e) {
+      // QA B8 (2026-06-15) — показываем реальную причину с сервера (а не глухое
+      // «возможно, уже решено»): humanizeApiError достаёт RU-message ApiError,
+      // фоллбэк — прежний текст.
+      toast.error(
+        humanizeApiError(e, 'Не удалось — возможно, уже решено. Обновите страницу.'),
+      );
       // мутация откатывается внутри хука (rollbackOnError); пробрасываем
       // дальше, чтобы карточка сняла busy-состояние.
       throw new Error('confirm failed');

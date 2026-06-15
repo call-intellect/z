@@ -48,7 +48,7 @@ export function BarTrend({
               tickLine={false}
               tick={{ fill: CHART.faint, fontSize: 12 }}
             />
-            <Tooltip content={<ChartTip />} cursor={{ fill: 'oklch(1 0 0 / 0.05)' }} />
+            <Tooltip content={<ChartTip />} cursor={{ fill: 'var(--surface-inset)' }} />
             <Bar dataKey={dataKey} radius={[8, 8, 0, 0]} fill="url(#bar)" maxBarSize={34} />
           </BarChart>
         </ResponsiveContainer>

@@ -12,6 +12,7 @@ import {
   TasksSchema,
   turnsToText,
   withConfidenceCalibration,
+  withNotATaskDiscriminator,
   withRoomChatNote,
   withToolInstructions,
 } from './common';
@@ -401,6 +402,12 @@ function buildSystemUnified(
     // не отменяет, только уточняет шкалу.
     body = withConfidenceCalibration(body);
   }
+
+  // Ф7 (интент): негативный класс «не задача» — в САМЫЙ конец system
+  // (после калибровки confidence), чтобы блок приклеился стабильной
+  // константой в хвост и для enriched (meeting-extract-actions), и для
+  // structured (chatbox→Task). Кэш не страдает: префикс не меняется.
+  body = withNotATaskDiscriminator(body);
 
   return body;
 }

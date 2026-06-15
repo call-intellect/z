@@ -5,8 +5,8 @@ import { CheckCircle2, Copy, LinkIcon } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 import { buildReferralUrl, type ReferralDomain } from '@/domain/referral';
+import { GRAD, glass } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
 import { Input } from '@/ui/shadcn/input';
 
 interface Props {
@@ -24,6 +24,10 @@ interface Props {
  *
  * Origin берётся из `window.location.origin` — это безопасно, так как
  * компонент `'use client'`. В SSR-fallback ставим `https://app.kora.app`.
+ *
+ * Редизайн B10: стеклянная обёртка `glass()`. QR лежит на сплошной светлой
+ * плашке (`var(--bg-card)`) с белым модулем-фоном, чтобы код оставался
+ * читаемым на градиентной подложке в обеих темах.
  */
 export function ReferralLinkCard({ referral, hint }: Props) {
   const origin =
@@ -51,19 +55,20 @@ export function ReferralLinkCard({ referral, hint }: Props) {
   };
 
   return (
-    <Card className="space-y-4 p-6">
-      <header className="flex items-center gap-2">
+    <div style={glass()} className="space-y-4 p-6">
+      <header className="flex items-center gap-2.5">
         <span
-          className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-muted text-accent"
+          className="grid h-8 w-8 place-items-center rounded-xl"
+          style={{ background: GRAD.blue, color: 'oklch(0.99 0.005 280)' }}
           aria-hidden="true"
         >
           <LinkIcon className="h-4 w-4" />
         </span>
         <div>
-          <h2 className="text-base font-semibold text-fg-primary">
+          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
             Твоя партнёрская ссылка
           </h2>
-          <p className="text-xs text-fg-tertiary">
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
             Поделись ей — клики и оплаты попадают тебе автоматически.
           </p>
         </div>
@@ -99,7 +104,14 @@ export function ReferralLinkCard({ referral, hint }: Props) {
             </Button>
           </div>
           {hint && (
-            <p className="rounded-md border border-border-subtle bg-bg-base/40 px-3 py-2 text-sm text-fg-secondary">
+            <p
+              className="rounded-xl px-3 py-2 text-sm"
+              style={{
+                background: 'var(--surface-inset)',
+                border: '1px solid var(--border-inset)',
+                color: 'var(--text-secondary)',
+              }}
+            >
               {hint}
             </p>
           )}
@@ -107,7 +119,11 @@ export function ReferralLinkCard({ referral, hint }: Props) {
 
         <div className="flex justify-center lg:justify-end">
           <div
-            className="rounded-md border border-border-subtle bg-bg-card p-3"
+            className="rounded-2xl p-3"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-inset)',
+            }}
             aria-label="QR-код партнёрской ссылки"
           >
             <QRCodeSVG
@@ -120,6 +136,6 @@ export function ReferralLinkCard({ referral, hint }: Props) {
           </div>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

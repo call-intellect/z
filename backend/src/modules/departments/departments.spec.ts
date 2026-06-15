@@ -2,18 +2,25 @@
  * Unit-тесты DepartmentsService.mergeDepartments (редизайн кабинета Ф7а).
  *
  * Покрытие:
- *   - перенос всех 6 FK source→target вызван с правильными where/data
+ *   - перенос всех 10 FK/ссылок source→target вызван с правильными where/data
  *     (Role / Appointment / Project / Person.primaryDepartment / дочерние
- *     Department / DepartmentDomainLink);
+ *     Department / DepartmentDomainLink / Metric.attachedToDepartment /
+ *     Interaction.counterpartDepartment / OrgUnit.parentDepartment /
+ *     Department.entityId);
  *   - DepartmentDomainLink: дубль (target уже покрывает domain) → delete,
  *     иначе → update на target;
+ *   - Department.entityId: перенос с обходом UNIQUE (обнулить source → присвоить
+ *     target) только если у target пусто; не трогаем, если у target уже есть;
+ *   - регресс A2: после merge для всех перенесённых FK вызван updateMany
+ *     source→target (0 висячих ссылок на удалённый отдел);
  *   - source soft-deleted (deletedAt выставлен);
  *   - запрет self-merge (source===target) → BadRequest;
  *   - запрет цикла (target — потомок source) → BadRequest;
  *   - повторный merge уже удалённого source → BadRequest (не 500).
  *
  * Все зависимости мокаются: Prisma (department/role/appointment/project/person/
- * departmentDomainLink + $transaction прокидывает тот же tx), AuditLogService.
+ * departmentDomainLink/metric/interaction/orgUnit + $transaction прокидывает тот
+ * же tx), AuditLogService.
  */
 
 import { BadRequestException } from '@nestjs/common';
@@ -29,6 +36,7 @@ interface DeptSeed {
   tenantId: string;
   parentDepartmentId?: string | null;
   headPersonId?: string | null;
+  entityId?: string | null;
   deletedAt?: Date | null;
   name?: string;
 }
@@ -62,6 +70,9 @@ function makePrisma(opts: {
     childUpdateMany: [] as unknown[],
     domainLinkUpdate: [] as unknown[],
     domainLinkDelete: [] as unknown[],
+    metricUpdateMany: [] as unknown[],
+    interactionUpdateMany: [] as unknown[],
+    orgUnitUpdateMany: [] as unknown[],
     deptUpdate: [] as Array<{ where: { id: string }; data: Record<string, unknown> }>,
   };
 
@@ -76,6 +87,7 @@ function makePrisma(opts: {
               tenantId: d.tenantId,
               parentDepartmentId: d.parentDepartmentId ?? null,
               headPersonId: d.headPersonId ?? null,
+              entityId: d.entityId ?? null,
               deletedAt: d.deletedAt ?? null,
               name: d.name ?? d.id,
             }
@@ -157,6 +169,24 @@ function makePrisma(opts: {
         return {};
       }),
     },
+    metric: {
+      updateMany: vi.fn(async (arg: unknown) => {
+        calls.metricUpdateMany.push(arg);
+        return { count: 6 };
+      }),
+    },
+    interaction: {
+      updateMany: vi.fn(async (arg: unknown) => {
+        calls.interactionUpdateMany.push(arg);
+        return { count: 7 };
+      }),
+    },
+    orgUnit: {
+      updateMany: vi.fn(async (arg: unknown) => {
+        calls.orgUnitUpdateMany.push(arg);
+        return { count: 8 };
+      }),
+    },
   };
 
   return { prisma: prisma as unknown as PrismaService, calls, byId };
@@ -169,7 +199,7 @@ function makeService(prisma: PrismaService): DepartmentsService {
 const TENANT = 't1';
 
 describe('DepartmentsService.mergeDepartments', () => {
-  it('переносит все 6 FK source→target и soft-удаляет source', async () => {
+  it('переносит все 10 FK/ссылок source→target и soft-удаляет source', async () => {
     const { prisma, calls, byId } = makePrisma({
       departments: [
         { id: 'src', tenantId: TENANT },
@@ -207,6 +237,19 @@ describe('DepartmentsService.mergeDepartments', () => {
       where: { tenantId: TENANT, parentDepartmentId: 'src' },
       data: { parentDepartmentId: 'dst' },
     });
+    // A2: KPI-метрики, взаимодействия и OrgUnit переподвешены source→target.
+    expect(calls.metricUpdateMany[0]).toEqual({
+      where: { tenantId: TENANT, attachedToDepartmentId: 'src' },
+      data: { attachedToDepartmentId: 'dst' },
+    });
+    expect(calls.interactionUpdateMany[0]).toEqual({
+      where: { tenantId: TENANT, counterpartDepartmentId: 'src' },
+      data: { counterpartDepartmentId: 'dst' },
+    });
+    expect(calls.orgUnitUpdateMany[0]).toEqual({
+      where: { tenantId: TENANT, parentDepartmentId: 'src' },
+      data: { parentDepartmentId: 'dst' },
+    });
 
     // source помечен soft-deleted.
     expect(byId.get('src')?.deletedAt).toBeInstanceOf(Date);
@@ -219,6 +262,9 @@ describe('DepartmentsService.mergeDepartments', () => {
       projects: 4,
       persons: 5,
       childDepartments: 2,
+      metrics: 6,
+      interactions: 7,
+      orgUnits: 8,
     });
   });
 
@@ -294,6 +340,133 @@ describe('DepartmentsService.mergeDepartments', () => {
       where: { id: 'dst' },
       data: { headPersonId: 'head-src' },
     });
+  });
+
+  it('entityId: переносит с обходом UNIQUE (обнулить source → присвоить target), если у target пусто', async () => {
+    const { prisma, calls } = makePrisma({
+      departments: [
+        { id: 'src', tenantId: TENANT, entityId: 'ent-src' },
+        { id: 'dst', tenantId: TENANT, entityId: null },
+      ],
+    });
+    const svc = makeService(prisma);
+    const res = await svc.mergeDepartments({
+      tenantId: TENANT,
+      sourceId: 'src',
+      targetId: 'dst',
+      byUserId: 'u1',
+    });
+
+    // Сначала освобождаем unique у source, затем присваиваем target.
+    const srcNull = calls.deptUpdate.findIndex(
+      (c) => c.where.id === 'src' && c.data.entityId === null,
+    );
+    const dstSet = calls.deptUpdate.findIndex(
+      (c) => c.where.id === 'dst' && c.data.entityId === 'ent-src',
+    );
+    expect(srcNull).toBeGreaterThanOrEqual(0);
+    expect(dstSet).toBeGreaterThanOrEqual(0);
+    // Порядок: обнуление source строго ДО присвоения target (иначе P2002).
+    expect(srcNull).toBeLessThan(dstSet);
+    expect(res.moved.entity).toBe(1);
+  });
+
+  it('entityId: НЕ трогает, если у target уже есть entityId (source осиротеет)', async () => {
+    const { prisma, calls } = makePrisma({
+      departments: [
+        { id: 'src', tenantId: TENANT, entityId: 'ent-src' },
+        { id: 'dst', tenantId: TENANT, entityId: 'ent-dst' },
+      ],
+    });
+    const svc = makeService(prisma);
+    const res = await svc.mergeDepartments({
+      tenantId: TENANT,
+      sourceId: 'src',
+      targetId: 'dst',
+      byUserId: 'u1',
+    });
+
+    expect(
+      calls.deptUpdate.some((c) => c.where.id === 'dst' && 'entityId' in c.data),
+    ).toBe(false);
+    expect(
+      calls.deptUpdate.some((c) => c.where.id === 'src' && c.data.entityId === null),
+    ).toBe(false);
+    expect(res.moved.entity).toBe(0);
+  });
+
+  it('регресс A2: после merge — 0 висячих ссылок (все перенесённые FK source→target)', async () => {
+    const { prisma, calls } = makePrisma({
+      departments: [
+        { id: 'src', tenantId: TENANT, entityId: 'ent-src' },
+        { id: 'dst', tenantId: TENANT, entityId: null },
+      ],
+    });
+    const svc = makeService(prisma);
+    await svc.mergeDepartments({
+      tenantId: TENANT,
+      sourceId: 'src',
+      targetId: 'dst',
+      byUserId: 'u1',
+    });
+
+    // Каждый updateMany перенёс именно source→target (никаких ссылок на 'src'
+    // не остаётся после soft-delete).
+    expect(calls.roleUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ departmentId: 'src' }),
+        data: expect.objectContaining({ departmentId: 'dst' }),
+      }),
+    );
+    expect(calls.appointmentUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ departmentId: 'src' }),
+        data: expect.objectContaining({ departmentId: 'dst' }),
+      }),
+    );
+    expect(calls.projectUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ departmentId: 'src' }),
+        data: expect.objectContaining({ departmentId: 'dst' }),
+      }),
+    );
+    expect(calls.personUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ primaryDepartmentId: 'src' }),
+        data: expect.objectContaining({ primaryDepartmentId: 'dst' }),
+      }),
+    );
+    expect(calls.childUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ parentDepartmentId: 'src' }),
+        data: expect.objectContaining({ parentDepartmentId: 'dst' }),
+      }),
+    );
+    expect(calls.metricUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ attachedToDepartmentId: 'src' }),
+        data: expect.objectContaining({ attachedToDepartmentId: 'dst' }),
+      }),
+    );
+    expect(calls.interactionUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ counterpartDepartmentId: 'src' }),
+        data: expect.objectContaining({ counterpartDepartmentId: 'dst' }),
+      }),
+    );
+    expect(calls.orgUnitUpdateMany).toContainEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ parentDepartmentId: 'src' }),
+        data: expect.objectContaining({ parentDepartmentId: 'dst' }),
+      }),
+    );
+    // entityId перенесён на target (source освобождён).
+    expect(calls.deptUpdate).toContainEqual(
+      expect.objectContaining({
+        where: { id: 'dst' },
+        data: expect.objectContaining({ entityId: 'ent-src' }),
+      }),
+    );
   });
 
   it('self-merge (source===target) → BadRequest', async () => {

@@ -30,14 +30,20 @@ import {
   type ChatV2AskBody,
   type ChatV2AskResponseApi,
 } from '@/api/chat-v2.api';
+import { clonesApi } from '@/api/clones.api';
+import { ApiError, humanizeApiError } from '@/api/api-error';
+import { useAuth } from '@/contexts/auth-context';
 import { AssistantMarkdown } from '@/ui/components/chat-v2/AssistantMarkdown';
+import { AssistantTargetSelect } from '@/ui/components/chat-v2/AssistantTargetSelect';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
 import {
   chatV2ConversationStatusLabel,
   chatV2ScopeLabel,
+  cloneAnswerToChatV2Message,
   formatTimestamp,
   toChatV2Conversation,
   toChatV2ConversationWithMessages,
+  type AssistantTarget,
   type ChatV2Conversation,
   type ChatV2ConversationStatus,
   type ChatV2ConversationWithMessages,
@@ -258,9 +264,29 @@ function ConversationDetail({
     },
   );
 
+  const { currentOrgId } = useAuth();
+
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ТЗ#5 — адресат вопроса: общий помощник (дефолт) или ролевой клон.
+  const [selectedTarget, setSelectedTarget] = useState<AssistantTarget>({
+    kind: 'assistant',
+  });
+  // ТЗ#5 — per-roleId conversationId клона (непрерывность в рамках сессии).
+  // Ответ клона ведёт СВОЮ clone-ленту; conversationId помощника туда не
+  // примешиваем (решение Р-E2).
+  const [cloneConvId, setCloneConvId] = useState<Record<string, string>>({});
+  // ТЗ#5 — roleId клона, к которому отказано в доступе (403): показываем
+  // действие «Запросить доступ» рядом с сообщением об ошибке.
+  const [accessDeniedRoleId, setAccessDeniedRoleId] = useState<string | null>(
+    null,
+  );
+  // ТЗ#5 — клиентская склейка: сообщения с клоном живут локально (своя
+  // clone-лента не перезагружается в `/chat`, см. v1-ограничение §9 ТЗ).
+  const [localCloneMessages, setLocalCloneMessages] = useState<
+    ChatV2Message[]
+  >([]);
   // SBA α-5 dialog-layer — temporal query (advanced).
   const [validAt, setValidAt] = useState<string>('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -277,7 +303,9 @@ function ConversationDetail({
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   // §4 Ф1 — при смене диалога / размонтировании прерываем активный стрим.
+  // ТЗ#5 — и сбрасываем локальную clone-ленту (она привязана к видимой нити).
   useEffect(() => {
+    setLocalCloneMessages([]);
     return () => {
       streamControllerRef.current?.abort();
       streamControllerRef.current = null;
@@ -291,6 +319,13 @@ function ConversationDetail({
     setSending(true);
     setError(null);
     setLastCacheHit(false);
+
+    // ТЗ#5 — ветвление по адресату. Клон идёт синхронным `askRole` (без стрима),
+    // помощник — прежним путём (стрим + fallback). Пути НЕ пересекаются.
+    if (selectedTarget.kind === 'clone') {
+      await onSubmitClone(question, selectedTarget);
+      return;
+    }
 
     // Если задан validAt — конвертим из datetime-local в ISO.
     const asOfIso = validAt ? new Date(validAt).toISOString() : undefined;
@@ -355,6 +390,86 @@ function ConversationDetail({
     }
   }
 
+  /**
+   * ТЗ#5 — путь клона: синхронный `clonesApi.askRole`. Ответ маппится в
+   * `ChatV2Message`-shape и встраивается в видимую нить (клиентская склейка).
+   * conversationId клона хранится per-roleId для непрерывности в сессии.
+   *
+   * `refused:true` — нормальный ответ (рендерим `text`); 403 — «нет доступа»;
+   * 429/прочее — человеко-читаемая ошибка через `humanizeApiError`.
+   */
+  async function onSubmitClone(
+    question: string,
+    target: Extract<AssistantTarget, { kind: 'clone' }>,
+  ): Promise<void> {
+    if (!currentOrgId) {
+      setError('Компания не выбрана. Обновите страницу и попробуйте снова.');
+      setSending(false);
+      return;
+    }
+    // Локальное user-сообщение в видимую нить (clone-лента не рефетчится).
+    const userMsg: ChatV2Message = {
+      id: `local-user-${Date.now()}`,
+      conversationId: conversationId ?? '',
+      role: 'user',
+      mode: null,
+      text: question,
+      citations: [],
+      retrievalMeta: null,
+      llmMeta: null,
+      createdAt: new Date(),
+    };
+    setLocalCloneMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setAccessDeniedRoleId(null);
+    try {
+      const res = await clonesApi.askRole(currentOrgId, target.roleId, {
+        question,
+        ...(cloneConvId[target.roleId]
+          ? { conversationId: cloneConvId[target.roleId] }
+          : {}),
+      });
+      // Запоминаем conversationId клона для непрерывности следующих вопросов.
+      setCloneConvId((prev) => ({ ...prev, [target.roleId]: res.conversationId }));
+      const base = cloneAnswerToChatV2Message(res);
+      // Помечаем сообщение именем клона (для подписи в нити).
+      const cloneMsg: ChatV2Message = {
+        ...base,
+        llmMeta: { ...(base.llmMeta ?? {}), cloneName: target.roleName },
+      };
+      setLocalCloneMessages((prev) => [...prev, cloneMsg]);
+    } catch (err) {
+      // Откатываем optimistic user-сообщение — пусть пользователь перепечатает.
+      setLocalCloneMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+      if (err instanceof ApiError && err.code === 'forbidden') {
+        setAccessDeniedRoleId(target.roleId);
+        setError(`Нет доступа к клону «${target.roleName}».`);
+      } else {
+        setError(humanizeApiError(err, 'Не удалось получить ответ клона.'));
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /** ТЗ#5 — запросить доступ к клону (показывается при ошибке 403). */
+  async function requestCloneAccess(roleId: string): Promise<void> {
+    if (!currentOrgId) return;
+    try {
+      const res = await clonesApi.requestAccess(currentOrgId, 'role', roleId);
+      setAccessDeniedRoleId(null);
+      if (res.ok) {
+        setError('Запрос на доступ отправлен администратору.');
+      } else if (res.reason === 'already_granted') {
+        setError('Доступ уже выдан — обновите страницу.');
+      } else {
+        setError('Не удалось отправить запрос на доступ.');
+      }
+    } catch (err) {
+      setError(humanizeApiError(err, 'Не удалось отправить запрос на доступ.'));
+    }
+  }
+
   async function togglePin(): Promise<void> {
     if (!detail.data) return;
     const target = !detail.data.pinnedAt;
@@ -374,10 +489,24 @@ function ConversationDetail({
     onConversationChanged();
   }
 
-  const messages = useMemo<ChatV2Message[]>(
-    () => detail.data?.messages ?? [],
-    [detail.data],
-  );
+  // ТЗ#5 — видимая нить = серверные сообщения помощника (chat-v2) + локальные
+  // сообщения клона (его лента в `/chat` не рефетчится, склейка на клиенте).
+  const messages = useMemo<ChatV2Message[]>(() => {
+    const server = detail.data?.messages ?? [];
+    const seen = new Set(server.map((m) => m.id));
+    const extras = localCloneMessages.filter((m) => !seen.has(m.id));
+    return [...server, ...extras];
+  }, [detail.data, localCloneMessages]);
+
+  // ТЗ#5 — заголовок/плейсхолдер отражают выбранного адресата.
+  const targetLabel =
+    selectedTarget.kind === 'clone'
+      ? selectedTarget.roleName
+      : 'Помощник компании';
+  const inputPlaceholder =
+    selectedTarget.kind === 'clone'
+      ? `Спросите клона «${selectedTarget.roleName}»…`
+      : 'Спросите Кору о памяти компании...';
 
   return (
     <>
@@ -386,7 +515,7 @@ function ConversationDetail({
         <div className="flex items-center gap-2">
           <MessageCircle size={18} className="text-accent" />
           <h1 className="text-lg font-semibold">
-            {detail.data?.title ?? (conversationId ? 'Новый диалог' : 'Помощник компании')}
+            {detail.data?.title ?? (conversationId ? 'Новый диалог' : targetLabel)}
           </h1>
         </div>
         {detail.data ? (
@@ -415,8 +544,12 @@ function ConversationDetail({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-bg">
-        {!conversationId ? (
+        {!conversationId && messages.length === 0 ? (
           <EmptyState />
+        ) : !conversationId ? (
+          // ТЗ#5 — нить только из локальных сообщений клона (chat-v2 диалог ещё
+          // не создан): рендерим их без обращения к detail.
+          messages.map((m) => <MessageView key={m.id} message={m} />)
         ) : detail.isLoading ? (
           <div className="flex h-full items-center justify-center text-fg-tertiary">
             <Loader2 className="animate-spin" />
@@ -442,7 +575,16 @@ function ConversationDetail({
         ) : null}
         {error ? (
           <div className="rounded bg-chip-danger-bg px-3 py-2 text-sm text-chip-danger-fg">
-            Ошибка: {error}
+            <span>{error}</span>
+            {accessDeniedRoleId ? (
+              <button
+                type="button"
+                onClick={() => void requestCloneAccess(accessDeniedRoleId)}
+                className="ml-2 font-medium underline underline-offset-2 hover:no-underline"
+              >
+                Запросить доступ
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -455,16 +597,31 @@ function ConversationDetail({
         // не перекрывала кнопку отправки и поле ввода.
         className="border-t border-border bg-surface p-3 pb-20 sm:pr-20 flex flex-col gap-2"
       >
-        {/* SBA α-5 dialog-layer — advanced: temporal query (validAt). */}
+        {/* ТЗ#5 — селектор адресата (помощник / клон должности). Скрыт, если у
+            Org нет ролевых клонов (компонент сам вернёт null). */}
+        {currentOrgId ? (
+          <AssistantTargetSelect
+            orgId={currentOrgId}
+            value={selectedTarget}
+            onChange={setSelectedTarget}
+            disabled={sending}
+          />
+        ) : null}
+        {/* SBA α-5 dialog-layer — advanced: temporal query (validAt).
+            ТЗ#5 — temporal-фильтр только для помощника (у клона своего asOf нет). */}
         <div className="flex items-center justify-between text-xs text-fg-tertiary">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="underline-offset-2 hover:underline"
-          >
-            {showAdvanced ? 'Скрыть' : 'Дополнительно'}
-          </button>
-          {showAdvanced ? (
+          {selectedTarget.kind === 'assistant' ? (
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="underline-offset-2 hover:underline"
+            >
+              {showAdvanced ? 'Скрыть' : 'Дополнительно'}
+            </button>
+          ) : (
+            <span />
+          )}
+          {showAdvanced && selectedTarget.kind === 'assistant' ? (
             <label className="flex items-center gap-2">
               <span>На момент:</span>
               <input
@@ -490,7 +647,7 @@ function ConversationDetail({
         <input
           type="text"
           className="flex-1 rounded border border-border bg-bg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          placeholder="Спросите Кору о памяти компании..."
+          placeholder={inputPlaceholder}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
@@ -529,6 +686,12 @@ function EmptyState(): ReactElement {
 
 function MessageView({ message }: { message: ChatV2Message }): ReactElement {
   const isUser = message.role === 'user';
+  // ТЗ#5 — ответ клона помечается именем клона (а не «Мастер Кора»).
+  const isClone = message.mode === 'clone_style';
+  const cloneName =
+    typeof message.llmMeta?.['cloneName'] === 'string'
+      ? (message.llmMeta['cloneName'] as string)
+      : 'Клон должности';
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
@@ -539,7 +702,9 @@ function MessageView({ message }: { message: ChatV2Message }): ReactElement {
         }`}
       >
         {!isUser ? (
-          <div className="mb-1 text-xs text-fg-tertiary">✨ Мастер Кора</div>
+          <div className="mb-1 text-xs text-fg-tertiary">
+            {isClone ? `🧩 ${cloneName}` : '✨ Мастер Кора'}
+          </div>
         ) : null}
         {isUser ? (
           <div>{message.text}</div>

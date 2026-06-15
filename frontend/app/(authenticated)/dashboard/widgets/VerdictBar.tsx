@@ -90,7 +90,7 @@ export function VerdictBar({ requiresCount, down, subtitle }: Props) {
           href="/actions"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-transform hover:translate-x-0.5"
           style={{
-            background: isDown ? 'oklch(0.66 0.22 25 / 0.18)' : 'oklch(1 0 0 / 0.08)',
+            background: isDown ? 'oklch(0.66 0.22 25 / 0.18)' : 'var(--surface-inset-strong)',
             color: isDown ? tone : CHART.text,
           }}
         >

@@ -85,7 +85,7 @@ export function CheckinDisciplineWidget({ weekStart }: { weekStart: string }) {
         // Б-6 — флаг чек-инов выключен.
         <div
           className="mt-4 rounded-2xl p-6 text-center"
-          style={{ background: 'oklch(1 0 0 / 0.04)' }}
+          style={{ background: 'var(--surface-inset)' }}
         >
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Чек-ины выключены

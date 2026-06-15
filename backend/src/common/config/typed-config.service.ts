@@ -84,6 +84,14 @@ export class TypedConfigService {
     } as const;
   }
 
+  // ─────────────────────────── persons ───────────────────────────
+  get persons() {
+    return {
+      /** SBA α-8 wave 3 — читать/писать должности через Appointment вместо PersonRole. */
+      useAppointment: this.get('USE_APPOINTMENT_FOR_PERSON_ROLES') as boolean,
+    } as const;
+  }
+
   // ─────────────────────────── logging (LoggingModule defaults) ──
   /**
    * Env-дефолты технического логирования. Используются `LogSettingsService`
@@ -1892,7 +1900,6 @@ export class TypedConfigService {
       enabled: this.get('DIALOG_LAYER_ENABLED'),
       answerCacheTtlSeconds: this.get('ANSWER_CACHE_TTL_SECONDS'),
       retrievalCacheTtlSeconds: this.get('RETRIEVAL_CACHE_TTL_SECONDS'),
-      contextualizerConfidenceMin: this.get('CONTEXTUALIZER_CONFIDENCE_MIN'),
       summarizerMessageThreshold: this.get('SUMMARIZER_MESSAGE_THRESHOLD'),
       multiQueryExpansionEnabled: this.get('MULTI_QUERY_EXPANSION_ENABLED'),
       queryPlanExtractionEnabled: this.get('QUERY_PLAN_EXTRACTION_ENABLED'),

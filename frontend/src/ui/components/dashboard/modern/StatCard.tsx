@@ -51,8 +51,8 @@ export function StatCard({
           <span
             className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium"
             style={{
-              color: up ? CHART.mint : CHART.amber,
-              background: up ? 'oklch(0.85 0.15 165 / 0.12)' : 'oklch(0.84 0.16 80 / 0.12)',
+              color: up ? 'var(--chip-success-fg)' : 'var(--chip-warning-fg)',
+              background: up ? 'var(--chip-success-bg)' : 'var(--chip-warning-bg)',
             }}
           >
             {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}

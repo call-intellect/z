@@ -47,14 +47,14 @@ const TYPE_META: Record<
   DestinationType,
   { label: string; icon: typeof AtSign; description: string }
 > = {
-  email: { label: 'Email', icon: AtSign, description: 'Письмо на адрес' },
-  slack_webhook: { label: 'Slack', icon: MessagesSquare, description: 'Incoming webhook URL' },
+  email: { label: 'Почта', icon: AtSign, description: 'Письмо на адрес' },
+  slack_webhook: { label: 'Slack', icon: MessagesSquare, description: 'Входящий вебхук Slack' },
   telegram_bot: {
     label: 'Telegram',
     icon: MessagesSquare,
-    description: 'Bot token + chat_id',
+    description: 'Токен бота + идентификатор чата',
   },
-  generic_webhook: { label: 'Generic webhook', icon: Globe, description: 'Любой HTTPS URL' },
+  generic_webhook: { label: 'Произвольный вебхук', icon: Globe, description: 'Любой HTTPS-адрес' },
 };
 
 const TYPE_ORDER: DestinationType[] = ['email', 'slack_webhook', 'telegram_bot', 'generic_webhook'];
@@ -257,7 +257,7 @@ function ImportTrackerEntry() {
           </div>
           <div className="mt-0.5 text-xs text-fg-tertiary">
             Перенос проектов, задач, комментариев и вложений из Trello,
-            Битрикс24 или Яндекс Трекера. Wizard за 4 шага.
+            Битрикс24 или Яндекс Трекера. Мастер за 4 шага.
           </div>
         </div>
         <ArrowRight
@@ -273,9 +273,9 @@ function summarizeConfig(d: DestinationApi): string {
   const cfg = d.config;
   if (d.type === 'email') return cfg.recipient_email ?? '—';
   if (d.type === 'slack_webhook')
-    return cfg.url_present ? 'Webhook URL сохранён' : '—';
+    return cfg.url_present ? 'Адрес вебхука сохранён' : '—';
   if (d.type === 'telegram_bot')
-    return `chat_id: ${cfg.chat_id ?? '—'}${cfg.bot_token_present ? ' · токен сохранён' : ''}`;
+    return `чат: ${cfg.chat_id ?? '—'}${cfg.bot_token_present ? ' · токен сохранён' : ''}`;
   if (d.type === 'generic_webhook')
     return cfg.url_present ? 'URL сохранён' : '—';
   return '';
@@ -408,7 +408,7 @@ function DestinationDialog({
 
           {type === 'email' && (
             <div className="space-y-1.5">
-              <Label htmlFor="dest-email">Email-адрес</Label>
+              <Label htmlFor="dest-email">Адрес почты</Label>
               <Input
                 id="dest-email"
                 type="email"
@@ -422,7 +422,9 @@ function DestinationDialog({
           {(type === 'slack_webhook' || type === 'generic_webhook') && (
             <div className="space-y-1.5">
               <Label htmlFor="dest-url">
-                {type === 'slack_webhook' ? 'Slack Webhook URL' : 'Webhook URL'}
+                {type === 'slack_webhook'
+                  ? 'Адрес вебхука Slack'
+                  : 'Адрес вебхука'}
               </Label>
               <Input
                 id="dest-url"
@@ -446,7 +448,7 @@ function DestinationDialog({
           {type === 'telegram_bot' && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="dest-token">Bot token</Label>
+                <Label htmlFor="dest-token">Токен бота</Label>
                 <Input
                   id="dest-token"
                   type="password"
@@ -458,7 +460,7 @@ function DestinationDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="dest-chat">Chat ID</Label>
+                <Label htmlFor="dest-chat">Идентификатор чата</Label>
                 <Input
                   id="dest-chat"
                   value={chatId}

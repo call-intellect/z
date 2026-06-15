@@ -17,6 +17,26 @@ import { createEmptyIdMap, type SeedContext } from './demo-data/types';
 import type { WelcomePatchBody } from './dto/welcome-patch.dto';
 import { humanize } from './onboarding-labels';
 
+/**
+ * QA B6 (2026-06-15) — прогресс «Настройка компании» по принципу
+ * «timestamp-веха ИЛИ факт существования сущности». Раньше фронт считал только
+ * по `Org.*CompletedAt`, поэтому отделы/должности, заведённые вне мастера
+ * (через /structure или импорт), не зачитывались → «0 из 6» при реально
+ * существующих отделах и ролях.
+ */
+export interface SetupProgressDto {
+  completed: number;
+  total: number;
+  steps: {
+    welcome: boolean;
+    companyInfo: boolean;
+    departments: boolean;
+    roles: boolean;
+    team: boolean;
+    firstActivity: boolean;
+  };
+}
+
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
@@ -24,6 +44,55 @@ export class OnboardingService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * GET /orgs/:orgId/setup-progress — прогресс настройки компании (6 вех).
+   * Каждая веха выполнена, если стоит timestamp ИЛИ реально существует сущность
+   * (отдел/должность/участник/встреча/спринт), даже если её завели вне мастера.
+   */
+  async getSetupProgress(orgId: string): Promise<SetupProgressDto> {
+    const org = await this.prisma.org.findUnique({
+      where: { id: orgId },
+      select: {
+        welcomeCompletedAt: true,
+        companyInfoCompletedAt: true,
+        departmentsCompletedAt: true,
+        rolesCompletedAt: true,
+        teamInvitedAt: true,
+        firstMeetingCreatedAt: true,
+        firstSprintCreatedAt: true,
+        industry: true,
+      },
+    });
+    if (!org) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'org_not_found', message: 'Org не найдена' },
+      });
+    }
+    const [departments, roles, persons, meetings, cycles] = await Promise.all([
+      this.prisma.department.count({ where: { tenantId: orgId } }),
+      this.prisma.role.count({ where: { tenantId: orgId } }),
+      this.prisma.person.count({ where: { tenantId: orgId, deletedAt: null } }),
+      this.prisma.meeting.count({ where: { tenantId: orgId } }),
+      this.prisma.cycle.count({ where: { tenantId: orgId } }),
+    ]);
+    const steps = {
+      welcome: org.welcomeCompletedAt != null,
+      companyInfo: org.companyInfoCompletedAt != null || !!org.industry,
+      departments: org.departmentsCompletedAt != null || departments > 0,
+      roles: org.rolesCompletedAt != null || roles > 0,
+      // teamInvitedAt ИЛИ в Org более одного Person (владелец + хотя бы ещё один).
+      team: org.teamInvitedAt != null || persons > 1,
+      firstActivity:
+        org.firstMeetingCreatedAt != null ||
+        org.firstSprintCreatedAt != null ||
+        meetings > 0 ||
+        cycles > 0,
+    };
+    const completed = Object.values(steps).filter(Boolean).length;
+    return { completed, total: 6, steps };
+  }
 
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение ответов Блока A */
   async patchWelcome(args: {

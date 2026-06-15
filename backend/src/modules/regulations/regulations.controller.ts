@@ -36,6 +36,8 @@ import {
   type RegulationDetailDto,
   type RegulationHistoryResponse,
   type RegulationKindDto,
+  type RegulationSourcesResponse,
+  type RegulationSummaryResponse,
   SupersedeRegulationBodySchema,
   type SupersedeRegulationBody,
 } from './dto/regulations.dto';
@@ -86,6 +88,22 @@ export class RegulationsController {
     return this.svc.list({ tenantId: t, userId: user.id, query: q });
   }
 
+  @Get('summary')
+  @ApiOperation({
+    summary:
+      'Сводка хаба «Оцифровано»: счётчики 4 типов карточек + недельный прирост',
+  })
+  async summary(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<RegulationSummaryResponse> {
+    const t = this.requireTenant(tenantId);
+    // Доступ как у list — read на любой из 4 типов (чтобы read-доступ к хабу
+    // давал и сводку; manager не должен упираться в requirePrivileged).
+    await this.requireReadAny(user.id, t);
+    return this.svc.getSummary(t);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Получить регламент / процесс / политику по id и kind' })
   async byId(
@@ -98,6 +116,23 @@ export class RegulationsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t, params.kind);
     return this.svc.getByIdAndKind({ tenantId: t, id, kind: params.kind });
+  }
+
+  @Get(':id/sources')
+  @ApiOperation({
+    summary: 'Цитаты-первоисточники карточки (провенанс хаба «Оцифровано»)',
+  })
+  async sources(
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(GetRegulationParamsSchema))
+    params: { kind: RegulationKindDto },
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<RegulationSourcesResponse> {
+    const t = this.requireTenant(tenantId);
+    // Тот же гейт, что у GET /:id — read на конкретный kind карточки.
+    await this.requireRead(user.id, t, params.kind);
+    return this.svc.getSources({ tenantId: t, id, kind: params.kind });
   }
 
   @Get(':id/history')

@@ -15,6 +15,8 @@
  * Зависимости через @Module:
  *   - AuthModule — CookieAuthGuard + SuperAdminGuard
  *   - InnLookupModule — `InnLookupService` для verify-inn
+ *   - BillingModule — `SeatService` для эффективной базовой цены подписки
+ *     (B2 — расчёт `targetClients` шкалы прогресса баннера рефералки)
  *
  * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9 + §14 Фаза 6.
  */
@@ -22,6 +24,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
+import { BillingModule } from '../billing/billing.module';
 import { InnLookupModule } from '../inn-lookup/inn-lookup.module';
 
 import { AdminReferralsController } from './controllers/admin-referrals.controller';
@@ -32,7 +35,7 @@ import { ReferralPayoutService } from './services/referral-payout.service';
 import { ReferralsService } from './services/referrals.service';
 
 @Module({
-  imports: [AuthModule, InnLookupModule],
+  imports: [AuthModule, InnLookupModule, BillingModule],
   controllers: [
     PublicReferralsController,
     ReferralsController,

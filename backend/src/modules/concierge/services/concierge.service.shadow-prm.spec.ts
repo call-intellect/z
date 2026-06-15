@@ -15,7 +15,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../../ai/services/llm-router.service';
-import type { DialogService } from '../../dialog-layer/services/dialog.service';
 
 import type { ConciergeContextBuilderService } from './concierge-context-builder.service';
 import type { ConciergeQuotaService } from './concierge-quota.service';
@@ -188,7 +187,6 @@ function buildShadowConciergeService(opts: ShadowOpts) {
     observeConciergePrmScore: metricsObserveConciergePrmScore,
   } as unknown as BusinessMetricsService;
 
-  const dialog = null as unknown as DialogService | null;
   const stepScorer = new ConciergeStepScorerService(llm);
 
   const svc = new ConciergeService(
@@ -202,7 +200,8 @@ function buildShadowConciergeService(opts: ShadowOpts) {
     quota,
     aiChatQuota,
     metrics,
-    dialog,
+    // ТЗ 2026-06-14 — `DialogService` убран из конструктора (помощник не
+    // владеет пониманием запроса). Последний аргумент — PRM step-scorer.
     stepScorer,
   );
 

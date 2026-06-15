@@ -186,6 +186,52 @@ describe('TelegramTaskParserService', () => {
       });
       expect(result.reason).toBe('llm_failed');
     });
+
+    // Ф7 (интент): SYSTEM-промпт извлекателя содержит негативный класс
+    // «не задача» (вопрос/команда/статус ≠ обещание).
+    it('SYSTEM содержит негативный класс «не задача» (Ф7)', async () => {
+      vi.mocked(llm.call).mockResolvedValueOnce({
+        text: JSON.stringify({ title: 'X', confidence: 0.3 }),
+        modelUsed: 'deepseek:deepseek-chat',
+        inputTokens: 10,
+        outputTokens: 5,
+        cachedTokens: 0,
+        durationMs: 200,
+      });
+      await parser.parseCreateTask({
+        tenantId: 'org-1',
+        userId: 'u-1',
+        rawText: 'какие у меня задачи?',
+      });
+      const callArg = vi.mocked(llm.call).mock.calls[0]?.[0] as
+        | { systemPrompt?: string }
+        | undefined;
+      expect(callArg?.systemPrompt).toBeDefined();
+      expect(callArg!.systemPrompt).toContain('Не задача (НЕ извлекай');
+      expect(callArg!.systemPrompt).toContain('/actions');
+      expect(callArg!.systemPrompt).toContain('запрос ответа, не поручение');
+    });
+
+    // Ф7: когда LLM (следуя инструкции) распознаёт вопрос как «не задачу» и
+    // возвращает пустой title — парсер не создаёт IntakeIssue (reason=llm_failed).
+    it('на вопрос «/actions» с пустым title → IntakeIssue НЕ создан', async () => {
+      vi.mocked(llm.call).mockResolvedValueOnce({
+        text: JSON.stringify({ title: '', confidence: 0 }),
+        modelUsed: 'deepseek:deepseek-chat',
+        inputTokens: 10,
+        outputTokens: 2,
+        cachedTokens: 0,
+        durationMs: 100,
+      });
+      const result = await parser.parseCreateTask({
+        tenantId: 'org-1',
+        userId: 'u-1',
+        rawText: '/actions',
+      });
+      expect(result.intakeIssueId).toBeNull();
+      expect(result.reason).toBe('llm_failed');
+      expect(prisma.intakeIssue.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('parseForwardToTask', () => {

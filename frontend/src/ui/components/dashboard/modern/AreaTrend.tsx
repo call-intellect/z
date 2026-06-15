@@ -49,7 +49,7 @@ export function AreaTrend({
                 <span className="text-[32px] font-semibold leading-none tracking-tight">
                   {headline.value}
                 </span>
-                <span className="pb-1 text-sm" style={{ color: headline.subColor ?? CHART.mint }}>
+                <span className="pb-1 text-sm" style={{ color: headline.subColor ?? 'var(--chip-success-fg)' }}>
                   {headline.sub}
                 </span>
               </div>
@@ -75,7 +75,7 @@ export function AreaTrend({
               tickLine={false}
               tick={{ fill: CHART.faint, fontSize: 12 }}
             />
-            <Tooltip content={<ChartTip />} cursor={{ stroke: 'oklch(1 0 0 / 0.15)' }} />
+            <Tooltip content={<ChartTip />} cursor={{ stroke: 'var(--border-strong)' }} />
             {series.map((s) => (
               <Area
                 key={s.key}

@@ -21,6 +21,8 @@ import type {
   RegulationHistoryResponse,
   RegulationKindDto,
   RegulationListItemDto,
+  RegulationSourcesResponse,
+  RegulationSummaryResponse,
   SupersedeRegulationBody,
   TrustTierDto,
 } from '../dto/regulations.dto';
@@ -414,6 +416,177 @@ export class RegulationsService {
         createdAt: v.createdAt.toISOString(),
         createdByUserId: v.createdByUserId,
       })),
+    };
+  }
+
+  // ───────────────────────────── sources (C3) ─────────────────────────────
+
+  /**
+   * C3 (хаб «Оцифровано») — провенанс карточки: цитаты-первоисточники.
+   *
+   * Цепочка: `<card>.sourceBlockIds[]` → `IdeaBlock` (tenant-скоуп) →
+   * `IdeaBlockEvidence.quote` → `RawEvent` → `Meeting` (best-effort title/date).
+   *
+   * Гранулярность — по evidence (одна запись = одна цитата), а не по блоку:
+   * один блок может иметь несколько свидетельств из разных встреч. Пустой
+   * `sourceBlockIds` или отсутствие evidence → `{ items: [] }`.
+   *
+   * tenant-скоуп ОБЯЗАТЕЛЕН: и карточка, и блоки фильтруются по `tenantId`
+   * (evidence наследует tenant через свой блок, доп. фильтр на встрече по tenant).
+   */
+  async getSources(args: {
+    tenantId: string;
+    id: string;
+    kind: RegulationKindDto;
+  }): Promise<RegulationSourcesResponse> {
+    // 1) sourceBlockIds карточки (с tenant-скоупом и 404 при отсутствии).
+    const sourceBlockIds = await this.getSourceBlockIds(
+      args.tenantId,
+      args.id,
+      args.kind,
+    );
+    if (sourceBlockIds.length === 0) return { items: [] };
+
+    // 2) Блоки этого tenant'а из sourceBlockIds (отсекаем чужие/удалённые id).
+    const blocks = await this.prisma.ideaBlock.findMany({
+      where: { id: { in: sourceBlockIds }, tenantId: args.tenantId },
+      select: { id: true },
+    });
+    const blockIds = blocks.map((b) => b.id);
+    if (blockIds.length === 0) return { items: [] };
+
+    // 3) Свидетельства (цитаты) этих блоков + их RawEvent.
+    const evidence = await this.prisma.ideaBlockEvidence.findMany({
+      where: { blockId: { in: blockIds } },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        blockId: true,
+        quote: true,
+        rawEvent: {
+          select: { sourceType: true, sourceExternalId: true },
+        },
+      },
+    });
+    if (evidence.length === 0) return { items: [] };
+
+    // 4) Резолв встреч batch'ем (best-effort): RawEvent(sourceType='meeting',
+    //    sourceExternalId=meetingId) → Meeting (tenant-скоуп) → title/date.
+    const meetingIds = new Set<string>();
+    for (const ev of evidence) {
+      if (ev.rawEvent.sourceType === 'meeting' && ev.rawEvent.sourceExternalId) {
+        meetingIds.add(ev.rawEvent.sourceExternalId);
+      }
+    }
+    const meetingById = new Map<string, { id: string; title: string; date: string }>();
+    if (meetingIds.size > 0) {
+      const meetings = await this.prisma.meeting.findMany({
+        where: { tenantId: args.tenantId, id: { in: [...meetingIds] } },
+        select: { id: true, title: true, startedAt: true, createdAt: true },
+      });
+      for (const m of meetings) {
+        meetingById.set(m.id, {
+          id: m.id,
+          title: m.title,
+          date: (m.startedAt ?? m.createdAt).toISOString(),
+        });
+      }
+    }
+
+    return {
+      items: evidence.map((ev) => {
+        const meetingId =
+          ev.rawEvent.sourceType === 'meeting' ? ev.rawEvent.sourceExternalId : null;
+        // Best-effort: встреча резолвится → отдаём {id,title,date}; иначе null
+        // (не-meeting источник или встреча не найдена в этом tenant'е).
+        const meeting = meetingId ? meetingById.get(meetingId) ?? null : null;
+        return { blockId: ev.blockId, quote: ev.quote, meeting };
+      }),
+    };
+  }
+
+  /**
+   * Вернуть `sourceBlockIds` карточки под kind (tenant-скоуп). 404 при отсутствии.
+   * Прямой select (не дёргаем getByIdAndKind целиком — нужно лишь одно поле).
+   */
+  private async getSourceBlockIds(
+    tenantId: string,
+    id: string,
+    kind: RegulationKindDto,
+  ): Promise<string[]> {
+    if (kind === 'process') {
+      const rec = await this.prisma.process.findFirst({
+        where: { id, tenantId },
+        select: { sourceBlockIds: true },
+      });
+      if (!rec) this.notFound(kind, id);
+      return rec.sourceBlockIds;
+    }
+    if (kind === 'policy') {
+      const rec = await this.prisma.policy.findFirst({
+        where: { id, tenantId },
+        select: { sourceBlockIds: true },
+      });
+      if (!rec) this.notFound(kind, id);
+      return rec.sourceBlockIds;
+    }
+    if (kind === 'instruction') {
+      const rec = await this.prisma.instruction.findFirst({
+        where: { id, tenantId },
+        select: { sourceBlockIds: true },
+      });
+      if (!rec) this.notFound(kind, id);
+      return rec.sourceBlockIds;
+    }
+    // regulation / standard
+    const rec = await this.prisma.regulation.findFirst({
+      where: {
+        id,
+        tenantId,
+        ...(kind === 'standard'
+          ? { category: 'standard' }
+          : { category: 'regulation' }),
+      },
+      select: { sourceBlockIds: true },
+    });
+    if (!rec) this.notFound(kind, id);
+    return rec.sourceBlockIds;
+  }
+
+  // ───────────────────────────── summary (C4) ─────────────────────────────
+
+  /**
+   * C4 (хаб «Оцифровано») — сводка: счётчики 4 типов карточек + недельный
+   * прирост (карточки всех 4 типов, созданные за последние 7 дней). Все
+   * запросы — параллельно (`Promise.all`), tenant-скоуп обязателен.
+   */
+  async getSummary(tenantId: string): Promise<RegulationSummaryResponse> {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recent = { createdAt: { gte: weekAgo } };
+    const [
+      regulations,
+      processes,
+      instructions,
+      policies,
+      regWeek,
+      procWeek,
+      instrWeek,
+      polWeek,
+    ] = await Promise.all([
+      this.prisma.regulation.count({ where: { tenantId } }),
+      this.prisma.process.count({ where: { tenantId } }),
+      this.prisma.instruction.count({ where: { tenantId } }),
+      this.prisma.policy.count({ where: { tenantId } }),
+      this.prisma.regulation.count({ where: { tenantId, ...recent } }),
+      this.prisma.process.count({ where: { tenantId, ...recent } }),
+      this.prisma.instruction.count({ where: { tenantId, ...recent } }),
+      this.prisma.policy.count({ where: { tenantId, ...recent } }),
+    ]);
+    return {
+      regulations,
+      processes,
+      instructions,
+      policies,
+      weekDelta: regWeek + procWeek + instrWeek + polWeek,
     };
   }
 

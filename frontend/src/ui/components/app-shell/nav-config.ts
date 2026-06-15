@@ -36,6 +36,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  BookText,
   Bot,
   Brain,
   Building2,
@@ -46,10 +47,12 @@ import {
   FileText,
   FlaskConical,
   Gauge,
+  Gift,
   Home,
   IdCard,
   Inbox,
   LifeBuoy,
+  Lightbulb,
   ListChecks,
   MessageCircle,
   Network,
@@ -67,7 +70,6 @@ import {
   UserRound,
   Users,
   Video,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -236,6 +238,14 @@ const WORK_SECTION: NavConfigSection = {
       matchPrefix: '/memory',
       overviewTarget: 'overview.memory',
     },
+    // «Оцифровано» — регламенты, процессы, инструкции и политики, извлечённые из
+    // встреч (страница /regulations сама гейтит доступ по RBAC).
+    {
+      href: '/regulations',
+      label: 'Оцифровано',
+      icon: BookText,
+      matchPrefix: '/regulations',
+    },
     {
       href: '/structure',
       label: SECTION_LABELS.structure, // «Команда»
@@ -302,9 +312,9 @@ const REFERENCE_SUBGROUP: NavConfigSubgroup = {
     { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
     { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
     { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
-    // Процессы — реальная страница (была в «Будет в следующей фазе»), оставляем
-    // достижимой из Справочника.
-    { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes' },
+    // «Процессы» (/processes) убраны из меню — их поглощает хаб «Оцифровано»
+    // (/regulations) вкладкой «Шаблоны процессов». Сама страница остаётся живой
+    // (используется хабом), просто без отдельного пункта в Справочнике.
   ],
 };
 
@@ -317,6 +327,13 @@ const SYSTEM_SECTION: NavConfigSection = {
     // дубль «Интеграции» из «Чатов» убран в Ф0).
     { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
     { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
+    // Партнёрка — личный кабинет реферальной программы (доступен всем ролям:
+    // ссылку можно создать без ИНН). Раньше входа в меню не было — только промо-полоса.
+    { href: '/referrals', label: 'Партнёрка', icon: Gift, matchPrefix: '/referrals' },
+    // Канал обратной связи «Ваши предложения» (форма + ночная AI-кластеризация в
+    // смысловые блоки). Виден всем ролям; вернули в меню после редизайна Ф0
+    // (ТЗ 2026-06-15). Тултип берётся из NAV_HELP['/feedback'].
+    { href: '/feedback', label: 'Ваши предложения', icon: Lightbulb, matchPrefix: '/feedback' },
     // «Мои обращения» — личный вход в свои тикеты поддержки (когда деск настроен).
     { href: '/support/my-tickets', label: 'Мои обращения', icon: LifeBuoy, matchPrefix: '/support/my-tickets', requiresDesk: true },
   ],
@@ -460,9 +477,13 @@ export function isDesktopNavReachable(href: string): boolean {
 // ─────────────────────────── Мобильные табы ──────────────────────
 // ТЗ Ф9. Единый источник: те же href, что и в десктопе (гард mobile ⊆ desktop).
 //   EXEC (owner/admin):  Сегодня /dashboard · Неделя /week · Требует вас /actions
-//                        · Память /chat · Я /me
+//                        · Память /memory · Я /me
 //   MANAGER (остальные): Сегодня /me · Чек-ин /me/check-ins · Спросить /chat
 //                        · Дела /me/inbox
+// Паритет «Память» (A11.2): таб EXEC «Память» ведёт на /memory — тот же URL и
+// смысл, что у десктоп-пункта «Память» (виден EXEC). Раньше вёл на /chat
+// («Спросить»), который у EXEC на десктопе скрыт (roles: ['manager']) — это
+// рассинхрон label↔URL и доступ к разделу вне десктоп-меню EXEC.
 
 export interface MobileNavTab {
   key: string;
@@ -475,7 +496,7 @@ export const MOBILE_EXEC_TABS: readonly MobileNavTab[] = [
   { key: 'today', href: '/dashboard', label: 'Сегодня', icon: Home },
   { key: 'week', href: '/week', label: 'Неделя', icon: CalendarRange },
   { key: 'requires', href: '/actions', label: 'Требует вас', icon: AlertTriangle },
-  { key: 'ask', href: '/chat', label: 'Память', icon: MessageCircle },
+  { key: 'memory', href: '/memory', label: 'Память', icon: Brain },
   { key: 'me', href: '/me', label: 'Я', icon: UserRound },
 ] as const;
 

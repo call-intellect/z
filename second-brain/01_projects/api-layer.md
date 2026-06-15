@@ -58,6 +58,7 @@ covers: реестр всех REST endpoints backend по модулям
 | GET | `/api/v1/referrals/me/income-chart` | 12 месяцев `{month, incomeRub, activeClients}` |
 | GET | `/api/v1/referrals/me/funnel?period=30d\|90d\|all` | Воронка `{clicks, signups, firstPayments, activeNow, conversions}` |
 | POST | `/api/v1/referrals/me/promo-event` | Трекинг impression/click/dismissed промо-баннера. Throttle 30/min/IP |
+| GET | `/api/v1/referrals/me/reward-progress` | Прогресс к вознаграждению для persistent role-баннера `ReferralRewardBanner`: `{hasProfile, activePaying, targetClients, monthlyEarnedKopecks}`. (2026-06-14, ТЗ cabinet-master-fixes B2) |
 
 `GET /api/v1/admin/referrals/:id` (super_admin) теперь использует `listClientsForAdmin` — НЕ маскированный, со всеми `org.name/id` для аудита.
 
@@ -79,6 +80,12 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 ## Tracker
 
 См. полный список в [`tracker.md`](tracker.md) §«REST API endpoints».
+
+### Перенос задачи между проектами (2026-06-15)
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/issues/:id/move` | Перенести задачу в другой проект. Body `{ targetProjectId }`. Атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null. Запрет переноса задач с подзадачами (400). WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из общей папки „Входящие“ в нужный проект». Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md). | RBAC `issue`/`write` |
 
 ### Финальный handoff Wave 1-3 — новые endpoint'ы
 
@@ -182,11 +189,14 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 Таймаут синтеза `chat-v2` разведён от общего `LLM_ROUTER_DISPATCH_TIMEOUT_MS` через AdminSetting `knowledge.chatV2SynthesisTimeoutMs` (POSITIVE_INT, code-default 90000 мс; per-call `LlmCallParams.timeoutMs?` override в llm-router; 2026-06-11, §4 Ф3).
 
+> **Единый промпт-ответчик + таблицы как источник (2026-06-15).** Контракт `POST /chat-v2/messages` не изменился, но изменилось ЧТО считается внутри: убраны режимы факт/синтез/clone — один промпт; контекст переведён в человеческий русский (summary/history → конец USER, «О компании» в SYSTEM); умные таблицы ищутся ПАРАЛЛЕЛЬНО с графом и идут синтезатору «Данные из таблиц» (`ChatV2TableContextService`, крутилки `chat_v2.table_context_max_rows`/`max_tables`). ТЗ [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md). Клон должности — НЕ режим chat-v2 (выбор в кабинете через `clonesApi.askRole`).
+
 ## Concierge + Voice
 
 | Метод | Путь | Назначение | T |
 |---|---|---|---|
-| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use) | γ-2 |
+| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use). С 2026-06-15 помощник — развилка + руки: понимание/синтез не дублирует (живут в chat-v2), `ask_chat_v2` терминальный; инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md). | γ-2 |
+| POST | `/api/v1/me/tasks` | **Self-задача (2026-06-15):** рядовой ставит задачу СЕБЕ в проект «Входящие» (через `issue`/`write`, self). Эндпоинт инструмента `create_task` помощника; список — `GET /api/v1/me/inbox`. | — |
 | GET  | `/api/v1/me/ai-chat/quota` | Единая per-user дневная квота AI-общения (Concierge + клоны вместе) — `{ dailyUsed, dailyLimit, role }`. См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md). | — |
 | POST | `/api/v1/voice/transcribe` | REST ASR (Vox/GigaAM, fallback) | — |
 | WS | `/ws/voice` | Streaming-стенд для голоса (events: voice.start/chunk/end/cancel → voice.transcribed/error) | **T4** |
@@ -200,6 +210,12 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 ## Regulations (единый API регламентов/процессов/политик/инструкций)
 
 Единая поверхность `/api/v1/regulations` агрегирует несколько таблиц через query-параметр `kind`. Полная карта эндпоинтов и DTO — [[../02_architecture/module-map]] §«SBA α-7 / Specialist 3.1». **Мастер-ТЗ промптов (2026-06-10):** `kind=instruction` добавлен как 4-я сущность — `GET /regulations?kind=instruction` (list), `GET /regulations/:id?kind=instruction` (get), `POST /regulations/:id/confirm` читают/пишут **`prisma.instruction`** (отдельная таблица `instructions`, см. [[../02_architecture/data-model]]). RBAC — ResourceType `instruction` (зеркалит `process`). Detail отдаёт поле `extractionStatus` (Существует / Нужен / Обсуждается).
+
+**Хаб «Оцифровано» (2026-06-14, ТЗ cabinet-master-fixes часть C):** `/regulations` поднят в видимый пункт меню «Оцифровано», страница стала хабом (4 типа норм + вкладка шаблонов процессов). Два новых эндпоинта:
+- `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты (источники карточки до цитаты), фронт — аккордеон «Источники» (C3).
+- `GET /api/v1/regulations/summary` — агрегированные счётчики по 4 типам норм; питает чипы-счётчики хаба, блок «Недавно оцифровано» и summary-виджет «Оцифровано» на экране «Сегодня» (C4).
+
+`/policies` теперь redirect на `/regulations?kind=policy`; дубль пункта `/processes` из меню убран (C1). См. [[regulations]] §«Хаб "Оцифровано"».
 
 ## Curation (Слой 4)
 
@@ -433,6 +449,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 |---|---|---|
 | GET | `/api/v1/orgs/:orgId/demo-seed-status` | статус авто-заливки демо (`pending`/`in_progress`/`completed`/`failed`) для loading-экрана `/onboarding/welcome/complete` |
 | POST | `/api/v1/orgs/:orgId/demo-workspace/ensure` | **fallback**: если Org в DEMO, но синтетики нет (старые Org / неудавшийся seed) — ставит свежий seed-job. Идемпотентно (`{status, enqueued}`). Дёргается `SubscriptionContext` один раз при DEMO. |
+| GET | `/api/v1/orgs/:orgId/setup-progress` | прогресс «Настройка компании»: 6 вех `{completed,total,steps}` по принципу «timestamp ИЛИ факт существования сущности» (QA B6, 2026-06-15). Главная берёт прогресс отсюда, а не из `Org.*CompletedAt`. |
 
 ### Content (Фаза 5)
 | Метод | Путь | Назначение |
@@ -657,5 +674,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-11 (Probe-система Фаза 1):** добавлены два notification eventType `probe.digest` (батч-дайджест отложенных probe от `ProbeDigestCron`, канал-политика `['telegram_bot','max_bot','in_app']`, label «Вопросы от Коры») и `probe.answer_acknowledged` (подтверждение «ваш ответ записан» от `ProbeResponseHandler`, label «Ответ записан»). Zod в `event-payload.registry.ts`, рендер telegram/max-bot. См. [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md).
 - **2026-06-06 (Трекер + Встречи, B5):** новый эндпоинт `POST /meetings/:id/invitees` — допригласить участников на joinable-встречу (host-only, `@RequireSubscription`, идемпотентно по `userId`/`personId`); переиспользует `seedInviteeInTx` + `deliverMeetingInvites` (та же логика, что при создании встречи). Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`. См. [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
 - **2026-06-12 (слой метода клона, Э0.1):** новый эндпоинт `GET /api/v1/clones/query-log` (OrgAdminGuard, пагинация limit/offset, фильтр `cloneTargetId`) — журнал запросов к клонам (модель `CloneQueryLog`: questionPreview+sha256, answeredGrounded, refusalReason `'ungrounded'`). Пишется на каждый ask всех 4 путей, вкл. программные отказы grounding-гейта (`CLONE_RESPOND_GROUNDING_ENABLED`). См. [[skill-and-clone]] §«Доработки 2026-06-12», [plans/tz/2026-06-11-clone-persona-method-layer.md](../../plans/tz/2026-06-11-clone-persona-method-layer.md).
+- **2026-06-15 (помощник = развилка + руки; цепочка из 5 ТЗ):** новый self-эндпоинт `POST /api/v1/me/tasks` (рядовой ставит задачу СЕБЕ в проект «Входящие», self через `issue`/`write`; эндпоинт инструмента `create_task` помощника, список — `GET /me/inbox`). Контракты `POST /concierge/ask` и `POST /chat-v2/messages` не изменились, но изменилось ЧТО внутри: помощник не дублирует понимание/синтез (`ask_chat_v2` терминальный, `search_knowledge` убран), chat-v2 — единый промпт без режимов + умные таблицы как параллельный источник. Удалена ENV `CONTEXTUALIZER_CONFIDENCE_MIN` (слитый dialog-layer). ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md) / [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md) / [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md).
+- **2026-06-15 (перенос задачи между проектами):** новый эндпоинт `POST /api/v1/issues/:id/move` (body `{ targetProjectId }`, RBAC `issue`/`write`) — атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из „Входящих“ в нужный проект» (поверх дефолт-проекта Ф3). Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md).
 
 [[../index|← index]]

@@ -45,7 +45,7 @@ export function MemoryHelpedMeWidget() {
               <div
                 key={i}
                 className="h-20 animate-pulse rounded-2xl"
-                style={{ background: 'oklch(1 0 0 / 0.05)' }}
+                style={{ background: 'var(--surface-inset)' }}
               />
             ))}
           </div>
@@ -78,7 +78,7 @@ export function MemoryHelpedMeWidget() {
 
             <div
               className="mt-4 flex items-center justify-between rounded-2xl px-4 py-3"
-              style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              style={{ background: 'var(--surface-inset)' }}
             >
               <span
                 className="inline-flex items-center gap-2 text-sm"
@@ -119,10 +119,10 @@ function Stat({
   label: string;
 }) {
   return (
-    <div className="rounded-2xl p-3" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+    <div className="rounded-2xl p-3" style={{ background: 'var(--surface-inset)' }}>
       <div
         className="grid h-8 w-8 place-items-center rounded-lg"
-        style={{ background: 'oklch(1 0 0 / 0.06)', color: tone }}
+        style={{ background: 'var(--surface-inset)', color: tone }}
       >
         {icon}
       </div>

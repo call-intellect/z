@@ -2,12 +2,13 @@
 name: referrals
 title: Партнёрский кабинет (реферальная программа)
 status_overall: implemented
-last_audited: 2026-05-31
+last_audited: 2026-06-14
 related_processes:
   - 03_processes/referral-program.md
 related_plans:
   - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
   - plans/tz/2026-05-31-referrals-cabinet-revamp.md
+  - plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md
 ---
 
 # Партнёрский кабинет (реферальная программа)
@@ -35,6 +36,7 @@ related_plans:
 - `GET /me/income-chart` — ровно 12 точек по месяцам (UTC).
 - `GET /me/funnel?period=30d|90d|all` — клики → регистрации → первые оплаты → активные сейчас.
 - `POST /me/promo-event` — трекинг промо-стрипа, 204 No Content, throttle 30/min/IP.
+- `GET /me/reward-progress` — прогресс к вознаграждению для persistent role-баннера (ТЗ cabinet-master-fixes B2): `{hasProfile, activePaying, targetClients, monthlyEarnedKopecks}`.
 - `POST /attribute-current-org` — привязка по cookie `X-Z-Ref` + `X-Z-Fingerprint`; защищён `TenantGuard` (audit Б14).
 
 ## Админ-эндпоинты (`/api/v1/admin/referrals/*`)
@@ -54,12 +56,19 @@ related_plans:
 - **ReferralPayout** — начисление 20 000 ₽ × 100 копеек по умолчанию. `triggerInvoiceId @unique` (audit Б7, защита от двойной выплаты), `periodMonth` 'YYYY-MM', `status` pending/paid/void.
 - **Org.pendingAttributionSlug** + **pendingAttributionAt** — pending-атрибуция до первой оплаты (используется в `getStats` / `getFunnel` как источник «signups»).
 
-## Промо-стрип
+## Доработки 2026-06-14 (ТЗ cabinet-master-fixes, часть B)
 
-`frontend/src/ui/components/app-shell/ReferralPromoStrip.tsx`. Видимость — `useReferralPromoVisibility` (`frontend/src/hooks/`):
+- **Пункт меню «Партнёрка» (/referrals) вернулся в кабинет** — добавлен в `nav-config` (секция «Система») (B1).
+- **Persistent role-баннер `ReferralRewardBanner`** (+ хук `useReferralBannerVisibility`) заменил удалённый `ReferralPromoStrip`: вместо промо-полоски показывает прогресс «N из 3» к вознаграждению на основе `GET /me/reward-progress` (B3/B4). Серверного флага баннер не имеет — видимость через фронтовый dismiss-TTL.
+- **Редизайн кабинета `/referrals` на modern/** (glass / `StatCard` / `BarTrend` / `GaugeCard` / `ModernTable`) — логика, ИНН-гейт и маскирование клиентов НЕ тронуты (B5–B12).
+
+## Промо-стрип (legacy — заменён баннером 2026-06-14)
+
+`frontend/src/ui/components/app-shell/ReferralPromoStrip.tsx` — **удалён**, на смену пришёл `ReferralRewardBanner` (см. выше). Историческая справка:
+- Видимость — `useReferralPromoVisibility` (`frontend/src/hooks/`).
 - Whitelist: `/`, `/dashboard/*`, `/activity-feed/*`, `/goals/*`, `/insights/*`, `/tracker/*`, `/clones`, `/persons`, `/entities`, `/themes`, `/meetings` (exact).
 - Blacklist (перекрывает whitelist): `/referrals`, `/admin`, `/onboarding`, `/settings`, `/chat`, `/login`, `/signup`.
-- Скрывается если `Subscription.status === 'DEMO'`, если есть профиль (кэш 24 ч в localStorage), или dismissed (30 дней).
+- Скрывалась если `Subscription.status === 'DEMO'`, если есть профиль (кэш 24 ч в localStorage), или dismissed (30 дней).
 - Трекинг через `POST /me/promo-event` (impression / click / dismissed × role owner/member).
 
 ## Маскировка клиентов

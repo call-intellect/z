@@ -14,6 +14,7 @@
 
 import { apiClient } from './api-client';
 import { buildQuery, orgHeaders } from './admin-helpers';
+import type { RoleMapApi } from './role-map.api';
 
 // ─── Department ─────────────────────────────────────────────────────────────
 
@@ -180,25 +181,22 @@ export interface StructureSummaryApi {
 
 // ─── Role-profile (карта должности) ─────────────────────────────────────────
 
-export interface RoleProfileBlockApi {
-  /** один из: responsibilities | skills | decision_patterns | common_pitfalls | style_profile */
-  key: string;
-  title?: string;
-  items: string[];
-}
-
 export interface RoleProfileApi {
   roleId: string;
   status: 'ready' | 'forming' | 'stale' | 'error' | 'absent';
-  summaryCache: {
-    blocks: RoleProfileBlockApi[];
-  } | null;
+  /**
+   * Сырое содержимое `RoleProfile.summaryCache` (backend `RoleProfileDetailDto.summary`,
+   * Json произвольной формы). НЕ имеет поля `blocks` — рендер карты должности
+   * на `/roles/[id]` и `/me` идёт через нормализованный Role Map
+   * (`roleMapApi.getMap`), а не отсюда (см. plans/tz/2026-06-15-me-role-map-card-contract.md).
+   */
+  summary?: unknown;
   sources?: Array<{
     type: 'meeting' | 'document' | 'dump';
     id: string;
     title: string;
   }>;
-  updatedAt: string | null;
+  updatedAt?: string | null;
   /** Кол-во материалов в обработке (для UI «N материалов ждут анализа»). */
   pending?: number;
 }
@@ -210,11 +208,31 @@ export interface RoleProfileBuildStatusApi {
 
 // ─── /me/profile ────────────────────────────────────────────────────────────
 
+// Контракт выровнен по факту ответа `GET /api/v1/me/profile`
+// (backend `MeProfileDto` / `MeProfileRoleProfileDto`, me.service.ts):
+//   - `primaryRole`/`primaryDepartment` и `person.{id,name,email}` — раньше тип
+//     лгал (`role`/`department`/`person.fullName`), из-за чего раздел «Я» всегда
+//     показывал «Должность не назначена» (QA B3 2026-06-15);
+//   - `roleProfile` отдаёт `{id,status,buildVersion,lastBuildAt,roleMap}` —
+//     БЕЗ `summaryCache`. Раньше тип указывал на богатый `RoleProfileApi`
+//     (с `summaryCache.blocks`, которого в ответе нет) → «Моя карта должности»
+//     всегда показывала заглушку. Теперь карта приходит готовой в `roleMap`
+//     (тот же формат `RoleMapApi`, что и `GET /api/v1/roles/:id/map`), self-scoped;
+//     `null` — нет primaryRole / сервис карты недоступен (мягкая деградация).
+//     См. plans/tz/2026-06-15-me-role-map-card-contract.md.
+export interface MyProfileRoleProfileApi {
+  id: string;
+  status: 'forming' | 'ready' | 'stale' | 'error';
+  buildVersion: number;
+  lastBuildAt: string | null;
+  roleMap: RoleMapApi | null;
+}
+
 export interface MyProfileApi {
-  person: PersonDomainApi | null;
-  role: RoleDomainApi | null;
-  department: DepartmentApi | null;
-  roleProfile: RoleProfileApi | null;
+  person: { id: string; name: string; email: string } | null;
+  primaryRole: { id: string; name: string } | null;
+  primaryDepartment: { id: string; name: string } | null;
+  roleProfile: MyProfileRoleProfileApi | null;
 }
 
 // ─── API surface ────────────────────────────────────────────────────────────

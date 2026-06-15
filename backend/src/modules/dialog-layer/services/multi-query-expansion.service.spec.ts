@@ -3,24 +3,39 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MultiQueryExpansionService } from './multi-query-expansion.service';
 
 /**
- * SBA α-5 dialog-layer — unit-тесты MultiQueryExpansionService.
+ * dialog-layer — unit-тесты MultiQueryExpansionService (ТЗ 2026-06-14: слитый
+ * модуль понимания запроса; intent-гейтинг убран, история доходит до промпта).
  */
 describe('MultiQueryExpansionService', () => {
   let llmCallMock: ReturnType<typeof vi.fn>;
   let svc: MultiQueryExpansionService;
-  let cfg: { dialogLayer: { multiQueryExpansionEnabled: boolean } };
+  let cfg: {
+    dialogLayer: { multiQueryExpansionEnabled: boolean };
+    aiFeatures: { promptInjectionGuardEnabled: boolean };
+  };
 
   beforeEach(() => {
     llmCallMock = vi.fn();
-    cfg = { dialogLayer: { multiQueryExpansionEnabled: true } };
+    cfg = {
+      dialogLayer: { multiQueryExpansionEnabled: true },
+      aiFeatures: { promptInjectionGuardEnabled: false },
+    };
     svc = new MultiQueryExpansionService(
       { call: llmCallMock } as unknown as never,
       cfg as unknown as never,
-      { observeDialogProcessingDuration: vi.fn() } as unknown as never,
+      {
+        observeDialogProcessingDuration: vi.fn(),
+        incPromptInjectionAttempt: vi.fn(),
+        incPromptInvalidResponse: vi.fn(),
+      } as unknown as never,
     );
   });
 
-  it('factual intent — НЕ expand (gating)', async () => {
+  it('org-режим при enabled ВСЕГДА вызывает llm.call (нет intent-гейтинга), даже на factual', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"queries":["q1","q2","q3"]}',
+      modelUsed: 'deepseek:deepseek-v4-flash',
+    });
     const r = await svc.expand({
       tenantId: 't',
       userId: 'u',
@@ -28,42 +43,63 @@ describe('MultiQueryExpansionService', () => {
       intent: 'factual',
       conversationId: null,
     });
-    expect(r.expanded).toBe(false);
-    expect(r.queries).toEqual(['Сколько денег?']);
-    expect(llmCallMock).not.toHaveBeenCalled();
+    expect(llmCallMock).toHaveBeenCalledTimes(1);
+    expect(r.expanded).toBe(true);
+    expect(r.queries[0]).toBe('Сколько денег?'); // оригинал первый
+    expect(r.queries).toEqual(['Сколько денег?', 'q1', 'q2', 'q3']);
   });
 
-  it('exploratory intent — 3 expansion (originalQuestion + 3)', async () => {
+  it('summary + history доходят до промпта (userMessage содержит их текст)', async () => {
     llmCallMock.mockResolvedValue({
-      text: '{"queries": ["Расскажи о найме разработчиков", "Какая ситуация с подбором инженеров?", "Найм senior-разработчиков в 2026"]}',
+      text: '{"queries":["Сколько стоит Маяк?"]}',
+      modelUsed: 'deepseek:deepseek-v4-flash',
+    });
+    await svc.expand({
+      tenantId: 't',
+      userId: 'u',
+      question: 'а сколько это стоит?',
+      intent: 'factual',
+      conversationId: 'conv-1',
+      summary: 'Обсуждали продукт Маяк для логистики.',
+      history: [
+        { role: 'user', content: 'Что у нас по продукту Маяк?' },
+        { role: 'assistant', content: 'Это система для логистики.' },
+      ],
+    });
+    expect(llmCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskType: 'dialog-multi-query',
+        userMessage: expect.stringContaining(
+          'Обсуждали продукт Маяк для логистики.',
+        ),
+      }),
+    );
+    const callArg = llmCallMock.mock.calls[0]?.[0] as { userMessage: string };
+    expect(callArg.userMessage).toContain('Что у нас по продукту Маяк?');
+    expect(callArg.userMessage).toContain('Это система для логистики.');
+    expect(callArg.userMessage).toContain('а сколько это стоит?');
+  });
+
+  it('clone-режим использует clone-промпт и taskType dialog-multi-query-clone', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"queries":["точная","аналог","принцип"]}',
+      modelUsed: 'deepseek:deepseek-v4-pro',
     });
     const r = await svc.expand({
       tenantId: 't',
       userId: 'u',
-      question: 'Расскажи про найм',
-      intent: 'exploratory',
+      question: 'Как бы поступил клон маркетолога?',
+      intent: 'factual',
       conversationId: null,
+      mode: 'clone',
     });
-    expect(r.expanded).toBe(true);
-    expect(r.queries.length).toBeGreaterThan(1);
-    expect(r.queries[0]).toBe('Расскажи про найм'); // оригинал первый
-  });
-
-  it('analytical intent — тоже expand', async () => {
-    llmCallMock.mockResolvedValue({
-      text: '{"queries": ["q1", "q2", "q3"]}',
-    });
-    const r = await svc.expand({
-      tenantId: 't',
-      userId: 'u',
-      question: 'Почему мы теряем клиентов?',
-      intent: 'analytical',
-      conversationId: null,
-    });
+    expect(llmCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ taskType: 'dialog-multi-query-clone' }),
+    );
     expect(r.expanded).toBe(true);
   });
 
-  it('disabled flag — НЕ expand', async () => {
+  it('disabled flag — НЕ expand, llm не вызывается', async () => {
     cfg.dialogLayer.multiQueryExpansionEnabled = false;
     const r = await svc.expand({
       tenantId: 't',
@@ -73,10 +109,11 @@ describe('MultiQueryExpansionService', () => {
       conversationId: null,
     });
     expect(r.expanded).toBe(false);
+    expect(r.queries).toEqual(['Расскажи про найм']);
     expect(llmCallMock).not.toHaveBeenCalled();
   });
 
-  it('LLM error → возвращаем только оригинальный вопрос', async () => {
+  it('LLM упал → queries=[question], expanded=false', async () => {
     llmCallMock.mockRejectedValue(new Error('LLM timeout'));
     const r = await svc.expand({
       tenantId: 't',
@@ -89,14 +126,23 @@ describe('MultiQueryExpansionService', () => {
     expect(r.expanded).toBe(false);
   });
 
-  it('clone_roleplay intent — НЕ expand', async () => {
+  it('дедуп оригинала с экспансиями (если LLM повторил реплику)', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"queries":["Расскажи про найм","Какова ситуация с подбором?","Найм инженеров"]}',
+      modelUsed: 'deepseek:deepseek-v4-flash',
+    });
     const r = await svc.expand({
       tenantId: 't',
       userId: 'u',
-      question: 'Как бы Иван сказал?',
-      intent: 'clone_roleplay',
+      question: 'Расскажи про найм',
+      intent: 'exploratory',
       conversationId: null,
     });
-    expect(r.expanded).toBe(false);
+    // оригинал «Расскажи про найм» не должен задвоиться
+    expect(r.queries).toEqual([
+      'Расскажи про найм',
+      'Какова ситуация с подбором?',
+      'Найм инженеров',
+    ]);
   });
 });

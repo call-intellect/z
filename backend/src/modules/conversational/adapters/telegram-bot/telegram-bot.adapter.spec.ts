@@ -68,9 +68,7 @@ function makeAdapter(opts: {
     | 'clone_roleplay'
     | 'daily_plan_morning'
     | 'daily_report_evening'
-    | 'note'
-    | 'task'
-    | 'show_tasks';
+    | 'note';
   classifyConfidence?: number;
   withTaskHandler?: boolean;
   classifyThrows?: boolean;
@@ -420,11 +418,15 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     });
   });
 
-  // ─────────── §2 гейт намерения: task / show_tasks ───────────
+  // ─────────── §2 ТЗ 2026-06-14 channels-sync: интенты task/show_tasks убраны ─────
 
-  it('текст task (conf>=0.7): task-handler создаёт задачу, InboundMessage не возвращается', async () => {
+  // Интентов task/show_tasks больше нет в классификаторе. При routing OFF
+  // task-/show_tasks-подобные сообщения классифицируются как обычная заметка
+  // или вопрос — task-handler НЕ вызывается из ветки намерения (его методы
+  // остаются для структурного task-flow: reply/forward в tryHandleStructural).
+  it('OFF: task-подобный текст (классиф. note) → free_note, task-handler НЕ зовётся', async () => {
     mocks = makeAdapter({
-      classifyIntent: 'task',
+      classifyIntent: 'note',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
@@ -446,19 +448,16 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
       tenantId: 'org-1',
       channel,
     });
-    expect(result).toBeNull();
-    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'org-1',
-        text: 'Поставь задачу: подготовить КП к пятнице',
-      }),
-    );
+    expect(result).toMatchObject({ type: 'free_note' });
+    expect(
+      vi.mocked(mocks.taskHandler!.handleCreateTask),
+    ).not.toHaveBeenCalled();
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
   });
 
-  it('текст show_tasks (conf>=0.7): читалка «мои задачи», InboundMessage не возвращается', async () => {
+  it('OFF: «покажи задачи»-подобный текст (классиф. factual) → chat_query, читалка НЕ зовётся', async () => {
     mocks = makeAdapter({
-      classifyIntent: 'show_tasks',
+      classifyIntent: 'factual',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
@@ -480,65 +479,11 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
       tenantId: 'org-1',
       channel,
     });
-    expect(result).toBeNull();
-    expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).toHaveBeenCalled();
-    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
-  });
-
-  it('текст show_tasks с conf<0.7: трактуется как вопрос (chat_query), не читалка', async () => {
-    mocks = makeAdapter({
-      classifyIntent: 'show_tasks',
-      classifyConfidence: 0.5,
-      withTaskHandler: true,
-    });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
-    const update: TelegramUpdate = {
-      update_id: 52,
-      message: {
-        message_id: 52,
-        date: 1700000000,
-        chat: { id: 100 },
-        from: { id: 100 },
-        text: 'задачи',
-      },
-    };
-    const result = await mocks.adapter.ingestUpdate({
-      update,
-      tenantId: 'org-1',
-      channel,
-    });
     expect(result).toMatchObject({ type: 'chat_query' });
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
-  });
-
-  it('текст task с conf<0.7: падает в free_note (не создаёт задачу)', async () => {
-    mocks = makeAdapter({
-      classifyIntent: 'task',
-      classifyConfidence: 0.5,
-      withTaskHandler: true,
-    });
-    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
-      verifiedBinding(),
-    );
-    const update: TelegramUpdate = {
-      update_id: 53,
-      message: {
-        message_id: 53,
-        date: 1700000000,
-        chat: { id: 100 },
-        from: { id: 100 },
-        text: 'надо бы что-то сделать наверное',
-      },
-    };
-    const result = await mocks.adapter.ingestUpdate({
-      update,
-      tenantId: 'org-1',
-      channel,
-    });
-    expect(result).toMatchObject({ type: 'free_note' });
-    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.taskHandler!.handleCreateTask),
+    ).not.toHaveBeenCalled();
   });
 
   it('структурный спецслучай (tryHandleStructural=true): адаптер выходит, classify не зовётся', async () => {
@@ -793,10 +738,13 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
     },
   });
 
-  it('ON: intent task (conf>=0.7) → ПО-ПРЕЖНЕМУ handleCreateTask (у помощника нет инструмента постановки задачи), InboundMessage null', async () => {
+  it('ON: task-сообщение → assistant_turn (помощник вызовет create_task), handleCreateTask НЕ вызван — ТЗ 2026-06-14 channels-sync', async () => {
+    // task/show_tasks как интентов больше нет: классификатор отдаёт обычную
+    // категорию (например note), которая при ON уходит в assistant_turn.
+    // Постановку задачи делает уже помощник (create_task), не task-handler.
     const mocks = makeAdapter({
       assistantChannelRoutingEnabled: true,
-      classifyIntent: 'task',
+      classifyIntent: 'note',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });
@@ -810,21 +758,25 @@ describe('TelegramBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', 
       channel: makeChannel(),
     });
 
-    // Как при OFF: бот сам отвечает через task-handler, наружу ничего не идёт.
-    expect(result).toBeNull();
-    expect(vi.mocked(mocks.taskHandler!.handleCreateTask)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'org-1',
-        text: 'Поставь задачу: подготовить КП к пятнице',
-      }),
-    );
+    // Раньше тут вызывался handleCreateTask; теперь сообщение целиком уходит
+    // единому помощнику через assistant_turn.
+    expect(result).toMatchObject({
+      type: 'assistant_turn',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      text: 'Поставь задачу: подготовить КП к пятнице',
+      originChannelBindingId: 'binding-1',
+    });
+    expect(
+      vi.mocked(mocks.taskHandler!.handleCreateTask),
+    ).not.toHaveBeenCalled();
     expect(vi.mocked(mocks.taskHandler!.handleShowTasks)).not.toHaveBeenCalled();
   });
 
-  it('ON: intent show_tasks (conf>=0.7) → assistant_turn (помощник покрывает через list_tasks), handleShowTasks НЕ вызван', async () => {
+  it('ON: «покажи задачи»-сообщение → assistant_turn (помощник покрывает через search_tasks/list_tasks), handleShowTasks НЕ вызван', async () => {
     const mocks = makeAdapter({
       assistantChannelRoutingEnabled: true,
-      classifyIntent: 'show_tasks',
+      classifyIntent: 'factual',
       classifyConfidence: 0.9,
       withTaskHandler: true,
     });

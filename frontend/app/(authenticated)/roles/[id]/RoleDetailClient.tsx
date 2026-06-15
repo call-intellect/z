@@ -15,6 +15,7 @@ import useSWR from 'swr';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import { documentsApi } from '@/api/documents.api';
+import { roleMapApi } from '@/api/role-map.api';
 import {
   personsDomainApi,
   roleProfilesApi,
@@ -29,6 +30,10 @@ import { toast } from 'sonner';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
+  RoleMapGrid,
+  isRoleMapEmpty,
+} from '@/ui/components/role-map/RoleMapCards';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -42,14 +47,6 @@ import {
   AdminError,
   AdminForbidden,
 } from '@app/(admin)/admin/AdminStateViews';
-
-const BLOCK_TITLES: Record<string, string> = {
-  responsibilities: 'Обязанности',
-  skills: 'Навыки',
-  decision_patterns: 'Решения, которые принимает',
-  common_pitfalls: 'Типичные грабли',
-  style_profile: 'Стиль работы',
-};
 
 const REBUILD_COOLDOWN_MS = 60_000;
 const BUILD_STATUS_POLL_MS = 10_000;
@@ -424,6 +421,18 @@ function RoleProfileSection({
   const [now, setNow] = useState(() => Date.now());
   const pollTimerRef = useRef<number | null>(null);
 
+  // Тело карты должности берём из того же источника, что и `/roles/[id]/map`
+  // (нормализованные таблицы Role Map через RoleMapBuilderService), а не из
+  // `roleProfilesApi.byRole().summaryCache.blocks` — этого поля бэкенд не отдаёт
+  // (см. plans/tz/2026-06-15-me-role-map-card-contract.md). `profile` остаётся
+  // для статуса сборки / rebuild / источников.
+  const mapSwr = useSWR(['role-map-overview', orgId, roleId], () =>
+    roleMapApi.getMap(orgId, roleId),
+  );
+  const roleMap = mapSwr.data ?? null;
+  const hasMap =
+    roleMap !== null && !roleMap.isForming && !isRoleMapEmpty(roleMap);
+
   // Тикер для секунд cooldown.
   useEffect(() => {
     if (!cooldownUntil) return;
@@ -533,32 +542,18 @@ function RoleProfileSection({
         <p className="text-sm text-fg-tertiary">
           Сервис карт должностей пока не подключён.
         </p>
-      ) : loading ? (
+      ) : loading || mapSwr.isLoading ? (
         <Skeleton className="h-24 w-full" />
-      ) : !profile || !profile.summaryCache ? (
+      ) : !hasMap ? (
         <p className="text-sm text-fg-tertiary">
           Карта формируется. Заполнится автоматически по мере поступления
           материалов.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {profile.summaryCache.blocks.map((block) => (
-            <div key={block.key}>
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
-                {block.title ?? BLOCK_TITLES[block.key] ?? block.key}
-              </h3>
-              {block.items.length === 0 ? (
-                <p className="text-sm text-fg-tertiary">—</p>
-              ) : (
-                <ul className="list-disc space-y-1 pl-5 text-sm text-fg-primary">
-                  {block.items.map((it, i) => (
-                    <li key={i}>{it}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
+        <RoleMapGrid
+          map={roleMap}
+          className="grid grid-cols-1 gap-4 md:grid-cols-2"
+        />
       )}
 
       {profile?.sources && profile.sources.length > 0 && (

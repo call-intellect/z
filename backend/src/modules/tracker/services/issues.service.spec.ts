@@ -842,3 +842,314 @@ describe('IssuesService — Б9 advisory_xact_lock', () => {
     expect(queryRawCalls.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+/**
+ * Issue move-to-project (2026-06-15, plans/tz/2026-06-15-issue-move-to-project.md).
+ *
+ * Тестируем `IssuesService.moveToProject`: успешный перенос (новый
+ * identifier/sequence, ремап state по category, default-доска, cycle=null,
+ * activity verb='moved_to_project'); негатив (тот же проект, чужой tenant,
+ * архивный проект, подзадача/задача с детьми); ремап state когда нет
+ * совпадающей category → defaultStateId.
+ */
+describe('IssuesService — moveToProject', () => {
+  type MoveOpts = {
+    /** Текущая задача (requireIssue + diff). null → 404. */
+    existing: Partial<Issue> | null;
+    /** Целевой проект (requireProject). null → бросает NotFound. */
+    targetProject: {
+      id: string;
+      identifier: string;
+      defaultStateId: string | null;
+      archivedAt: Date | null;
+    } | null;
+    /** Число прямых детей текущей задачи. */
+    childrenCount?: number;
+    /** category текущего state (issueState.findUnique). */
+    currentStateCategory?: string | null;
+    /** Совпадающий state в целевом проекте (issueState.findFirst). */
+    targetStateMatch?: { id: string } | null;
+    /** Максимальный sequenceId в целевом проекте. */
+    targetMaxSequence?: number;
+    /** Default-доска целевого проекта (BoardsService). */
+    targetBoardId?: string | null;
+    /** Инжектить ли BoardsService. */
+    withBoards?: boolean;
+  };
+
+  function buildService(opts: MoveOpts) {
+    const issueUpdate = vi.fn().mockImplementation(async ({ data }) => ({
+      id: 'i1',
+      ...data,
+    }));
+    const issueAggregate = vi
+      .fn()
+      .mockResolvedValue({ _max: { sequenceId: opts.targetMaxSequence ?? 0 } });
+    const issueCount = vi.fn().mockResolvedValue(opts.childrenCount ?? 0);
+
+    // requireIssue + assemble используют prisma.issue.findFirst. requireIssue
+    // первым (без include), assemble — с include. Возвращаем «обновлённую»
+    // задачу для assemble (берём из последнего update-вызова, если был).
+    let assembleCall = 0;
+    const issueFindFirst = vi.fn().mockImplementation(async () => {
+      assembleCall++;
+      // Первый вызов — requireIssue (отдаёт existing as-is).
+      if (assembleCall === 1) {
+        return opts.existing
+          ? { ...opts.existing, assignees: [], labels: [] }
+          : null;
+      }
+      // Последующий — assemble: отдаём с обновлёнными полями из update-mock.
+      const last = issueUpdate.mock.calls.at(-1)?.[0]?.data ?? {};
+      return {
+        ...(opts.existing ?? {}),
+        ...last,
+        assignees: [],
+        labels: [],
+      };
+    });
+
+    const issueStateFindUnique = vi
+      .fn()
+      .mockResolvedValue(
+        opts.currentStateCategory != null
+          ? { category: opts.currentStateCategory }
+          : null,
+      );
+    const issueStateFindFirst = vi
+      .fn()
+      .mockResolvedValue(opts.targetStateMatch ?? null);
+
+    const activityRecord = vi.fn().mockResolvedValue('act_move');
+
+    const prisma = {
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          issue: { aggregate: issueAggregate, update: issueUpdate },
+        }),
+      issue: { findFirst: issueFindFirst, count: issueCount },
+      issueState: {
+        findUnique: issueStateFindUnique,
+        findFirst: issueStateFindFirst,
+      },
+    } as unknown as PrismaService;
+
+    const activity = {
+      record: activityRecord,
+    } as unknown as ActivityRecorderService;
+    const projects = {
+      requireProject: vi.fn().mockImplementation(async () => {
+        if (!opts.targetProject) {
+          const { NotFoundException } = await import('@nestjs/common');
+          throw new NotFoundException({
+            ok: false,
+            error: { code: 'project_not_found', message: 'Проект не найден' },
+          });
+        }
+        return opts.targetProject;
+      }),
+    } as unknown as ProjectsService;
+    const events = {
+      publishIssueUpdated: vi.fn(),
+      publishIssueMovedToProject: vi.fn(),
+    } as unknown as TrackerEventsService;
+    const webhooks = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookDispatcher;
+    const emitter = {} as unknown as TrackerEmitterService;
+    const boards = opts.withBoards
+      ? ({
+          resolveDefaultBoardId: vi
+            .fn()
+            .mockResolvedValue(opts.targetBoardId ?? null),
+        } as unknown as import('./boards.service').BoardsService)
+      : undefined;
+    const metrics = {
+      incIssueMovedToProject: vi.fn(),
+    } as unknown as import('../../../common/metrics/business-metrics.service').BusinessMetricsService;
+
+    const service = new IssuesService(
+      prisma,
+      activity,
+      projects,
+      events,
+      webhooks,
+      emitter,
+      undefined, // embedQueue
+      undefined, // inferFieldsSvc
+      undefined, // goalSuggestSvc
+      undefined, // holiday
+      boards,
+      metrics,
+    );
+
+    return {
+      service,
+      issueUpdate,
+      issueAggregate,
+      issueCount,
+      issueStateFindFirst,
+      activityRecord,
+      events,
+    };
+  }
+
+  const SRC_ISSUE: Partial<Issue> = {
+    id: 'i1',
+    tenantId: 'org_1',
+    projectId: 'p_src',
+    identifier: 'SRC-7',
+    sequenceId: 7,
+    title: 'Перенести меня',
+    parentId: null,
+    stateId: 'st_src_started',
+    cycleId: 'cyc_1',
+    boardId: 'b_src',
+    // assemble → toResponseFromInclude обращается к этим Date-полям.
+    linkedMeetingIds: [],
+    sourceBlockIds: [],
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    archivedAt: null,
+    deletedAt: null,
+  };
+
+  const TARGET = {
+    id: 'p_dst',
+    identifier: 'DST',
+    defaultStateId: 'st_dst_backlog',
+    archivedAt: null,
+  };
+
+  it('успех — новый identifier/sequence, ремап state по category, board=default, cycle=null, activity verb=moved_to_project', async () => {
+    const { service, issueUpdate, activityRecord, events } = buildService({
+      existing: SRC_ISSUE,
+      targetProject: TARGET,
+      currentStateCategory: 'started',
+      targetStateMatch: { id: 'st_dst_started' },
+      targetMaxSequence: 14,
+      withBoards: true,
+      targetBoardId: 'b_dst',
+    });
+
+    const res = await service.moveToProject('i1', 'p_dst', 'org_1', 'u1');
+
+    const updateArg = issueUpdate.mock.calls[0]![0];
+    expect(updateArg.where).toEqual({ id: 'i1' });
+    expect(updateArg.data.projectId).toBe('p_dst');
+    expect(updateArg.data.sequenceId).toBe(15); // max 14 + 1
+    expect(updateArg.data.identifier).toBe('DST-15');
+    expect(updateArg.data.stateId).toBe('st_dst_started'); // совпадение по category
+    expect(updateArg.data.boardId).toBe('b_dst');
+    expect(updateArg.data.cycleId).toBeNull();
+
+    // Activity verb='moved_to_project' с oldValue/newValue и metadata.
+    expect(activityRecord).toHaveBeenCalledTimes(1);
+    const actArg = activityRecord.mock.calls[0]![0];
+    expect(actArg.verb).toBe('moved_to_project');
+    expect(actArg.field).toBe('projectId');
+    expect(actArg.oldValue).toBe('p_src');
+    expect(actArg.newValue).toBe('p_dst');
+    expect(actArg.metadata).toEqual({
+      oldIdentifier: 'SRC-7',
+      newIdentifier: 'DST-15',
+    });
+
+    // WS-события.
+    expect(events.publishIssueUpdated).toHaveBeenCalledWith(
+      expect.anything(),
+      'org_1',
+      ['projectId', 'identifier'],
+    );
+    expect(events.publishIssueMovedToProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issueId: 'i1',
+        fromProjectId: 'p_src',
+        toProjectId: 'p_dst',
+        oldIdentifier: 'SRC-7',
+        newIdentifier: 'DST-15',
+      }),
+    );
+
+    // Ответ — обновлённая задача (новый identifier).
+    expect(res.identifier).toBe('DST-15');
+  });
+
+  it('ремап state — нет совпадающей category → defaultStateId целевого', async () => {
+    const { service, issueUpdate } = buildService({
+      existing: { ...SRC_ISSUE, stateId: 'st_src_started' },
+      targetProject: TARGET,
+      currentStateCategory: 'started',
+      targetStateMatch: null, // нет статуса той же категории
+      targetMaxSequence: 0,
+      withBoards: false,
+    });
+
+    await service.moveToProject('i1', 'p_dst', 'org_1', 'u1');
+
+    const updateArg = issueUpdate.mock.calls[0]![0];
+    expect(updateArg.data.stateId).toBe('st_dst_backlog'); // defaultStateId
+    expect(updateArg.data.identifier).toBe('DST-1');
+  });
+
+  it('same_project → 400', async () => {
+    const { service } = buildService({
+      existing: { ...SRC_ISSUE, projectId: 'p_dst' },
+      targetProject: TARGET,
+    });
+    await expect(
+      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'same_project' } },
+    });
+  });
+
+  it('чужой tenant (целевой проект не найден) → 404', async () => {
+    const { service } = buildService({
+      existing: SRC_ISSUE,
+      targetProject: null, // requireProject бросит NotFound
+    });
+    await expect(
+      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'project_not_found' } },
+    });
+  });
+
+  it('архивный целевой проект → 400 target_project_archived', async () => {
+    const { service } = buildService({
+      existing: SRC_ISSUE,
+      targetProject: { ...TARGET, archivedAt: new Date() },
+    });
+    await expect(
+      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'target_project_archived' } },
+    });
+  });
+
+  it('задача с parentId → 400 cannot_move_issue_with_subtasks', async () => {
+    const { service } = buildService({
+      existing: { ...SRC_ISSUE, parentId: 'i_parent' },
+      targetProject: TARGET,
+    });
+    await expect(
+      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'cannot_move_issue_with_subtasks' } },
+    });
+  });
+
+  it('задача с детьми → 400 cannot_move_issue_with_subtasks', async () => {
+    const { service } = buildService({
+      existing: SRC_ISSUE,
+      targetProject: TARGET,
+      childrenCount: 2,
+    });
+    await expect(
+      service.moveToProject('i1', 'p_dst', 'org_1', 'u1'),
+    ).rejects.toMatchObject({
+      response: { error: { code: 'cannot_move_issue_with_subtasks' } },
+    });
+  });
+});

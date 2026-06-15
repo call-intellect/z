@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { weeklyPerPersonApi } from '@/api/weekly-per-person.api';
@@ -16,10 +16,15 @@ import {
   type WeeklyPersonRowUi,
 } from '@/domain/weekly-per-person';
 import {
+  buildPlanerkaCsv,
+  type PlanerkaPerson,
+} from '@/domain/planerka-csv';
+import {
   CardTitle,
   GlassCard,
   GRAD,
 } from '@/ui/components/dashboard/modern';
+import { toast } from '@/ui/shadcn/toast';
 
 /**
  * ТЗ-D Фаза 5 (2026-06-05) — виджет недельного план-факта по людям.
@@ -44,6 +49,9 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
   const [allLoading, setAllLoading] = useState(false);
   const [allError, setAllError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+
+  // Экспорт «для планёрки»: собираем построчный план-факт по ВСЕМ людям.
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +97,71 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
       });
   };
 
+  /**
+   * Собирает ПОЛНУЮ построчную таблицу план-факта по всем людям и скачивает
+   * CSV «для планёрки» (клиентский blob, без новых зависимостей).
+   *
+   * Шаги: (1) тянем полный список людей (если ещё нет — `get` с limit=100);
+   * (2) для каждого человека грузим его items батчами (ограничиваем
+   * параллелизм, чтобы не залить бэкенд при больших командах); (3) мапим,
+   * строим CSV (чистая `buildPlanerkaCsv`), добавляем BOM и скачиваем.
+   */
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // 1. Полный список людей (rows из основной загрузки — это top-5, не все).
+      const full = weeklyPerPersonFromApi(
+        await weeklyPerPersonApi.get(weekStart, {
+          limit: 100,
+          offset: 0,
+          sort: 'reliability',
+        }),
+      );
+      const rows = full.rows;
+      if (rows.length === 0) {
+        toast.error('За эту неделю нет данных для выгрузки');
+        return;
+      }
+
+      // 2. Построчные items по каждому человеку — батчами по 6 параллельно.
+      const BATCH = 6;
+      const people: PlanerkaPerson[] = [];
+      for (let i = 0; i < rows.length; i += BATCH) {
+        const slice = rows.slice(i, i + BATCH);
+        const loaded = await Promise.all(
+          slice.map(async (row) => {
+            const res = await weeklyPerPersonApi.items(weekStart, row.personId);
+            return {
+              personName: row.personName,
+              items: res.items.map(weeklyPersonItemFromApi),
+            } satisfies PlanerkaPerson;
+          }),
+        );
+        people.push(...loaded);
+      }
+
+      // 3. CSV + BOM + клиентский blob-download.
+      const csv = buildPlanerkaCsv(people);
+      const blob = new Blob(['﻿', csv], {
+        type: 'text/csv;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `planerka-${weekStart}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Таблица для планёрки скачана');
+    } catch (err: unknown) {
+      toast.error(toMessage(err, 'Не удалось собрать таблицу для планёрки'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <GlassCard>
       <CardTitle icon={<Users size={16} />} grad={GRAD.blue}>
@@ -119,24 +192,43 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
           </div>
 
           <div className="mt-4 border-t border-border-subtle pt-3">
-            {!expanded ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {!expanded ? (
+                <button
+                  type="button"
+                  onClick={loadAll}
+                  disabled={allLoading}
+                  className="rounded border px-3 py-1 text-sm text-fg-primary hover:bg-bg-subtle disabled:opacity-50"
+                >
+                  {allLoading ? 'Загрузка…' : 'Показать всех'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setExpanded(false)}
+                  className="rounded border px-3 py-1 text-sm text-fg-primary hover:bg-bg-subtle"
+                >
+                  Свернуть
+                </button>
+              )}
               <button
                 type="button"
-                onClick={loadAll}
-                disabled={allLoading}
-                className="rounded border px-3 py-1 text-sm text-fg-primary hover:bg-bg-subtle disabled:opacity-50"
+                onClick={handleExport}
+                disabled={exporting}
+                title="Скачать построчную таблицу план-факт по всем людям в CSV"
+                className="inline-flex items-center gap-1.5 rounded bg-accent px-3 py-1 text-sm text-accent-fg hover:bg-accent-hover disabled:opacity-50"
               >
-                {allLoading ? 'Загрузка…' : 'Показать всех'}
+                {exporting ? (
+                  <span
+                    aria-hidden
+                    className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent-fg/40 border-t-accent-fg"
+                  />
+                ) : (
+                  <Download size={14} aria-hidden />
+                )}
+                {exporting ? 'Готовим…' : 'Скачать для планёрки'}
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setExpanded(false)}
-                className="rounded border px-3 py-1 text-sm text-fg-primary hover:bg-bg-subtle"
-              >
-                Свернуть
-              </button>
-            )}
+            </div>
             {allError ? (
               <p className="mt-3 rounded border border-chip-warning-bg bg-chip-warning-bg p-3 text-sm text-chip-warning-fg">
                 {allError}

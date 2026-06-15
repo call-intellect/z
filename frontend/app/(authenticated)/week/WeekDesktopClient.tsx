@@ -12,6 +12,7 @@ import { WeeklyDigestClient } from '../dashboard/operations/weekly/WeeklyDigestC
 import { WeeklyPerPersonWidget } from '../dashboard/operations/weekly/WeeklyPerPersonWidget';
 import { PortfolioDashboardClient } from '../dashboard/portfolio/PortfolioDashboardClient';
 import { CheckinDisciplineWidget } from './CheckinDisciplineWidget';
+import { StaleQuestionsWidget } from './StaleQuestionsWidget';
 
 /**
  * НЕДЕЛЯ — десктоп-экран `/week` (ТЗ редизайн кабинета Ф2).
@@ -19,8 +20,10 @@ import { CheckinDisciplineWidget } from './CheckinDisciplineWidget';
  * Понедельничный ритм: слияние трёх ранее отдельных дашбордов в один экран с
  * вкладками. Порядок по смыслу — «Кто держит слово» ключевая, но «Сводка»
  * остаётся первой (вход с вердикта). Состав:
- *   - «Сводка»          — вердикт недели + недельный дайджест (`WeeklyDigestClient`)
- *                          + вектор/портфель целей (`PortfolioDashboardClient`).
+ *   - «Сводка»          — вердикт недели + «висят без ответа ≥3 дней»
+ *                          (`StaleQuestionsWidget`, только owner/admin/coo) +
+ *                          недельный дайджест (`WeeklyDigestClient`) +
+ *                          вектор/портфель целей (`PortfolioDashboardClient`).
  *   - «Пульс сейчас»    — операционный пульс (`OperationsDashboardClient`).
  *   - «Кто держит слово» — план-факт по людям (`WeeklyPerPersonWidget`) +
  *                          дисциплина чек-инов (`CheckinDisciplineWidget`).
@@ -123,6 +126,7 @@ export function WeekDesktopClient() {
         <TabsContent value="summary">
           <div className="space-y-6">
             <WeekVerdictBar weekStart={weekStart} />
+            <StaleQuestionsWidget />
             <WeeklyDigestClient
               embedded
               weekStart={weekStart}

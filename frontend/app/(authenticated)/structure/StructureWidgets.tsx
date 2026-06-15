@@ -67,7 +67,7 @@ const TONE_CHIP: Record<HealthToneDomain, { c: string; bg: string }> = {
   success: { c: CHART.mint, bg: 'oklch(0.85 0.15 165 / 0.14)' },
   warning: { c: CHART.amber, bg: 'oklch(0.84 0.16 80 / 0.14)' },
   danger: { c: CHART.red, bg: 'oklch(0.66 0.22 25 / 0.16)' },
-  neutral: { c: CHART.dim, bg: 'oklch(1 0 0 / 0.06)' },
+  neutral: { c: CHART.dim, bg: 'var(--surface-inset)' },
 };
 
 /* ── Корневой блок ─────────────────────────────────────────────────────── */
@@ -137,7 +137,7 @@ function TeamHealthWidget({ orgId }: { orgId: string }) {
         // Б-6 — схлоп: нет ни одной команды cohort ≥3.
         <div
           className="mt-4 rounded-2xl p-6"
-          style={{ background: 'oklch(1 0 0 / 0.04)' }}
+          style={{ background: 'var(--surface-inset)' }}
         >
           <p className="text-sm leading-relaxed" style={{ color: CHART.dim }}>
             Здоровье команды Кора считает, когда в отделе{' '}
@@ -252,7 +252,7 @@ function PeopleToHelpWidget({ orgId }: { orgId: string }) {
         // Б-6 — никто не под риском.
         <div
           className="mt-4 rounded-2xl p-6 text-center"
-          style={{ background: 'oklch(1 0 0 / 0.04)' }}
+          style={{ background: 'var(--surface-inset)' }}
         >
           <p className="text-sm font-medium" style={{ color: CHART.mint }}>
             Все в норме
@@ -283,7 +283,7 @@ function PersonHelpCard({ item }: { item: PeopleAtRiskItemDomain }) {
   return (
     <div
       className="flex flex-col rounded-2xl p-4"
-      style={{ background: 'oklch(1 0 0 / 0.04)', border: '1px solid oklch(1 0 0 / 0.06)' }}
+      style={{ background: 'var(--surface-inset)', border: '1px solid var(--border-inset)' }}
     >
       <div className="flex items-center gap-3">
         <span
@@ -353,7 +353,7 @@ function MaturityWidget({ orgId }: { orgId: string }) {
       ) : (
         <div
           className="mt-4 rounded-2xl p-6 text-center"
-          style={{ background: 'oklch(1 0 0 / 0.04)' }}
+          style={{ background: 'var(--surface-inset)' }}
         >
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Пока не определено

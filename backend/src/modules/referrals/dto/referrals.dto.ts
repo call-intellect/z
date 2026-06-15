@@ -153,6 +153,31 @@ export class ReferralClientMaskedDto extends createZodDto(
 ) {}
 
 /**
+ * Прогресс к награде партнёра (B2 — шкала прогресса баннера рефералки).
+ *
+ * Питает шкалу «приведи N клиентов» в промо-баннере кабинета:
+ *   - `hasProfile`           — есть ли у пользователя реферальный профиль.
+ *     `false` для pre-profile-кейса (профиль ещё не создан) — тогда
+ *     `activePaying = 0`, `monthlyEarnedKopecks = 0`, но `targetClients`
+ *     всё равно посчитан (шкала показывается с нулевым прогрессом).
+ *   - `activePaying`         — активно платящих приведённых клиентов сейчас
+ *     (как `getStats.activePaying`).
+ *   - `targetClients`        — сколько активных клиентов «закрывают» базовую
+ *     месячную подписку: `ceil(baseMonthlyPriceKopecks /
+ *     REFERRAL_MONTHLY_COMMISSION_KOPECKS)` (= 3 при 60 000 ₽ / 20 000 ₽).
+ *     Самонастраивается от текущей базовой цены (AdminSetting).
+ *   - `monthlyEarnedKopecks` — `activePaying × REFERRAL_MONTHLY_COMMISSION_KOPECKS`.
+ */
+export const RewardProgressSchema = z.object({
+  hasProfile: z.boolean(),
+  activePaying: z.number().int().nonnegative(),
+  targetClients: z.number().int().nonnegative(),
+  monthlyEarnedKopecks: z.number().int().nonnegative(),
+});
+export type RewardProgressBody = z.infer<typeof RewardProgressSchema>;
+export class RewardProgressDto extends createZodDto(RewardProgressSchema) {}
+
+/**
  * Точка на графике дохода (ТЗ referrals-cabinet-revamp §7.3).
  *
  * `getIncomeChart` отдаёт ровно 12 точек: с месяца `now - 11mo` до `now`

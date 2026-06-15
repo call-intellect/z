@@ -139,6 +139,23 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
     expect(ctx.queryRaw).toHaveBeenCalledTimes(1);
   });
 
+  it('QA B2: citations-array проверяется под CASE-guard (защита от 22023 на скаляре)', async () => {
+    const queryRaw = vi.fn(async () => [{ cnt: 0 }]);
+    const ctx = makeService({ queryRaw });
+
+    await (ctx.svc as unknown as Privates).fetchValueStrip('t1', 'week');
+
+    // tagged-template `$queryRaw`: первый аргумент — массив строковых частей.
+    const firstCall = (queryRaw.mock.calls as unknown[][])[0] ?? [];
+    const sqlParts = Array.isArray(firstCall[0]) ? (firstCall[0] as string[]) : [];
+    const joined = sqlParts.join(' ');
+    // jsonb_array_length вызывается ТОЛЬКО внутри CASE (детерминированный
+    // порядок) — иначе Postgres падает 22023 на скалярных citations.
+    expect(joined).toContain('CASE');
+    expect(joined).toContain('jsonb_typeof');
+    expect(joined).toContain('jsonb_array_length');
+  });
+
   it('parse bigint cnt из raw-query (Postgres COUNT возвращает bigint)', async () => {
     const ctx = makeService({
       queryRaw: vi.fn(async () => [{ cnt: 9n }]),

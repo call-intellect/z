@@ -685,6 +685,31 @@ const KnowledgeCoreSchema = z.object({
    */
   CARD_ROLLUP_V2_DEBOUNCE_MS: z.coerce.number().int().positive().default(60_000),
 
+  // ── Редизайн кабинета Ф8.2: theme-silence-detector cron ──
+  /**
+   * Kill-switch ночного `theme-silence-detector.cron` (Ship-On: дефолт ON).
+   * При `true` (default) cron ищет «молчащие» темы и заводит/обновляет
+   * Insight(kind='risk'); при `false` проход целиком пропускается. Лучше
+   * крутить через AdminSetting `dashboard.theme_silence.enabled` (admin-editable),
+   * ENV — fallback. Аварийный рубильник, действий владельца не требует.
+   */
+  DASHBOARD_THEME_SILENCE_ENABLED: zBool(true),
+  /**
+   * Сколько недель без сигнала по теме делают её «молчащей». 3 недели —
+   * дефолт (выровнено с `DEFAULT_THEME_SILENCE_WEEKS` в scoring). Лучше
+   * крутить через AdminSetting `dashboard.theme_silence_weeks`, ENV — fallback.
+   */
+  DASHBOARD_THEME_SILENCE_WEEKS: z.coerce.number().int().positive().default(3),
+
+  // ── SBA α-8 wave 3: PersonRole → Appointment ──
+  /**
+   * Feature-flag двойной записи/чтения должностей через `Appointment`
+   * параллельно с `PersonRole` (PersonsService). Де-факто дефолт — `false`
+   * (прежний `process.env.* === 'true'` → false при отсутствии). Читается
+   * через TypedConfigService (`config.persons.useAppointment`).
+   */
+  USE_APPOINTMENT_FOR_PERSON_ROLES: zBool(false),
+
   // ── DEPRECATED (2026-06-10): v2-стек (meeting-analyze-v2 + extractor-v2) удалён ──
   // Воркер/cron/очередь/extractor-сервисы снесены как мёртвый код (прод никогда
   // не включал `KNOWLEDGE_CORE_V2_AGENTS_ENABLED`). ENV-ключи оставлены инертными,
@@ -1444,8 +1469,6 @@ const ProcessTemplateSchema = z.object({
  *   - DIALOG_LAYER_ENABLED — master-флаг. False → fallback на raw userMessage.
  *   - ANSWER_CACHE_TTL_SECONDS — TTL финального ответа (24h по умолчанию).
  *   - RETRIEVAL_CACHE_TTL_SECONDS — TTL blockIds (1h по умолчанию).
- *   - CONTEXTUALIZER_CONFIDENCE_MIN — порог confidence ниже которого
- *     fallback на raw userMessage.
  *   - SUMMARIZER_MESSAGE_THRESHOLD — порог числа messages, при котором
  *     ConversationSummarizerCron сжимает старую часть в summary.
  *   - MULTI_QUERY_EXPANSION_ENABLED — мастер-флаг 3-way query expansion
@@ -1461,7 +1484,6 @@ const DialogLayerSchema = z.object({
   DIALOG_LAYER_ENABLED: zBool(true),
   ANSWER_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   RETRIEVAL_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
-  CONTEXTUALIZER_CONFIDENCE_MIN: z.coerce.number().min(0).max(1).default(0.5),
   SUMMARIZER_MESSAGE_THRESHOLD: z.coerce.number().int().positive().default(12),
   MULTI_QUERY_EXPANSION_ENABLED: zBool(true),
   // Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — kill-switch извлечения

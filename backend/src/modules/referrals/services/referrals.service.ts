@@ -40,6 +40,7 @@ import { customAlphabet } from 'nanoid';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { SeatService } from '../../billing/services/seat.service';
 import { InnLookupService } from '../../inn-lookup/inn-lookup.service';
 import type { FunnelPeriod } from '../dto/referrals.dto';
 
@@ -107,6 +108,17 @@ export interface MonthlyPoint {
   activeClients: number;
 }
 
+/**
+ * Прогресс к награде партнёра (B2 — шкала прогресса баннера рефералки).
+ * `hasProfile=false` для pre-profile-кейса (профиль ещё не создан).
+ */
+export interface RewardProgress {
+  hasProfile: boolean;
+  activePaying: number;
+  targetClients: number;
+  monthlyEarnedKopecks: number;
+}
+
 /** Воронка (ТЗ referrals-cabinet-revamp §7.3). */
 export interface Funnel {
   period: FunnelPeriod;
@@ -129,6 +141,7 @@ export class ReferralsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(InnLookupService) private readonly innLookup: InnLookupService,
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
+    @Inject(SeatService) private readonly seats: SeatService,
   ) {}
 
   async getByUserId(ownerUserId: string): Promise<Referral | null> {
@@ -479,6 +492,45 @@ export class ReferralsService {
       firstPayments30d,
       conversionClickToPaidPercent: percent(firstPayments30d, clicks30d),
       conversionSignupToPaidPercent: percent(firstPayments30d, signups30d),
+    };
+  }
+
+  /**
+   * Прогресс к награде партнёра для шкалы промо-баннера (B2).
+   *
+   * Покрывает pre-profile-кейс: если профиля нет — возвращаем
+   * `{ hasProfile: false, activePaying: 0, monthlyEarnedKopecks: 0 }`, но
+   * `targetClients` всё равно посчитан (шкала рисуется с нулевым прогрессом),
+   * НЕ возвращаем null.
+   *
+   * `targetClients = ceil(baseMonthlyPriceKopecks / REFERRAL_COMMISSION_KOPECKS)` —
+   * сколько активных клиентов «отбивают» базовую месячную подписку. Базовую
+   * цену берём из `SeatService.calculateMonthlyPriceKopecks(0)` (эффективная
+   * `billing.baseMonthlyKopecks` из AdminSetting через `getDynamic`, не
+   * хардкод) — формула самонастраивается при смене цены.
+   */
+  async getRewardProgress(ownerUserId: string): Promise<RewardProgress> {
+    const baseMonthlyPriceKopecks = await this.seats.calculateMonthlyPriceKopecks(0);
+    const targetClients = Math.ceil(
+      baseMonthlyPriceKopecks / REFERRAL_COMMISSION_KOPECKS,
+    );
+
+    const ref = await this.getByUserId(ownerUserId);
+    if (!ref) {
+      return {
+        hasProfile: false,
+        activePaying: 0,
+        targetClients,
+        monthlyEarnedKopecks: 0,
+      };
+    }
+
+    const stats = await this.getStats(ref.id);
+    return {
+      hasProfile: true,
+      activePaying: stats.activePaying,
+      targetClients,
+      monthlyEarnedKopecks: stats.activePaying * REFERRAL_COMMISSION_KOPECKS,
     };
   }
 

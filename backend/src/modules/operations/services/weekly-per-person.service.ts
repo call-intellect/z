@@ -68,6 +68,13 @@ interface PersonAcc {
   tasksPlanned: number;
   /** Сколько из запланированных на неделю задач закрыты (status='done'). */
   tasksPlannedDone: number;
+  /**
+   * A11.1 (2026-06-14) — issueId задач трекера в активном цикле недели, уже
+   * учтённых за этого человека в tasksPlanned. Дедуп-гард: один `Issue`,
+   * назначенный на нескольких исполнителей, считается у каждого ровно один раз
+   * (на случай повторной/расширенной выборки — счёт идемпотентен).
+   */
+  countedCycleIssueIds: Set<string>;
   checkInsCompleted: number;
   /**
    * ТЗ-2 Ф4 — множество blockId обещаний, УЖЕ учтённых за этого человека.
@@ -498,6 +505,25 @@ export class WeeklyPerPersonService {
         acc.tasksPlanned += 1;
         if (t.status === 'done') acc.tasksPlannedDone += 1;
       }
+
+      // 5d. A11.1 (2026-06-14) — задачи трекера (`Issue`) в АКТИВНОМ цикле недели
+      //     тоже считаются «запланированными на неделю», даже если у самой задачи
+      //     dueDate вне окна (план задаёт цикл, а не личный срок). Аддитивно к
+      //     Task-плану (это разные таблицы — двойного счёта между ними нет).
+      //
+      //     ⚠️ Модель: у `Issue` НЕТ `assigneeUserId` (он есть только у legacy
+      //     `Task`); исполнители — M:M через `IssueAssignee` (`assignees.some.userId`).
+      //     Завершённость задачи трекера — `Issue.completedAt != null` (канон,
+      //     см. decision-implementation.service.ts / IssueOverdueDetectorCron),
+      //     отдельного `status='done'` у `Issue` нет.
+      await this.addCycleIssuesToPlan(
+        tenantId,
+        weekStartDate,
+        weekEndDate,
+        authorUserIds,
+        userIdToPersonId,
+        accByPerson,
+      );
     }
 
     // 6. Чек-ины: completedAt в окне недели. DailyCheckIn.tenantId — NOT NULL,
@@ -591,6 +617,7 @@ export class WeeklyPerPersonService {
         tasksDone: 0,
         tasksPlanned: 0,
         tasksPlannedDone: 0,
+        countedCycleIssueIds: new Set<string>(),
         checkInsCompleted: 0,
         countedCommitmentBlockIds: new Set<string>(),
       };
@@ -615,6 +642,79 @@ export class WeeklyPerPersonService {
       if (acc.countedCommitmentBlockIds.has(blockId)) return true;
     }
     return false;
+  }
+
+  /**
+   * A11.1 (2026-06-14) — подмешивает в PLAN задачи трекера (`Issue`) из АКТИВНЫХ
+   * циклов недели, назначенные людям-авторам, увеличивая `tasksPlanned`
+   * (и `tasksPlannedDone`, если задача завершена — `Issue.completedAt != null`).
+   *
+   * «Активный цикл недели» — `Cycle` с `completedAt = null`, чьё окно
+   * `[startDate..endDate]` пересекается с окном недели (`startDate <= weekEnd`
+   * И `endDate >= weekStart`). Tenant-скоуп на обеих выборках. Если активных
+   * циклов нет — выходит без второй выборки.
+   *
+   * Дедуп: `acc.countedCycleIssueIds` гарантирует, что один `Issue`,
+   * назначенный человеку, считается за него ровно один раз. Аддитивно к
+   * Task-плану (`Task` и `Issue` — разные таблицы, пересечения нет).
+   */
+  private async addCycleIssuesToPlan(
+    tenantId: string,
+    weekStartDate: Date,
+    weekEndDate: Date,
+    authorUserIds: string[],
+    userIdToPersonId: Map<string, string>,
+    accByPerson: Map<string, PersonAcc>,
+  ): Promise<void> {
+    if (authorUserIds.length === 0) return;
+
+    // 1. Активные циклы недели (tenant-скоуп, не завершённые, окно пересекает).
+    const activeCycles = await this.prisma.cycle.findMany({
+      where: {
+        tenantId,
+        completedAt: null,
+        startDate: { lte: weekEndDate },
+        endDate: { gte: weekStartDate },
+      },
+      select: { id: true },
+    });
+    if (activeCycles.length === 0) return;
+    const cycleIds = activeCycles.map((c) => c.id);
+
+    // 2. Задачи трекера в этих циклах, назначенные людям-авторам, живые
+    //    (не soft-deleted / не архив). Исполнители — M:M через IssueAssignee.
+    const issues = await this.prisma.issue.findMany({
+      where: {
+        tenantId,
+        cycleId: { in: cycleIds },
+        deletedAt: null,
+        archivedAt: null,
+        assignees: { some: { userId: { in: authorUserIds } } },
+      },
+      select: {
+        id: true,
+        completedAt: true,
+        assignees: { select: { userId: true } },
+      },
+    });
+
+    // 3. Раскладка по людям. Один Issue может быть назначен нескольким — каждому
+    //    идёт в план по разу (дедуп через countedCycleIssueIds на acc).
+    const authorUserIdSet = new Set(authorUserIds);
+    for (const issue of issues) {
+      const isDone = issue.completedAt !== null;
+      for (const a of issue.assignees) {
+        if (!authorUserIdSet.has(a.userId)) continue;
+        const personId = userIdToPersonId.get(a.userId);
+        if (!personId) continue;
+        const acc = accByPerson.get(personId);
+        if (!acc) continue;
+        if (acc.countedCycleIssueIds.has(issue.id)) continue;
+        acc.countedCycleIssueIds.add(issue.id);
+        acc.tasksPlanned += 1;
+        if (isDone) acc.tasksPlannedDone += 1;
+      }
+    }
   }
 
   private buildRow(

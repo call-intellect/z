@@ -23,7 +23,9 @@ import type {
   ReferralPayoutStatusApi,
   ReferralStatsExtendedApi,
   ReferralViewApi,
+  RewardProgressApi,
 } from '@/api/types/referrals';
+import { formatRubles } from '@/domain/billing';
 
 // ────────────────────────── Types ──────────────────────────
 
@@ -102,6 +104,14 @@ export interface FunnelDomain {
   };
 }
 
+/** Прогресс окупаемости подписки за счёт приведённых клиентов (B2). */
+export interface RewardProgressDomain {
+  hasProfile: boolean;
+  activePaying: number;
+  targetClients: number;
+  monthlyEarnedKopecks: number;
+}
+
 // ────────────────────────── Mappers ──────────────────────────
 
 export function referralFromApi(api: ReferralViewApi): ReferralDomain {
@@ -173,6 +183,17 @@ export function funnelFromApi(api: FunnelApi): FunnelDomain {
       signupToPaidPercent: api.conversions.signupToPaidPercent,
       clickToPaidPercent: api.conversions.clickToPaidPercent,
     },
+  };
+}
+
+export function rewardProgressFromApi(
+  api: RewardProgressApi,
+): RewardProgressDomain {
+  return {
+    hasProfile: api.hasProfile,
+    activePaying: api.activePaying,
+    targetClients: api.targetClients,
+    monthlyEarnedKopecks: api.monthlyEarnedKopecks,
   };
 }
 
@@ -344,6 +365,100 @@ export function funnelPeriodLabel(p: FunnelPeriod): string {
     all: 'За всё время',
   };
   return map[p];
+}
+
+// ──────────────────── Persistent reward-banner (B3) ────────────────────
+
+/**
+ * Ежемесячный платёж одной приведённой компании. Используется в копи
+ * баннера («×20 000 ₽/мес»). 20 000 ₽ = 2 000 000 копеек.
+ */
+export const REFERRAL_REWARD_PER_CLIENT_KOPECKS = 20_000_00;
+
+/**
+ * Состояние persistent-баннера окупаемости (B3) — какой вариант копи
+ * показывать.
+ *
+ *   - `'leaderNoProfile'` — руководитель ещё без профиля: «приведи N компаний».
+ *   - `'leaderInProgress'` — руководитель, клиентов меньше цели: живая шкала.
+ *   - `'leaderReached'`    — руководитель, цель достигнута: «подписка окуплена».
+ *   - `'member'`           — рядовой сотрудник: «дополнительный заработок».
+ */
+export type ReferralBannerVariant =
+  | 'leaderNoProfile'
+  | 'leaderInProgress'
+  | 'leaderReached'
+  | 'member';
+
+export interface ReferralBannerCopy {
+  variant: ReferralBannerVariant;
+  /** Главный заголовок баннера. */
+  title: string;
+  /** Поясняющий хвост (можно скрывать на мобильном). Пустая строка = нет. */
+  subtitle: string;
+  /** Текст основной кнопки-CTA (ведёт на `/referrals`). */
+  cta: string;
+  /** Показывать ли шкалу прогресса (заполнение `activePaying / targetClients`). */
+  showProgress: boolean;
+}
+
+/**
+ * Чистая функция выбора варианта и копи баннера по роли + прогрессу.
+ * Вынесена из компонента для тестируемости морфинга (B3).
+ *
+ * `isLeader` — руководитель (owner/admin/coo или super-admin).
+ */
+export function referralBannerCopy(
+  isLeader: boolean,
+  progress: RewardProgressDomain,
+): ReferralBannerCopy {
+  const { hasProfile, activePaying, targetClients } = progress;
+
+  if (!isLeader) {
+    return {
+      variant: 'member',
+      title: 'Дополнительный заработок с Корой',
+      subtitle:
+        'Сделай партнёрскую ссылку и отправь знакомым руководителям — 20 000 ₽/мес с каждой компании.',
+      cta: 'Создать ссылку',
+      showProgress: false,
+    };
+  }
+
+  if (!hasProfile) {
+    return {
+      variant: 'leaderNoProfile',
+      title: `Пользуйся Корой бесплатно — приведи ${targetClients} компании`,
+      subtitle: `Каждая платит 20 000 ₽/мес — подписка окупится. Осталось привести: ${targetClients} из ${targetClients}.`,
+      cta: 'Создать ссылку',
+      showProgress: true,
+    };
+  }
+
+  if (activePaying < targetClients) {
+    const left = targetClients - activePaying;
+    return {
+      variant: 'leaderInProgress',
+      title: 'Окупаем подписку приведёнными компаниями',
+      subtitle: `Осталось привести ещё ${left} из ${targetClients} — подписка окупится.`,
+      cta: 'Моя ссылка',
+      showProgress: true,
+    };
+  }
+
+  return {
+    variant: 'leaderReached',
+    title: 'Подписка окуплена 🎉 дальше — чистый заработок',
+    subtitle: 'Каждая новая компания приносит 20 000 ₽/мес сверху.',
+    cta: 'Мой кабинет партнёра',
+    showProgress: false,
+  };
+}
+
+/** Заработок партнёра строкой для UI (если есть что показать). */
+export function referralMonthlyEarnedLabel(kopecks: number): string | null {
+  if (kopecks <= 0) return null;
+  return `${formatRubles(kopecks)}/мес`;
 }
 
 /**

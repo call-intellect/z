@@ -1,10 +1,15 @@
 import { ConflictException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AuditLogService } from '../../audit/audit-log.service';
 
 import { PersonsService } from './persons.service';
+
+const cfgStub = {
+  persons: { useAppointment: false },
+} as unknown as TypedConfigService;
 
 describe('PersonsService.create — дружелюбный дедуп по email (Ф4)', () => {
   let prismaMock: {
@@ -27,6 +32,7 @@ describe('PersonsService.create — дружелюбный дедуп по email
     svc = new PersonsService(
       prismaMock as unknown as PrismaService,
       auditMock as unknown as AuditLogService,
+      cfgStub,
     );
   });
 

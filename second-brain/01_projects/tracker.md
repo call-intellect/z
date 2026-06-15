@@ -77,6 +77,7 @@ POST/DELETE /api/v1/issues/:id/labels
 POST/DELETE /api/v1/issues/:id/subscribe
 POST   /api/v1/issues/:id/link-goal
 DELETE /api/v1/issues/:id/link-goal
+POST   /api/v1/issues/:id/move                   # перенос в другой проект (2026-06-15): ре-аллокация sequenceId/identifier, ремап state по category, board=дефолт, cycle=null; запрет переноса задач с подзадачами; RBAC issue/write
 GET    /api/v1/issues/:id/activity               # audit-trail
 GET    /api/v1/issues/:id/versions
 
@@ -127,6 +128,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 
 События:
 - `issue.created/updated/deleted` (с `changedFields` для update)
+- `issue.movedToProject` (`IssueMovedToProjectEvent`, 2026-06-15) — задача перенесена в другой проект; метрика `issue_moved_to_project_total`
 - `comment.created/updated/deleted`
 - `cycle.created/progressUpdated/completed`
 - `intake.newItem`
@@ -224,6 +226,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 |---|---|
 | **KNN похожие задачи** | `Issue.embedding vector(1536)` + `embeddingHash` (commit 1c49eea). IssueEmbedWorker (sha256-skip). SimilarIssuesService (KNN cosine threshold 0.18). `GET /api/v1/tracker/issues/:id/similar`. HNSW partial-index в postgres-init.sql. |
 | **meeting-extract-actions** | После ai_ready встречи → MeetingExtractActionsService → IntakeIssue с suggested* (assignee/project/dueDate/priority/confidence/sourceQuote). LlmTaskType `meeting-extract-actions`. |
+| **Ф7-калибровка интента (2026-06-15)** | Вопросы/команды сотрудников («какие у меня задачи?», `/actions`, запросы статуса) **больше НЕ становятся `IntakeIssue`/кандидатами в задачи**. Константа `NOT_A_TASK_DISCRIMINATOR` в хвосте SYSTEM-промптов (`common.ts` → `telegram-task-parser.service.ts` главный источник + `tasks-unified.ts` встречи/ChatBox); ChatBox теперь пишет в `Task`, не в `IntakeIssue`. ТЗ [`2026-06-15-intent-questions-are-not-commitments`](../../plans/tz/2026-06-15-intent-questions-are-not-commitments.md), коммит `dfb82a6f`. |
 | **intake-auto-triage** | IntakeAutoTriageWorker (consumer `core.intake-auto-triage`) — confidence ≥ 0.92 + source='meeting' + assigneeId → auto-create Issue. LlmTaskType `intake-auto-triage`. |
 | **issue-infer-fields** | POST /issues с `inferSuggestions: true` → IssueInferFieldsService → `aiSuggestions` inline в response (timeout 8s). LlmTaskType `issue-infer-fields`. |
 | **issue-goal-suggest** | KNN (top-10, distance ≤ 0.20, voting ≥ 60%) → LLM fallback. LlmTaskType `issue-goal-suggest`. |

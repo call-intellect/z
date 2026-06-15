@@ -11,6 +11,7 @@ owner: architecture
 
 Связанные документы:
 - [Карта модулей backend](module-map.md) — где живут модули и очереди
+- [Функциональные модули AI-агентов](agent-modules.md) — группировка ~127 агентов по способностям (другой разрез, чем 3 модуля «по запуску» здесь; M1 «Помощник и общение» описан)
 - [Архитектура knowledge-core](knowledge-core.md) — ядро памяти компании
 - [AI-интеграция](ai-integration.md) — провайдеры и роутер
 - [LLM-провайдеры verified](../01_projects/llm-providers-verified.md) — какие модели сейчас primary

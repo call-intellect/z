@@ -373,8 +373,9 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       }
       // ТЗ 2026-06-10 §2 — структурные спецслучаи (forward/reply) до ASR.
       // Plain voice БОЛЬШЕ не перехватывается как задача безусловно: его
-      // транскрибирует handleVoice и классифицирует (task/show_tasks/вопрос/
-      // план/заметка) — гейт намерения работает и для голоса.
+      // транскрибирует handleVoice и классифицирует (вопрос/план/заметка) —
+      // гейт намерения работает и для голоса. ТЗ 2026-06-14 channels-sync:
+      // постановка задач голосом идёт через AI-помощника (assistant_turn).
       if (this.taskHandler) {
         const handled = await this.taskHandler.tryHandleStructural({
           msg,
@@ -524,7 +525,9 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     //      обрабатываются ДО классификации намерения. Plain text БОЛЬШЕ не
     //      перехватывается безусловно как задача — её разбирает классификатор
     //      ниже (фикс обхода гейта намерения: «план/вопрос» больше не падают
-    //      в IntakeIssue). task/show_tasks → отдельный маршрут после classify.
+    //      в IntakeIssue). ТЗ 2026-06-14 channels-sync: свободная постановка
+    //      задач интентом task/show_tasks убрана — её закрывает AI-помощник
+    //      (assistant_turn). Здесь остаётся только структурный task-flow.
     if (this.taskHandler) {
       const handled = await this.taskHandler.tryHandleStructural({
         msg,
@@ -542,19 +545,17 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       userId: binding.userId,
     });
 
-    // Ф5 assistant-channels (2026-06-11) — за kill-switch'ем
-    // ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (chat_query /
-    // show_tasks / free_note) уходит единому AI-помощнику (assistant_turn →
+    // Ф5 assistant-channels (2026-06-11) + ТЗ 2026-06-14 channels-sync — за
+    // kill-switch'ем ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (вопросы
+    // и задачи) уходит единому AI-помощнику (assistant_turn →
     // AssistantChannelBridge → ConciergeService): у помощника есть свои
-    // инструменты (list_tasks и др.), поэтому handleShowTasks здесь НЕ
-    // вызывается. task — прежней веткой handleCreateTask: у помощника пока
-    // нет инструмента постановки задачи (intake RBAC), см. vNext-ТЗ
-    // create_task. Чек-ин (план/отчёт, гейт conf>=0.7 внутри classifyIntent)
-    // НЕ трогаем — идёт прежней веткой daily_checkin_self ниже. OFF —
-    // прежний узкий роутер бит-в-бит.
+    // инструменты (create_task / search_tasks / list_tasks и др.), поэтому
+    // постановка/показ задач больше НЕ перехватывается отдельной веткой —
+    // task-сообщение идёт в помощника, который вызовет create_task. Чек-ин
+    // (план/отчёт, гейт conf>=0.7 внутри classifyIntent) НЕ трогаем — идёт
+    // прежней веткой daily_checkin_self ниже. OFF — прежний узкий роутер.
     if (
       this.isAssistantRoutingEnabled() &&
-      intent !== 'task' &&
       intent !== 'daily_plan_morning' &&
       intent !== 'daily_report_evening'
     ) {
@@ -566,25 +567,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         metadata: { source: 'telegram_bot', chatId: msg.chat.id, intent },
         originChannelBindingId: binding.id,
       };
-    }
-
-    // ТЗ 2026-06-10 §2 Ф2 — task / show_tasks обрабатывает task-handler напрямую
-    // (создание задачи / читалка «мои задачи»): бот сам отвечает пользователю →
-    // InboundMessage не нужен. Если handler недоступен — упадёт в free_note ниже.
-    if (intent === 'task' && this.taskHandler) {
-      await this.taskHandler.handleCreateTask({
-        msg,
-        binding,
-        tenantId,
-        config,
-        text: rawText,
-        externalId: `${msg.chat.id}:${msg.message_id}`,
-      });
-      return null;
-    }
-    if (intent === 'show_tasks' && this.taskHandler) {
-      await this.taskHandler.handleShowTasks({ msg, binding, tenantId, config });
-      return null;
     }
 
     if (intent === 'chat_query') {
@@ -889,15 +871,14 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       userId: args.binding.userId,
     });
 
-    // Ф5 assistant-channels (2026-06-11) — голос идёт тем же путём, что и
-    // текст: Vox-транскрипт → classifyIntent → при включённом kill-switch
-    // всё свободное (chat_query/show_tasks/free_note) → assistant_turn
-    // (единый помощник). task — прежней веткой handleCreateTask: у помощника
-    // пока нет инструмента постановки задачи (intake RBAC), см. vNext-ТЗ
-    // create_task. Чек-ин (план/отчёт) — прежней веткой ниже.
+    // Ф5 assistant-channels (2026-06-11) + ТЗ 2026-06-14 channels-sync — голос
+    // идёт тем же путём, что и текст: Vox-транскрипт → classifyIntent → при
+    // включённом kill-switch всё свободное (вопросы и задачи) → assistant_turn
+    // (единый помощник). Постановка/показ задач больше НЕ перехватываются
+    // отдельной веткой — помощник вызовет create_task / search_tasks. Чек-ин
+    // (план/отчёт) — прежней веткой ниже.
     if (
       this.isAssistantRoutingEnabled() &&
-      intent !== 'task' &&
       intent !== 'daily_plan_morning' &&
       intent !== 'daily_report_evening'
     ) {
@@ -914,29 +895,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         },
         originChannelBindingId: args.binding.id,
       };
-    }
-
-    // ТЗ 2026-06-10 §2 — голосовая задача / «покажи задачи» → task-handler
-    // напрямую (бот сам отвечает), как и в текстовом пути.
-    if (intent === 'task' && this.taskHandler) {
-      await this.taskHandler.handleCreateTask({
-        msg: args.msg,
-        binding: args.binding,
-        tenantId: args.tenantId,
-        config: args.config,
-        text: transcript,
-        externalId: `${args.msg.chat.id}:${args.msg.message_id}`,
-      });
-      return null;
-    }
-    if (intent === 'show_tasks' && this.taskHandler) {
-      await this.taskHandler.handleShowTasks({
-        msg: args.msg,
-        binding: args.binding,
-        tenantId: args.tenantId,
-        config: args.config,
-      });
-      return null;
     }
 
     if (intent === 'chat_query') {
@@ -1176,8 +1134,6 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     | 'free_note'
     | 'daily_plan_morning'
     | 'daily_report_evening'
-    | 'task'
-    | 'show_tasks'
   > {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
@@ -1230,33 +1186,13 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         const intentSource: 'llm' | 'heuristic' =
           result.source === 'heuristic' ? 'heuristic' : 'llm';
 
-        // ТЗ 2026-06-10 §2 — task: поставить задачу в трекер. Gate >=0.7;
-        // task с conf<0.7 проваливается ниже в `free_note` (note) — корректно
-        // (лучше заметка в потоке, чем ложная задача).
-        if (result.intent === 'task' && conf >= 0.7) {
-          this.metrics.incBotIntentClassified({
-            channel: 'telegram_bot',
-            intent: 'task',
-            source: intentSource,
-          });
-          return 'task';
-        }
-        // show_tasks: показать мои задачи. Gate >=0.7 → show_tasks; иначе →
-        // chat_query (трактуем как вопрос — отвечаем из памяти, не молчим и
-        // не плодим задачу).
-        if (result.intent === 'show_tasks') {
-          const routed: 'show_tasks' | 'chat_query' =
-            conf >= 0.7 ? 'show_tasks' : 'chat_query';
-          this.metrics.incBotIntentClassified({
-            channel: 'telegram_bot',
-            intent: routed,
-            source: intentSource,
-          });
-          return routed;
-        }
-
-        // chat-категории → chat_query. Всё остальное (включая `note`,
-        // plan/report и task с conf<0.7) → free_note.
+        // ТЗ 2026-06-14 channels-sync — интенты task/show_tasks убраны из
+        // классификатора: постановку/показ задач из канала закрывает единый
+        // AI-помощник (assistant_turn → concierge → create_task/search_tasks).
+        // chat-категории → chat_query. Всё остальное (включая `note` и
+        // plan/report с conf<0.7) → free_note. При включённом kill-switch
+        // ASSISTANT_CHANNEL_ROUTING_ENABLED и chat_query, и free_note всё равно
+        // уходят помощнику выше — здесь различие сохраняется только для OFF.
         const isChat =
           result.intent === 'factual' ||
           result.intent === 'exploratory' ||

@@ -1,6 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
+import type { RoleMapDto } from '../role-map/dto/role-map.dto';
+import { RoleMapBuilderService } from '../role-map/services/role-map-builder.service';
 
 export interface MeProfilePersonDto {
   id: string;
@@ -23,6 +25,13 @@ export interface MeProfileRoleProfileDto {
   status: 'forming' | 'ready' | 'stale' | 'error';
   buildVersion: number;
   lastBuildAt: string | null;
+  /**
+   * Полная карта должности текущего пользователя (self-scoped, без RBAC
+   * role-profile — пользователь смотрит СВОЮ роль). Формат идентичен
+   * `GET /api/v1/roles/:id/map` (RoleMapDto). `null` — нет primaryRole,
+   * сервис карты недоступен или произошла ошибка (мягкая деградация).
+   */
+  roleMap: RoleMapDto | null;
 }
 
 export interface MeProfileDto {
@@ -38,7 +47,17 @@ export interface MeProfileDto {
  */
 @Injectable()
 export class MeService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MeService.name);
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    // @Optional — кросс-модульный инжект (MeModule импортирует RoleMapModule).
+    // Если по какой-то причине провайдер не зарезолвился, /me/profile
+    // продолжает работать без карты (roleMap=null), не падая.
+    @Optional()
+    @Inject(RoleMapBuilderService)
+    private readonly roleMapBuilder: RoleMapBuilderService | null = null,
+  ) {}
 
   async getProfile(args: {
     tenantId: string;
@@ -84,6 +103,9 @@ export class MeService {
       };
     }
     const link = person.personRoles[0] ?? null;
+    const roleMap = link
+      ? await this.loadRoleMap({ tenantId: args.tenantId, roleId: link.role.id })
+      : null;
     return {
       person: {
         id: person.id,
@@ -107,8 +129,35 @@ export class MeService {
             lastBuildAt: link.role.roleProfile.lastBuildAt
               ? link.role.roleProfile.lastBuildAt.toISOString()
               : null,
+            roleMap,
           }
         : null,
     };
+  }
+
+  /**
+   * Self-scoped загрузка полной карты должности через RoleMapBuilderService
+   * (тот же источник, что `GET /api/v1/roles/:id/map`). RBAC живёт в
+   * RoleMapController, а не в сервисе — поэтому прямой вызов из MeService для
+   * СВОЕЙ роли пользователя безопасен. Мягкая деградация: любой сбой (сервис
+   * недоступен / роль не найдена / иная ошибка) → `null`, /me/profile не падает.
+   */
+  private async loadRoleMap(args: {
+    tenantId: string;
+    roleId: string;
+  }): Promise<RoleMapDto | null> {
+    if (!this.roleMapBuilder) return null;
+    try {
+      return await this.roleMapBuilder.getMap({
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { tenantId: args.tenantId, roleId: args.roleId, err: String(err) },
+        'me.profile: не удалось собрать карту должности (мягкая деградация → null)',
+      );
+      return null;
+    }
   }
 }

@@ -35,6 +35,7 @@ import type {
   IssueCreatedEvent,
   IssueDeletedEvent,
   IssueMovedToBoardEvent,
+  IssueMovedToProjectEvent,
   IssueUpdatedEvent,
   ProjectDocumentCreatedEvent,
   ProjectDocumentDeletedEvent,
@@ -428,6 +429,38 @@ export class TrackerEventsService {
     this.safeEmit(event, [
       this.gateway.tenantRoom(args.tenantId),
       this.gateway.projectRoom(args.projectId),
+      this.gateway.issueRoom(args.issueId),
+    ]);
+  }
+
+  /**
+   * Перенос задачи в другой проект (POST /issues/:id/move). Эмитим в
+   * tenant: + issue: + оба project:-room'а (исходный и целевой), чтобы клиенты
+   * обоих проектов обновили списки. ТЗ
+   * `plans/tz/2026-06-15-issue-move-to-project.md`.
+   */
+  publishIssueMovedToProject(args: {
+    tenantId: string;
+    issueId: string;
+    fromProjectId: string;
+    toProjectId: string;
+    oldIdentifier: string;
+    newIdentifier: string;
+  }): void {
+    const event: IssueMovedToProjectEvent = {
+      type: 'issue.moved_to_project',
+      tenantId: args.tenantId,
+      issueId: args.issueId,
+      fromProjectId: args.fromProjectId,
+      toProjectId: args.toProjectId,
+      oldIdentifier: args.oldIdentifier,
+      newIdentifier: args.newIdentifier,
+      timestamp: new Date().toISOString(),
+    };
+    this.safeEmit(event, [
+      this.gateway.tenantRoom(args.tenantId),
+      this.gateway.projectRoom(args.fromProjectId),
+      this.gateway.projectRoom(args.toProjectId),
       this.gateway.issueRoom(args.issueId),
     ]);
   }

@@ -222,6 +222,20 @@ export const issuesApi = {
     ),
 
   /**
+   * Перенести задачу в другой проект (move-to-project, 2026-06-15).
+   * Контракт: `POST /api/v1/issues/:id/move` body `{ targetProjectId }`.
+   * Backend атомарно переназначает identifier/sequenceId, ремапит статус по
+   * категории и доску на дефолтную целевого проекта, сбрасывает спринт.
+   * Возвращает обновлённую задачу (новый identifier/projectId).
+   */
+  move: (orgId: string, issueId: string, targetProjectId: string) =>
+    apiClient.post<IssueApi>(
+      `/api/v1/issues/${encodeURIComponent(issueId)}/move`,
+      { targetProjectId },
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
    * Меняет `sortOrder` задачи внутри колонки канбана. Эндпоинт пока на
    * стороне backend в работе (Wave 2 finishing) — если вернётся 404, frontend
    * сохраняет оптимистичный порядок до следующего refresh.

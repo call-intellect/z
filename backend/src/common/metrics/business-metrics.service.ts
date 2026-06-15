@@ -1019,6 +1019,10 @@ export class BusinessMetricsService implements OnModuleInit {
   private boardsCreatedTotal!: Counter<'tenant_top' | 'project'>;
   private boardsArchivedTotal!: Counter<'tenant_top' | 'project'>;
   private boardIssuesMovedTotal!: Counter<'tenant_top' | 'from_board' | 'to_board'>;
+  // Issue move-to-project (2026-06-15, plans/tz/2026-06-15-issue-move-to-project.md)
+  //   - issue_moved_to_project_total{tenant_top} — задача перенесена в другой
+  //     проект (POST /issues/:id/move). Без project-меток (cardinality-safe).
+  private issueMovedToProjectTotal!: Counter<'tenant_top'>;
   // Tracker Phase 4 (Email-to-task, T5, 2026-05-24) — поллинг общего IMAP-ящика
   // (`inbox.kora.app`) → routing по To:-alias → IssuesService.create().
   // Cardinality-safe: project — id (десятки/сотни на tenant; в проде следить).
@@ -3704,6 +3708,11 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'board_issues_moved_total',
       help: 'Tracker Boards — задача перенесена между досками (PATCH /issues/:id { boardId }).',
       labelNames: ['tenant_top', 'from_board', 'to_board'] as const,
+    });
+    this.issueMovedToProjectTotal = this.getOrCreateCounter({
+      name: 'issue_moved_to_project_total',
+      help: 'Tracker — задача перенесена в другой проект (POST /issues/:id/move).',
+      labelNames: ['tenant_top'] as const,
     });
     // Tracker Phase 4 (Email-to-task, T5, 2026-05-24).
     this.mailInboundReceivedTotal = this.getOrCreateCounter({
@@ -8004,6 +8013,14 @@ export class BusinessMetricsService implements OnModuleInit {
       from_board: args.fromBoard,
       to_board: args.toBoard,
     });
+  }
+
+  /**
+   * Tracker — задача перенесена в другой проект (POST /issues/:id/move).
+   * ТЗ plans/tz/2026-06-15-issue-move-to-project.md.
+   */
+  incIssueMovedToProject(args: { tenantTop: string }): void {
+    this.issueMovedToProjectTotal.inc({ tenant_top: args.tenantTop });
   }
 
   /**

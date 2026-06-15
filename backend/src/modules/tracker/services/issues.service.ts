@@ -984,6 +984,200 @@ export class IssuesService {
     return response;
   }
 
+  /**
+   * Перенос задачи в другой проект (POST /issues/:id/move). ТЗ
+   * `plans/tz/2026-06-15-issue-move-to-project.md`.
+   *
+   * Простая смена projectId сломала бы инварианты: identifier уникален
+   * per-tenant, sequenceId уникален per-project, stateId/boardId/cycleId
+   * принадлежат исходному проекту. Поэтому перенос = атомарная ре-аллокация
+   * в `$transaction`:
+   *   1. новый sequenceId = max(в целевом проекте)+1;
+   *   2. новый identifier = `${target.identifier}-${seq}`;
+   *   3. stateId → статус целевого проекта той же category (иначе
+   *      defaultStateId целевого, иначе null);
+   *   4. boardId → default-доска целевого проекта (иначе null);
+   *   5. cycleId → null (цикл исходного проекта неприменим);
+   *   6. IssueActivity verb='moved_to_project' + WS + метрика.
+   *
+   * Подзадачи: v1 запрещает перенос задачи, у которой есть parentId или
+   * дети (понятная 400) — деревья переносить нельзя, потому что родитель
+   * обязан быть в том же проекте (validateParentForIssue). Relations /
+   * labels / assignees / goal — tenant-scoped и переживают перенос.
+   */
+  async moveToProject(
+    issueId: string,
+    targetProjectId: string,
+    tenantId: string,
+    userId: string,
+  ): Promise<IssueResponseDto> {
+    const existing = await this.requireIssue(issueId, tenantId);
+
+    if (existing.projectId === targetProjectId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'same_project',
+          message: 'Задача уже находится в этом проекте',
+        },
+      });
+    }
+
+    // Целевой проект того же tenant'а (404 если чужой/удалён) и не архивный.
+    const target = await this.projects.requireProject(targetProjectId, tenantId);
+    if (target.archivedAt !== null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'target_project_archived',
+          message: 'Целевой проект архивирован — перенос невозможен',
+        },
+      });
+    }
+
+    // Подзадачи: запрещаем перенос задачи с родителем или с детьми.
+    if (existing.parentId !== null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cannot_move_issue_with_subtasks',
+          message:
+            'Нельзя перенести подзадачу — сначала сделайте её самостоятельной',
+        },
+      });
+    }
+    const childrenCount = await this.prisma.issue.count({
+      where: { parentId: issueId, deletedAt: null },
+    });
+    if (childrenCount > 0) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'cannot_move_issue_with_subtasks',
+          message:
+            'Нельзя перенести задачу с подзадачами — перенесите или отвяжите подзадачи',
+        },
+      });
+    }
+
+    // Ремап state по category: ищем в целевом проекте статус той же
+    // категории, что у текущего state. Если у задачи нет state или совпадения
+    // нет — берём defaultStateId целевого проекта (может быть null).
+    const currentCategory = existing.stateId
+      ? (
+          await this.prisma.issueState.findUnique({
+            where: { id: existing.stateId },
+            select: { category: true },
+          })
+        )?.category ?? null
+      : null;
+    let targetStateId: string | null = target.defaultStateId ?? null;
+    if (currentCategory) {
+      const matched = await this.prisma.issueState.findFirst({
+        where: { projectId: targetProjectId, category: currentCategory },
+        orderBy: { sequence: 'asc' },
+        select: { id: true },
+      });
+      if (matched) targetStateId = matched.id;
+    }
+
+    // Ремап board: default-доска целевого проекта (лениво создаётся).
+    let targetBoardId: string | null = null;
+    if (this.boards) {
+      try {
+        targetBoardId = await this.boards.resolveDefaultBoardId({
+          tenantId,
+          projectId: targetProjectId,
+        });
+      } catch (err) {
+        this.logger.warn(
+          {
+            issueId,
+            targetProjectId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'IssuesService.moveToProject: default-доска целевого проекта не разрешилась — переносим без boardId',
+        );
+        targetBoardId = null;
+      }
+    }
+
+    const oldIdentifier = existing.identifier;
+    let newIdentifier = oldIdentifier;
+    await this.prisma.$transaction(async (tx) => {
+      // Новый sequenceId = max(в целевом проекте)+1 — защита
+      // @@unique([projectId, sequenceId]). Копия логики из create().
+      const maxRow = await tx.issue.aggregate({
+        where: { projectId: targetProjectId },
+        _max: { sequenceId: true },
+      });
+      const sequenceId = (maxRow._max.sequenceId ?? 0) + 1;
+      newIdentifier = `${target.identifier}-${sequenceId}`;
+
+      await tx.issue.update({
+        where: { id: issueId },
+        data: {
+          projectId: targetProjectId,
+          sequenceId,
+          identifier: newIdentifier,
+          stateId: targetStateId,
+          boardId: targetBoardId,
+          cycleId: null,
+        },
+      });
+
+      await this.activity.record({
+        tenantId,
+        issueId,
+        actorUserId: userId,
+        actorType: 'user',
+        verb: 'moved_to_project',
+        field: 'projectId',
+        oldValue: existing.projectId,
+        newValue: targetProjectId,
+        metadata: { oldIdentifier, newIdentifier },
+        tx,
+      });
+    });
+
+    const response = await this.assemble(issueId, tenantId);
+    // WS: общий issue.updated (projectId/identifier поменялись) + узкое
+    // issue.moved_to_project. Fire-and-forget — ошибки доставки логируются
+    // самим events-service'ом, не пропагируются.
+    this.events.publishIssueUpdated(response, tenantId, [
+      'projectId',
+      'identifier',
+    ]);
+    this.events.publishIssueMovedToProject({
+      tenantId,
+      issueId,
+      fromProjectId: existing.projectId,
+      toProjectId: targetProjectId,
+      oldIdentifier,
+      newIdentifier,
+    });
+    try {
+      this.metrics?.incIssueMovedToProject({ tenantTop: tenantTopOf(tenantId) });
+    } catch (e) {
+      this.logger.warn(
+        { issueId, err: e instanceof Error ? e.message : String(e) },
+        'issue_moved_to_project_total inc failed (best-effort)',
+      );
+    }
+    void this.webhooks
+      .dispatch(tenantId, 'issue.updated', {
+        issue: response,
+        changedFields: ['projectId', 'identifier'],
+      })
+      .catch((e) => {
+        this.logger.warn(
+          { issueId, err: e instanceof Error ? e.message : String(e) },
+          'issue.updated (move) webhook dispatch failed',
+        );
+      });
+    return response;
+  }
+
   /** Добавить исполнителя. IssueActivity verb='assigned'. */
   async addAssignee(
     issueId: string,

@@ -466,6 +466,22 @@ Idempotent — upsert по `(tenantId, kind)`. Шифруют секреты с�
 - **Native function-calling** в самом помощнике — kill-switch `CONCIERGE_NATIVE_TOOLS_ENABLED` (ON); для каналов ToolRouter работает в режиме `authMode='service'` (self-signed session JWT 60с, loopback `CONCIERGE_LOOPBACK_BASE_URL`).
 - Метрика: `z_assistant_turn_total`.
 
-**vNext (см. реестр не-сделано):** стрим в Telegram, чек-ин через помощника, инструмент `create_task` (ждёт policy intake_issue/write), расширение руководительских инструментов.
+**vNext (см. реестр не-сделано):** стрим в Telegram, чек-ин через помощника, расширение руководительских инструментов.
+
+---
+
+# Помощник = единый мозг каналов: дедуп понимания/синтеза + руки + уточнитель (реализовано 2026-06-15)
+
+> **Цепочка из 5 ТЗ, один релиз** (ветка `feature/dialog-chat-assistant-chain`): dialog-layer (слитый «модуль понимания запроса») → chat-v2 (единый промпт-ответчик + таблицы как источник) → concierge (развилка + руки + уточнитель) → channels-sync (whitelist + интенты) → cabinet (селектор клона). ТЗ: [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md), [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md), [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md), [`2026-06-11-assistant-channels-telegram-max`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) (Ф-синхронизация каналов), [`2026-06-15-cabinet-assistant-clone-selector`](../../plans/tz/2026-06-15-cabinet-assistant-clone-selector.md).
+
+**Решение владельца 2026-06-14/15:** помощник — это **развилка + руки**, а не второй мозг. Понимание запроса (контекстуализация + 3 формулировки + фильтры) и умный синтез ответа считаются **ОДИН раз — внутри chat-v2**. Это устраняет дубль «помощник понимает + chat-v2 понимает» и «двойной синтез».
+
+**Что меняется в слое каналов (постановка задач из Telegram → помощник):**
+- **Понимание/синтез — один раз.** Помощник больше не вызывает `dialog.process()` и не делает предпоиск (`preRetrieve`). Когда помощник отвечает на вопрос к памяти, он зовёт инструмент `ask_chat_v2`, а вся понимание-цепочка прогоняется внутри chat-v2 (3 самодостаточных формулировки → фильтры → поиск по графу + параллельно по умным таблицам → синтез).
+- **`ask_chat_v2` — терминальный (passthrough).** На чистом вопросе к памяти ответ chat-v2 (текст + цитаты) отдаётся напрямую без второго синтеза помощником; смешанный запрос «узнать → сделать» — обычный цикл tool-use.
+- **Инструменты помощника вместо `search_knowledge`.** Из реестра убран лёгкий `search_knowledge` (единственный путь к памяти — тяжёлый терминальный `ask_chat_v2`); добавлены `create_task` (поставить задачу СЕБЕ — self-эндпоинт `POST /api/v1/me/tasks`, проект «Входящие»), `search_tasks` (`GET /me/inbox`), `ingest_note` (занести мысль/факт в граф — `POST /me/notifications/free-note`).
+- **Интенты `task` / `show_tasks` убраны из классификатора** (`dialog-classify` enum 9→7) и из Telegram-адаптера. Постановка и показ задач из Telegram больше **не** перехватываются узким классификатором — всё свободное (включая «поставь задачу …») идёт `assistant_turn` → помощник → инструмент `create_task` / `search_tasks`. Чек-ин (`daily_plan`/`report`), голос, probe, login, document — ветки не затронуты; MAX-адаптер `task`/`show_tasks` не использовал.
+- **`CHANNEL_TOOL_WHITELIST_SELF`** обновлён: −`search_knowledge`, +`create_task`/`search_tasks`/`ingest_note` (к памяти по-прежнему только `ask_chat_v2`).
+- **Клон должности — НЕ канальный путь.** Через Telegram/MAX отвечает только общий помощник; ролевые клоны выбираются человеком в кабинете (см. [[frontend-pages]] селектор на `/chat`).
 
 [[../index|← index]]

@@ -1,6 +1,7 @@
 ---
 type: tz
-status: ready
+status: done
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит 3f63f7c1
 feature: dialog-layer — слияние контекстуализатора + оценщика уверенности + расширителя в один history-aware «модуль понимания запроса»
 date: 2026-06-14
 area: backend/dialog-layer
@@ -11,6 +12,10 @@ related:
 ---
 
 # Dialog-layer: один history-aware модуль понимания запроса вместо трёх агентов
+
+> **Статус: реализовано 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`,
+> коммит `3f63f7c1` (ТЗ#1 цепочки помощника). Прод-выкат — общий блок
+> `🧠 2026-06-15` в [`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md).
 
 ## 1. Цель и контекст
 

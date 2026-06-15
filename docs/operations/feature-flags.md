@@ -52,7 +52,7 @@
 |---|---|---|---|
 | `feature.tables_text_to_schema` | AdminSetting | seed-дефолт true + patch | человек подтверждает превью схемы (галлюцинация не создаётся молча); риск смягчён. AdminSetting → false |
 | `knowledge.meetingTasksToTrackerOnly` | AdminSetting | seed-дефолт true + patch | из встречи одна задача (Issue); `assigneeRaw`/`sourceQuote` станут null. AdminSetting → false |
-| `CONCIERGE_DIALOG_LAYER_ENABLED` | ENV (code-default) | code-default ON | kill-switch: `=false` в `.env` + рестарт |
+| ~~`CONCIERGE_DIALOG_LAYER_ENABLED`~~ | ENV (code-default) | _**снят с употребления 2026-06-15**_ | После переписи помощника (ТЗ `assistant-router-dedup`) concierge больше не зовёт dialog-layer (понимание/синтез — внутри chat-v2). Флаг ничего не гейтит, может быть удалён из `.env`. |
 | `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch; с 2026-06-12 и seed-дефолт true (autonomy W3) | базовый kill-switch порогов и так активен. AdminSetting → false |
 
 ### ⏸️ Остаётся OFF — осознанное решение владельца
@@ -184,6 +184,11 @@ _(пусто — все доставки в Telegram авторизованы в
 | `dashboard.theme_silence_weeks` | 3 | Сколько недель тема графа должна молчать, чтобы детектор `theme-silence-detector` создал `Insight` «тема замолчала». AdminSetting (super_admin), code-fallback `3`. Сам детектор гейтится kill-switch `dashboard.theme_silence.enabled` (выше) | Детектор молчащих тем (ТЗ cabinet-redesign-rhythms Ф8.2/8.1) |
 | `pendingActions.conflictTtlDays` | 14 | Срок жизни (дней) `ConflictItem` в очереди решений «Требует вас»: по истечении sweep-крон проставляет `expiresAt` и убирает протухший конфликт из очереди. AdminSetting (super_admin), code-fallback | Очередь решений (ТЗ cabinet-redesign-rhythms Ф4) |
 | `pendingActions.intakeTtlDays` | 14 | Срок жизни (дней) `IntakeIssue` в очереди решений «Требует вас»: по истечении sweep-крон проставляет `expiresAt` и убирает протухшую входящую задачу из очереди. AdminSetting (super_admin), code-fallback | Очередь решений (ТЗ cabinet-redesign-rhythms Ф4) |
+| `dialog_layer.query_history_pairs` | 4 | Сколько последних пар реплик диалога подмешивается в history-aware «модуль понимания запроса» (слитый dialog-layer: реплика + summary + история → 3 самодостаточных вопроса). AdminSetting (super_admin). Сид `seed-admin-setting-dialog-layer.ts` | Модуль понимания запроса (ТЗ dialog-layer-unified-query-understanding) |
+| `concierge.history_pairs` | 4 | Глубина памяти помощника: сколько последних пар сообщений (помимо summary) уходит в системный промпт concierge. AdminSetting (super_admin). Сид `seed-admin-setting-concierge.ts` | Помощник = развилка + руки (ТЗ assistant-router-dedup) |
+| `concierge.clarify_min_confidence` | 80 | Порог самооценки понимания запроса (0–100), ниже которого помощник задаёт ОДИН уточняющий вопрос вместо действия (крен «лучше переспросить»). Подкреплён жёстким код-гардом: изменяющее действие без обязательного поля → уточнять всегда. AdminSetting (super_admin) | Помощник-уточнитель (ТЗ assistant-router-dedup) |
+| `chat_v2.table_context_max_rows` | 20 | Потолок строк умных таблиц, отдаваемых синтезатору chat-v2 как «Данные из таблиц» (таблицы — параллельный с графом источник). AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
+| `chat_v2.table_context_max_tables` | 2 | Максимум таблиц, из которых chat-v2 тянет строки в один ответ. AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
 
 ---
 

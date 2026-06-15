@@ -81,6 +81,12 @@ CRUD `POST/PATCH/DELETE/list/getUsage` упразднены. Модель `Plan`
 
 См. полный список в [`tracker.md`](tracker.md) §«REST API endpoints».
 
+### Перенос задачи между проектами (2026-06-15)
+
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| POST | `/api/v1/issues/:id/move` | Перенести задачу в другой проект. Body `{ targetProjectId }`. Атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null. Запрет переноса задач с подзадачами (400). WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из общей папки „Входящие“ в нужный проект». Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md). | RBAC `issue`/`write` |
+
 ### Финальный handoff Wave 1-3 — новые endpoint'ы
 
 | Метод | Путь | Назначение | T |
@@ -183,11 +189,14 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 Таймаут синтеза `chat-v2` разведён от общего `LLM_ROUTER_DISPATCH_TIMEOUT_MS` через AdminSetting `knowledge.chatV2SynthesisTimeoutMs` (POSITIVE_INT, code-default 90000 мс; per-call `LlmCallParams.timeoutMs?` override в llm-router; 2026-06-11, §4 Ф3).
 
+> **Единый промпт-ответчик + таблицы как источник (2026-06-15).** Контракт `POST /chat-v2/messages` не изменился, но изменилось ЧТО считается внутри: убраны режимы факт/синтез/clone — один промпт; контекст переведён в человеческий русский (summary/history → конец USER, «О компании» в SYSTEM); умные таблицы ищутся ПАРАЛЛЕЛЬНО с графом и идут синтезатору «Данные из таблиц» (`ChatV2TableContextService`, крутилки `chat_v2.table_context_max_rows`/`max_tables`). ТЗ [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md). Клон должности — НЕ режим chat-v2 (выбор в кабинете через `clonesApi.askRole`).
+
 ## Concierge + Voice
 
 | Метод | Путь | Назначение | T |
 |---|---|---|---|
-| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use) | γ-2 |
+| POST | `/api/v1/concierge/ask` | Conversational интерфейс (NL → tool-use). С 2026-06-15 помощник — развилка + руки: понимание/синтез не дублирует (живут в chat-v2), `ask_chat_v2` терминальный; инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md). | γ-2 |
+| POST | `/api/v1/me/tasks` | **Self-задача (2026-06-15):** рядовой ставит задачу СЕБЕ в проект «Входящие» (через `issue`/`write`, self). Эндпоинт инструмента `create_task` помощника; список — `GET /api/v1/me/inbox`. | — |
 | GET  | `/api/v1/me/ai-chat/quota` | Единая per-user дневная квота AI-общения (Concierge + клоны вместе) — `{ dailyUsed, dailyLimit, role }`. См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md). | — |
 | POST | `/api/v1/voice/transcribe` | REST ASR (Vox/GigaAM, fallback) | — |
 | WS | `/ws/voice` | Streaming-стенд для голоса (events: voice.start/chunk/end/cancel → voice.transcribed/error) | **T4** |
@@ -665,5 +674,7 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 - **2026-06-11 (Probe-система Фаза 1):** добавлены два notification eventType `probe.digest` (батч-дайджест отложенных probe от `ProbeDigestCron`, канал-политика `['telegram_bot','max_bot','in_app']`, label «Вопросы от Коры») и `probe.answer_acknowledged` (подтверждение «ваш ответ записан» от `ProbeResponseHandler`, label «Ответ записан»). Zod в `event-payload.registry.ts`, рендер telegram/max-bot. См. [`plans/tz/2026-06-11-probe-system-upgrade-phase1.md`](../../plans/tz/2026-06-11-probe-system-upgrade-phase1.md).
 - **2026-06-06 (Трекер + Встречи, B5):** новый эндпоинт `POST /meetings/:id/invitees` — допригласить участников на joinable-встречу (host-only, `@RequireSubscription`, идемпотентно по `userId`/`personId`); переиспользует `seedInviteeInTx` + `deliverMeetingInvites` (та же логика, что при создании встречи). Контроллер `meetings.controller.ts`, сервис `MeetingsService.addInvitees`. См. [plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md).
 - **2026-06-12 (слой метода клона, Э0.1):** новый эндпоинт `GET /api/v1/clones/query-log` (OrgAdminGuard, пагинация limit/offset, фильтр `cloneTargetId`) — журнал запросов к клонам (модель `CloneQueryLog`: questionPreview+sha256, answeredGrounded, refusalReason `'ungrounded'`). Пишется на каждый ask всех 4 путей, вкл. программные отказы grounding-гейта (`CLONE_RESPOND_GROUNDING_ENABLED`). См. [[skill-and-clone]] §«Доработки 2026-06-12», [plans/tz/2026-06-11-clone-persona-method-layer.md](../../plans/tz/2026-06-11-clone-persona-method-layer.md).
+- **2026-06-15 (помощник = развилка + руки; цепочка из 5 ТЗ):** новый self-эндпоинт `POST /api/v1/me/tasks` (рядовой ставит задачу СЕБЕ в проект «Входящие», self через `issue`/`write`; эндпоинт инструмента `create_task` помощника, список — `GET /me/inbox`). Контракты `POST /concierge/ask` и `POST /chat-v2/messages` не изменились, но изменилось ЧТО внутри: помощник не дублирует понимание/синтез (`ask_chat_v2` терминальный, `search_knowledge` убран), chat-v2 — единый промпт без режимов + умные таблицы как параллельный источник. Удалена ENV `CONTEXTUALIZER_CONFIDENCE_MIN` (слитый dialog-layer). ТЗ [`2026-06-14-assistant-router-dedup-and-prompt`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md) / [`2026-06-15-chat-v2-unified-answer-prompt`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md) / [`2026-06-14-dialog-layer-unified-query-understanding`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md).
+- **2026-06-15 (перенос задачи между проектами):** новый эндпоинт `POST /api/v1/issues/:id/move` (body `{ targetProjectId }`, RBAC `issue`/`write`) — атомарная ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт целевого проекта, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Закрывает кейс «увести задачу из „Входящих“ в нужный проект» (поверх дефолт-проекта Ф3). Без миграций. ТЗ [`2026-06-15-issue-move-to-project`](../../plans/tz/2026-06-15-issue-move-to-project.md).
 
 [[../index|← index]]

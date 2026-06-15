@@ -1,6 +1,7 @@
 ---
 type: tz
-status: ready
+status: done (desktop); mobile vNext
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит 4e9f1fec
 feature: cabinet-assistant-clone-selector — выпадающий селектор «общий помощник / клон должности» у окна ввода AI-чата компании (кабинет)
 date: 2026-06-15
 area: frontend/chat-v2 (+ verify backend clones route)
@@ -158,5 +159,14 @@ related:
   если backend не менялся.
 
 ## Итог
-Не реализовано (ТЗ написано 2026-06-15). Реализация — в составе цепочки помощника
-ПОСЛЕ chat-v2 (ТЗ#2), как ТЗ#5.
+**Реализовано (desktop) 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`,
+коммит `4e9f1fec` (ТЗ#5 цепочки помощника). Desktop-селектор «помощник / клон
+должности» на `/chat` + маршрутизация выбранного клона на `clonesApi.askRole`.
+Прод-выкат — общий блок `🧠 2026-06-15` в
+[`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md)
+(выкатка чисто фронтовая).
+
+**Отложено в vNext** (зафиксировано в `second-brain/04_не-сделано/README.md`):
+- единая СОХРАНЁННАЯ нить помощник+клон (v1 — клиентская склейка, клон-сообщения
+  живут в своей clone-ленте; рассинхрон — §9 «Риски»);
+- мобильный селектор клона (OrgChatPanel) — §9 «Риски» (mobile-композер дорог).

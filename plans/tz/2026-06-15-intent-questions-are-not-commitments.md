@@ -1,7 +1,8 @@
 ---
 title: Интент — вопросы и команды сотрудников не должны становиться «кандидатами в задачи»
 type: tz
-status: needs-calibration
+status: done
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит dfb82a6f
 date: 2026-06-15
 owner: Сергей (sergrv80@gmail.com)
 parent_tz: plans/tz/2026-06-15-cabinet-qa-bugfixes.md  # Ф7, вынесена отдельно
@@ -103,5 +104,12 @@ relates_to:
 - На проде доля «Кандидатов в задачи», являющихся вопросами/командами, падает к 0.
 
 ## Итог
-Не реализовано (ТЗ-калибровка). Вынесено из Ф1–Ф6 по природе задачи. Реализация —
-по явному «делаем калибровку интента» (с примерами и прогоном на ключах).
+**Реализовано 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`, коммит
+`dfb82a6f` (Ф7 цепочки помощника). Константа `NOT_A_TASK_DISCRIMINATOR` (вопросы/
+команды/`/actions`/запросы статуса ≠ обещания) добавлена в хвост SYSTEM-промптов
+через `common.ts` → `telegram-task-parser.service.ts` (главный источник) +
+`tasks-unified.ts` (встречи/ChatBox). ChatBox теперь пишет в `Task`, а не в
+`IntakeIssue`. Тест-батарея `smoke-tasks-unified-battery.ts` (полевой smoke, в
+`apply-prod-deploy.ts` STEPS НЕ регистрируется). Прод-выкат — без операций (rebuild
+backend, промпт code-fallback/registry), см. блок `🧠 2026-06-15 → Ф7` в
+[`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md).

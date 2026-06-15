@@ -1,7 +1,8 @@
 ---
 title: Перенос задачи в другой проект (вручную сменить проект у Issue)
 type: tz
-status: ready-to-implement
+status: done
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит b207743d
 date: 2026-06-15
 owner: Сергей (sergrv80@gmail.com)
 discovered_during: plans/tz/2026-06-15-cabinet-qa-bugfixes.md (Ф3 — дефолт-проект «Входящие»)
@@ -54,7 +55,7 @@ relates_to:
 
 ## Объём работ
 
-### Фаза 1 — backend: move-to-project [ ]
+### Фаза 1 — backend: move-to-project [x]
 - `IssuesService.moveToProject(issueId, targetProjectId, tenantId, userId)` —
   атомарная ре-аллокация (1–6 выше) в `$transaction`. Валидации: целевой проект
   того же tenant, не архивный; задача существует; запрет переноса в тот же
@@ -65,7 +66,7 @@ relates_to:
 - Тесты: успешный перенос (новый identifier/sequence/state/board, cycle=null,
   activity); негатив (тот же проект, чужой tenant, архивный проект); подзадачи.
 
-### Фаза 2 — frontend: селектор проекта у задачи [ ]
+### Фаза 2 — frontend: селектор проекта у задачи [x]
 - В карточке/детале задачи — «Проект: <name> · Перенести» → диалог выбора
   проекта (переиспользовать паттерн пикера проектов из `/intake`).
 - `issuesApi.move(orgId, issueId, targetProjectId)`; оптимистичное обновление +
@@ -84,7 +85,13 @@ relates_to:
   без флагов.
 
 ## Итог
-Не реализовано (ТЗ написано по требованию владельца в ходе Ф3). Дефолт-проект
-«Входящие» (Ф3) уже устраняет ошибку; этот ТЗ даёт обещанную возможность увести
-задачу из общей папки в нужный проект. Реализация — по явному «делаем перенос
-задач между проектами».
+**Реализовано 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`, коммит
+`b207743d`. Новый `POST /api/v1/issues/:id/move` (body `{ targetProjectId }`, RBAC
+`issue`/`write`): атомарная ре-аллокация `sequenceId`/`identifier`, ремап `stateId`
+по category, `boardId`=дефолтная доска целевого проекта, `cycleId`=null. Перенос
+задач с подзадачами запрещён (понятная 400). WS-событие `IssueMovedToProjectEvent`
++ метрика `issue_moved_to_project_total`. Фронт: `ProjectPickerDialog` (вынесен в
+`src/ui/tracker`) + строка «Проект · Перенести» в `IssueSidebar`. **Миграций НЕТ**
+(на существующих моделях `Issue`). Прод-выкат — rebuild backend+frontend, см. блок
+`🧠 2026-06-15 → issue-move` в
+[`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md).

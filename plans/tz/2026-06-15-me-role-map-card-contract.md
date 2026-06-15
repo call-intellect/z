@@ -1,7 +1,7 @@
 ---
 title: «Моя карта должности» на /me пуста — /me/profile не отдаёт summaryCache
 type: tz
-status: stub-needs-owner-decision
+status: not-implemented — ожидает продуктового решения владельца (контракт-баг + маппер summaryCache→blocks не существует)
 date: 2026-06-15
 owner: Сергей (sergrv80@gmail.com)
 discovered_during: plans/tz/2026-06-15-cabinet-qa-bugfixes.md (Ф2 — должность в «Я»)

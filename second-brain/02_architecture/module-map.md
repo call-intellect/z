@@ -508,6 +508,11 @@ AI-чат компании поверх knowledge-core, с conversation history 
 
 **ENV (через `TypedConfigService.chatV2`):** `CHAT_V2_HISTORY_MESSAGES=6`, `CHAT_V2_CONVERSATION_TTL_DAYS=90`, `CHAT_V2_CLEANUP_CRON='0 3 * * 0'`, `CHAT_V2_DEFAULT_MODE=synthetic`.
 
+> **Единый промпт-ответчик + человеческий контекст + таблицы (2026-06-15).** ТЗ [`plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md).
+> - **Один промпт без режимов.** Удалены `chat-v2/prompts/{factual,synthetic,clone-style}.prompt.ts`; `synthesis.service.ts` больше не выбирает ТЕКСТ промпта по `ChatV2Mode`. Графовый путь идёт по единому `BASE_SYSTEM_PROMPT` (роль, границы, few-shot, self-check, темпоральные правила «противоречащий факт» / «цепочка рассуждения» — больше не теряются). `askPerson` (clone_style+card) и brand-voice (clone_style+org) — отдельные движки, не тронуты.
+> - **Человеческий русский контекст.** `buildUserMessage` (knowledge-core `chat-v2.service.ts`): summary/history перенесены из SYSTEM в конец USER (кэш цел); русские ярлыки типов сигналов через `SIGNAL_TYPE_CONTEXT_RU` (`Record<SignalType,string>`, compile-guard на enum); русские теги `[ПРОТИВОРЕЧАЩИЙ ФАКТ]` / `[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ]` вместо английских; «О компании» (per-tenant `CompanyProfile`) — стабильный хвост SYSTEM.
+> - **Умные таблицы — параллельный источник** (ЧАСТЬ B). Новый `ChatV2TableContextService` (knowledge-core): entity-bridge по `TableRow.entityId` + keyword-выбор таблиц → `parseSemanticFilter` → `TableSemanticFilterService.applyFilterToRows` (server-side eq/in/empty + остальные через выборку+TS-фильтр, единая семантика с фронтом). `ChatV2Service.ask` гоняет ветку таблиц параллельно с retrieval'ом графа (`Promise.allSettled` — падение ветки не валит граф), найденные строки идут синтезатору как «Данные из таблиц». Каждой ветке передаётся обогащённое понимание (`entityHints`/`entityIds`/`aggregation`). Caps — крутилки `chat_v2.table_context_max_rows` (20) / `chat_v2.table_context_max_tables` (2), сид `seed-admin-setting-chat-v2-tables.ts`. `@Optional`-инжект `TableSemanticFilterService` (export `TablesModule`, без DI-цикла).
+
 **Frontend:**
 - `frontend/src/api/chat-v2.api.ts` — REST-клиент.
 - `frontend/src/domain/chat-v2.ts` — DomainModel + русские лейблы scope/mode/status + хелпер `formatTimestamp`.
@@ -1552,6 +1557,14 @@ backend/src/modules/tracker/
 
 `IssuesService.findMyInbox(tenantId, userId, query)` — cursor по id desc (стабильный cuid order), take=limit+1 для hasMore.
 
+### Tracker `/me/tasks` — self-задача для помощника (2026-06-15)
+
+ТЗ [`plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md). Чтобы помощник (concierge) сам ставил задачи через инструмент `create_task`:
+
+- `controllers/me-tasks.controller.ts` — `POST /api/v1/me/tasks`: рядовой ставит задачу **СЕБЕ** в проект «Входящие» через `issue`/`write` (policy.csv НЕ меняется — это self-операция). DTO `dto/issues/post-me-task.dto.ts`.
+- `services/me-tasks.service.ts` — создание self-задачи; `ensureInboxProjectId` вынесен в `ProjectsService` (общий с intake-приёмом).
+- Инструмент `create_task` помощника → этот эндпоинт; `search_tasks` → `GET /api/v1/me/inbox`. Закрывает бот-интент «поставить задачу» через агента (см. [[../01_projects/conversational-channels]] §«Помощник = единый мозг каналов»).
+
 ### PWA frontend (Wave 2 F2)
 
 ```
@@ -1978,24 +1991,33 @@ mail-inbound/
 
 ### `backend/src/modules/concierge/`
 
-Главный AI-агент кабинета (tool-use loop, 13 whitelist-tools). После Фаз 1-5 ТЗ 2026-05-27 pipeline расширен:
+Главный AI-агент кабинета (tool-use loop). После Фаз 1-5 ТЗ 2026-05-27 pipeline расширен.
 
-- `services/concierge.service.ts` — основной orchestrator. При `CONCIERGE_DIALOG_LAYER_ENABLED=true`:
-  - читает `ConciergeConversation.summary` (генерится `concierge-conversation-summarizer.cron`);
-  - вызывает `DialogService.process({ scope: 'concierge', scopeRefId: conv.id })` — 5-шаговый pipeline (contextualize → confidence → classify → multi-query + answer-cache);
-  - на cache-hit делает short-circuit (`thinking → message → done`, без LLM);
-  - запускает **параллельный pre-retrieval** по `dialogResult.queries[]` (до 3) через `ToolRouterService.execute('search_knowledge')` — per-query timeout 3000ms (`CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`), cumulative top-K 12 (`CONCIERGE_PRE_RETRIEVAL_TOP_K`), дедуп по id, skip для `intent='clone_roleplay'`;
-  - подаёт preHits в system-prompt блоком `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` перед tool whitelist;
-  - сохраняет debug-блок `{ dialogLayer, preRetrieval }` в `ConciergeMessage.toolCallsJson`.
+> **⚠ Переписан 2026-06-15 (ТЗ `2026-06-14-assistant-router-dedup-and-prompt`).** Описание pre-retrieval / dialog-layer ниже — **legacy**, оставлено для истории. Актуальная модель: помощник **не владеет** пониманием запроса (см. подраздел «Помощник = развилка + руки» ниже).
 
-Legacy путь при `CONCIERGE_DIALOG_LAYER_ENABLED=false` — без dialog-layer, без pre-retrieval, summary не читается.
+- `services/concierge.service.ts` (legacy γ-2). При `CONCIERGE_DIALOG_LAYER_ENABLED=true`:
+  - читал `ConciergeConversation.summary` (генерится `concierge-conversation-summarizer.cron`);
+  - вызывал `DialogService.process({ scope: 'concierge', scopeRefId: conv.id })` — 5-шаговый pipeline (contextualize → confidence → classify → multi-query + answer-cache);
+  - на cache-hit делал short-circuit (`thinking → message → done`, без LLM);
+  - запускал **параллельный pre-retrieval** по `dialogResult.queries[]` (до 3) через `ToolRouterService.execute('search_knowledge')`, дедуп по id, skip для `intent='clone_roleplay'`;
+  - подавал preHits в system-prompt + debug-блок `{ dialogLayer, preRetrieval }` в `ConciergeMessage.toolCallsJson`.
+
+#### Помощник = развилка + руки + уточнитель (2026-06-15, актуально)
+
+ТЗ [`plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md).
+
+- `services/concierge.service.ts` — убраны `dialog.process()` + `preRetrieve` + preHits + intent-гейтинг + метрики dialog-layer. Помощник решает развилку сам выбором инструмента (native function-calling): действие/просмотр → инструмент, вопрос к памяти → `ask_chat_v2` (терминальный), неясно → ОДИН уточняющий вопрос, не про компанию → вежливый отказ. Понимание-цепочка и синтез — **один раз, внутри chat-v2**.
+- `prompts/concierge-respond.prompt.ts` — новый системный промпт (роль/границы/ingest/уточнение/карта инструментов по группам, cache-friendly). История — **4 пары** (крутилка `concierge.history_pairs`); summary остаётся.
+- **`ask_chat_v2` — терминальный (passthrough):** если за turn единственный инструмент — `ask_chat_v2`, его текст + цитаты отдаются напрямую без второго LLM-синтеза; смешанный turn — обычный цикл tool-use.
+- **Реестр инструментов:** убран `search_knowledge`; добавлены `create_task` (self-задача `POST /api/v1/me/tasks`), `search_tasks` (`GET /api/v1/me/inbox`), `ingest_note` (`POST /me/notifications/free-note` → RawEvent → граф). Модель выбирает инструмент по `description` (каждый — «Используй для…»).
+- **Уточнитель** — поведение из промпта + жёсткий код-гард: изменяющее действие с отсутствующим обязательным полем (исполнитель/время/кого) → всегда уточнять. Крутилка `concierge.clarify_min_confidence` (0–100, дефолт **80**).
 
 - `services/assistant-channel.bridge.ts` (Ф5 assistant-channels, 2026-06-12) — `AssistantChannelBridge`: мост каналов к единому мозгу. Подписан на inbound `assistant_turn` (свободный текст/голос из Telegram/MAX) → `ConciergeService`; память диалога per-binding в Redis (`concierge:channel-conv:<bindingId>`, TTL 24ч); канальный whitelist self/manager + текстовое подтверждение мутаций (`confirm_required`, Redis TTL 300с, judge `assistant-confirm-classify`); ответ одним сообщением `chat.answer` в канал-источник. Kill-switch `ASSISTANT_CHANNEL_ROUTING_ENABLED` (ON). Метрика `z_assistant_turn_total`. См. [[../01_projects/conversational-channels]] §«Единый мозг помощника».
 
 ### Зависимости (импорты)
 
-- `backend/src/modules/dialog-layer/` — `DialogService` (5-step preprocessor + AnswerCache в Redis).
-- `backend/src/modules/concierge/services/tool-router.service.ts` — `search_knowledge` invocation с RBAC от userId.
+- ~~`backend/src/modules/dialog-layer/` — `DialogService` (5-step preprocessor)~~ — **больше не зовётся из concierge** (2026-06-15, ТЗ assistant-router-dedup). Понимание-цепочка живёт внутри chat-v2.
+- `backend/src/modules/concierge/services/tool-router.service.ts` — инвокация инструментов с RBAC от userId (с 2026-06-15: `ask_chat_v2`/`create_task`/`search_tasks`/`ingest_note`, **без** `search_knowledge`).
 - `backend/src/modules/ai/services/llm-router.service.ts` — `taskType='concierge-respond'`.
 
 ### Метрики Prometheus (новые)
@@ -2006,13 +2028,13 @@ Legacy путь при `CONCIERGE_DIALOG_LAYER_ENABLED=false` — без dialog-
 
 Pino-логи: `stage: 'dialog-layer' | 'pre-retrieval'`.
 
-### ENV
+### ENV (legacy γ-2)
 
-- `CONCIERGE_DIALOG_LAYER_ENABLED` (default **false**) — мастер-флаг новой ветки pipeline.
-- `CONCIERGE_PRE_RETRIEVAL_TOP_K` (default 12) — cap items.
-- `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS` (default 3000) — per-query timeout.
+- ~~`CONCIERGE_DIALOG_LAYER_ENABLED` / `CONCIERGE_PRE_RETRIEVAL_TOP_K` / `CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`~~ — относятся к снятой ветке pre-retrieval (2026-06-15). После переписи помощника dialog-layer из concierge не зовётся; крутилки помощника теперь AdminSetting — `concierge.history_pairs` (4), `concierge.clarify_min_confidence` (80), сид `seed-admin-setting-concierge.ts`.
 
-Читаются через `process.env` в `TypedConfigService.concierge` (не в `EnvSchema` из-за `.merge` chain depth).
+#### Слитый dialog-layer — «модуль понимания запроса» (2026-06-15)
+
+ТЗ [`plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md). `DialogService.process` (зовётся ТОЛЬКО из chat-v2) теперь history-aware и слит в один LLM-вызов: `classify(сырая) → answerCache → expand` (реплика + summary + история → 3 самодостаточных вопроса, промпт `query-understand.prompt.ts`, taskType `dialog-multi-query`) → `queryPlan` по 3 формулировкам (`extract-plan.prompt.ts` v2). **Удалены** `ContextualizerService` / `ConfidenceEstimatorService` + их промпты, taskType `dialog-contextualize`/`dialog-confidence`, ENV `CONTEXTUALIZER_CONFIDENCE_MIN`. Поля `confidence`/`steps.contextualize` сохранены = 1.0/0 (совместимость потребителей). Глубина истории — крутилка AdminSetting `dialog_layer.query_history_pairs` (4), сид `seed-admin-setting-dialog-layer.ts`.
 
 ### Тесты
 

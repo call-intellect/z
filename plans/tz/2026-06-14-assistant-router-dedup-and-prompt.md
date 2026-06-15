@@ -1,6 +1,7 @@
 ---
 type: tz
-status: ready
+status: done
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммит f49e7212
 feature: помощник (Concierge) = развилка + руки + уточнитель + границы; устранение дубля помощник↔chat-v2 (понимание и синтез — по одному разу)
 date: 2026-06-14
 area: backend/concierge + backend/chat-v2
@@ -12,6 +13,12 @@ related:
 ---
 
 # Помощник = развилка + руки + уточнитель; убрать дубль с chat-v2
+
+> **Статус: реализовано 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`,
+> коммит `f49e7212` (ТЗ#3 цепочки помощника). Прод-выкат — общий блок
+> `🧠 2026-06-15` в [`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md).
+> Ограничение `ask_chat_v2` passthrough (терминальный только когда единственный
+> инструмент — `ask_chat_v2`) принято и зафиксировано в `04_не-сделано`.
 
 ## 1. Цель и контекст
 

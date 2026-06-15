@@ -1,6 +1,7 @@
 ---
 type: tz
-status: ready
+status: done
+implemented: 2026-06-15, ветка feature/dialog-chat-assistant-chain, коммиты 13b0cd9c+5e3498f9
 feature: chat-v2 — один единый промпт-ответчик вместо 3 режимов + человеческий (русский) контекст вместо машинного
 date: 2026-06-15
 area: backend/chat-v2 + backend/knowledge-core
@@ -13,6 +14,12 @@ related:
 ---
 
 # Chat-v2: один промпт-ответчик + человеческий контекст
+
+> **Статус: реализовано 2026-06-15** — ветка `feature/dialog-chat-assistant-chain`,
+> коммиты `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B цепочки помощника). Прод-выкат — общий блок
+> `🧠 2026-06-15` в [`docs/operations/prod-deploy-log.md`](../../docs/operations/prod-deploy-log.md).
+> UI-селектор «помощник / клон» вынесен в отдельное ТЗ
+> [`2026-06-15-cabinet-assistant-clone-selector.md`](2026-06-15-cabinet-assistant-clone-selector.md) (desktop реализован).
 
 ## 1. Цель и контекст
 

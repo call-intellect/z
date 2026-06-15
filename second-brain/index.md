@@ -70,6 +70,7 @@
 - [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов; Фаза 0: группа А (с UI) + группа Б (слоты каркаса) + расширения existing + Apache AGE
 - [[02_architecture/age-deployment-decision]] — решение по Apache AGE (граф знаний поверх PostgreSQL)
 - [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
+- [[02_architecture/agent-modules]] — **функциональные модули AI-агентов**: группировка ~127 агентов по способностям (M1 «Помощник и общение с сотрудниками» описан; M2–M9 — реестр-указатели)
 - [[02_architecture/llm-cache-status]] — **prompt caching по всем 9 каналам Z**: где работает, где нет, размерные пороги, 6 анти-паттернов (verified 2026-05-25)
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)

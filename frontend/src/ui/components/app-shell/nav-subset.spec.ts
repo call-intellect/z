@@ -68,4 +68,12 @@ describe('навигация — mobile ⊆ desktop (Ф6)', () => {
     expect(memoryTab?.href).toBe('/memory');
     expect(DESKTOP_NAV_HREFS).toContain('/memory');
   });
+
+  // ТЗ 2026-06-15 — «Ваши предложения» (/feedback) вернули в меню (секция
+  // «Система») после редизайна Ф0, где пункт выпал. Гард, чтобы он снова не
+  // «потерялся» при следующем редизайне.
+  it('«Ваши предложения» (/feedback) присутствует в десктоп-навигации', () => {
+    expect(DESKTOP_NAV_HREFS).toContain('/feedback');
+    expect(isDesktopNavReachable('/feedback')).toBe(true);
+  });
 });

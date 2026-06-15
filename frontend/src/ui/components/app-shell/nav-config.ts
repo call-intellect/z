@@ -52,6 +52,7 @@ import {
   IdCard,
   Inbox,
   LifeBuoy,
+  Lightbulb,
   ListChecks,
   MessageCircle,
   Network,
@@ -329,6 +330,10 @@ const SYSTEM_SECTION: NavConfigSection = {
     // Партнёрка — личный кабинет реферальной программы (доступен всем ролям:
     // ссылку можно создать без ИНН). Раньше входа в меню не было — только промо-полоса.
     { href: '/referrals', label: 'Партнёрка', icon: Gift, matchPrefix: '/referrals' },
+    // Канал обратной связи «Ваши предложения» (форма + ночная AI-кластеризация в
+    // смысловые блоки). Виден всем ролям; вернули в меню после редизайна Ф0
+    // (ТЗ 2026-06-15). Тултип берётся из NAV_HELP['/feedback'].
+    { href: '/feedback', label: 'Ваши предложения', icon: Lightbulb, matchPrefix: '/feedback' },
     // «Мои обращения» — личный вход в свои тикеты поддержки (когда деск настроен).
     { href: '/support/my-tickets', label: 'Мои обращения', icon: LifeBuoy, matchPrefix: '/support/my-tickets', requiresDesk: true },
   ],

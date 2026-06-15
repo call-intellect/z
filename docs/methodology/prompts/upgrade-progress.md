@@ -24,8 +24,9 @@
 | `dialog-multi-query` (модуль понимания запроса — слияние контекстуализатора + оценщика + расширителя) | [multi-query-expansion.service.ts](../../../backend/src/modules/dialog-layer/services/multi-query-expansion.service.ts) | 🟡 | ТЗ 2026-06-14, Прил. A | 2026-06-14 |
 | `dialog-extract-plan` (извлекатель плана — вход 3 формулировки, объединённый план) | [extract-plan.prompt.ts](../../../backend/src/modules/dialog-layer/prompts/extract-plan.prompt.ts) | 🟡 | ТЗ 2026-06-14, Прил. B | 2026-06-14 |
 | `concierge-respond` (помощник — развилка + руки + уточнитель + границы) | [concierge.service.ts](../../../backend/src/modules/concierge/services/concierge.service.ts) | 🟡 | ТЗ 2026-06-14 (assistant-router-dedup), Прил. A | 2026-06-14 |
+| chat-v2 (единый ответчик — слияние BASE + «факт» + «синтез», без режимов; человеческий контекст) | [chat-v2.service.ts](../../../backend/src/modules/knowledge-core/services/chat-v2.service.ts) | 🟡 | ТЗ 2026-06-15, Прил. A | 2026-06-15 |
 
-ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md)
+ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md) · [plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md](../../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md)
 
 ## Очередь — отчёты по типам встреч (`extract_*`)
 
@@ -60,7 +61,7 @@
 | knowledge-core: ingest/distill | block-ingest, block-distill, специалист-routing | ⬜ |
 | Клоны / персоны | knowledge-clone-extract, executable-persona, skill-trait-detect | ⬜ |
 | Probe (уточняющие вопросы) | `probe-formulate` (✅ эталон методологии), probe-question | ⬜ |
-| Chat / Chat-v2 | synthesize, стадии, query | ⬜ |
+| Chat / Chat-v2 | synthesize, стадии, query | 🟡 единый ответчик — ТЗ 2026-06-15; стадии/query — ещё ⬜ |
 | Operations / Pulse | checkin-sentiment, meeting-speaker-analyzer, meeting-roi, decision-hygiene | ⬜ |
 | Smart-tables | table-architect, table-auto-fill, table-extract-rows, table-infer-schema, table-semantic-filter | ⬜ |
 | Документы | document-attribution-suggest, structured-document-compiler | ⬜ |

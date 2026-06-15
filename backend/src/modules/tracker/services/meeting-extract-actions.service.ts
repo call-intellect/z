@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
@@ -27,6 +28,7 @@ import {
 } from '../../ai/services/prompts/tasks';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { TaskAssigneeResolverService } from '../../knowledge-core/services/task-assignee-resolver.service';
+import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 
@@ -71,6 +73,8 @@ export class MeetingExtractActionsService implements OnModuleInit {
     private readonly orgContext: OrgContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -333,6 +337,10 @@ export class MeetingExtractActionsService implements OnModuleInit {
           suggestedDueDate,
           suggestedLabels: [],
           confidence: confidenceDecimal,
+          // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
+          // pending-intake после TTL (cfg.pendingActions.intakeTtlDays).
+          // TODO: крутилка позже уедет в AdminSetting UI.
+          expiresAt: computeExpiresAt(this.cfg.pendingActions.intakeTtlDays),
         },
         select: { id: true },
       });

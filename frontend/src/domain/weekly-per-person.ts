@@ -10,6 +10,9 @@
  */
 import type {
   WeeklyPerPersonApi,
+  WeeklyPersonItemApi,
+  WeeklyPersonItemFactStatusApi,
+  WeeklyPersonItemKindApi,
   WeeklyPersonRowApi,
 } from '@/api/weekly-per-person.api';
 
@@ -114,4 +117,98 @@ export function pluralRu(
   if (tail > 1 && tail < 5) return forms[1];
   if (tail === 1) return forms[0];
   return forms[2];
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * ТЗ редизайн Ф8.5 — drill-down «план-факт по людям» (раскрытие строки).
+ * ApiDto → UiModel: добавляем готовые к выводу подписи (kind, factStatus,
+ * форматированный срок) и тон-чип для статуса факта.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** Тон чипа статуса факта (маппится на парные токены chip-*). */
+export type WeeklyPersonItemTone = 'ok' | 'risk' | 'warn' | 'neutral';
+
+/** Пункт построчного план-факта, готовый к выводу в UI. */
+export interface WeeklyPersonItemUi {
+  kind: WeeklyPersonItemKindApi;
+  /** RU-лейбл типа: «задача» / «обещание» / «план дня». */
+  kindLabel: string;
+  title: string;
+  factStatus: WeeklyPersonItemFactStatusApi;
+  /** RU-лейбл статуса факта. */
+  factLabel: string;
+  /** Тон чипа статуса факта. */
+  tone: WeeklyPersonItemTone;
+  /** Форматированный плановый срок («13 июня») или «—», если срока нет. */
+  plannedDueLabel: string;
+  /** «Что мешало» (как пришло с бэка) или null. */
+  blockedBy: string | null;
+}
+
+const KIND_LABELS: Record<WeeklyPersonItemKindApi, string> = {
+  task: 'задача',
+  commitment: 'обещание',
+  checkin: 'план дня',
+};
+
+const FACT_LABELS: Record<WeeklyPersonItemFactStatusApi, string> = {
+  done: 'сделано',
+  fulfilled: 'выполнено',
+  missed: 'сорвано',
+  overdue: 'просрочено',
+  open: 'в работе',
+  asked: 'ждёт ответа',
+  planned: 'запланировано',
+};
+
+const FACT_TONES: Record<WeeklyPersonItemFactStatusApi, WeeklyPersonItemTone> = {
+  done: 'ok',
+  fulfilled: 'ok',
+  missed: 'risk',
+  overdue: 'risk',
+  open: 'warn',
+  planned: 'warn',
+  asked: 'neutral',
+};
+
+/** RU-лейбл типа пункта. */
+export function weeklyPersonItemKindLabel(kind: WeeklyPersonItemKindApi): string {
+  return KIND_LABELS[kind] ?? kind;
+}
+
+/** RU-лейбл статуса факта. */
+export function weeklyPersonItemFactLabel(
+  status: WeeklyPersonItemFactStatusApi,
+): string {
+  return FACT_LABELS[status] ?? status;
+}
+
+/** Тон чипа статуса факта. */
+export function weeklyPersonItemTone(
+  status: WeeklyPersonItemFactStatusApi,
+): WeeklyPersonItemTone {
+  return FACT_TONES[status] ?? 'neutral';
+}
+
+/** ISO-дата → «13 июня» (день+месяц). «—», если даты нет / она невалидна. */
+export function formatPlannedDue(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
+export function weeklyPersonItemFromApi(
+  api: WeeklyPersonItemApi,
+): WeeklyPersonItemUi {
+  return {
+    kind: api.kind,
+    kindLabel: weeklyPersonItemKindLabel(api.kind),
+    title: api.title,
+    factStatus: api.factStatus,
+    factLabel: weeklyPersonItemFactLabel(api.factStatus),
+    tone: weeklyPersonItemTone(api.factStatus),
+    plannedDueLabel: formatPlannedDue(api.plannedDue),
+    blockedBy: api.blockedBy,
+  };
 }

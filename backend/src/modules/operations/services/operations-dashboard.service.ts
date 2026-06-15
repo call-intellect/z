@@ -6,6 +6,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import type {
+  CheckinDisciplineDto,
+  CheckinDisciplinePersonDto,
+  CheckinDisciplineTotalsDto,
+} from '../dto/checkin-discipline.dto';
+import type {
   InsightCauseCategoryAggregateDto,
   MaturitySnapshotDto,
   OperationsDashboardBlockerDto,
@@ -318,6 +323,155 @@ export class OperationsDashboardService {
       date: args.date,
       totalEmployees: persons.length,
       missing,
+    };
+  }
+
+  /**
+   * ТЗ Ф8.7 (cabinet-redesign-rhythms) — `GET /api/v1/dashboard/operations/checkin-discipline`.
+   *
+   * Дисциплина чек-инов за окно [from, to] (включительно). Источник —
+   * `DailyCheckIn`: cron создаёт строку-плейсхолдер только когда сотруднику
+   * ушло приглашение, поэтому «ожидаемых» = все строки данного kind за период.
+   *   - expected  = число строк (kind, в окне);
+   *   - completed = строки с `completedAt != null` (сотрудник ответил);
+   *   - missed    = expected − completed (cron поставил, человек не ответил).
+   *
+   * Считаем двумя `groupBy` по (personId, kind): один — все строки в окне
+   * (expected), второй — только `completedAt != null` (completed). По
+   * `dateLocal` (строка YYYY-MM-DD) фильтр покрыт индексом
+   * `(tenantId, kind, dateLocal)`. personName резолвим отдельным `findMany`
+   * (у groupBy нет relation).
+   *
+   * Флаг `DAILY_CHECKIN_ENABLED` (kill-switch cron'а) выключен → отдаём
+   * `enabled:false` и нулевые totals/byPerson; фронт показывает Б-6 «нет
+   * данных» с причиной «чек-ины выключены».
+   */
+  async getCheckinDiscipline(args: {
+    tenantId: string;
+    from: string;
+    to: string;
+  }): Promise<CheckinDisciplineDto> {
+    const enabled = this.cfg.betaOps.dailyCheckInEnabled;
+    if (!enabled) {
+      return {
+        from: args.from,
+        to: args.to,
+        enabled: false,
+        totals: emptyDisciplineTotals(),
+        byPerson: [],
+      };
+    }
+
+    const where = {
+      tenantId: args.tenantId,
+      dateLocal: { gte: args.from, lte: args.to },
+    };
+
+    const [expectedGroups, completedGroups] = await Promise.all([
+      this.prisma.dailyCheckIn.groupBy({
+        by: ['personId', 'kind'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.dailyCheckIn.groupBy({
+        by: ['personId', 'kind'],
+        where: { ...where, completedAt: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    // Аккумулятор per-person: expected/completed по утру и вечеру.
+    type Acc = {
+      morningExpected: number;
+      morningCompleted: number;
+      eveningExpected: number;
+      eveningCompleted: number;
+    };
+    const byPersonAcc = new Map<string, Acc>();
+    const ensure = (personId: string): Acc => {
+      let acc = byPersonAcc.get(personId);
+      if (!acc) {
+        acc = {
+          morningExpected: 0,
+          morningCompleted: 0,
+          eveningExpected: 0,
+          eveningCompleted: 0,
+        };
+        byPersonAcc.set(personId, acc);
+      }
+      return acc;
+    };
+
+    for (const g of expectedGroups) {
+      const acc = ensure(g.personId);
+      const n = g._count._all;
+      if (g.kind === 'morning') acc.morningExpected += n;
+      else if (g.kind === 'evening') acc.eveningExpected += n;
+    }
+    for (const g of completedGroups) {
+      const acc = ensure(g.personId);
+      const n = g._count._all;
+      if (g.kind === 'morning') acc.morningCompleted += n;
+      else if (g.kind === 'evening') acc.eveningCompleted += n;
+    }
+
+    // Имена людей — отдельным запросом (у groupBy нет relation).
+    const personIds = [...byPersonAcc.keys()];
+    const nameById = new Map<string, string>();
+    if (personIds.length > 0) {
+      const persons = await this.prisma.person.findMany({
+        where: { tenantId: args.tenantId, id: { in: personIds } },
+        select: { id: true, name: true },
+      });
+      for (const p of persons) nameById.set(p.id, p.name);
+    }
+
+    const byPerson: CheckinDisciplinePersonDto[] = [];
+    const totals = emptyDisciplineTotals();
+    for (const [personId, acc] of byPersonAcc) {
+      const morningMissed = acc.morningExpected - acc.morningCompleted;
+      const eveningMissed = acc.eveningExpected - acc.eveningCompleted;
+      byPerson.push({
+        personId,
+        personName: nameById.get(personId) ?? 'Без имени',
+        morningExpected: acc.morningExpected,
+        morningCompleted: acc.morningCompleted,
+        morningMissed,
+        eveningExpected: acc.eveningExpected,
+        eveningCompleted: acc.eveningCompleted,
+        eveningMissed,
+        completionRate: computeCompletionRate(
+          acc.morningCompleted + acc.eveningCompleted,
+          acc.morningExpected + acc.eveningExpected,
+        ),
+      });
+
+      totals.morningExpected += acc.morningExpected;
+      totals.morningCompleted += acc.morningCompleted;
+      totals.morningMissed += morningMissed;
+      totals.eveningExpected += acc.eveningExpected;
+      totals.eveningCompleted += acc.eveningCompleted;
+      totals.eveningMissed += eveningMissed;
+    }
+    totals.completionRate = computeCompletionRate(
+      totals.morningCompleted + totals.eveningCompleted,
+      totals.morningExpected + totals.eveningExpected,
+    );
+
+    // Детерминированный порядок: по убыванию суммарного expected, затем имя.
+    byPerson.sort((a, b) => {
+      const expA = a.morningExpected + a.eveningExpected;
+      const expB = b.morningExpected + b.eveningExpected;
+      if (expB !== expA) return expB - expA;
+      return a.personName.localeCompare(b.personName, 'ru');
+    });
+
+    return {
+      from: args.from,
+      to: args.to,
+      enabled: true,
+      totals,
+      byPerson,
     };
   }
 
@@ -933,4 +1087,29 @@ function isoDateDaysAgo(days: number): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
+}
+
+/** ТЗ Ф8.7 — пустые totals дисциплины чек-инов (флаг OFF / нет данных). */
+function emptyDisciplineTotals(): CheckinDisciplineTotalsDto {
+  return {
+    morningExpected: 0,
+    morningCompleted: 0,
+    morningMissed: 0,
+    eveningExpected: 0,
+    eveningCompleted: 0,
+    eveningMissed: 0,
+    completionRate: null,
+  };
+}
+
+/**
+ * ТЗ Ф8.7 — доля сданных чек-инов (0..1), округлённая до 3 знаков.
+ * `null`, если ожидаемых не было (деления на 0 нет).
+ */
+function computeCompletionRate(
+  completed: number,
+  expected: number,
+): number | null {
+  if (expected <= 0) return null;
+  return Math.round((completed / expected) * 1000) / 1000;
 }

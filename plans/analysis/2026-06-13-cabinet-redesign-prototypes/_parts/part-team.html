@@ -1,0 +1,318 @@
+<!-- ============================ КОМАНДА ============================ -->
+      <section class="screen" id="screen-team">
+
+        <!-- строка-вердикт: спокойное состояние, но есть что прибрать -->
+        <div class="verdict-bar">
+          <span class="led-lg" style="background:var(--amber); box-shadow:0 0 14px var(--amber)"></span>
+          <div style="flex:1">
+            <div style="font-weight:600; font-size:14px;">В команде 4 человека. Структура слегка запуталась — есть дубли отделов и пустые подразделения.</div>
+            <div class="faint" style="font-size:12px; margin-top:2px;">Все активны · 1 приглашение не принято · Кора предлагает навести порядок в один клик</div>
+          </div>
+          <button class="btn primary" data-goto="team-fix">Навести порядок →</button>
+        </div>
+
+        <!-- Вкладки раздела -->
+        <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
+          <div class="pill-group">
+            <button class="pill active">Сотрудники</button>
+            <button class="pill">Отделы</button>
+            <button class="pill">Пульс людей</button>
+          </div>
+          <span class="faint" style="font-size:12px; margin-left:auto;">ООО «Луа» · обновлено сегодня в 10:42</span>
+        </div>
+
+        <!-- Карточка-мастер: дедуп и чистка отделов (плавающая, акцентная) -->
+        <div class="glass float mt" style="margin-top:0; background:linear-gradient(180deg, oklch(0.34 0.10 295 / 0.5), oklch(0.22 0.04 280 / 0.5)); border-color:oklch(0.66 0.20 300 / 0.28)">
+          <span class="glow"></span>
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-violet)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 7 5-4 5 4M8 3v11"/><path d="M21 17l-5 4-5-4M16 21V10"/></svg>
+            </span>
+            <h3>Наведём порядок в отделах</h3>
+            <span class="chip info" style="margin-left:auto"><span class="led"></span>предложение Коры</span>
+          </div>
+          <p class="muted" style="font-size:14px; line-height:1.6; margin:0 0 16px;">
+            Нашёл <b style="color:var(--text)">2 похожих отдела</b> —
+            <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">«отдел внедрения»</span> и
+            <span style="color:var(--cyan); border-bottom:1px dashed oklch(0.8 0.13 205/.5); cursor:pointer">«Отдел внедрения»</span>
+            (различаются только регистром) — и <b style="color:var(--text)">6 пустых подразделений</b> без единого сотрудника.
+            Похоже на следы первичной настройки. Объединить дубли и убрать пустые?
+          </p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px;">
+            <span class="chip warn"><span class="led"></span>2 дубля → 1 отдел</span>
+            <span class="chip info"><span class="led"></span>6 пустых на удаление</span>
+            <span class="chip ok"><span class="led"></span>люди не пострадают</span>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn primary">Объединить и убрать</button>
+            <button class="btn">Показать предложение</button>
+          </div>
+        </div>
+
+        <!-- Таблица сотрудников -->
+        <div class="glass float mt">
+          <span class="glow blue"></span>
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-blue)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <h3>Сотрудники</h3>
+            <span class="chip ok" style="margin-left:auto"><span class="led"></span>3 активны</span>
+            <span class="chip warn" style="margin-left:8px"><span class="led"></span>1 не приглашён</span>
+          </div>
+          <table class="mtable">
+            <thead>
+              <tr>
+                <th>Человек</th>
+                <th>Должность</th>
+                <th>Отдел</th>
+                <th class="r">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span class="cell-person">
+                    <span class="avatar" style="background:var(--grad-violet)">СМ</span>
+                    <span>Сергей Мазур <span class="faint" style="font-size:11px;">· это вы</span></span>
+                  </span>
+                </td>
+                <td class="muted">Генеральный директор</td>
+                <td class="muted">Руководство</td>
+                <td class="r"><span class="chip ok"><span class="led"></span>активен</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="cell-person">
+                    <span class="avatar" style="background:var(--grad-teal)">АК</span>
+                    <span>Анна Ковалёва</span>
+                  </span>
+                </td>
+                <td class="muted">Руководитель внедрения</td>
+                <td class="muted">Внедрение</td>
+                <td class="r"><span class="chip ok"><span class="led"></span>активна</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="cell-person">
+                    <span class="avatar" style="background:var(--grad-amber)">ДС</span>
+                    <span>Дмитрий Соколов</span>
+                  </span>
+                </td>
+                <td class="muted">Менеджер по продажам</td>
+                <td class="muted">Продажи</td>
+                <td class="r"><span class="chip ok"><span class="led"></span>активен</span></td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="cell-person">
+                    <span class="avatar" style="background:var(--grad-pink)">ЕВ</span>
+                    <span>Елена Воронина</span>
+                  </span>
+                </td>
+                <td class="muted">Специалист поддержки</td>
+                <td class="muted">Поддержка</td>
+                <td class="r"><span class="chip warn"><span class="led"></span>не приглашена</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Здоровье команд — одна строка-сводка вместо 10 «слишком мал» -->
+        <div class="glass mt" style="border-color:oklch(0.70 0.16 245 / 0.2)">
+          <div class="card-title">
+            <span class="card-ico" style="background:var(--grad-mint)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </span>
+            <h3>Здоровье команд</h3>
+          </div>
+          <div class="empty">
+            <div style="font-size:14px; color:var(--dim); line-height:1.6;">
+              Здоровье команды Кора считает, когда в отделе <b style="color:var(--text)">от 3 человек</b> — иначе сравнивать не с чем.<br>
+              Сейчас таких отделов нет: люди разнесены по одиночке. Объедините близкие отделы — и здоровье посчитается само.
+            </div>
+            <div class="cta">
+              <button class="btn primary" data-goto="team-fix">Объединить отделы →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Кому помочь — НЕ рейтинг, без чисел; повод для 1:1 -->
+        <div class="section-h mt">Кому помочь — повод для короткого разговора</div>
+        <div class="grid g3">
+
+          <div class="glass float">
+            <span class="glow amber"></span>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+              <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-teal)">АК</span>
+              <div>
+                <div style="font-weight:600; font-size:14px;">Анна Ковалёва</div>
+                <div class="faint" style="font-size:12px;">Руководитель внедрения</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <span class="chip warn" style="align-self:flex-start"><span class="led"></span>повод для короткого 1:1</span>
+              <p class="muted" style="font-size:13px; line-height:1.55; margin:2px 0 0;">
+                Третью неделю тянет внедрение «Орбиты» в одиночку и дважды сдвигала свои задачи. Спросите, чем разгрузить.
+              </p>
+            </div>
+            <button class="btn" style="width:100%; margin-top:14px">Договориться о 1:1 →</button>
+          </div>
+
+          <div class="glass float">
+            <span class="glow blue"></span>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+              <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-pink)">ЕВ</span>
+              <div>
+                <div style="font-weight:600; font-size:14px;">Елена Воронина</div>
+                <div class="faint" style="font-size:12px;">Специалист поддержки</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <span class="chip info" style="align-self:flex-start"><span class="led"></span>повод для короткого 1:1</span>
+              <p class="muted" style="font-size:13px; line-height:1.55; margin:2px 0 0;">
+                Ещё не приняла приглашение в Кору — выпадает из общей памяти команды. Помогите войти, чтобы её работа была видна.
+              </p>
+            </div>
+            <button class="btn" style="width:100%; margin-top:14px">Повторить приглашение →</button>
+          </div>
+
+          <div class="glass float">
+            <span class="glow teal"></span>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+              <span class="avatar" style="width:42px; height:42px; border-radius:13px; font-size:15px; background:var(--grad-amber)">ДС</span>
+              <div>
+                <div style="font-weight:600; font-size:14px;">Дмитрий Соколов</div>
+                <div class="faint" style="font-size:12px;">Менеджер по продажам</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <span class="chip ok" style="align-self:flex-start"><span class="led"></span>повод для короткого 1:1</span>
+              <p class="muted" style="font-size:13px; line-height:1.55; margin:2px 0 0;">
+                Закрыл двух клиентов за неделю и предложил идею по тарифам. Хороший момент сказать спасибо и услышать планы.
+              </p>
+            </div>
+            <button class="btn" style="width:100%; margin-top:14px">Договориться о 1:1 →</button>
+          </div>
+
+        </div>
+
+        <div class="grid g-2-1 mt">
+
+          <!-- Пульс людей — мини-гейджи вовлечённости (качественно) -->
+          <div class="glass float">
+            <span class="glow"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-pink)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              </span>
+              <h3>Пульс людей</h3>
+              <span class="faint" style="margin-left:auto; font-size:11.5px;">вовлечённость по участию во встречах и переписке</span>
+            </div>
+
+            <div class="row-list">
+
+              <!-- Сергей -->
+              <div class="list-row">
+                <span class="avatar" style="background:var(--grad-violet)">СМ</span>
+                <div class="body">
+                  <div class="ttl">Сергей Мазур</div>
+                  <div class="meta">активно ведёт встречи и решения</div>
+                </div>
+                <svg class="spark" width="80" height="40" viewBox="0 0 80 40">
+                  <defs><linearGradient id="g-pulse-a" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="oklch(0.82 0.13 178)"/><stop offset="1" stop-color="oklch(0.66 0.20 300)"/></linearGradient></defs>
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="6" stroke-linecap="round"/>
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="url(#g-pulse-a)" stroke-width="6" stroke-linecap="round" stroke-dasharray="95 110" filter="drop-shadow(0 0 6px oklch(0.82 0.13 178 / 0.7))"/>
+                </svg>
+                <span class="chip ok" style="flex:none"><span class="led"></span>живой</span>
+              </div>
+
+              <!-- Анна -->
+              <div class="list-row">
+                <span class="avatar" style="background:var(--grad-teal)">АК</span>
+                <div class="body">
+                  <div class="ttl">Анна Ковалёва</div>
+                  <div class="meta">высокая нагрузка, мало пауз</div>
+                </div>
+                <svg class="spark" width="80" height="40" viewBox="0 0 80 40">
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="6" stroke-linecap="round"/>
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(0.84 0.16 80)" stroke-width="6" stroke-linecap="round" stroke-dasharray="105 110" filter="drop-shadow(0 0 6px oklch(0.84 0.16 80 / 0.7))"/>
+                </svg>
+                <span class="chip warn" style="flex:none"><span class="led"></span>на пределе</span>
+              </div>
+
+              <!-- Дмитрий -->
+              <div class="list-row">
+                <span class="avatar" style="background:var(--grad-amber)">ДС</span>
+                <div class="body">
+                  <div class="ttl">Дмитрий Соколов</div>
+                  <div class="meta">ровное, бодрое участие</div>
+                </div>
+                <svg class="spark" width="80" height="40" viewBox="0 0 80 40">
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="6" stroke-linecap="round"/>
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(0.85 0.15 165)" stroke-width="6" stroke-linecap="round" stroke-dasharray="78 110" filter="drop-shadow(0 0 6px oklch(0.85 0.15 165 / 0.7))"/>
+                </svg>
+                <span class="chip ok" style="flex:none"><span class="led"></span>живой</span>
+              </div>
+
+              <!-- Елена -->
+              <div class="list-row">
+                <span class="avatar" style="background:var(--grad-pink)">ЕВ</span>
+                <div class="body">
+                  <div class="ttl">Елена Воронина</div>
+                  <div class="meta">пока не в Коре — данных нет</div>
+                </div>
+                <svg class="spark" width="80" height="40" viewBox="0 0 80 40">
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(1 0 0 / 0.08)" stroke-width="6" stroke-linecap="round"/>
+                  <path d="M5 35a30 30 0 0 1 70 0" fill="none" stroke="oklch(1 0 0 / 0.12)" stroke-width="6" stroke-linecap="round" stroke-dasharray="6 110"/>
+                </svg>
+                <span class="chip info" style="flex:none"><span class="led"></span>ждём входа</span>
+              </div>
+
+            </div>
+            <div class="faint" style="font-size:11.5px; margin-top:12px; line-height:1.5;">
+              Пульс — про участие в жизни компании, а не оценку человека. Низкий пульс — повод спросить «чем помочь», не повод для выводов.
+            </div>
+          </div>
+
+          <!-- Зрелость компании — число спрятано, идёт сбор данных -->
+          <div class="glass float">
+            <span class="glow teal"></span>
+            <div class="card-title">
+              <span class="card-ico" style="background:var(--grad-teal)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              </span>
+              <h3>Зрелость компании</h3>
+            </div>
+
+            <div style="display:flex; justify-content:center; padding:8px 0 4px;">
+              <svg width="150" height="150" viewBox="0 0 150 150">
+                <defs>
+                  <linearGradient id="g-maturity" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.86 0.15 168)"/><stop offset="1" stop-color="oklch(0.74 0.13 205)"/></linearGradient>
+                </defs>
+                <!-- кольцо-основа -->
+                <circle cx="75" cy="75" r="58" fill="none" stroke="oklch(1 0 0 / 0.07)" stroke-width="10"/>
+                <!-- пунктир «идёт заполнение» -->
+                <circle cx="75" cy="75" r="58" fill="none" stroke="url(#g-maturity)" stroke-width="10" stroke-linecap="round"
+                        stroke-dasharray="14 22" transform="rotate(-90 75 75)" opacity="0.65"
+                        filter="drop-shadow(0 0 6px oklch(0.82 0.13 178 / 0.6))"/>
+                <text x="75" y="70" fill="var(--dim)" font-size="13" text-anchor="middle">пока</text>
+                <text x="75" y="90" fill="var(--text)" font-size="15" font-weight="600" text-anchor="middle">не определено</text>
+              </svg>
+            </div>
+
+            <div class="empty" style="padding:8px 6px 0;">
+              <div style="font-size:13px; color:var(--dim); line-height:1.55;">
+                Кора ещё собирает данные о том, как компания принимает и доводит решения. Оценка появится, когда наберётся история нескольких недель.
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+              <span class="chip ok"><span class="led"></span>встречи собираются</span>
+              <span class="chip ok"><span class="led"></span>решения фиксируются</span>
+              <span class="chip warn"><span class="led"></span>мало истории</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>

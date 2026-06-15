@@ -61,6 +61,7 @@ export class DecisionImplementationCron {
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     checked: number;
+    autoImplemented: number;
     stalled: number;
     notified: number;
     errors: number;
@@ -72,6 +73,7 @@ export class DecisionImplementationCron {
     });
 
     let checked = 0;
+    let autoImplemented = 0;
     let stalled = 0;
     let notified = 0;
     let errors = 0;
@@ -81,6 +83,7 @@ export class DecisionImplementationCron {
       try {
         const res = await this.svc.computeForTenant({ tenantId: org.id, now });
         checked += res.checked;
+        autoImplemented += res.autoImplemented;
         stalled += res.stalled.length;
         for (const st of res.stalled) {
           const sent = await this.notifyResponsible({
@@ -104,7 +107,14 @@ export class DecisionImplementationCron {
       }
     }
 
-    return { orgsProcessed: orgs.length, checked, stalled, notified, errors };
+    return {
+      orgsProcessed: orgs.length,
+      checked,
+      autoImplemented,
+      stalled,
+      notified,
+      errors,
+    };
   }
 
   /**

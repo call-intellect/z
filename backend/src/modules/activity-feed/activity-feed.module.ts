@@ -8,6 +8,7 @@ import { FeedDigestCron } from './cron/feed-digest.cron';
 import { FeedExpireCron } from './cron/feed-expire.cron';
 import { ActivityFeedGateway } from './gateways/activity-feed.gateway';
 import { ActivityFeedService } from './services/activity-feed.service';
+import { CoraFeedService } from './services/cora-feed.service';
 
 /**
  * ActivityFeedModule (Wave 2 Поток D, 2026-05-24).
@@ -41,10 +42,11 @@ import { ActivityFeedService } from './services/activity-feed.service';
   controllers: [FeedController, FeedSubscriptionsController],
   providers: [
     ActivityFeedService,
+    CoraFeedService,
     ActivityFeedGateway,
     FeedExpireCron,
     FeedDigestCron,
   ],
-  exports: [ActivityFeedService],
+  exports: [ActivityFeedService, CoraFeedService],
 })
 export class ActivityFeedModule {}

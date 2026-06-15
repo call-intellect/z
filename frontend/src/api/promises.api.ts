@@ -35,9 +35,34 @@ export interface CommitmentApi {
   createdAt: string;
 }
 
+/**
+ * Редизайн Ф7б — открытый вопрос. Это НЕ обещание: блок-обещание, у которого
+ * не хватает данных до полноценного обещания (нет автора / нет ответственного
+ * и срока). Бэк отдаёт их отдельным массивом, чтобы они не считались
+ * «обещаниями этого человека».
+ */
+export interface OpenQuestionApi {
+  id: string;
+  text: string;
+  sourceMeetingId: string | null;
+  sourceMeetingTitle: string | null;
+  /** Чего не хватает до полного обещания (человекочитаемо, RU). */
+  reason: string;
+  createdAt: string;
+}
+
 export interface MarkPromiseBody {
   status: 'fulfilled' | 'missed' | 'cancelled' | 'superseded';
   note?: string;
+}
+
+/**
+ * Редизайн Ф7б — ответ `GET /me/promises`: полные обещания (`items`) +
+ * открытые вопросы (`openQuestions`). `items` совместим с прежним контрактом.
+ */
+export interface MyPromisesListApi {
+  items: CommitmentApi[];
+  openQuestions: OpenQuestionApi[];
 }
 
 export const promisesApi = {
@@ -46,7 +71,7 @@ export const promisesApi = {
     if (params?.status) q.set('status', params.status);
     if (params?.limit) q.set('limit', String(params.limit));
     const suffix = q.toString();
-    return apiClient.get<{ items: CommitmentApi[] }>(
+    return apiClient.get<MyPromisesListApi>(
       `/api/v1/me/promises${suffix ? `?${suffix}` : ''}`,
     );
   },

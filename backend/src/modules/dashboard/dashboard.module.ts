@@ -19,6 +19,7 @@ import { KnowledgeVelocityTrackerCron } from './agents/knowledge-velocity-tracke
 import { MeetingRoiScorerWorker } from './agents/meeting-roi-scorer.worker';
 import { PromiseNetworkAnalyzerCron } from './agents/promise-network-analyzer.cron';
 import { TeamHealthAnalyzerCron } from './agents/team-health-analyzer.cron';
+import { ThemeSilenceDetectorCron } from './agents/theme-silence-detector.cron';
 import { TopicRecurrenceDetectorCron } from './agents/topic-recurrence-detector.cron';
 import { DirectorDashboardController } from './director-dashboard.controller';
 import { CommitmentReliabilityService } from './services/commitment-reliability.service';
@@ -100,6 +101,11 @@ import { TeamHealthService } from './services/team-health.service';
     // §6.7 KnowledgeVelocityTrackerCron — median time gap → answer (NO LLM).
     BusFactorAnalyzerCron,
     TopicRecurrenceDetectorCron,
+    // Редизайн кабинета Ф8.2 🔴 — Theme-Silence-Detector (daily 04:00 UTC,
+    // NO LLM): активные каноничные темы с lastSignalAt старше N недель →
+    // Insight kind='risk' «Тема молчит N недель» (идемпотентно по
+    // causeCategory='ts:<themeId>'). Kill-switch dashboard.theme_silence.enabled.
+    ThemeSilenceDetectorCron,
     PromiseNetworkAnalyzerCron,
     GoalVectorTrackerCron,
     KnowledgeVelocityTrackerCron,

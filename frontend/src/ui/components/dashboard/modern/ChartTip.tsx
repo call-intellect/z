@@ -12,10 +12,11 @@ export function ChartTip({ active, payload, label }: any) {
   return (
     <div
       style={{
-        background: 'oklch(0.18 0.03 280 / 0.95)',
-        border: '1px solid oklch(1 0 0 / 0.12)',
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
         borderRadius: 12,
         padding: '8px 12px',
+        boxShadow: 'var(--shadow-card-raised)',
         backdropFilter: 'blur(8px)',
       }}
     >

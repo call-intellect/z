@@ -11,6 +11,7 @@
  */
 
 import type {
+  PendingActionDetailApi,
   PendingActionItemApi,
   PendingActionSeverityApi,
   PendingActionSourceApi,
@@ -19,6 +20,56 @@ import type {
 
 export type PendingActionSource = PendingActionSourceApi;
 export type PendingActionSeverity = PendingActionSeverityApi;
+
+/** Ссылка на момент встречи (готовая к рендеру). */
+export interface PendingActionCite {
+  meetingTitle?: string;
+  timecode?: string;
+  url?: string;
+}
+
+/** Версия факта в конфликте. */
+export interface ConflictVersion {
+  text: string;
+  date?: string;
+  cite?: PendingActionCite;
+}
+
+/**
+ * Доменный `detail` — дискриминированный union по `kind` (= source).
+ * Confidence у intake нормализован в проценты 0..100 (число) либо undefined.
+ */
+export type PendingActionDetail =
+  | {
+      kind: 'probe';
+      question: string;
+      context?: string;
+      meetingTitle?: string;
+      cite?: PendingActionCite;
+      notificationId: string;
+    }
+  | {
+      kind: 'conflict';
+      summary: string;
+      oldVersion: ConflictVersion;
+      newVersion: ConflictVersion;
+    }
+  | {
+      kind: 'intake';
+      title: string;
+      description?: string;
+      assigneeName?: string;
+      dueLabel?: string;
+      /** Уверенность Коры в процентах 0..100. */
+      confidencePct?: number;
+      cite?: PendingActionCite;
+    }
+  | {
+      kind: 'curation';
+      cardTitle: string;
+      preview?: string;
+      cite?: PendingActionCite;
+    };
 
 /** Доменная карточка подтверждения. */
 export interface PendingAction {
@@ -32,6 +83,8 @@ export interface PendingAction {
   canQuickConfirm: boolean;
   /** Готовый RU-лейбл источника (см. PENDING_SOURCE_LABEL). */
   sourceLabel: string;
+  /** Дискриминированная суть item'а для inline-резолва (опц.). */
+  detail?: PendingActionDetail;
 }
 
 export interface PendingActionsCount {
@@ -117,7 +170,103 @@ export function formatPendingAge(ageDays: number): string {
   return `${d} дн.`;
 }
 
+/** «ждёт N дн.» / «ждёт сегодня» — подпись возраста для чипа в группах (Ф4). */
+export function formatPendingWait(ageDays: number): string {
+  const d = Math.max(0, Math.round(ageDays));
+  return d === 0 ? 'ждёт сегодня' : `ждёт ${d} дн.`;
+}
+
+/**
+ * RU-лейбл приоритета по severity (для чипа внутри группы). `urgent` →
+ * «высокий приоритет», `normal` → «средний приоритет».
+ */
+export function formatPendingPriority(severity: PendingActionSeverity): string {
+  return severity === 'urgent' ? 'высокий приоритет' : 'средний приоритет';
+}
+
+/**
+ * Готовая подпись cite: «встреча <title> [таймкод]» — используется в чипе
+ * источника. Возвращает null, если рисовать нечего.
+ */
+export function formatPendingCite(cite?: PendingActionCite): string | null {
+  if (!cite) return null;
+  const parts: string[] = [];
+  if (cite.meetingTitle) parts.push(`встреча ${cite.meetingTitle}`);
+  if (cite.timecode) parts.push(`[${cite.timecode}]`);
+  const text = parts.join(' ').trim();
+  return text.length > 0 ? text : null;
+}
+
 // ─── mappers ────────────────────────────────────────────────────────
+
+/** Нормализуем confidence (0..1 ИЛИ 0..100) в целые проценты 0..100. */
+function normalizeConfidencePct(raw?: number): number | undefined {
+  if (raw == null || Number.isNaN(raw)) return undefined;
+  const pct = raw <= 1 ? raw * 100 : raw;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function mapCite(
+  cite?: PendingActionCite | undefined,
+): PendingActionCite | undefined {
+  if (!cite) return undefined;
+  return {
+    meetingTitle: cite.meetingTitle,
+    timecode: cite.timecode,
+    url: cite.url,
+  };
+}
+
+export function mapPendingActionDetail(
+  api: PendingActionDetailApi | undefined,
+): PendingActionDetail | undefined {
+  if (!api) return undefined;
+  switch (api.kind) {
+    case 'probe':
+      return {
+        kind: 'probe',
+        question: api.question,
+        context: api.context,
+        meetingTitle: api.meetingTitle,
+        cite: mapCite(api.cite),
+        notificationId: api.notificationId,
+      };
+    case 'conflict':
+      return {
+        kind: 'conflict',
+        summary: api.summary,
+        oldVersion: {
+          text: api.oldVersion.text,
+          date: api.oldVersion.date,
+          cite: mapCite(api.oldVersion.cite),
+        },
+        newVersion: {
+          text: api.newVersion.text,
+          date: api.newVersion.date,
+          cite: mapCite(api.newVersion.cite),
+        },
+      };
+    case 'intake':
+      return {
+        kind: 'intake',
+        title: api.title,
+        description: api.description,
+        assigneeName: api.assigneeName,
+        dueLabel: api.dueLabel,
+        confidencePct: normalizeConfidencePct(api.confidence),
+        cite: mapCite(api.cite),
+      };
+    case 'curation':
+      return {
+        kind: 'curation',
+        cardTitle: api.cardTitle,
+        preview: api.preview,
+        cite: mapCite(api.cite),
+      };
+    default:
+      return undefined;
+  }
+}
 
 export function mapPendingAction(api: PendingActionItemApi): PendingAction {
   return {
@@ -130,6 +279,7 @@ export function mapPendingAction(api: PendingActionItemApi): PendingAction {
     actionUrl: api.actionUrl,
     canQuickConfirm: api.canQuickConfirm,
     sourceLabel: PENDING_SOURCE_LABEL[api.source] ?? api.source,
+    detail: mapPendingActionDetail(api.detail),
   };
 }
 

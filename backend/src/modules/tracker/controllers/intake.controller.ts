@@ -30,6 +30,10 @@ import {
   type ListIntakeQuery,
 } from '../dto/intake/create-intake.dto';
 import {
+  NextStepToIntakeSchema,
+  type NextStepToIntakeDto,
+} from '../dto/intake/next-step-to-intake.dto';
+import {
   TriageIntakeSchema,
   type TriageIntakeDto,
   UpdateIntakeSchema,
@@ -96,6 +100,33 @@ export class IntakeController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.update(id, body, t, user.id);
+  }
+
+  /**
+   * Редизайн кабинета Ф5а (2026-06-13) — «следующий шаг отчёта → кандидат в
+   * задачу». Создаёт IntakeIssue (source='meeting') из текста next-step отчёта.
+   * Сама задача появится после триажа (accept). Идемпотентно по (meetingId +
+   * text). RBAC — write на intake_issue.
+   */
+  @Post('meetings/:meetingId/next-steps/to-intake')
+  @RequireSubscription()
+  @ApiOperation({
+    summary: 'Создать кандидата в задачу из следующего шага отчёта встречи',
+  })
+  async nextStepToIntake(
+    @Param('meetingId') meetingId: string,
+    @Body(new ZodValidationPipe(NextStepToIntakeSchema)) body: NextStepToIntakeDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IntakeResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.createFromMeetingNextStep({
+      meetingId,
+      text: body.text,
+      description: body.description ?? null,
+      tenantId: t,
+    });
   }
 
   @Post('intake/:id/triage')

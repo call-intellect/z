@@ -45,18 +45,46 @@ export type SnoozePendingActionBody = z.infer<
   typeof SnoozePendingActionBodySchema
 >;
 
-// ─────────────────────────── Confirm body (B4) ─────────────────────
+// ─────────────────────────── Confirm body (Ф4 — сквозной резолв) ───
 
 /**
- * Action Center B4 «быстрый путь подтверждения» (2026-06-02).
+ * Сквозной резолв item'а единой очереди решений (редизайн Ф4, 2026-06-13).
+ * Один эндпоинт `POST /pending-actions/confirm` диспетчеризует по `source`:
  *
- * One-tap подтверждение item'а прямо из feed'а (страница /actions и колокольчик).
- * Поддерживается ТОЛЬКО `source==='curation'` для light-уровня (canQuickConfirm);
- * критические/deep подтверждаются только на странице карточки.
+ *   - `curation`:  resolution `'approve'` (дефолт) | `'reject'` →
+ *     CurationService.decide. Быстрое подтверждение для light-карточек (B4).
+ *   - `conflict`:  resolution `'keep_old'|'accept_new'|'merge'` →
+ *     ConflictService.resolve.
+ *   - `intake`:    resolution `'accept'|'reject'` → IntakeService.triage.
+ *                  Для accept можно передать `targetProjectId` (иначе берётся
+ *                  suggested/привязанный проект; если проекта нет — ошибка).
+ *   - `probe`:     resolution не нужен; обязателен `answerText` (свободный
+ *                  ответ) → ConversationalService.respondToProbe.
  */
+export const ConfirmResolutionSchema = z.enum([
+  // curation
+  'approve',
+  // curation + intake
+  'reject',
+  // conflict
+  'keep_old',
+  'accept_new',
+  'merge',
+  // intake
+  'accept',
+]);
+export type ConfirmResolutionDto = z.infer<typeof ConfirmResolutionSchema>;
+
 export const ConfirmPendingActionBodySchema = z.object({
   source: PendingActionSourceSchema,
   resourceId: z.string().trim().min(1).max(80),
+  /// Стратегия резолва (зависит от source). Для curation опционально (дефолт
+  /// approve); для conflict/intake — обязательна; для probe игнорируется.
+  resolution: ConfirmResolutionSchema.optional(),
+  /// Свободный ответ на probe-вопрос (только source='probe').
+  answerText: z.string().trim().min(1).max(10_000).optional(),
+  /// Целевой проект для intake accept (опционально; иначе suggested/привязка).
+  targetProjectId: z.string().trim().min(1).max(64).optional(),
 });
 export type ConfirmPendingActionBody = z.infer<
   typeof ConfirmPendingActionBodySchema

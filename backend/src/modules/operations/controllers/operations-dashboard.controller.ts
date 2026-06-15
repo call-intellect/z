@@ -11,10 +11,11 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -24,6 +25,11 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
+import {
+  CheckinDisciplineQuerySchema,
+  type CheckinDisciplineDto,
+  type CheckinDisciplineQuery,
+} from '../dto/checkin-discipline.dto';
 import {
   OpenCommitmentsQuerySchema,
   type OpenCommitmentsQuery,
@@ -89,6 +95,7 @@ import {
 } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 import { buildValueRecapSlides } from '../utils/value-recap-export';
+import { buildValueRecapPptx } from '../utils/value-recap-pptx';
 
 /**
  * SBA β-8 — `GET /api/v1/dashboard/operations/*`.
@@ -226,6 +233,33 @@ export class OperationsDashboardController {
     const target =
       date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : this.todayMsk();
     return this.svc.getMissingCheckIns({ tenantId: tenantId!, date: target });
+  }
+
+  /**
+   * ТЗ Ф8.7 (cabinet-redesign-rhythms) — Дисциплина чек-инов за окно
+   * `?from=&to=` (default — текущая неделя: понедельник..сегодня МСК).
+   *
+   * Агрегат «ожидаемо / сдано / пропущено» по утренним и вечерним чек-инам —
+   * суммарно и по людям. `enabled=false` (флаг `DAILY_CHECKIN_ENABLED` OFF) →
+   * totals по нулям, причина «нет данных» на фронте. Доступ — owner/admin/coo.
+   */
+  @Get('checkin-discipline')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — дисциплина чек-инов (ожидаемо/сдано/пропущено, суммарно и по людям)',
+  })
+  async checkinDiscipline(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Query(new ZodValidationPipe(CheckinDisciplineQuerySchema))
+    q: CheckinDisciplineQuery,
+  ): Promise<CheckinDisciplineDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    const from = q.from ?? this.mondayOfCurrentWeekMsk();
+    const to = q.to ?? this.todayMsk();
+    return this.svc.getCheckinDiscipline({ tenantId: tenantId!, from, to });
   }
 
   /**
@@ -562,7 +596,12 @@ export class OperationsDashboardController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
-    const periodYm = q.period ?? this.previousMonth();
+    // Дефолт-период (Ф3 редизайн): последний месяц С ДАННЫМИ, иначе прошлый
+    // календарный. Явный ?period= имеет приоритет и не ломается.
+    const periodYm =
+      q.period ??
+      (await this.valueRecap.getLatestPeriodWithData(tenantId!)) ??
+      this.previousMonth();
 
     const existing = await this.valueRecap.getSnapshot({
       tenantId: tenantId!,
@@ -613,23 +652,25 @@ export class OperationsDashboardController {
   }
 
   /**
-   * TZ-1 Фаза 5 — экспорт витрины. `format=slides` (default) — минимальный
+   * TZ-1 Фаза 5 + Ф3 редизайн — экспорт витрины. `format=slides` (default) —
    * структурный набор печатаемых слайдов (заголовок + буллеты); `format=json`
-   * — сырой payload. Полноценный генератор презентаций НЕ блокирует фичу
-   * (отмечено в реестре не-сделанного). Доступ — owner/admin/coo.
+   * — сырой payload; `format=pptx` — готовая PPTX-презентация поверх slides-JSON
+   * (binary stream). PDF серверно НЕ делаем — фронт печатает браузером.
+   * Доступ — owner/admin/coo.
    */
   @Get('value-recap/:id/export')
   @ApiOperation({
     summary:
-      'COO — экспорт месячной витрины (slides=структурные слайды / json=payload)',
+      'COO — экспорт месячной витрины (slides=слайды / json=payload / pptx=презентация)',
   })
   async valueRecapExport(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
     @Query(new ZodValidationPipe(ValueRecapExportQuerySchema))
     q: ValueRecapExportQuery,
-  ): Promise<ValueRecapExportDto> {
+  ): Promise<ValueRecapExportDto | void> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
@@ -640,6 +681,22 @@ export class OperationsDashboardController {
         error: { code: 'recap_not_found', message: 'Витрина не найдена' },
       });
     }
+
+    if (q.format === 'pptx') {
+      const slides = buildValueRecapSlides(snap.payload);
+      const buffer = await buildValueRecapPptx(slides);
+      res
+        .status(HttpStatus.OK)
+        .set({
+          'Content-Type':
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'Content-Disposition': `attachment; filename="kora-itogi-${snap.periodYm}.pptx"`,
+          'Content-Length': String(buffer.length),
+        })
+        .send(buffer);
+      return;
+    }
+
     if (q.format === 'json') {
       return { format: 'json', periodYm: snap.periodYm, payload: snap.payload };
     }
@@ -727,6 +784,21 @@ export class OperationsDashboardController {
     const now = new Date();
     const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
     return msk.toISOString().slice(0, 10);
+  }
+
+  /**
+   * ТЗ Ф8.7 — понедельник текущей недели в МСК (UTC+3), формат YYYY-MM-DD.
+   * Default `from` для виджета дисциплины чек-инов. Неделя начинается с
+   * понедельника (ISO). Не зависит от системной таймзоны контейнера.
+   */
+  private mondayOfCurrentWeekMsk(): string {
+    const now = new Date();
+    const msk = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    // getUTCDay: 0=вс..6=сб. Сдвиг до понедельника (вс → −6, иначе → 1−day).
+    const day = msk.getUTCDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(msk.getTime() + diff * 24 * 60 * 60 * 1000);
+    return monday.toISOString().slice(0, 10);
   }
 
   private requireUser(req: Request): string {

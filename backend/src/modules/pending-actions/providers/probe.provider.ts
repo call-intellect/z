@@ -8,6 +8,7 @@ import {
   type PendingActionItem,
   type PendingActionsProvider,
   type PendingActionsProviderArgs,
+  type ProbePendingDetail,
 } from './pending-actions-provider.types';
 
 /**
@@ -55,6 +56,7 @@ export class ProbePendingProvider implements PendingActionsProvider {
       take: a.limit,
       select: {
         id: true,
+        payload: true,
         expiresAt: true,
         createdAt: true,
       },
@@ -63,11 +65,24 @@ export class ProbePendingProvider implements PendingActionsProvider {
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
       const overdue = i.expiresAt != null && i.expiresAt.getTime() < now.getTime();
+      // payload probe.question формируется в ProbeDispatcherWorker:
+      // { question, askedBy, context? } (см. probe-dispatcher.worker.ts §4).
+      const payload = asObject(i.payload);
+      const question = strOrUndef(payload.question);
+      const context = strOrUndef(payload.context);
+      const detail: ProbePendingDetail = {
+        kind: 'probe',
+        // Если по какой-то причине вопроса нет в payload — мягкий fallback.
+        question: question ?? 'Уточняющий вопрос ждёт вашего ответа',
+        context,
+        notificationId: i.id,
+      };
       return {
         source: this.source,
         resourceType: 'probe_question',
         resourceId: i.id,
-        title: 'Уточняющий вопрос ждёт вашего ответа',
+        // Реальная суть: сам вопрос вместо шаблона.
+        title: question ?? 'Уточняющий вопрос ждёт вашего ответа',
         severity: overdue ? 'urgent' : 'normal',
         ageDays,
         // Ведём прямо к конкретному вопросу в «Уведомлениях», где на него
@@ -75,7 +90,21 @@ export class ProbePendingProvider implements PendingActionsProvider {
         // resourceId здесь = id Notification (см. select выше).
         actionUrl: `/me/notifications?id=${i.id}`,
         canQuickConfirm: false,
+        detail,
       } satisfies PendingActionItem;
     });
   }
+}
+
+/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
+function asObject(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  return {};
+}
+
+/** Непустая строка или undefined. */
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim().length > 0 ? v : undefined;
 }

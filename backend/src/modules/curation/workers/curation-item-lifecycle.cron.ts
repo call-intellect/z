@@ -21,10 +21,21 @@ import { ConversationalService } from '../../conversational/conversational.servi
  *      `system.message`, severity 'warning'). Дедуп не критичен — крон раз в сутки.
  *
  * Cron-литерал `'0 2 * * *'` (раз в сутки, ночь UTC).
+ *
+ * Редизайн Ф4 «Требует вас» (2026-06-13) — тот же крон авто-закрывает и
+ * другие протухшие источники единой очереди решений (idempotent updateMany):
+ *   - ConflictItem `status=open & expiresAt<now` → `dismissed`
+ *     (+ reasoning «авто-закрыт по сроку»);
+ *   - IntakeIssue `status=pending & expiresAt<now` → `rejected`
+ *     (+ rejectedReason «авто-закрыт по сроку»).
+ * Так очередь решений не копится вечно ни по одному источнику.
  */
 @Injectable()
 export class CurationItemLifecycleCron {
   private readonly logger = new Logger(CurationItemLifecycleCron.name);
+
+  /** Причина авто-закрытия по сроку (редизайн Ф4). */
+  static readonly AUTO_EXPIRE_REASON = 'авто-закрыт по сроку';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -51,6 +62,8 @@ export class CurationItemLifecycleCron {
     scannedOrgs: number;
     expiredTotal: number;
     notificationsSent: number;
+    conflictsDismissed: number;
+    intakesRejected: number;
   }> {
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -59,12 +72,16 @@ export class CurationItemLifecycleCron {
 
     let expiredTotal = 0;
     let notificationsSent = 0;
+    let conflictsDismissed = 0;
+    let intakesRejected = 0;
 
     for (const org of orgs) {
       try {
         const sent = await this.runForOrg(org.id);
         expiredTotal += sent.expired;
         notificationsSent += sent.notified;
+        conflictsDismissed += sent.conflictsDismissed;
+        intakesRejected += sent.intakesRejected;
       } catch (err) {
         // best-effort: ошибка одной Org не должна валить весь проход.
         this.logger.warn(
@@ -81,13 +98,24 @@ export class CurationItemLifecycleCron {
       scannedOrgs: orgs.length,
       expiredTotal,
       notificationsSent,
+      conflictsDismissed,
+      intakesRejected,
     };
   }
 
-  private async runForOrg(
-    tenantId: string,
-  ): Promise<{ expired: number; notified: number }> {
+  private async runForOrg(tenantId: string): Promise<{
+    expired: number;
+    notified: number;
+    conflictsDismissed: number;
+    intakesRejected: number;
+  }> {
     const now = new Date();
+
+    // 0. Редизайн Ф4 — авто-закрытие протухших конфликтов/intake (idempotent
+    //    updateMany по фильтру status+expiresAt). Выполняется ВСЕГДА, даже
+    //    если протухших curation-items нет.
+    const { conflictsDismissed, intakesRejected } =
+      await this.sweepConflictAndIntake(tenantId, now);
 
     // 1. Собираем просроченные pending-items (нужны поля для метрик).
     const candidates = await this.prisma.curationItem.findMany({
@@ -106,7 +134,7 @@ export class CurationItemLifecycleCron {
     });
 
     if (candidates.length === 0) {
-      return { expired: 0, notified: 0 };
+      return { expired: 0, notified: 0, conflictsDismissed, intakesRejected };
     }
 
     // 2. Батчевый перевод pending → expired.
@@ -150,7 +178,69 @@ export class CurationItemLifecycleCron {
       );
     }
 
-    return { expired: candidates.length, notified };
+    return {
+      expired: candidates.length,
+      notified,
+      conflictsDismissed,
+      intakesRejected,
+    };
+  }
+
+  /**
+   * Редизайн Ф4 «Требует вас» (2026-06-13) — авто-закрытие протухших
+   * источников единой очереди решений. Идемпотентно: `updateMany` по фильтру
+   * `status + expiresAt<now` — повторный прогон не находит уже закрытых.
+   *   - ConflictItem open → dismissed (reasoning «авто-закрыт по сроку»);
+   *   - IntakeIssue pending → rejected (rejectedReason «авто-закрыт по сроку»).
+   */
+  private async sweepConflictAndIntake(
+    tenantId: string,
+    now: Date,
+  ): Promise<{ conflictsDismissed: number; intakesRejected: number }> {
+    const reason = CurationItemLifecycleCron.AUTO_EXPIRE_REASON;
+
+    const [conflicts, intakes] = await Promise.all([
+      this.prisma.conflictItem.updateMany({
+        where: {
+          tenantId,
+          status: 'open',
+          expiresAt: { not: null, lt: now },
+        },
+        data: {
+          status: 'dismissed',
+          reasoning: reason,
+          resolvedAt: now,
+        },
+      }),
+      this.prisma.intakeIssue.updateMany({
+        where: {
+          tenantId,
+          status: 'pending',
+          expiresAt: { not: null, lt: now },
+        },
+        data: {
+          status: 'rejected',
+          rejectedReason: reason,
+          triagedAt: now,
+        },
+      }),
+    ]);
+
+    if (conflicts.count > 0 || intakes.count > 0) {
+      this.logger.log(
+        {
+          tenantId,
+          conflictsDismissed: conflicts.count,
+          intakesRejected: intakes.count,
+        },
+        'curation-item-lifecycle: авто-закрыты протухшие конфликты/intake',
+      );
+    }
+
+    return {
+      conflictsDismissed: conflicts.count,
+      intakesRejected: intakes.count,
+    };
   }
 
   /**

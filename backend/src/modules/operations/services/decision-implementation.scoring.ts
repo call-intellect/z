@@ -76,6 +76,45 @@ export function computeDecisionThroughput(args: {
   };
 }
 
+/**
+ * % доведения одного решения по его статусу внедрения (для построчного списка
+ * витрины Ф5). `done` → 100, `in_progress` → 50, `stalled`/`not_started` → 0.
+ * Грубая шкала «по статусу» — точного % на отдельное решение нет (Р7: count
+ * месяца идёт В ПАРЕ с агрегатным throughput из computeDecisionThroughput).
+ * Чистая функция.
+ */
+export function decisionThroughputPercentForStatus(
+  status: DecisionImplementationStatus,
+): number {
+  switch (status) {
+    case 'done':
+      return 100;
+    case 'in_progress':
+      return 50;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Порядок сортировки списка решений месяца: внедрённые (done) → в работе
+ * (in_progress) → застрявшие (stalled) → не начатые (not_started). Чистая.
+ */
+export function decisionStatusSortRank(
+  status: DecisionImplementationStatus,
+): number {
+  switch (status) {
+    case 'done':
+      return 0;
+    case 'in_progress':
+      return 1;
+    case 'stalled':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
 function safeNumber(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
 }

@@ -1626,6 +1626,10 @@ export class TypedConfigService {
    *     срочным (CurationPendingProvider).
    *   - `reminderLeadDays` — за сколько дней до истечения expiresAt помечать
    *     срочным (lead-окно «скоро истечёт»).
+   *   - `conflictTtlDays` / `intakeTtlDays` — редизайн Ф4 (2026-06-13): срок
+   *     жизни открытого конфликта / pending-intake. По истечении sweep-крон
+   *     авто-закрывает (conflict → dismissed, intake → rejected), чтобы
+   *     очередь решений не копилась вечно. Дефолты 16 / 30 дней.
    */
   get pendingActions() {
     return {
@@ -1653,6 +1657,16 @@ export class TypedConfigService {
         'pendingActions.reminderLeadDays',
         undefined,
         3,
+      ),
+      conflictTtlDays: this.resolveSync<number>(
+        'pendingActions.conflictTtlDays',
+        undefined,
+        16,
+      ),
+      intakeTtlDays: this.resolveSync<number>(
+        'pendingActions.intakeTtlDays',
+        undefined,
+        30,
       ),
     } as const;
   }

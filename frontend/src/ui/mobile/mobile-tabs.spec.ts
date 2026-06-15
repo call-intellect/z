@@ -37,32 +37,32 @@ describe('tabsForRole — конкретные наборы', () => {
   it('exec-роль отдаёт EXEC_TABS', () => {
     expect(tabsForRole('owner')).toBe(EXEC_TABS);
     expect(tabsForRole('owner').map((t) => t.label)).toEqual([
-      'Обзор',
-      'Команда',
-      'Дела',
-      'Цели',
-      'Спросить',
+      'Сегодня',
+      'Неделя',
+      'Требует вас',
+      'Память',
+      'Я',
     ]);
   });
 
   it('manager-роль отдаёт MANAGER_TABS', () => {
     expect(tabsForRole('manager')).toBe(MANAGER_TABS);
     expect(tabsForRole('manager').map((t) => t.label)).toEqual([
-      'Моё',
+      'Сегодня',
       'Чек-ин',
       'Спросить',
-      'Память',
+      'Дела',
     ]);
   });
 });
 
 describe('landingHrefForRole — приземление по роли (Б1)', () => {
-  it('owner/admin приземляются на «Обзор» (/dashboard)', () => {
+  it('owner/admin приземляются на «Сегодня» (/dashboard)', () => {
     expect(landingHrefForRole('owner')).toBe('/dashboard');
     expect(landingHrefForRole('admin')).toBe('/dashboard');
   });
-  it('manager приземляется на «Моё» (/me/daily-brief)', () => {
-    expect(landingHrefForRole('manager')).toBe('/me/daily-brief');
+  it('manager приземляется на «Сегодня» (/me)', () => {
+    expect(landingHrefForRole('manager')).toBe('/me');
   });
 });
 

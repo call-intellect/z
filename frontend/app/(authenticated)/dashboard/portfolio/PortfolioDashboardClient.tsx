@@ -44,8 +44,17 @@ import {
  *     приоритет inline (`goalsApi.setPriority` + optimistic SWR mutate).
  *
  * Современный визуальный язык (стекло/градиент/recharts), тёмная тема.
+ *
+ * Встроенный режим (`embedded`, ТЗ редизайн кабинета Ф2): на экране `/week`
+ * (вкладка «Сводка») клиент живёт внутри общего `ModernPageShell`, поэтому
+ * не рендерит собственный фон-обёртку `MODERN_PAGE_BG` + контейнер; заголовок
+ * сжимается до заголовка секции (вектор/портфель целей — один из блоков сводки).
  */
-export function PortfolioDashboardClient() {
+export function PortfolioDashboardClient({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const { currentOrgId, currentOrgRole, isSuperAdmin } = useAuth();
 
   const swrKey = currentOrgId ? ['portfolio-health', currentOrgId] : null;
@@ -71,48 +80,65 @@ export function PortfolioDashboardClient() {
     return error instanceof Error ? error.message : 'Не удалось загрузить портфель.';
   })();
 
-  return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-        <header className="mb-6">
+  const inner = (
+    <>
+      <header className="mb-6">
+        {embedded ? (
+          <h2 className="text-lg font-semibold" style={{ color: CHART.text }}>
+            Вектор и портфель целей
+          </h2>
+        ) : (
           <h1 className="text-2xl font-semibold tracking-tight" style={{ color: CHART.text }}>
             Портфель целей
           </h1>
-          <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
-            Здоровье портфеля, приоритеты по MoSCoW и движение каждой цели.
-          </p>
-        </header>
+        )}
+        <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
+          Здоровье портфеля, приоритеты по MoSCoW и движение каждой цели.
+        </p>
+      </header>
 
-        {isLoading && (
+      {isLoading && (
+        <p className="text-sm" style={{ color: CHART.dim }}>
+          Загрузка портфеля…
+        </p>
+      )}
+
+      {friendlyError && (
+        <GlassCard>
+          <p className="text-sm" style={{ color: CHART.red }}>
+            {friendlyError}
+          </p>
+        </GlassCard>
+      )}
+
+      {!isLoading && !friendlyError && domain && domain.isEmpty && (
+        <GlassCard>
           <p className="text-sm" style={{ color: CHART.dim }}>
-            Загрузка портфеля…
+            Создайте цели — и портфель покажет здоровье.
           </p>
-        )}
+        </GlassCard>
+      )}
 
-        {friendlyError && (
-          <GlassCard>
-            <p className="text-sm" style={{ color: CHART.red }}>
-              {friendlyError}
-            </p>
-          </GlassCard>
-        )}
+      {!isLoading && !friendlyError && domain && !domain.isEmpty && (
+        <PortfolioBody
+          domain={domain}
+          canEdit={canEdit}
+          orgId={currentOrgId!}
+          swrKey={swrKey!}
+        />
+      )}
+    </>
+  );
 
-        {!isLoading && !friendlyError && domain && domain.isEmpty && (
-          <GlassCard>
-            <p className="text-sm" style={{ color: CHART.dim }}>
-              Создайте цели — и портфель покажет здоровье.
-            </p>
-          </GlassCard>
-        )}
+  // Встроенный режим: фон/контейнер даёт родитель `/week`.
+  if (embedded) {
+    return inner;
+  }
 
-        {!isLoading && !friendlyError && domain && !domain.isEmpty && (
-          <PortfolioBody
-            domain={domain}
-            canEdit={canEdit}
-            orgId={currentOrgId!}
-            swrKey={swrKey!}
-          />
-        )}
+  return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        {inner}
       </div>
     </div>
   );

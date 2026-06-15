@@ -136,6 +136,65 @@ describe('ConflictPendingProvider (B0)', () => {
     const defaultItems = await defaultProvider.listForUser(args);
     expect(defaultItems[0]!.severity).toBe('urgent');
   });
+
+  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
+
+  it('Ф4: title = суть из evidence; detail.kind=conflict с обеими версиями', async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: 'cf-d1',
+        resourceType: 'decision',
+        createdAt: new Date(),
+        evidence: {
+          oldStatement: 'Перешли на спринты по 2 недели',
+          newStatement: 'Перешли на спринты по 1 неделе',
+          supersedeReason: 'Команда выросла',
+          explanation: 'Старое решение противоречит новому по длине спринта',
+        },
+        evolvingMeta: {
+          existingValidUntil: '2026-06-01T00:00:00.000Z',
+          newValidFrom: '2026-06-02T00:00:00.000Z',
+        },
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-admin',
+      role: 'admin',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe(
+      'Старое решение противоречит новому по длине спринта',
+    );
+    expect(items[0]!.detail).toEqual({
+      kind: 'conflict',
+      summary: 'Старое решение противоречит новому по длине спринта',
+      oldVersion: {
+        text: 'Перешли на спринты по 2 недели',
+        date: '2026-06-01T00:00:00.000Z',
+      },
+      newVersion: {
+        text: 'Перешли на спринты по 1 неделе',
+        date: '2026-06-02T00:00:00.000Z',
+      },
+    });
+  });
+
+  it('Ф4: evidence без полей сути → fallback-title по типу ресурса', async () => {
+    findManyMock.mockResolvedValue([
+      { id: 'cf-d2', resourceType: 'decision', createdAt: new Date(), evidence: {} },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-admin',
+      role: 'admin',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toContain('Конфликт карточек');
+    expect(items[0]!.detail?.kind).toBe('conflict');
+  });
 });
 
 describe('IntakePendingProvider (B0)', () => {
@@ -144,11 +203,15 @@ describe('IntakePendingProvider (B0)', () => {
   let countMock: ReturnType<typeof vi.fn>;
   let findManyMock: ReturnType<typeof vi.fn>;
 
+  let personFindManyMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     countMock = vi.fn();
     findManyMock = vi.fn();
+    personFindManyMock = vi.fn().mockResolvedValue([]);
     prisma = {
       intakeIssue: { count: countMock, findMany: findManyMock },
+      person: { findMany: personFindManyMock },
     } as unknown as PrismaService;
     provider = new IntakePendingProvider(prisma, makeCfg());
   });
@@ -190,7 +253,11 @@ describe('IntakePendingProvider (B0)', () => {
       {
         id: 'ii-1',
         extractedTitle: 'Починить биллинг',
+        extractedDescription: null,
         rawContent: 'сырой текст',
+        suggestedAssigneeId: null,
+        suggestedDueDate: null,
+        confidence: null,
         createdAt: new Date(),
       },
     ]);
@@ -204,5 +271,72 @@ describe('IntakePendingProvider (B0)', () => {
     expect(items[0]!.title).toContain('Починить биллинг');
     expect(items[0]!.actionUrl).toBe('/intake');
     expect(items[0]!.resourceType).toBe('intake_issue');
+    // Без suggestedAssigneeId person.findMany не вызывается.
+    expect(personFindManyMock).not.toHaveBeenCalled();
+  });
+
+  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
+
+  it('Ф4: title = extractedTitle; detail с assigneeName/dueLabel/confidence/description', async () => {
+    const due = new Date('2026-06-20T00:00:00.000Z');
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ii-2',
+        extractedTitle: 'Подготовить договор',
+        extractedDescription: 'Клиент просил черновик к пятнице',
+        rawContent: 'сырой текст про договор',
+        suggestedAssigneeId: 'u-nastya',
+        suggestedDueDate: due,
+        confidence: { toString: () => '0.82' },
+        createdAt: new Date(),
+      },
+    ]);
+    personFindManyMock.mockResolvedValue([
+      { userId: 'u-nastya', name: 'Настя Иванова' },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-owner',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe('Подготовить договор');
+    expect(items[0]!.detail).toEqual({
+      kind: 'intake',
+      title: 'Подготовить договор',
+      description: 'Клиент просил черновик к пятнице',
+      assigneeName: 'Настя Иванова',
+      dueLabel: '2026-06-20T00:00:00.000Z',
+      confidence: 0.82,
+    });
+    // person.findMany вызван один раз для батч-резолва имён.
+    expect(personFindManyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ф4: без extractedTitle → title из rawContent.slice(0,80)', async () => {
+    findManyMock.mockResolvedValue([
+      {
+        id: 'ii-3',
+        extractedTitle: null,
+        extractedDescription: null,
+        rawContent: 'Длинный сырой текст обращения без явного заголовка',
+        suggestedAssigneeId: null,
+        suggestedDueDate: null,
+        confidence: null,
+        createdAt: new Date(),
+      },
+    ]);
+    const items = await provider.listForUser({
+      tenantId: 't-1',
+      userId: 'u-owner',
+      role: 'owner',
+      limit: 50,
+      snoozedResourceIds: new Set(),
+    });
+    expect(items[0]!.title).toBe(
+      'Длинный сырой текст обращения без явного заголовка',
+    );
+    expect(items[0]!.detail?.kind).toBe('intake');
   });
 });

@@ -18,10 +18,13 @@ export const ValueRecapQuerySchema = z
   .strict();
 export type ValueRecapQuery = z.infer<typeof ValueRecapQuerySchema>;
 
-/** Query `GET /dashboard/operations/value-recap/:id/export?format=slides`. */
+/**
+ * Query `GET /dashboard/operations/value-recap/:id/export?format=slides|json|pptx`.
+ * `pptx` отдаёт binary-презентацию (Ф3 редизайн «Итоги месяца»).
+ */
 export const ValueRecapExportQuerySchema = z
   .object({
-    format: z.enum(['slides', 'json']).optional().default('slides'),
+    format: z.enum(['slides', 'json', 'pptx']).optional().default('slides'),
   })
   .strict();
 export type ValueRecapExportQuery = z.infer<typeof ValueRecapExportQuerySchema>;

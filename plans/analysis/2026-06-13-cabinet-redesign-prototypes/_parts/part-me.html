@@ -1,0 +1,249 @@
+<!-- ============================ ЭКРАН Я ============================ -->
+<section class="screen" id="screen-me">
+
+  <!-- вкладки личного кабинета -->
+  <div class="pill-group" style="margin-bottom:18px;">
+    <button class="pill active">Обзор</button>
+    <button class="pill">Пульс</button>
+    <button class="pill">Мои обещания</button>
+    <button class="pill">Чем полезен</button>
+    <button class="pill">Помощь коллегам</button>
+  </div>
+
+  <!-- приветствие-вердикт -->
+  <div class="verdict-bar">
+    <span class="led-lg"></span>
+    <div style="flex:1">
+      <div style="font-weight:600; font-size:14px;">Доброе утро, Сергей. 2 ваших обещания на этой неделе, 1 встреча сегодня.</div>
+      <div class="faint" style="font-size:12px; margin-top:2px;">Маркетолог · ООО «Луа» · Telegram подключён · последняя ваша встреча вчера в 16:30</div>
+    </div>
+    <span class="chip ok" style="flex:none"><span class="led"></span>всё спокойно</span>
+  </div>
+
+  <div class="grid g-2-1">
+    <!-- МОИ ОБЕЩАНИЯ -->
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-teal)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </span>
+        <h3>Мои обещания</h3>
+        <span class="chip warn" style="margin-left:auto"><span class="led"></span>2 на этой неделе</span>
+      </div>
+
+      <table class="mtable">
+        <thead>
+          <tr><th>Что обещал</th><th>Кому</th><th>Срок</th><th class="r">Действие</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Подготовить прайс на расширенный тариф</td>
+            <td><span class="muted">«Вектор»</span></td>
+            <td><span class="chip warn"><span class="led"></span>к пятнице</span></td>
+            <td class="r"><div class="act" style="justify-content:flex-end"><button class="btn ok">Сделано</button><button class="btn">Перенести срок</button></div></td>
+          </tr>
+          <tr>
+            <td>Прислать отчёт по рекламной кампании</td>
+            <td><span class="muted">Анне (директор)</span></td>
+            <td><span class="chip info"><span class="led"></span>к среде</span></td>
+            <td class="r"><div class="act" style="justify-content:flex-end"><button class="btn ok">Сделано</button><button class="btn">Перенести срок</button></div></td>
+          </tr>
+          <tr>
+            <td>Согласовать макет для клиента «Орбита»</td>
+            <td><span class="muted">«Орбита»</span></td>
+            <td><span class="chip ok"><span class="led"></span>сдано вовремя</span></td>
+            <td class="r"><span class="faint" style="font-size:12px;">закрыто 11.06</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- открытые вопросы — ОТДЕЛЬНО от обещаний -->
+      <div class="section-h mt" style="margin-bottom:10px;">Открытые вопросы — это не обещания, по ним нужно договориться</div>
+      <div class="row-list">
+        <div class="list-row" style="padding:11px 4px;">
+          <span class="lead" style="background:var(--info-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <div class="body">
+            <div class="ttl">О чём договорились по поддержке «Орбиты»?</div>
+            <div class="meta">упомянуто на встрече 12.06 · решение не зафиксировано</div>
+          </div>
+          <span class="chip info" style="flex:none">открытый вопрос</span>
+        </div>
+        <div class="list-row" style="padding:11px 4px;">
+          <span class="lead" style="background:var(--info-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+          <div class="body">
+            <div class="ttl">Кто отвечает за бюджет на следующий квартал?</div>
+            <div class="meta">обсуждалось на планёрке 10.06 · ответственный не назначен</div>
+          </div>
+          <span class="chip info" style="flex:none">открытый вопрос</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Моя неделя в цифрах -->
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+        <h3>Моя неделя</h3>
+      </div>
+      <div class="hero-num glow-text" style="color:var(--mint)">5 из 6</div>
+      <div class="faint" style="font-size:12px; margin:6px 0 18px;">обещаний сдержано · ваш ритм ровный</div>
+
+      <!-- спарклайн «обещаний в неделю» -->
+      <div class="faint" style="font-size:11px; margin-bottom:6px;">Обещаний за 6 недель</div>
+      <svg class="spark" width="100%" height="56" viewBox="0 0 240 56" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="me-spark-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="oklch(0.82 0.13 178 / 0.45)"/>
+            <stop offset="1" stop-color="oklch(0.82 0.13 178 / 0)"/>
+          </linearGradient>
+        </defs>
+        <path d="M0,40 L48,34 L96,38 L144,22 L192,18 L240,12 L240,56 L0,56 Z" fill="url(#me-spark-fill)"/>
+        <polyline points="0,40 48,34 96,38 144,22 192,18 240,12" fill="none" stroke="oklch(0.82 0.13 178)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="240" cy="12" r="4" fill="oklch(0.85 0.15 165)" filter="drop-shadow(0 0 6px oklch(0.85 0.15 165 / 0.8))"/>
+      </svg>
+
+      <div class="row-list" style="margin-top:10px;">
+        <div class="list-row" style="padding:10px 0;">
+          <span class="chip ok" style="flex:none"><span class="led"></span>3</span>
+          <div class="body"><div class="ttl">встречи на этой неделе</div></div>
+        </div>
+        <div class="list-row" style="padding:10px 0;">
+          <span class="chip info" style="flex:none"><span class="led"></span>8</span>
+          <div class="body"><div class="ttl">задач извлечено из ваших встреч</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Судьба моих идей -->
+  <div class="glass mt">
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-pink)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.6 1 1.4 1 2.3h6c0-.9.4-1.7 1-2.3A7 7 0 0 0 12 2z"/></svg></span>
+      <h3>Судьба моих идей</h3>
+      <span class="more">все идеи →</span>
+    </div>
+    <div class="row-list">
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+        <div class="body">
+          <div class="ttl">Запустить рассылку для «спящих» клиентов</div>
+          <div class="meta">предложено на планёрке 03.06 · взято в работу директором</div>
+        </div>
+        <span class="chip ok" style="flex:none"><span class="led"></span>принята · поддержали 3</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--warn-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/></svg></span>
+        <div class="body">
+          <div class="ttl">Перейти на единый шаблон коммерческого предложения</div>
+          <div class="meta">обсуждается · команда делится мнениями</div>
+        </div>
+        <span class="chip warn" style="flex:none"><span class="led"></span>на обсуждении · поддержали 2</span>
+      </div>
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span>
+        <div class="body">
+          <div class="ttl">Добавить отзывы клиентов на сайт</div>
+          <div class="meta">новая · ждёт реакции коллег</div>
+        </div>
+        <span class="chip info" style="flex:none"><span class="led"></span>новая · поддержали 1</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Память помогла мне -->
+  <div class="section-h mt">Память помогла мне на этой неделе</div>
+  <div class="grid g3">
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span></div>
+      <div class="stat-label">Я спросил Кору</div>
+      <div class="stat-value">11</div>
+      <div class="stat-foot"><span class="delta up">↑ 4</span><span class="stat-sub">к прошлой неделе</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-teal)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+      <div class="stat-label">Кора ответила</div>
+      <div class="stat-value">11</div>
+      <div class="stat-foot"><span class="delta flat">= 0</span><span class="stat-sub">без «не знаю»</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-top"><span class="stat-icon" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span></div>
+      <div class="stat-label">Со ссылкой на источник</div>
+      <div class="stat-value">9</div>
+      <div class="stat-foot"><span class="delta up">↑ 3</span><span class="stat-sub">точная встреча и минута</span></div>
+    </div>
+  </div>
+
+  <div class="grid g3 mt">
+    <!-- Telegram-подключение -->
+    <div class="glass float">
+      <span class="glow blue"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-blue)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3 11 13M22 3l-7 18-4-8-8-4 19-6z"/></svg></span>
+        <h3>Telegram</h3>
+        <span class="chip ok" style="margin-left:auto"><span class="led"></span>подключён</span>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.55; margin:0 0 14px;">
+        Кора пишет вам в личку: напоминает об обещаниях и присылает короткую сводку дня. Можно отвечать прямо в чате — голосом или текстом.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="chip info"><span class="led"></span>сводка дня в 09:00</span>
+        <span class="chip ok"><span class="led"></span>напоминания о сроках</span>
+      </div>
+      <button class="btn" style="width:100%; margin-top:14px;">Настроить уведомления</button>
+    </div>
+
+    <!-- Мои встречи -->
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l4.5-2.5v9L15 14M3 7h12v10H3z"/></svg></span>
+        <h3>Мои встречи</h3>
+        <span class="more">все →</span>
+      </div>
+      <div class="row-list">
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--warn-bg)"><span style="width:8px;height:8px;border-radius:9px;background:var(--amber);box-shadow:0 0 8px var(--amber)"></span></span>
+          <div class="body"><div class="ttl">Планёрка отдела</div><div class="meta">сегодня в 15:00 · с командой</div></div>
+          <span class="chip warn" style="flex:none">сегодня</span>
+        </div>
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--ok-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <div class="body"><div class="ttl">Звонок с «Вектором»</div><div class="meta">вчера 16:30 · отчёт готов</div></div>
+          <span class="chip ok" style="flex:none">разобрана</span>
+        </div>
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--ok-bg)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></span>
+          <div class="body"><div class="ttl">Демо для «Орбиты»</div><div class="meta">11.06 · отчёт готов</div></div>
+          <span class="chip ok" style="flex:none">разобрана</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Мои документы -->
+    <div class="glass float">
+      <span class="glow amber"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-amber)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+        <h3>Мои документы</h3>
+        <span class="more">загрузить →</span>
+      </div>
+      <div class="row-list">
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--grad-teal)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 200)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></span>
+          <div class="body"><div class="ttl">Прайс-лист тарифов</div><div class="meta">разобран в граф · 3 факта</div></div>
+        </div>
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--grad-violet)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></span>
+          <div class="body"><div class="ttl">Бриф клиента «Орбита»</div><div class="meta">разобран в граф · 6 фактов</div></div>
+        </div>
+        <div class="list-row" style="padding:11px 0;">
+          <span class="lead" style="background:var(--surface-soft)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span>
+          <div class="body"><div class="ttl">Добавить документ</div><div class="meta">бриф, регламент, шаблон — Кора разберёт сама</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>

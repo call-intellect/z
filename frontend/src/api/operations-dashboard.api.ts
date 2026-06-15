@@ -1,4 +1,5 @@
 import { apiClient } from './api-client';
+import { orgHeaders } from './admin-helpers';
 
 /**
  * SBA β-8 — API-клиент COO operations dashboard и personal-relations.
@@ -233,6 +234,41 @@ export interface PersonalRelationApi {
   observedAt: string | null;
 }
 
+/**
+ * ТЗ Ф8.7 (cabinet-redesign-rhythms) — «Дисциплина чек-инов».
+ * Контракт: `GET /api/v1/dashboard/operations/checkin-discipline?from=&to=`.
+ * Зеркало `backend/src/modules/operations/dto/checkin-discipline.dto.ts`.
+ *
+ * `enabled=false` (флаг `DAILY_CHECKIN_ENABLED` OFF) → totals по нулям, фронт
+ * показывает Б-6 «чек-ины выключены».
+ */
+export interface CheckinDisciplineTotalsApi {
+  morningExpected: number;
+  morningCompleted: number;
+  morningMissed: number;
+  eveningExpected: number;
+  eveningCompleted: number;
+  eveningMissed: number;
+  /** 0..1 или null, если ожидаемых чек-инов не было. */
+  completionRate: number | null;
+}
+
+export interface CheckinDisciplinePersonApi extends CheckinDisciplineTotalsApi {
+  personId: string;
+  personName: string;
+}
+
+export interface CheckinDisciplineApi {
+  /** Начало окна (YYYY-MM-DD), как реально применено. */
+  from: string;
+  /** Конец окна (YYYY-MM-DD), как реально применено. */
+  to: string;
+  /** Флаг `DAILY_CHECKIN_ENABLED`. false → totals по нулям. */
+  enabled: boolean;
+  totals: CheckinDisciplineTotalsApi;
+  byPerson: CheckinDisciplinePersonApi[];
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -308,6 +344,22 @@ export const operationsDashboardApi = {
     const suffix = q.toString();
     return apiClient.get<OperationsChronicBlockersApi>(
       `/api/v1/dashboard/operations/blockers/chronic${suffix ? `?${suffix}` : ''}`,
+    );
+  },
+  /**
+   * ТЗ Ф8.7 — `GET /dashboard/operations/checkin-discipline?from=&to=`.
+   * Дисциплина чек-инов (ожидаемо/сдано/пропущено, суммарно и по людям).
+   * Без `from`/`to` backend берёт текущую неделю (понедельник..сегодня МСК).
+   * Для плашки «Сегодня» вызывать с `from=to=`<сегодня (локальная дата)>.
+   */
+  getCheckinDiscipline: (orgId: string, from?: string, to?: string) => {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    const suffix = q.toString();
+    return apiClient.get<CheckinDisciplineApi>(
+      `/api/v1/dashboard/operations/checkin-discipline${suffix ? `?${suffix}` : ''}`,
+      { headers: orgHeaders(orgId) },
     );
   },
 };

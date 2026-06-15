@@ -4,56 +4,18 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
-  Activity,
-  AlertTriangle,
-  Archive,
-  BarChart3,
-  BellRing,
-  Bot,
   Brain,
-  Building2,
-  CalendarClock,
-  CalendarDays,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
   Clock4,
-  FileText,
-  FlaskConical,
-  FolderKanban,
-  Gauge,
-  Gift,
-  Home,
-  IdCard,
-  Inbox,
-  Lightbulb,
-  LifeBuoy,
+  KeyRound,
   ListChecks,
   Lock,
   LogOut,
-  MessageCircle,
-  MessagesSquare,
-  Network,
-  Newspaper,
-  Palette,
-  Plug,
   Plus,
-  Rocket,
-  Scale,
-  Send,
-  Settings,
-  Settings2,
-  Shapes,
-  Shield,
-  Sparkles,
-  Table2,
   Target,
-  Truck,
   User,
-  UserRound,
-  Users,
-  Workflow,
-  KeyRound,
+  Video,
   type LucideIcon,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/ui/shadcn/avatar';
@@ -79,490 +41,45 @@ import {
 import { cn } from '@/ui/shadcn/lib/utils';
 import { useAuth } from '@/contexts/auth-context';
 import { useEntitlement } from '@/hooks/useEntitlement';
-import { useIntakePendingCount } from '@/hooks/tracker/useIntakePendingCount';
-// Action Center B1 — живой бейдж pending-подтверждений у пункта «Подтверждения».
-import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
-import { useMemoryAccess } from '@/hooks/useMemoryAccess';
-// ТЗ 2026-06-09 support-desk — пункт «Поддержка» (только сотрудники деска) и
-// «Мои обращения» (всем, когда деск настроен).
+import { useMyInboxCount } from '@/hooks/tracker/useMyInboxCount';
+// ТЗ 2026-06-09 support-desk — статус деска (deskEnabled / isAgent).
 import { useSupportStatus } from '@/hooks/useSupportStatus';
 // ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
 import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
 import {
   FEATURE_MIN_TIER,
   tierLabel,
-  type FeatureKey,
 } from '@/domain/entitlement';
 import { useTheme } from '@/ui/components/theme/ThemeProvider';
 import { NAV_HELP } from '@/lib/nav-help';
-import { SECTION_LABELS } from '@/lib/section-labels';
 import { OrgSwitcher } from './OrgSwitcher';
+import {
+  resolveDesktopNav,
+  type NavConfigItem,
+  type NavConfigSection,
+  type NavConfigSubgroup,
+} from './nav-config';
 
 /**
- * Sidebar — главный навигационный каркас ЛК.
+ * Sidebar — главный навигационный каркас кабинета Коры.
  *
- * Структура (ТЗ 2026-05-27 navigation-restructure; ТЗ A3 2026-06-06 —
- * добавлен слой «Задачи») — смысловые слои, отражающие частоту
- * использования и природу данных:
- *   1. «Каждый день» — daily drivers: команда, главная, встречи, карточки,
- *      помощник.
- *   2. «Задачи» — трекер: проекты, спринты, архив спринтов. Для owner/admin
- *      сюда же добавляется «Входящие» с живым бейджем (useIntakePendingCount).
- *   3. «Моё пространство» — личный кабинет: /me и его подразделы, фидбек.
- *   4. «Память компании» — knowledge-граф: дамп, таблицы, идеи, правила,
- *      решения, сигналы, сущности, темы. Доступ фильтруется через
- *      `useMemoryAccess()` (роль + entitlement-флаги).
- *   5. «Управление» — ролевые дашборды (COO-панель, отчёты, цели). Целая
- *      группа условная: рендерится только для owner / admin / coo.
- *   6. «Справочник» — структура и метаданные компании (структура, отделы,
- *      домены, документы, карты должностей, клоны, поставщики, события,
- *      эксперименты, голос бренда). Целая группа collapsible, по умолчанию
- *      свёрнута; внутри — вторая подгруппа «Будет в следующей фазе» с
- *      γ-пунктами (Процессы / Политики / Метрики).
- *   7. «Настройки» — конфиг + админка (последняя видна только owner/admin).
+ * ТЗ 2026-06-13 «Редизайн кабинета: ритмы, очередь решений, новое меню», Ф0.
+ * Структура декларируется в ЕДИНОМ `nav-config.ts` (источник правды и для
+ * десктопа, и для мобилки) — 3 ритма + рабочие разделы + Я + Система,
+ * роль-зависимо. Здесь — только рендер и наложение динамики (живой бейдж
+ * «Мои дела», точка «новый клон-грант», тариф-гейт, статус деска).
  *
  * Состояния пункта (порядок проверки: comingSoon → locked → enabled):
- *   - `comingSoon=true` — функционал ещё не реализован (Фаза γ). Иконка
- *     `Clock4` справа, opacity-60, кликабелен — ведёт на preview-страницу
- *     через `<ComingSoonPage />`.
- *   - `gateFeature` + не оплачен тариф — иконка `Lock` справа, клик ведёт
- *     на `/settings/billing`, tooltip «Доступно на тарифе ...».
- *   - Обычное состояние — стандартный `<Link>`.
+ *   - `comingSoon=true` — иконка `Clock4`, opacity-60, ведёт на preview.
+ *   - `gateFeature` + закрытый тариф — иконка `Lock`, клик → /settings/billing.
+ *   - Обычное — стандартный `<Link>`.
  */
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  matchPrefix?: string;
-  /**
-   * Если задано — пункт гейтится на feature. На закрытом тарифе пункт
-   * остаётся видим, иконка-замок справа, tooltip и редирект на
-   * `/settings/billing` вместо целевого URL (Фаза 12 шаг 10).
-   */
-  gateFeature?: FeatureKey;
-  /**
-   * Если true — функционал ещё не реализован (Фаза γ). Пункт остаётся
-   * кликабельным (ведёт на preview-страницу), но визуально приглушён,
-   * с иконкой `Clock4` справа вместо `Lock` (Фаза 0c §5.2).
-   */
-  comingSoon?: boolean;
-  /**
-   * Phase 3 Sprint 6: число «непрочитанных» рядом с пунктом
-   * (используется в «Входящие» для admin/owner). Значение 0 или
-   * undefined — бейдж скрыт. >99 показывается как «99+».
-   */
+/** Пункт после наложения динамики (живой бейдж/точка). */
+type ResolvedNavItem = NavConfigItem & {
   badgeCount?: number;
-  /**
-   * ТЗ 2026-05-26 §5.5: рисуем маленькую точку справа от подписи —
-   * «есть что-то новое, на что пользователь ещё не смотрел». Сейчас
-   * используется для пункта «Клоны» (новый CloneAccessGrant).
-   */
   showDot?: boolean;
-  /**
-   * ТЗ 2026-05-27 onboarding-tour — id целевого элемента для тура. Если
-   * задан, к <Link> добавляется `data-tour-target="<value>"`.
-   */
-  tourTarget?: string;
-  /**
-   * ТЗ 2026-05-29 onboarding-v2 — отдельный target для overview-тура.
-   * Если задан, к <Link> добавляется `data-overview-target="<value>"`.
-   */
-  overviewTarget?: string;
 };
-
-type NavSubgroup = {
-  label: string;
-  items: NavItem[];
-  defaultCollapsed: boolean;
-  /**
-   * Если задан — состояние раскрытия персистится в localStorage по этому ключу.
-   * Значение `'1'` = раскрыто, `'0'` = свёрнуто. По умолчанию (если ключа нет
-   * в storage) используется `defaultCollapsed`.
-   */
-  storageKey?: string;
-};
-
-type NavGroup = {
-  label: string;
-  items: NavItem[];
-  /**
-   * Подгруппы внутри группы — с собственным collapse/expand и localStorage.
-   * Рендерятся после `items`, сверху вниз. Если внутри одной из них активный
-   * пункт — она автоматически раскрывается (как и раньше).
-   */
-  collapsibleSubgroups?: NavSubgroup[];
-  /**
-   * ТЗ 2026-05-27 — если true, заголовок группы не рендерится. Используется
-   * для «Справочника»: вся группа — это одна collapsible-подгруппа, и
-   * показывать заголовок дважды (группы + подгруппы) избыточно.
-   */
-  hideGroupLabel?: boolean;
-};
-
-/**
- * Пункты подгруппы «Память компании» (ТЗ 2026-05-26-memory-section-ui).
- *
- * Это shared knowledge: то, что Кора извлекла из встреч и разговоров.
- * Доступ — через `useMemoryAccess()`: manager+ всегда видит; member —
- * только если admin Org включил соответствующий feature-флаг.
- */
-const MEMORY_SUBGROUP_ITEMS: NavItem[] = [
-  // Дамп и Таблицы (ТЗ A3 2026-06-06) — переехали сюда из «Каждый день»:
-  // это вход в память компании и витрина извлечённых данных.
-  { href: '/dump', label: 'Дамп', icon: Brain, matchPrefix: '/dump', overviewTarget: 'overview.dump' },
-  { href: '/tables', label: 'Таблицы', icon: Table2, matchPrefix: '/tables' },
-  // SBA β-5 — реестр идей и запросов клиентов (доступ всем member по умолчанию).
-  { href: '/ideas', label: 'Идеи', icon: Lightbulb, matchPrefix: '/ideas' },
-  // SBA α-7 — Regulation / Process / Policy.
-  { href: '/regulations', label: SECTION_LABELS.regulations, icon: ClipboardList, matchPrefix: '/regulations' },
-  // SBA β-3 — реестр решений компании.
-  { href: '/decisions', label: 'Решения', icon: ClipboardList, matchPrefix: '/decisions' },
-  // SBA β-4 — повторяющиеся сигналы (problems / risks / blockers).
-  { href: '/insights', label: 'Сигналы', icon: AlertTriangle, matchPrefix: '/insights' },
-  // ТЗ 2026-05-26 §3 — реестр сущностей (entity browser).
-  { href: '/entities', label: 'Сущности', icon: Network, matchPrefix: '/entities' },
-  {
-    href: '/themes',
-    label: 'Темы',
-    icon: Sparkles,
-    matchPrefix: '/themes',
-    gateFeature: 'feature.theme',
-  },
-];
-
-/**
- * ТЗ 2026-05-27 navigation-restructure (+ ТЗ A3 2026-06-06 «Задачи») —
- * меню разбито на смысловые слои по частоте использования и природе данных:
- *   1. Каждый день — daily drivers (команда/главная/встречи/карточки/помощник)
- *   2. Задачи — трекер (проекты/спринты/архив; +Входящие для owner/admin)
- *   3. Моё пространство — личный кабинет
- *   4. Память компании — knowledge-граф (дамп/таблицы + граф; useMemoryAccess)
- *   5. Управление — ролевые дашборды (owner/admin/coo)
- *   6. Справочник — структура и метаданные (collapsible, default свёрнут)
- *   7. Настройки — конфиг + админка
- */
-const DAILY_GROUP: NavGroup = {
-  label: 'Каждый день',
-  items: [
-    // ТЗ «Команда + доступы» Фаза 1 — единый раздел управления людьми
-    // (структура компании + участники). Виден всем; действия внутри гейтятся
-    // ролью. Переехал из свёрнутого «Справочника» наверх как daily-driver
-    // владельца. tourTarget welcome.structure перенесён сюда (был на /structure
-    // в «Справочнике»).
-    { href: '/structure', label: SECTION_LABELS.structure, icon: Users, matchPrefix: '/structure', tourTarget: 'welcome.structure' },
-    { href: '/dashboard', label: 'Главная', icon: Home, matchPrefix: '/dashboard', tourTarget: 'welcome.sidebar-home', overviewTarget: 'overview.dashboard' },
-    { href: '/meetings', label: 'Встречи', icon: CalendarDays, matchPrefix: '/meetings', tourTarget: 'welcome.sidebar-meetings', overviewTarget: 'overview.meetings' },
-    { href: '/cards', label: 'Карточки', icon: FolderKanban, matchPrefix: '/cards', tourTarget: 'welcome.sidebar-cards', overviewTarget: 'overview.cards' },
-    // ТЗ Ф6 (D4) 2026-06-11 — «Лента» добавлена в десктоп, чтобы мобильный
-    // нижний навбар (PRIMARY_NAV_ITEMS) был подмножеством десктопа. Доступна
-    // всем авторизованным (как /projects — без gateFeature).
-    { href: '/feed', label: 'Лента', icon: Newspaper, matchPrefix: '/feed' },
-    // ТЗ A3 (2026-06-06): «Дамп» и «Таблицы» переехали в «Память компании»
-    // (MEMORY_SUBGROUP_ITEMS); «Проекты», «Спринты», «Архив спринтов» —
-    // в новую группу «Задачи» (TASKS_GROUP). Здесь остаётся только daily-ядро.
-    {
-      href: '/chat',
-      label: 'Помощник компании',
-      icon: MessageCircle,
-      matchPrefix: '/chat',
-      gateFeature: 'feature.chat_org',
-      tourTarget: 'welcome.sidebar-chat',
-      overviewTarget: 'overview.chat',
-    },
-  ],
-};
-
-/**
- * ТЗ A3 (2026-06-06) — раздел «Задачи»: трекер в одном месте.
- * «Входящие» (только owner/admin) инжектится динамически в Sidebar
- * (между «Спринты» и «Архив спринтов»), badgeCount из useIntakePendingCount.
- */
-const TASKS_GROUP: NavGroup = {
-  label: 'Задачи',
-  items: [
-    { href: '/projects', label: 'Проекты', icon: ListChecks, matchPrefix: '/projects', tourTarget: 'welcome.sidebar-projects', overviewTarget: 'overview.projects' },
-    { href: '/sprints', label: 'Спринты', icon: Rocket, matchPrefix: '/sprints', tourTarget: 'welcome.sprints' },
-    { href: '/sprints/archive', label: 'Архив спринтов', icon: Archive, matchPrefix: '/sprints/archive' },
-  ],
-};
-
-const ME_GROUP: NavGroup = {
-  label: 'Моё пространство',
-  items: [
-    { href: '/me', label: 'Я', icon: UserRound, matchPrefix: '/me', overviewTarget: 'overview.me' },
-    // ТЗ 2026-06-05 — единый канон привязки Telegram-каналов (/me/channels).
-    // Дубль личной привязки убран со страницы /settings/integrations (там
-    // остались только outbound-направления доставки, DestinationsClient).
-    { href: '/me/channels', label: 'Каналы', icon: Send, matchPrefix: '/me/channels' },
-    // Action Center B1 — pending-подтверждения пользователя (виден всем).
-    // badgeCount инжектится динамически в Sidebar (usePendingActionsCount).
-    { href: '/actions', label: 'Подтверждения', icon: BellRing, matchPrefix: '/actions' },
-    // ТЗ-E Фаза 1 (R11) — «Мой пульс», «Мой вклад», «Мой вклад в команду» и
-    // «Мои обещания» свёрнуты во вкладки кабинета «Я» (/me?tab=...). Здесь
-    // остаётся единый пункт «Я» выше.
-    // 2026-05-25 user-feedback-with-ai-clustering — канал предложений пользователей.
-    { href: '/feedback', label: 'Ваши предложения', icon: MessageCircle, matchPrefix: '/feedback' },
-    // 2026-05-28 referrals-sidebar — реферальная программа (20 000 ₽ с платежа).
-    { href: '/referrals', label: SECTION_LABELS.referrals, icon: Gift, matchPrefix: '/referrals' },
-  ],
-};
-
-/**
- * Чаты (ТЗ 2026-06-05 chatbox-integration, Фаза 7) — раздел внешних чат-
- * источников. Пункт «Чаты» + collapsible-подгруппа «Интеграции» с настройкой
- * интеграции «Чат бокс». Гейтится на `feature.chatbox`.
- *
- * ТЗ Ф7 (D3) 2026-06-11 — вся группа свёрнута по умолчанию (как «Справочник»):
- * `items: []` + `hideGroupLabel`, а сам пункт «Чаты» живёт в collapsible-
- * подгруппе «Чаты» (storageKey `sidebar.chats.open`). Подгруппа «Интеграции»
- * сохранена вложенной. Активный пункт авто-раскрывает свою подгруппу.
- */
-const CHATS_GROUP: NavGroup = {
-  label: 'Чаты',
-  items: [],
-  hideGroupLabel: true,
-  collapsibleSubgroups: [
-    {
-      label: 'Чаты',
-      defaultCollapsed: true,
-      storageKey: 'sidebar.chats.open',
-      items: [
-        {
-          href: '/chats',
-          label: 'Чаты',
-          icon: MessagesSquare,
-          matchPrefix: '/chats',
-          gateFeature: 'feature.chatbox',
-        },
-      ],
-    },
-    {
-      label: 'Интеграции',
-      defaultCollapsed: true,
-      storageKey: 'sidebar.chats.integrations.open',
-      items: [
-        {
-          href: '/chats/integrations/chatbox',
-          label: 'Чат бокс',
-          icon: Plug,
-          matchPrefix: '/chats/integrations/chatbox',
-          gateFeature: 'feature.chatbox',
-        },
-      ],
-    },
-  ],
-};
-
-/**
- * Память компании — это то, что Кора извлекла из встреч и разговоров.
- * Раньше была подгруппой внутри «Компании»; в ТЗ 2026-05-27 поднята на
- * верхний уровень — это отдельный, самостоятельный пласт продукта.
- * Доступ к items фильтруется через `useMemoryAccess()` (см. ниже).
- */
-const MEMORY_GROUP: NavGroup = {
-  label: 'Память компании',
-  items: MEMORY_SUBGROUP_ITEMS,
-};
-
-/**
- * Управление — ролевые дашборды для owner/admin/coo. Группа целиком
- * условная: рендерится только при `canSeeOperationsCoo === true`.
- * `/goals` остаётся гейтнутым по тарифу (feature.goals_strategy).
- *
- * ТЗ Ф7 (D3) 2026-06-11 — свёрнута по умолчанию (как «Справочник»):
- * `items: []` + `hideGroupLabel`, все пункты в collapsible-подгруппе
- * «Управление» (storageKey `sidebar.management.open`). Активный пункт
- * авто-раскрывает подгруппу.
- */
-const MANAGEMENT_GROUP: NavGroup = {
-  label: 'Управление',
-  items: [],
-  hideGroupLabel: true,
-  collapsibleSubgroups: [
-    {
-      label: 'Управление',
-      defaultCollapsed: true,
-      storageKey: 'sidebar.management.open',
-      items: [
-        // SBA β-8 / β-8.1 / β-8.3 — COO-панели.
-        { href: '/dashboard/operations', label: 'Панель операций', icon: Activity, matchPrefix: '/dashboard/operations', overviewTarget: 'overview.operations' },
-        { href: '/dashboard/operations/daily', label: 'Ежедневный отчёт', icon: Newspaper, matchPrefix: '/dashboard/operations/daily' },
-        { href: '/dashboard/operations/weekly', label: 'Недельная сводка', icon: BarChart3, matchPrefix: '/dashboard/operations/weekly' },
-        {
-          href: '/goals',
-          label: 'Цели и стратегия',
-          icon: Target,
-          matchPrefix: '/goals',
-          gateFeature: 'feature.goals_strategy',
-        },
-      ],
-    },
-  ],
-};
-
-/**
- * Справочник — статические/редко-меняемые срезы компании. Целая группа —
- * collapsible (defaultCollapsed: true). Реализовано как единственная
- * подгруппа с `hideGroupLabel: true`, чтобы заголовок не дублировался.
- *
- * «Будет в следующей фазе» (Процессы/Политики/Метрики) — вторая подгруппа
- * внутри Справочника, тоже collapsed по умолчанию.
- */
-const REFERENCE_GROUP: NavGroup = {
-  label: 'Справочник',
-  items: [],
-  hideGroupLabel: true,
-  collapsibleSubgroups: [
-    {
-      label: 'Справочник',
-      defaultCollapsed: true,
-      storageKey: 'sidebar.reference.open',
-      items: [
-        // SBA α-9 wave 3 — Company Foundation.
-        { href: '/company', label: 'Компания', icon: Building2, matchPrefix: '/company', tourTarget: 'welcome.company' },
-        { href: '/departments', label: 'Отделы', icon: Network, matchPrefix: '/departments', tourTarget: 'welcome.departments' },
-        { href: '/domains', label: 'Домены', icon: Shapes, matchPrefix: '/domains' },
-        { href: '/maturity', label: 'Зрелость', icon: Gauge, matchPrefix: '/maturity' },
-        { href: '/documents', label: 'Документы', icon: FileText, matchPrefix: '/documents' },
-        { href: '/roles', label: 'Карты должностей', icon: IdCard, matchPrefix: '/roles', tourTarget: 'welcome.roles' },
-        // Clones=Roles Ф4 — публичная витрина клонов должностей.
-        { href: '/clones', label: 'Клоны', icon: Bot, matchPrefix: '/clones' },
-        // SBA α-3 — поставщики/события (категория A онтологии).
-        { href: '/vendors', label: 'Поставщики', icon: Truck, matchPrefix: '/vendors' },
-        { href: '/events', label: 'События', icon: CalendarClock, matchPrefix: '/events' },
-        // SBA β-6 — институциональная память: эксперименты и их уроки.
-        { href: '/experiments', label: 'Эксперименты', icon: FlaskConical, matchPrefix: '/experiments' },
-        // SBA β-7 — голос бренда (Specialist 3.10).
-        { href: '/brand-voice', label: 'Голос бренда', icon: Palette, matchPrefix: '/brand-voice' },
-      ],
-    },
-    {
-      label: 'Будет в следующей фазе',
-      defaultCollapsed: true,
-      items: [
-        // ТЗ 2026-05-26: /processes остаётся coming-soon (отдельное ТЗ).
-        { href: '/processes', label: 'Процессы', icon: Workflow, matchPrefix: '/processes', comingSoon: true },
-        { href: '/policies', label: 'Политики', icon: Scale, matchPrefix: '/policies', comingSoon: true },
-        { href: '/metrics', label: 'Метрики', icon: Gauge, matchPrefix: '/metrics', comingSoon: true },
-      ],
-    },
-  ],
-};
-
-/**
- * Доп. пункт «Входящие» (Phase 3 Sprint 6) — только для owner/admin.
- * ТЗ A3 (2026-06-06): вставляется в `TASKS_GROUP` динамически в Sidebar
- * (между «Спринты» и «Архив спринтов»). Роль приходит с клиента, поэтому
- * здесь нельзя жёстко прописать в массиве группы выше.
- */
-const INTAKE_NAV_ITEM: NavItem = {
-  href: '/intake',
-  label: 'Входящие',
-  icon: Inbox,
-  matchPrefix: '/intake',
-  tourTarget: 'welcome.sidebar-intake',
-  overviewTarget: 'overview.intake',
-};
-
-/**
- * ТЗ 2026-06-09 support-desk — «Поддержка» (очередь деска) виден ТОЛЬКО
- * сотрудникам поддержки (useSupportStatus().isAgent). Инжектится отдельной
- * группой в Sidebar.
- */
-const SUPPORT_DESK_NAV_ITEM: NavItem = {
-  href: '/support/desk',
-  label: 'Поддержка',
-  icon: LifeBuoy,
-  matchPrefix: '/support/desk',
-};
-
-/**
- * «Мои обращения» — личный вход в свои тикеты поддержки. Добавляется в
- * «Моё пространство», когда деск настроен (useSupportStatus().deskEnabled).
- * Основной вход всё равно — плавающий виджет.
- */
-const MY_TICKETS_NAV_ITEM: NavItem = {
-  href: '/support/my-tickets',
-  label: 'Мои обращения',
-  icon: LifeBuoy,
-  matchPrefix: '/support/my-tickets',
-};
-
-const SETTINGS_BASE_ITEMS: NavItem[] = [
-  { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
-  // /settings/integrations теперь = outbound-направления доставки (DestinationsClient).
-  // Личная привязка Telegram переехала в «Моё пространство» → «Каналы» (ТЗ 2026-06-05).
-  { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
-  { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
-];
-
-/**
- * ТЗ Ф6 (D4) 2026-06-11 — статический, РОЛЬ-АГНОСТИЧНЫЙ союз всех возможных
- * десктоп-пунктов сайдбара (href + matchPrefix). Часть пунктов в runtime
- * рендерится по роли/доступу/тарифу, но для гард-теста «mobile ⊆ desktop»
- * (`nav-subset.spec.ts`) важно лишь, что десктоп СПОСОБЕН открыть href —
- * поэтому собираем полный союз без учёта гейтинга. Источник — те же
- * статические group-константы, что использует сайдбар.
- *
- * Не включаем динамически инжектируемые элементы, у которых href и так
- * присутствует через matchPrefix их секции; namespace-пункты
- * (`INTAKE_NAV_ITEM` и т.п.) добавлены явно, чтобы союз был полным.
- */
-export interface DesktopNavRef {
-  href: string;
-  matchPrefix: string;
-}
-
-function flattenGroupRefs(group: NavGroup): DesktopNavRef[] {
-  const all: NavItem[] = [
-    ...group.items,
-    ...(group.collapsibleSubgroups?.flatMap((s) => s.items) ?? []),
-  ];
-  return all.map((it) => ({ href: it.href, matchPrefix: it.matchPrefix ?? it.href }));
-}
-
-/**
- * Полный союз десктоп-навигации (без дублей по href). Используется гард-тестом.
- */
-export function getDesktopNavRefs(): DesktopNavRef[] {
-  const refs: DesktopNavRef[] = [
-    ...flattenGroupRefs(DAILY_GROUP),
-    ...flattenGroupRefs(TASKS_GROUP),
-    ...flattenGroupRefs(ME_GROUP),
-    ...flattenGroupRefs(CHATS_GROUP),
-    ...flattenGroupRefs(MEMORY_GROUP),
-    ...flattenGroupRefs(MANAGEMENT_GROUP),
-    ...flattenGroupRefs(REFERENCE_GROUP),
-    // Динамически инжектируемые пункты (по роли/настройке деска):
-    { href: INTAKE_NAV_ITEM.href, matchPrefix: INTAKE_NAV_ITEM.matchPrefix ?? INTAKE_NAV_ITEM.href },
-    { href: SUPPORT_DESK_NAV_ITEM.href, matchPrefix: SUPPORT_DESK_NAV_ITEM.matchPrefix ?? SUPPORT_DESK_NAV_ITEM.href },
-    { href: MY_TICKETS_NAV_ITEM.href, matchPrefix: MY_TICKETS_NAV_ITEM.matchPrefix ?? MY_TICKETS_NAV_ITEM.href },
-    ...SETTINGS_BASE_ITEMS.map((it) => ({ href: it.href, matchPrefix: it.matchPrefix ?? it.href })),
-  ];
-  const seen = new Set<string>();
-  return refs.filter((r) => {
-    if (seen.has(r.href)) return false;
-    seen.add(r.href);
-    return true;
-  });
-}
-
-/**
- * Все href десктоп-навигации (роль-агностично). Удобный плоский список.
- */
-export const DESKTOP_NAV_HREFS: string[] = getDesktopNavRefs().map((r) => r.href);
-
-/**
- * Достижим ли `href` через десктоп-навигацию: точное совпадение href ИЛИ
- * покрытие каким-либо matchPrefix десктопа (`/me` покрывает `/me/inbox`,
- * `/me/check-ins`). Та же семантика, что у активного пункта в сайдбаре.
- */
-export function isDesktopNavReachable(href: string): boolean {
-  return getDesktopNavRefs().some(
-    (r) => href === r.href || href === r.matchPrefix || href.startsWith(`${r.matchPrefix}/`),
-  );
-}
 
 export function Sidebar({
   className,
@@ -573,170 +90,50 @@ export function Sidebar({
 }) {
   const pathname = usePathname() ?? '';
   const { isSuperAdmin, currentOrgRole, currentOrgId } = useAuth();
-  // Phase 3 Sprint 6: счётчик pending-intake для бейджа у пункта «Входящие».
-  // Запрос делается ТОЛЬКО для owner/admin (см. enabled).
-  const canTriage =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
-  const { count: intakePendingCount } = useIntakePendingCount(
-    currentOrgId,
-    canTriage,
-  );
-  // Action Center B1 — счётчик pending-подтверждений для бейджа у пункта
-  // «Подтверждения» (виден всем ролям; запрос только при наличии orgId).
-  const { total: pendingActionsTotal } = usePendingActionsCount(
-    currentOrgId,
-    Boolean(currentOrgId),
-  );
-  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны», если выдан новый grant,
-  // который пользователь ещё не видел (сравнение по количеству grants
-  // в localStorage). Тушится при заходе на /clones.
+
+  // Живой бейдж «Мои дела» (личный инбокс рядового). Хук вызывается всегда
+  // (rules-of-hooks), запрос гейтится наличием orgId.
+  const { count: myInboxCount } = useMyInboxCount(currentOrgId);
+
+  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны» при новом невидённом гранте.
   const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
 
-  // ТЗ 2026-06-09 support-desk — статус поддержки: deskEnabled → показываем
-  // «Мои обращения» всем; isAgent → отдельная группа «Поддержка» (очередь).
+  // ТЗ 2026-06-09 support-desk — deskEnabled → «Мои обращения»; isAgent →
+  // секция «Поддержка». Резолвится в nav-config через requiresDesk/Agent.
   const support = useSupportStatus();
 
-  // Динамические admin-пункты (Фаза 7) — отдельная подгруппа в «Настройках».
-  const adminItems: NavItem[] = [];
-  if (currentOrgRole === 'owner' || currentOrgRole === 'admin') {
-    adminItems.push({
-      href: '/company-admin',
-      label: 'Админка компании',
-      icon: Settings2,
-      matchPrefix: '/company-admin',
-      overviewTarget: 'overview.admin',
-    });
-  }
-  if (isSuperAdmin) {
-    adminItems.push({
-      href: '/admin',
-      label: 'Суперадмин',
-      icon: Shield,
-      matchPrefix: '/admin',
-    });
-  }
+  // Резолвим дерево навигации под текущую роль/доступ.
+  const sections = resolveDesktopNav({
+    role: currentOrgRole,
+    isSuperAdmin,
+    deskEnabled: support.deskEnabled,
+    isSupportAgent: support.isAgent,
+  });
 
-  const settingsGroup: NavGroup = {
-    label: 'Настройки',
-    items: SETTINGS_BASE_ITEMS,
-    ...(adminItems.length
+  // Накладываем динамику: живой бейдж и точку «новое».
+  const overlay = (item: NavConfigItem): ResolvedNavItem => {
+    const out: ResolvedNavItem = { ...item };
+    if (item.badge === 'myInbox') out.badgeCount = myInboxCount;
+    if (item.dot === 'cloneGrants') out.showDot = hasUnseenCloneGrants;
+    return out;
+  };
+
+  const resolvedSections = sections.map((section) => ({
+    ...section,
+    items: section.items.map(overlay),
+    ...(section.collapsibleSubgroups
       ? {
-          collapsibleSubgroups: [
-            {
-              label: 'Админка',
-              defaultCollapsed: false,
-              items: adminItems,
-            },
-          ],
+          collapsibleSubgroups: section.collapsibleSubgroups.map((sg) => ({
+            ...sg,
+            items: sg.items.map(overlay),
+          })),
         }
       : {}),
-  };
+  }));
 
-  // SBA β-8 / β-8.1 — «Управление» (ролевые дашборды) видно только
-  // owner/admin/coo. В ТЗ 2026-05-27 эта секция вынесена в отдельную
-  // верхнеуровневую группу `MANAGEMENT_GROUP` (раньше пункты COO-панели
-  // вшивались в «Оперативку»).
-  const canSeeOperationsCoo =
-    currentOrgRole === 'owner' ||
-    currentOrgRole === 'admin' ||
-    currentOrgRole === 'coo';
-
-  // ТЗ A3 (2026-06-06): «Входящие» (owner/admin) инжектится в «Задачи»
-  // между «Спринты» и «Архив спринтов». badgeCount — живой счётчик pending.
-  const tasksGroup: NavGroup = (() => {
-    if (!canTriage) return TASKS_GROUP;
-    const items: NavItem[] = [...TASKS_GROUP.items];
-    const archiveIdx = items.findIndex((i) => i.href === '/sprints/archive');
-    const insertAt = archiveIdx >= 0 ? archiveIdx : items.length;
-    items.splice(insertAt, 0, { ...INTAKE_NAV_ITEM, badgeCount: intakePendingCount });
-    return { ...TASKS_GROUP, items };
-  })();
-
-  // Action Center B1 — инжектим живой badgeCount в пункт «Подтверждения».
-  // ТЗ 2026-06-09 support-desk — если деск настроен, добавляем «Мои обращения»
-  // (личный вход в свои тикеты). Основной вход — плавающий виджет.
-  const meGroup: NavGroup = {
-    ...ME_GROUP,
-    items: [
-      ...ME_GROUP.items.map((it) =>
-        it.href === '/actions'
-          ? { ...it, badgeCount: pendingActionsTotal }
-          : it,
-      ),
-      ...(support.deskEnabled ? [MY_TICKETS_NAV_ITEM] : []),
-    ],
-  };
-
-  // ТЗ 2026-05-26 §6 — фильтруем пункты «Памяти компании» в зависимости от
-  // того, что пользователю разрешено видеть (роль + entitlement-флаги).
-  const memoryAccess = useMemoryAccess();
-
-  // ТЗ Ф7 (D3) 2026-06-11 — «Память компании» свёрнута по умолчанию (как
-  // «Справочник»): группа без собственных items + hideGroupLabel, все
-  // (отфильтрованные по доступу) пункты в collapsible-подгруппе «Память
-  // компании» (storageKey `sidebar.memory.open`). Активный пункт авто-
-  // раскрывает подгруппу; allItems по-прежнему собирает их через
-  // collapsibleSubgroups.items (winnerHref не ломается).
-  const memoryItems: NavItem[] = MEMORY_GROUP.items.filter((it) => {
-    if (it.href === '/regulations') return memoryAccess.canReadRegulations;
-    if (it.href === '/entities') return memoryAccess.canReadEntities;
-    return true;
-  });
-  const memoryGroup: NavGroup = {
-    label: MEMORY_GROUP.label,
-    items: [],
-    hideGroupLabel: true,
-    collapsibleSubgroups: [
-      {
-        label: MEMORY_GROUP.label,
-        defaultCollapsed: true,
-        storageKey: 'sidebar.memory.open',
-        items: memoryItems,
-      },
-    ],
-  };
-
-  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны» (новый CloneAccessGrant).
-  // После ТЗ 2026-05-27 пункт «Клоны» живёт в «Справочнике».
-  const referenceGroup: NavGroup = (() => {
-    const subgroups = REFERENCE_GROUP.collapsibleSubgroups?.map((sg) => {
-      if (sg.storageKey !== 'sidebar.reference.open') return sg;
-      return {
-        ...sg,
-        items: sg.items.map((i) =>
-          i.href === '/clones' ? { ...i, showDot: hasUnseenCloneGrants } : i,
-        ),
-      };
-    });
-    return {
-      ...REFERENCE_GROUP,
-      ...(subgroups ? { collapsibleSubgroups: subgroups } : {}),
-    };
-  })();
-
-  // ТЗ 2026-06-09 support-desk — отдельная группа «Поддержка» (очередь деска)
-  // только для сотрудников поддержки.
-  const supportGroup: NavGroup = {
-    label: 'Поддержка',
-    items: [SUPPORT_DESK_NAV_ITEM],
-  };
-
-  const groups: NavGroup[] = [
-    DAILY_GROUP,
-    tasksGroup,
-    meGroup,
-    CHATS_GROUP,
-    memoryGroup,
-    ...(canSeeOperationsCoo ? [MANAGEMENT_GROUP] : []),
-    ...(support.isAgent ? [supportGroup] : []),
-    referenceGroup,
-    settingsGroup,
-  ];
-
-  // Собираем все пункты в один плоский массив, чтобы вычислить «победителя»
-  // по matchPrefix один раз — поведение, как было в плоском Sidebar (см.
-  // оригинальный код, фильтр по самому специфичному matchPrefix).
-  const allItems: NavItem[] = groups.flatMap((g) => [
+  // Считаем «победителя» по самому специфичному matchPrefix (как в активном
+  // пункте) один раз по всему плоскому списку.
+  const allItems: ResolvedNavItem[] = resolvedSections.flatMap((g) => [
     ...g.items,
     ...(g.collapsibleSubgroups?.flatMap((s) => s.items) ?? []),
   ]);
@@ -754,8 +151,7 @@ export function Sidebar({
     }))
     .filter((c) => c.matches);
   const winnerHref = candidates.length
-    ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a))
-        .href
+    ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a)).href
     : null;
 
   return (
@@ -782,19 +178,14 @@ export function Sidebar({
         </Link>
       </div>
 
-      {/* Org switcher (Фаза 0c §5.3) — между логотипом и CTA */}
+      {/* Org switcher */}
       <div className="px-3 pb-2" data-overview-target="overview.org-switcher">
         <OrgSwitcher variant="sidebar" />
       </div>
 
-      {/* CTA */}
-      <div className="px-3 pb-3" data-tour-target="welcome.create-meeting" data-overview-target="overview.create-meeting">
-        <Button asChild className="w-full justify-start gap-2" size="default">
-          <Link href="/meetings/create" onClick={onNavigate}>
-            <Plus size={16} strokeWidth={2} />
-            Создать встречу
-          </Link>
-        </Button>
+      {/* CTA «+ Создать» (Встреча · Мысль · Задача · Цель) */}
+      <div className="px-3 pb-3" data-tour-target="welcome.create-meeting" data-overview-target="overview.create">
+        <CreateMenu onNavigate={onNavigate} />
       </div>
 
       <Separator />
@@ -802,10 +193,10 @@ export function Sidebar({
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-2">
         <TooltipProvider delayDuration={150}>
-          {groups.map((group, idx) => (
+          {resolvedSections.map((section, idx) => (
             <SidebarGroup
-              key={group.label}
-              group={group}
+              key={section.id}
+              group={section}
               winnerHref={winnerHref}
               onNavigate={onNavigate}
               showSeparator={idx > 0}
@@ -824,13 +215,49 @@ export function Sidebar({
   );
 }
 
+/**
+ * Дропдаун «+ Создать» — единый вход в создание сущностей (ТЗ Ф0, архитектура
+ * §3.1). «Дамп» убран из меню — мысль вносится отсюда.
+ */
+function CreateMenu({ onNavigate }: { onNavigate?: () => void }) {
+  const opts: { href: string; label: string; icon: LucideIcon }[] = [
+    { href: '/meetings/create', label: 'Встреча', icon: Video },
+    { href: '/dump', label: 'Мысль', icon: Brain },
+    { href: '/intake', label: 'Задача', icon: ListChecks },
+    { href: '/goals', label: 'Цель', icon: Target },
+  ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button className="w-full justify-start gap-2" size="default">
+          <Plus size={16} strokeWidth={2.2} />
+          Создать
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[calc(var(--sidebar-w)-1.5rem)] min-w-44">
+        {opts.map((o) => {
+          const Icon = o.icon;
+          return (
+            <DropdownMenuItem key={o.href} asChild>
+              <Link href={o.href} onClick={onNavigate} className="flex items-center gap-2">
+                <Icon size={15} strokeWidth={1.75} />
+                {o.label}
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function SidebarGroup({
   group,
   winnerHref,
   onNavigate,
   showSeparator,
 }: {
-  group: NavGroup;
+  group: NavConfigSection & { items: ResolvedNavItem[] };
   winnerHref: string | null;
   onNavigate?: () => void;
   showSeparator: boolean;
@@ -838,7 +265,7 @@ function SidebarGroup({
   return (
     <div>
       {showSeparator && <Separator className="my-2" />}
-      {!group.hideGroupLabel && (
+      {!group.hideLabel && (
         <div className="mt-4 mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-fg-secondary">
           {group.label}
         </div>
@@ -858,7 +285,7 @@ function SidebarGroup({
       {group.collapsibleSubgroups?.map((sg) => (
         <SidebarSubgroup
           key={sg.label}
-          subgroup={sg}
+          subgroup={sg as NavConfigSubgroup & { items: ResolvedNavItem[] }}
           winnerHref={winnerHref}
           onNavigate={onNavigate}
         />
@@ -872,13 +299,10 @@ function SidebarSubgroup({
   winnerHref,
   onNavigate,
 }: {
-  subgroup: NavSubgroup;
+  subgroup: NavConfigSubgroup & { items: ResolvedNavItem[] };
   winnerHref: string | null;
   onNavigate?: () => void;
 }) {
-  // ТЗ 2026-05-26 §5: подгруппа «Память компании» персистит состояние
-  // collapse в localStorage. При первом монтировании читаем сохранённое
-  // значение; если ключа нет — берём `defaultCollapsed`.
   const [collapsed, setCollapsed] = useState(subgroup.defaultCollapsed);
 
   useEffect(() => {
@@ -907,7 +331,7 @@ function SidebarSubgroup({
     });
   };
 
-  // Если внутри подгруппы есть активный пункт — раскрываем автоматически.
+  // Если внутри подгруппы активный пункт — раскрываем автоматически.
   const hasActive = subgroup.items.some((i) => i.href === winnerHref);
   const effectiveCollapsed = hasActive ? false : collapsed;
 
@@ -946,28 +370,15 @@ function SidebarSubgroup({
 }
 
 /**
- * Один пункт навигации с поддержкой тариф-гейтинга (Фаза 12 шаг 10) и
- * нового состояния `comingSoon` (Фаза 0c §5.2).
- *
+ * Один пункт навигации с поддержкой тариф-гейтинга и состояния `comingSoon`.
  * Порядок проверки: `comingSoon → locked → enabled`.
- *
- * Поведение для `comingSoon=true`:
- *   - href — реальный (preview-страница типа /processes).
- *   - opacity-60, text-fg-tertiary, иконка `Clock4` справа.
- *   - tooltip «Появится в Фазе γ».
- *   - тариф-замок НЕ показывается (раз функционала ещё нет — гейтинг бессмыслен).
- *
- * Поведение для `gateFeature` (если comingSoon=false):
- *   - loading или enabled — обычный Link на item.href.
- *   - !enabled — пункт остаётся видим, визуально приглушён, иконка `Lock`,
- *     tooltip «Доступно на тарифе X», клик ведёт на `/settings/billing`.
  */
 function SidebarNavLink({
   item,
   isActive,
   onNavigate,
 }: {
-  item: NavItem;
+  item: ResolvedNavItem;
   isActive: boolean;
   onNavigate?: () => void;
 }) {
@@ -1017,8 +428,7 @@ function SidebarNavLink({
       ? FEATURE_MIN_TIER[item.gateFeature] ?? 'tier_pro'
       : null;
 
-  // Badge непрочитанных (Phase 3 Sprint 6 — для «Входящие»). Скрыт, если
-  // 0/undefined. >99 — рисуем «99+», чтобы не растягивать пункт.
+  // Badge непрочитанных. Скрыт, если 0/undefined. >99 — рисуем «99+».
   const badge =
     item.badgeCount !== undefined && item.badgeCount > 0
       ? item.badgeCount > 99
@@ -1078,12 +488,8 @@ function SidebarNavLink({
       onClick={onNavigate}
       className={cn(baseClass, stateClass)}
       aria-disabled={locked || undefined}
-      {...(item.tourTarget
-        ? { 'data-tour-target': item.tourTarget }
-        : {})}
-      {...(item.overviewTarget
-        ? { 'data-overview-target': item.overviewTarget }
-        : {})}
+      {...(item.tourTarget ? { 'data-tour-target': item.tourTarget } : {})}
+      {...(item.overviewTarget ? { 'data-overview-target': item.overviewTarget } : {})}
     >
       {linkContent}
     </Link>
@@ -1113,8 +519,7 @@ function SidebarNavLink({
     );
   }
 
-  // Hover-тултип из словаря NAV_HELP (ТЗ 2026-05-29 onboarding-v2 Фаза 2).
-  // Показываем только если для этого href есть запись в словаре.
+  // Hover-тултип из словаря NAV_HELP (только если для href есть запись).
   const navHelp = NAV_HELP[item.href];
   if (navHelp) {
     return (

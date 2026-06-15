@@ -71,6 +71,40 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🗂️ 2026-06-13 — Редизайн кабинета: ритмы (Сегодня/Неделя/Месяц) + очередь решений + Лента Коры (Ф0–Ф10)
+
+> Контракт: ветка `feature/cabinet-redesign-rhythms`, 23 коммита. ТЗ: `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10). second-brain: `05_история/2026-06-13-cabinet-redesign-implementation.md`, `01_projects/director-dashboard.md`. Реестр флагов — `docs/operations/feature-flags.md`.
+>
+> **Зачем для прода:** кабинет перестроен от «свалки меню + противоречивых дашбордов» к модели ритмов (Сегодня / Неделя / Месяц) + сквозной очереди решений «Требует вас». Единый источник навигации (десктоп+мобилка), новый экран «Сегодня» (VerdictBar + лента дня + чек-ин-плашка), очередь решений с inline-резолвом, /week табы, /month + PPTX-экспорт, авто-название встреч, поиск по памяти, мастер дедупа отделов, drill-down план-факта по людям, Лента Коры (`/feed/cora` + контроль вопросов), silence-детектор тем, светлая тема.
+>
+> **2 миграции (авто).** **Новая backend-зависимость `pptxgenjs@^4.0.1` (подтянется при rebuild образа).** **Новый kill-switch + 3 крутилки (все с дефолтами — действий владельца НЕ требуют).** **Новый taskType `meeting-title` (DEFAULT-цепочка, сид не нужен).** **Новый @Cron `theme-silence-detector`.** **ENV новых нет. Seed/patch/backfill новых нет.** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — AdminSetting (новый kill-switch + крутилки, code-default есть — действий владельца НЕ требуют):**
+  - `dashboard.theme_silence.enabled` (kill-switch, code-default `true`) — детектор молчащих тем. Аварийный откат: → `false` из `/admin/settings` → cron no-op.
+  - `dashboard.theme_silence_weeks` (default `3`) — порог недель молчания темы.
+  - `pendingActions.conflictTtlDays` (default `14`) / `pendingActions.intakeTtlDays` (default `14`) — TTL элементов очереди решений (sweep-крон убирает протухшие).
+  - Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — ENV** — **новых ENV нет.**
+- **Шаг 1 — ⚙️ ВЛАДЕЛЕЦ (не блокер этого редизайна, напоминание):** VAPID-ключи web-push в проде (`npx web-push generate-vapid-keys` → `VAPID_*` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` в прод-`.env`). Без них web-push — graceful no-op (см. §«НЕ флаг, но ждёт прод-ENV: VAPID-ключи» в `feature-flags.md`). Этот пакет push-каналов не добавляет — строка справочная.
+- **Шаг 4 — Prisma** — **обязательно, авто** (2 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`):
+  - `add_expiresat_conflict_intake`: `ALTER TABLE` — добавляет nullable `expiresAt` на `ConflictItem` и `IntakeIssue` (TTL для очереди решений + sweep-крон). Backfill НЕ нужен (`null` = бессрочно до проставления sweep-кроном).
+  - `feed_read_cursor`: новая таблица/колонка курсора прочтения Ленты Коры (`POST /feed/cora/seen`). Аддитивна.
+  - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
+- **Зависимость — `pptxgenjs@^4.0.1`** (backend `package.json`) — для PPTX-экспорта раздела «Месяц». Подтянется автоматически при пересборке образа (`docker compose up -d --build backend`). Отдельной prod-команды не требует.
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего. Новый taskType `meeting-title` НЕ требует сид-роута (идёт по DEFAULT-цепочке) — действий не требует.
+- **Шаг 11 — Docker rebuild** — обязателен (новые миграции в PrismaClient, новый `@Cron('theme-silence-detector')`, новый sweep-крон очереди решений, новая зависимость `pptxgenjs`, новый taskType, новые контроллеры/эндпоинты): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) в логах backend поднялся `@Cron('theme-silence-detector')`;
+  - (б) Swagger `/api/docs` содержит новые эндпоинты: `GET /dashboard/operations/checkin-discipline`, `POST /pending-actions/confirm`, `GET /dashboard/operations/value-recap/:id/export?format=pptx`, `POST /meetings/:id/next-steps/to-intake`, `POST /departments/:id/merge`, `GET /dashboard/operations/weekly-per-person/:personId/items` (+ self `GET /me/...`), `GET /feed/cora`, `POST /feed/cora/seen`, `GET /probe/control`, `GET /decisions/stalled`;
+  - (в) taskType `meeting-title` присутствует в реестре: `docker compose exec backend bun run scripts/diag-routes.ts | grep meeting-title` (ожидаемо — DEFAULT-цепочка, отдельного роута нет);
+  - (г) PPTX-экспорт «Месяца» отдаёт файл (а не 500): `GET /dashboard/operations/value-recap/:id/export?format=pptx` → `Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`;
+  - (д) очередь решений «Требует вас» отдаёт 4 группы; `POST /pending-actions/confirm` резолвит элемент;
+  - (е) светлая тема: переключатель не даёт «светлое-на-светлом» (визуальная доводка оттенков графиков на белом — за владельцем/qa, отдельная строка в реестре не-сделанного).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🤖 2026-06-12 — Единый помощник в каналах (Telegram/MAX) + автономизация подтверждений (W0–W4)
 
 > Контракт: ветка `feature/assistant-channels-and-autonomy`, коммиты `cb285350..90f02a6e` (10 коммитов + фиксы ревью). ТЗ: `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (Ф1–Ф6) + `plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4). second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/ai-jobs.md`.

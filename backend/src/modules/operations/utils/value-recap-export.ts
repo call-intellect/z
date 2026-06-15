@@ -55,7 +55,20 @@ export function buildValueRecapSlides(
     ],
   });
 
-  // Слайд 3 — сводка (narrative).
+  // Слайд 3 — решения месяца (Ф3 редизайн): список + % доведения по статусу.
+  const decisions = payload.decisions ?? [];
+  if (decisions.length > 0) {
+    slides.push({
+      title: 'Решения месяца',
+      subtitle: `Всего ${t.decisionsTotal}, доведено до результата ${t.decisionsThroughputPercent}%`,
+      bullets: decisions.map(
+        (d) =>
+          `${d.statement} — ${decisionStatusLabel(d.status)} (${d.throughputPercent}%)`,
+      ),
+    });
+  }
+
+  // Слайд 4 — сводка (narrative).
   if (payload.narrative && payload.narrative.trim().length > 0) {
     slides.push({
       title: 'Коротко',
@@ -64,6 +77,22 @@ export function buildValueRecapSlides(
   }
 
   return slides;
+}
+
+/** Человекочитаемая метка статуса доведения решения (RU). */
+function decisionStatusLabel(status: string): string {
+  switch (status) {
+    case 'done':
+      return 'внедрено';
+    case 'in_progress':
+      return 'в работе';
+    case 'stalled':
+      return 'застряло';
+    case 'not_started':
+      return 'не начато';
+    default:
+      return status;
+  }
 }
 
 function fmtDelta(v: number | null | undefined): string {

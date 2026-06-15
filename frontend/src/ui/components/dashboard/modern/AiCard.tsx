@@ -24,8 +24,12 @@ export function AiCard({
   return (
     <div
       style={glass({
+        // Тема-зависимый фиолетовый тон AI-карточки: подложка из стеклянной
+        // поверхности (flip по теме) + лавандовый chip-тон поверх (тёмная:
+        // насыщенный приглушённый, светлая: пастельный) — смысл «AI/фиолет»
+        // сохранён в обеих темах, без тёмного-на-светлом.
         background:
-          'radial-gradient(120% 100% at 50% 0%, oklch(0.4 0.18 295 / 0.55), oklch(0.2 0.04 280 / 0.5))',
+          'linear-gradient(180deg, var(--chip-lavender-bg), transparent), var(--glass-surface)',
       })}
       className="relative overflow-hidden p-6"
     >
@@ -36,7 +40,13 @@ export function AiCard({
       />
       <div
         className="grid h-14 w-14 place-items-center rounded-2xl"
-        style={{ background: GRAD.violet, boxShadow: '0 12px 30px -10px oklch(0.6 0.2 300 / 0.9)' }}
+        style={{
+          background: GRAD.violet,
+          boxShadow: '0 12px 30px -10px oklch(0.6 0.2 300 / 0.9)',
+          // Иконка на насыщенном фиолетовом градиенте читается светлой в обеих
+          // темах (иначе в светлой теме унаследует тёмный текст — низкий контраст).
+          color: 'oklch(0.99 0 0)',
+        }}
       >
         <Sparkles size={24} />
       </div>
@@ -49,7 +59,7 @@ export function AiCard({
           type="button"
           onClick={onCta}
           className="mt-4 w-full rounded-xl py-2.5 text-sm font-medium"
-          style={{ background: 'oklch(1 0 0 / 0.92)', color: 'oklch(0.2 0.04 285)' }}
+          style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
         >
           {ctaLabel}
         </button>

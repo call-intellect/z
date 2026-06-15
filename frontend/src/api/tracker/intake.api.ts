@@ -73,6 +73,17 @@ export interface TriageIntakeResultApi {
   createdIssue: IssueApi | null;
 }
 
+/**
+ * Редизайн кабинета Ф5а (2026-06-13) — «следующий шаг отчёта → кандидат в задачу».
+ * Body для `POST /api/v1/meetings/:meetingId/next-steps/to-intake`.
+ */
+export interface NextStepToIntakeRequest {
+  /** Текст следующего шага (из next_steps отчёта), 1..2000. */
+  text: string;
+  /** Опц. развёрнутое описание. */
+  description?: string | null;
+}
+
 export const intakeApi = {
   list: (orgId: string, req: ListIntakeRequest = {}) =>
     apiClient.get<ListIntakeResponseApi>(
@@ -95,6 +106,21 @@ export const intakeApi = {
   triage: (orgId: string, intakeId: string, body: TriageIntakeRequest) =>
     apiClient.post<TriageIntakeResultApi>(
       `/api/v1/intake/${encodeURIComponent(intakeId)}/triage`,
+      body,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Создать кандидата в задачу из следующего шага отчёта встречи.
+   * Идемпотентно по (meetingId + text) — повтор не плодит кандидатов.
+   */
+  nextStepToIntake: (
+    orgId: string,
+    meetingId: string,
+    body: NextStepToIntakeRequest,
+  ) =>
+    apiClient.post<IntakeApi>(
+      `/api/v1/meetings/${encodeURIComponent(meetingId)}/next-steps/to-intake`,
       body,
       { headers: orgHeaders(orgId) },
     ),

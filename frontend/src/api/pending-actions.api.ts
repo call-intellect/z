@@ -31,6 +31,67 @@ export interface PendingActionsCountApi {
   };
 }
 
+/** Ссылка на момент во встрече (для «открыть на таймкоде»). */
+export interface PendingActionCiteApi {
+  /** Название встречи (если есть). */
+  meetingTitle?: string;
+  /** Таймкод вида «34:10». */
+  timecode?: string;
+  /** Прямая ссылка на встречу/таймкод (если есть). */
+  url?: string;
+}
+
+/**
+ * `detail` — дискриминированный union по `kind` (= source). Несёт реальную
+ * суть item'а для inline-резолва из списка. Может отсутствовать (старый бэк
+ * / неполные данные) — UI деградирует на `title`.
+ */
+export interface ProbeDetailApi {
+  kind: 'probe';
+  question: string;
+  context?: string;
+  meetingTitle?: string;
+  cite?: PendingActionCiteApi;
+  notificationId: string;
+}
+
+export interface ConflictVersionApi {
+  text: string;
+  date?: string;
+  cite?: PendingActionCiteApi;
+}
+
+export interface ConflictDetailApi {
+  kind: 'conflict';
+  summary: string;
+  oldVersion: ConflictVersionApi;
+  newVersion: ConflictVersionApi;
+}
+
+export interface IntakeDetailApi {
+  kind: 'intake';
+  title: string;
+  description?: string;
+  assigneeName?: string;
+  dueLabel?: string;
+  /** Уверенность Коры, 0..1 либо 0..100 (нормализуем в домене). */
+  confidence?: number;
+  cite?: PendingActionCiteApi;
+}
+
+export interface CurationDetailApi {
+  kind: 'curation';
+  cardTitle: string;
+  preview?: string;
+  cite?: PendingActionCiteApi;
+}
+
+export type PendingActionDetailApi =
+  | ProbeDetailApi
+  | ConflictDetailApi
+  | IntakeDetailApi
+  | CurationDetailApi;
+
 export interface PendingActionItemApi {
   source: PendingActionSourceApi;
   resourceType: string;
@@ -40,6 +101,7 @@ export interface PendingActionItemApi {
   ageDays: number;
   actionUrl: string;
   canQuickConfirm: boolean;
+  detail?: PendingActionDetailApi;
 }
 
 export interface PendingActionsListApi {
@@ -55,13 +117,34 @@ export interface SnoozePendingActionRequest {
 }
 
 /**
- * Action Center B4 — быстрое подтверждение item'а (one-tap approve).
- * Поддерживается только `source==='curation'` для light-уровня
- * (`canQuickConfirm===true`).
+ * Сквозной inline-резолв item'а (Фаза редизайна Ф4). Тело варьируется по
+ * источнику:
+ *   - probe:    `{ source:'probe', resourceId, answerText }`
+ *   - conflict: `{ source:'conflict', resourceId, resolution:'keep_old'|'accept_new'|'merge' }`
+ *   - intake:   `{ source:'intake', resourceId, resolution:'accept'|'reject', targetProjectId? }`
+ *   - curation: `{ source:'curation', resourceId, resolution:'approve'|'reject' }`
+ *
+ * Без `resolution`/`answerText` — старый light-путь approve (`canQuickConfirm`).
+ * На повторный/невалидный резолв бэк отвечает 400 (BadRequest) — caller
+ * показывает toast и откатывает оптимистичную мутацию.
  */
+export type PendingActionResolution =
+  | 'keep_old'
+  | 'accept_new'
+  | 'merge'
+  | 'accept'
+  | 'reject'
+  | 'approve';
+
 export interface ConfirmPendingActionRequest {
   source: PendingActionSourceApi;
   resourceId: string;
+  /** conflict / intake / curation. */
+  resolution?: PendingActionResolution;
+  /** probe — свободный ответ пользователя. */
+  answerText?: string;
+  /** intake accept — опц. целевой проект (иначе берётся suggestedProjectId). */
+  targetProjectId?: string;
 }
 
 export const pendingActionsApi = {

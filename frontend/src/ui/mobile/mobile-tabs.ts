@@ -1,74 +1,35 @@
 /**
- * Конфигурация мобильных табов по роли (ТЗ 2026-06-11 mobile-cora-exec-manager,
- * Ф1, Б2).
+ * Конфигурация мобильных табов по роли.
  *
- * Чистый модуль (без JSX/хуков) — чтобы выбор набора по роли тестировался
- * детерминированно (`mobile-tabs.spec.ts`), без рендера и сети.
+ * ТЗ 2026-06-13 «Редизайн кабинета», Ф9 — наборы табов теперь берутся из
+ * ЕДИНОГО `nav-config.ts` (тот же источник, что и десктоп-сайдбар), чтобы
+ * инвариант «mobile ⊆ desktop» (`nav-subset.spec.ts`) держался автоматически.
  *
- * Наборы из Р2/Р3:
- *   - exec (owner/admin):  Обзор · Команда · Дела · Цели · Спросить
- *   - manager:             Моё · Чек-ин · Спросить · Память
+ * Чистый модуль (без JSX/хуков) — выбор набора по роли тестируется
+ * детерминированно (`mobile-tabs.spec.ts`).
  *
- * Приземление по роли (Б1): owner/admin → exec-«Обзор» (/dashboard);
- * manager → «Моё» (/me/daily-brief).
+ * Наборы (Ф9):
+ *   - exec (owner/admin):  Сегодня · Неделя · Требует вас · Память · Я
+ *   - manager (остальные): Сегодня · Чек-ин · Спросить · Дела
  *
- * ВАЖНО: для фундамента (Ф1) табы ведут на СУЩЕСТВУЮЩИЕ десктоп-маршруты —
- * мобильное содержимое разделов (Ф2–Ф6) — отдельные фазы. Где целевого экрана
- * ещё нет, указываем ближайший существующий маршрут (помечено в комментарии).
+ * Приземление по роли (Б1): owner/admin → exec-«Сегодня» (/dashboard);
+ * остальные → «Сегодня» (/me).
  */
 
-import {
-  LayoutDashboard,
-  Users,
-  ClipboardList,
-  Target,
-  MessageCircle,
-  Sun,
-  CheckCircle2,
-  BookOpen,
-  type LucideIcon,
-} from 'lucide-react';
-
 import type { CurrentOrgRole } from '@/domain/account';
+import {
+  MOBILE_EXEC_TABS,
+  MOBILE_MANAGER_TABS,
+  type MobileNavTab,
+} from '@/ui/components/app-shell/nav-config';
 
 export type MobileTabSet = 'exec' | 'manager';
 
-export interface MobileTabItem {
-  /** Стабильный ключ (для тестов и React key). */
-  key: string;
-  href: string;
-  label: string;
-  icon: LucideIcon;
-}
+/** Алиас формы пункта (ключ/href/label/icon) — совместимость с прежним API. */
+export type MobileTabItem = MobileNavTab;
 
-/**
- * Руководитель. «Обзор»→/dashboard (Ф2 заменит десктоп мобильной раскладкой
- * через gate на том же роуте). «Команда»/«Дела»/«Цели» пока ведут на
- * ближайшие существующие десктоп-разделы — мобильные экраны Ф3.
- */
-export const EXEC_TABS: readonly MobileTabItem[] = [
-  { key: 'overview', href: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
-  // [Ф3] мобильного раздела «Команда» ещё нет → операционная панель (десктоп).
-  { key: 'team', href: '/dashboard/operations', label: 'Команда', icon: Users },
-  // [Ф3] мобильного «Дела» ещё нет → недельный план-факт по людям (десктоп).
-  { key: 'deals', href: '/dashboard/operations/weekly', label: 'Дела', icon: ClipboardList },
-  { key: 'goals', href: '/goals', label: 'Цели', icon: Target },
-  // [Ф5] first-class «Спросить» ещё нет → AI-чат «Помощник компании» (десктоп).
-  { key: 'ask', href: '/chat', label: 'Спросить', icon: MessageCircle },
-] as const;
-
-/**
- * Менеджер. «Моё»→/me/daily-brief (готово, Ф0). «Чек-ин»→существующий поток.
- * «Спросить» и «Память» — ближайшие существующие маршруты до Ф5/Ф6.
- */
-export const MANAGER_TABS: readonly MobileTabItem[] = [
-  { key: 'my-day', href: '/me/daily-brief', label: 'Моё', icon: Sun },
-  { key: 'checkin', href: '/me/check-ins', label: 'Чек-ин', icon: CheckCircle2 },
-  // [Ф5] first-class «Спросить» ещё нет → AI-чат «Помощник компании» (десктоп).
-  { key: 'ask', href: '/chat', label: 'Спросить', icon: MessageCircle },
-  // [Ф6] мобильной «Памяти» ещё нет → лента решений (десктоп).
-  { key: 'memory', href: '/decisions', label: 'Память', icon: BookOpen },
-] as const;
+export const EXEC_TABS: readonly MobileTabItem[] = MOBILE_EXEC_TABS;
+export const MANAGER_TABS: readonly MobileTabItem[] = MOBILE_MANAGER_TABS;
 
 /** owner/admin → exec; manager/coo/прочее → manager. */
 export function tabSetForRole(role: CurrentOrgRole): MobileTabSet {
@@ -81,8 +42,8 @@ export function tabsForRole(role: CurrentOrgRole): readonly MobileTabItem[] {
 }
 
 /**
- * Маршрут приземления по роли (Б1). owner/admin → exec-«Обзор» (/dashboard);
- * остальные → «Моё» (/me/daily-brief). Это первый таб соответствующего набора.
+ * Маршрут приземления по роли (Б1). owner/admin → exec-«Сегодня» (/dashboard);
+ * остальные → «Сегодня» (/me). Это первый таб соответствующего набора.
  */
 export function landingHrefForRole(role: CurrentOrgRole): string {
   return tabsForRole(role)[0]!.href;

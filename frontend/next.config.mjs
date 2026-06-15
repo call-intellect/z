@@ -85,6 +85,30 @@ const nextConfig = {
       },
     ];
   },
+  /**
+   * ТЗ 2026-06-13 «Редизайн кабинета», Ф0 — консолидация дашбордов в 3 ритма.
+   * Старые роуты и уже-битые cron deep-link-и (Telegram-пуши) ведём на новые
+   * экраны, чтобы не плодить 404 и не ломать рассылки. permanent:false (307) —
+   * адреса ещё могут уточняться по ходу редизайна.
+   *
+   * НЕ редиректим `/dashboard/operations/daily` — cron пушит его всем
+   * участникам (Р3), путь остаётся «полной версией» Сегодня.
+   */
+  async redirects() {
+    return [
+      // Недельная сводка → Неделя (deep-link крона weekly-digest).
+      { source: '/dashboard/operations/weekly', destination: '/week', permanent: false },
+      // Портфель целей (сирота) → вкладка «вектор» Недели.
+      { source: '/dashboard/portfolio', destination: '/week?tab=vector', permanent: false },
+      // «Что сделала Кора» → Итоги месяца (чинит битый cron-URL value-recap).
+      { source: '/dashboard/value-recap', destination: '/month', permanent: false },
+      { source: '/dashboard/operations/value-recap', destination: '/month', permanent: false },
+      // Битые cron deep-link-и (ведут в никуда) → целевые экраны.
+      { source: '/dashboard/operations/onboarding-ramp', destination: '/structure', permanent: false },
+      { source: '/dashboard/operations/knowledge-at-risk', destination: '/week', permanent: false },
+      { source: '/dashboard/operations/decisions/stalled', destination: '/decisions?status=stalled', permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

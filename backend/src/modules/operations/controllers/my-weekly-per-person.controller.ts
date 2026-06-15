@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  Param,
   Query,
   Req,
   UseGuards,
@@ -19,7 +20,12 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
-import type { MyWeeklyPerPersonDto } from '../dto/weekly-per-person.dto';
+import {
+  WeeklyPersonItemsQuerySchema,
+  type MyWeeklyPerPersonDto,
+  type WeeklyPersonItemsDto,
+  type WeeklyPersonItemsQuery,
+} from '../dto/weekly-per-person.dto';
 import { CommitmentsService } from '../services/commitments.service';
 import { WeeklyPerPersonService } from '../services/weekly-per-person.service';
 
@@ -116,6 +122,42 @@ export class MyWeeklyPerPersonController {
       row,
       teamAverageReliabilityPercent,
     };
+  }
+
+  /**
+   * ТЗ редизайн Ф8.5 — self drill-down: построчный план-факт по СВОЕМУ
+   * профилю за неделю. `:personId` обязан совпадать с собственным Person
+   * (иначе 403 forbidden_person) — RBAC operations-dashboard не требуется.
+   */
+  @Get('weekly-per-person/:personId/items')
+  @ApiOperation({
+    summary: 'Мой построчный план-факт за неделю (self drill-down)',
+  })
+  async getMyItems(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+    @Param('personId') personId: string,
+    @Query(new ZodValidationPipe(WeeklyPersonItemsQuerySchema))
+    q: WeeklyPersonItemsQuery,
+  ): Promise<WeeklyPersonItemsDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+
+    const selfPersonId = await this.resolveSelfPersonId(tenantId!, uid);
+    if (!selfPersonId || selfPersonId !== personId) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'forbidden_person',
+          message: 'Можно смотреть только свой план-факт',
+        },
+      });
+    }
+
+    return this.svc.getPersonWeekItems(
+      { tenantId: tenantId!, personId: selfPersonId, weekStart: q.weekStart },
+      new Date(),
+    );
   }
 
   // ── helpers ──

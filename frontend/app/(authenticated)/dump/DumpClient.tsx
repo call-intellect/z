@@ -49,7 +49,7 @@ export function DumpClient() {
       if (res.idempotent) {
         toast('Эта мысль уже была сохранена ранее');
       } else {
-        toast.success('Мысль сохранена в память компании');
+        toast.success('✓ Записано в память компании');
       }
       setText('');
       setSaved(true);

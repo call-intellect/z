@@ -1,0 +1,324 @@
+<!-- ============================ НАСТРОЙКИ ============================ -->
+<section class="screen" id="screen-settings">
+
+  <!-- строка-вердикт: что подключено -->
+  <div class="verdict-bar">
+    <span class="led-lg"></span>
+    <div style="flex:1">
+      <div style="font-weight:600; font-size:14px;">Кора собирает данные. Подключён 1 канал из 4 — добавьте ещё, чтобы память была полнее.</div>
+      <div class="faint" style="font-size:12px; margin-top:2px;">Профиль заполнен · утренний бриф включён · справочник готов на 9 из 11</div>
+    </div>
+    <button class="btn primary" data-goto="integrations">Подключить каналы →</button>
+  </div>
+
+  <!-- ===== Профиль и компания ===== -->
+  <div class="glass float">
+    <span class="glow"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-violet)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg>
+      </span>
+      <h3>Профиль и компания</h3>
+      <span class="chip ok" style="margin-left:auto"><span class="led"></span>заполнено</span>
+    </div>
+    <div class="grid g-1-2" style="align-items:center; gap:18px;">
+      <!-- логотип -->
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span style="width:64px; height:64px; border-radius:18px; display:grid; place-items:center; font-weight:800; font-size:24px; color:oklch(0.2 0.03 280); background:var(--grad-teal); box-shadow:0 10px 26px -8px oklch(0.82 0.13 178 / 0.75);">Л</span>
+        <div>
+          <div style="font-weight:600; font-size:14px;">Логотип компании</div>
+          <div class="faint" style="font-size:11.5px; margin-top:2px;">PNG или SVG, до 2 МБ</div>
+          <button class="btn ghost" style="margin-top:8px; padding:5px 11px;">Заменить</button>
+        </div>
+      </div>
+      <!-- поля -->
+      <div class="grid g2" style="gap:14px;">
+        <div>
+          <div class="faint" style="font-size:11px; margin-bottom:5px; letter-spacing:0.04em; text-transform:uppercase;">Название компании</div>
+          <div style="padding:11px 14px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.07); font-size:14px;">ООО «Луа»</div>
+        </div>
+        <div>
+          <div class="faint" style="font-size:11px; margin-bottom:5px; letter-spacing:0.04em; text-transform:uppercase;">Часовой пояс</div>
+          <div style="padding:11px 14px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.07); font-size:14px;">Москва · UTC+3</div>
+        </div>
+        <div>
+          <div class="faint" style="font-size:11px; margin-bottom:5px; letter-spacing:0.04em; text-transform:uppercase;">Ваше имя</div>
+          <div style="padding:11px 14px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.07); font-size:14px;">Сергей Мазур</div>
+        </div>
+        <div>
+          <div class="faint" style="font-size:11px; margin-bottom:5px; letter-spacing:0.04em; text-transform:uppercase;">Размер команды</div>
+          <div style="padding:11px 14px; border-radius:12px; background:var(--surface-soft); border:1px solid oklch(1 0 0 / 0.07); font-size:14px;">4 сотрудника</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button class="btn primary">Сохранить</button>
+      <button class="btn ghost">Отменить</button>
+    </div>
+  </div>
+
+  <!-- ===== Интеграции ===== -->
+  <div class="glass float mt">
+    <span class="glow blue"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-blue)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+      </span>
+      <h3>Интеграции и источники</h3>
+      <span class="chip info" style="margin-left:auto"><span class="led"></span>подключён 1 из 4</span>
+    </div>
+
+    <!-- баннер импорта задач -->
+    <div class="glass" style="padding:16px 18px; margin-bottom:14px; background:linear-gradient(180deg, oklch(0.34 0.07 165 / 0.4), oklch(0.24 0.05 185 / 0.4)); border-color:oklch(0.85 0.15 165 / 0.25);">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span class="card-ico" style="background:var(--grad-mint); width:38px; height:38px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        </span>
+        <div style="flex:1;">
+          <div style="font-weight:600; font-size:14px;">Перенесите задачи за 5 минут</div>
+          <div class="faint" style="font-size:12px; margin-top:2px;">Подключите Битрикс24 или Яндекс Трекер — Кора заберёт открытые задачи и свяжет их с целями и встречами.</div>
+        </div>
+        <button class="btn primary">Импортировать</button>
+      </div>
+    </div>
+
+    <div class="row-list">
+      <!-- Telegram -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--info-bg)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M22 4 11 13"/><path d="M22 4 15 20l-4-7-7-4z"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Телеграм</div>
+          <div class="meta">бот отправляет утренний бриф и получает ответы команды</div>
+        </div>
+        <span class="chip ok"><span class="led"></span>подключён</span>
+        <div class="act"><button class="btn ghost">Настроить</button></div>
+      </div>
+      <!-- MAX -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--surface-soft)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">МАКС</div>
+          <div class="meta">российский мессенджер — те же брифы и ответы, что в Телеграме</div>
+        </div>
+        <span class="chip" style="color:var(--faint); background:var(--surface-soft)">не подключён</span>
+        <div class="act"><button class="btn">Подключить</button></div>
+      </div>
+      <!-- Битрикс24 -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--surface-soft)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Битрикс24</div>
+          <div class="meta">импорт открытых задач и сделок · перенесите задачи за 5 минут</div>
+        </div>
+        <span class="chip warn"><span class="led"></span>готов к импорту</span>
+        <div class="act"><button class="btn">Подключить</button></div>
+      </div>
+      <!-- Яндекс Трекер -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--surface-soft)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Яндекс Трекер</div>
+          <div class="meta">импорт задач и очередей · перенесите задачи за 5 минут</div>
+        </div>
+        <span class="chip warn"><span class="led"></span>готов к импорту</span>
+        <div class="act"><button class="btn">Подключить</button></div>
+      </div>
+      <!-- Почта -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--surface-soft)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Почта</div>
+          <div class="meta">необязательно — пересылка писем для важных решений и договорённостей</div>
+        </div>
+        <span class="chip" style="color:var(--faint); background:var(--surface-soft)">не подключена</span>
+        <div class="act"><button class="btn">Подключить</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Каналы и уведомления ===== -->
+  <div class="glass float mt">
+    <span class="glow teal"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-teal)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5-2 6-2 6h18s-2-1-2-6a7 7 0 0 0-7-7z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+      </span>
+      <h3>Каналы и уведомления</h3>
+    </div>
+    <div class="row-list">
+      <!-- утренний бриф -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--ok-bg)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Утренний бриф в Телеграм</div>
+          <div class="meta">короткая выжимка вчерашнего дня · ежедневно в 09:00</div>
+        </div>
+        <!-- тумблер ВКЛ -->
+        <span style="width:46px; height:26px; border-radius:999px; background:var(--grad-teal); position:relative; box-shadow:0 0 14px -2px oklch(0.82 0.13 178 / 0.7); flex:none;"><span style="position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:999px; background:oklch(0.97 0.01 280);"></span></span>
+      </div>
+      <!-- решения, требующие вас -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--warn-bg)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Решения, требующие вас</div>
+          <div class="meta">сообщение, когда появляется решение или конфликт для вашего ответа</div>
+        </div>
+        <span style="width:46px; height:26px; border-radius:999px; background:var(--grad-teal); position:relative; box-shadow:0 0 14px -2px oklch(0.82 0.13 178 / 0.7); flex:none;"><span style="position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:999px; background:oklch(0.97 0.01 280);"></span></span>
+      </div>
+      <!-- риск-алерты -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--risk-bg)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Острые риски сразу</div>
+          <div class="meta">сигнал, если клиент под угрозой ухода или блокер висит дольше 5 дней</div>
+        </div>
+        <span style="width:46px; height:26px; border-radius:999px; background:var(--grad-teal); position:relative; box-shadow:0 0 14px -2px oklch(0.82 0.13 178 / 0.7); flex:none;"><span style="position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:999px; background:oklch(0.97 0.01 280);"></span></span>
+      </div>
+      <!-- еженедельная сводка -->
+      <div class="list-row">
+        <span class="lead" style="background:var(--surface-soft)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        </span>
+        <div class="body">
+          <div class="ttl">Еженедельная сводка</div>
+          <div class="meta">итоги недели и движение к цели · по понедельникам в 10:00</div>
+        </div>
+        <!-- тумблер ВЫКЛ -->
+        <span style="width:46px; height:26px; border-radius:999px; background:oklch(1 0 0 / 0.10); position:relative; flex:none;"><span style="position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:999px; background:oklch(0.74 0.02 280);"></span></span>
+      </div>
+    </div>
+    <!-- тихие часы -->
+    <div class="glass" style="padding:14px 18px; margin-top:14px; background:linear-gradient(180deg, oklch(0.28 0.04 280 / 0.5), oklch(0.20 0.03 278 / 0.5));">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span class="card-ico" style="background:var(--grad-pink); width:36px; height:36px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.18 0.03 280)" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </span>
+        <div style="flex:1;">
+          <div style="font-weight:600; font-size:14px;">Тихие часы</div>
+          <div class="faint" style="font-size:12px; margin-top:2px;">Кора не пишет ночью — копит и отдаёт утром одним брифом</div>
+        </div>
+        <span class="chip info"><span class="led"></span>с 22:00 до 08:00</span>
+        <button class="btn ghost">Изменить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Быстрые разделы ===== -->
+  <div class="grid g3 mt">
+    <div class="glass float">
+      <span class="glow amber"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-amber)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+        </span>
+        <h3>Шаблоны команд</h3>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.5; margin:0 0 14px;">Готовые наборы встреч, ролей и регламентов для отдела продаж, разработки или поддержки.</p>
+      <button class="btn" style="width:100%;">Открыть шаблоны →</button>
+    </div>
+    <div class="glass float">
+      <span class="glow"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-violet)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.5 2.3 7.1L12 16.6 5.7 21l2.3-7.1-6-4.5h7.6z"/></svg>
+        </span>
+        <h3>Ваши предложения</h3>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.5; margin:0 0 14px;">Расскажите, чего не хватает в Коре. Лучшие идеи попадают в работу первыми.</p>
+      <button class="btn" style="width:100%;">Предложить идею →</button>
+    </div>
+    <div class="glass float">
+      <span class="glow teal"></span>
+      <div class="card-title">
+        <span class="card-ico" style="background:var(--grad-mint)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>
+        </span>
+        <h3>Партнёрская программа</h3>
+      </div>
+      <p class="muted" style="font-size:13px; line-height:1.5; margin:0 0 14px;">Приглашайте другие компании — получайте бонусные месяцы за каждую подключённую.</p>
+      <button class="btn" style="width:100%;">Стать партнёром →</button>
+    </div>
+  </div>
+
+  <!-- ===== Справочник (аккордеон-имитация, развёрнут) ===== -->
+  <div class="glass float mt">
+    <span class="glow"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-pink)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      </span>
+      <h3>Справочник компании</h3>
+      <span class="chip info" style="margin-left:auto"><span class="led"></span>9 из 11 заполнено</span>
+      <span class="more" style="margin-left:12px;">Свернуть ▾</span>
+    </div>
+    <p class="muted" style="font-size:13px; line-height:1.5; margin:0 0 16px;">Опора памяти Коры. Чем точнее справочник, тем точнее ответы, разбор встреч и клоны должностей.</p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <span class="chip ok"><span class="led"></span>Компания</span>
+      <span class="chip ok"><span class="led"></span>Отделы</span>
+      <span class="chip ok"><span class="led"></span>Домены</span>
+      <span class="chip ok"><span class="led"></span>Документы</span>
+      <span class="chip ok"><span class="led"></span>Карты должностей</span>
+      <span class="chip ok"><span class="led"></span>Клоны</span>
+      <span class="chip ok"><span class="led"></span>Поставщики</span>
+      <span class="chip ok"><span class="led"></span>События</span>
+      <span class="chip ok"><span class="led"></span>Голос бренда</span>
+      <span class="chip warn"><span class="led"></span>Эксперименты — пусто</span>
+      <span class="chip warn"><span class="led"></span>Поставщики связи — пусто</span>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:16px;">
+      <button class="btn primary">Открыть справочник</button>
+      <button class="btn ghost">Заполнить недостающее</button>
+    </div>
+  </div>
+
+  <!-- ===== Админка компании (для владельца) ===== -->
+  <div class="glass float mt" style="background:linear-gradient(180deg, oklch(0.32 0.06 300 / 0.5), oklch(0.22 0.04 280 / 0.5)); border-color:oklch(0.66 0.20 300 / 0.25);">
+    <span class="glow"></span>
+    <div class="card-title">
+      <span class="card-ico" style="background:var(--grad-violet)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </span>
+      <h3>Админка компании</h3>
+      <span class="chip info" style="margin-left:auto"><span class="led"></span>для владельца</span>
+    </div>
+    <div class="grid g2" style="align-items:center; gap:16px;">
+      <p class="muted" style="font-size:13.5px; line-height:1.55; margin:0;">
+        Управление доступом к памяти компании и группами доступа. Кто видит встречи, решения и клоны каждого отдела — настраивается здесь.
+      </p>
+      <div class="row-list" style="background:var(--surface-soft); border-radius:14px; padding:4px 14px;">
+        <div class="list-row">
+          <span class="lead" style="background:var(--info-bg)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Доступ к памяти</div><div class="meta">кто и какие знания видит</div></div>
+        </div>
+        <div class="list-row">
+          <span class="lead" style="background:var(--ok-bg)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          </span>
+          <div class="body"><div class="ttl">Группы доступа</div><div class="meta">отделы и роли с правами</div></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button class="btn primary">Открыть админку компании →</button>
+    </div>
+  </div>
+
+</section>

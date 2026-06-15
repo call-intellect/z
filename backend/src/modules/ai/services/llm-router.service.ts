@@ -85,6 +85,12 @@ export type LlmTaskType =
   // первого user-сообщения (см. ConversationsService.generateTitle).
   | 'chat-v2-cite-select'
   | 'chat-v2-conversation-title'
+  // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи.
+  // 'meeting-title' — короткое название встречи (3-7 слов) из типа + первых
+  // реплик транскрипта. Перезаписывает только плейсхолдер-title (см.
+  // MeetingTitleService.generateMeetingTitle). Дешёвая задача — едет по
+  // DEFAULT_FALLBACK_CHAIN, отдельный seed-route не требуется.
+  | 'meeting-title'
   // SBA α-7 — Specialist 3.1 (Regulations / Processes / Policies).
   // 'regulation-extract' — извлечение черновика Regulation/Process/Policy из блока.
   // 'regulation-dedupe' — арбитр merge/new/extension/contradicts (KNN-кандидаты).
@@ -669,6 +675,8 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'custom-report',
   'chat-v2-cite-select',
   'chat-v2-conversation-title',
+  // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи.
+  'meeting-title',
   // SBA α-7
   'regulation-extract',
   'regulation-dedupe',

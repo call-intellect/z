@@ -13,6 +13,10 @@ import {
   wrapUserData,
 } from '../../../ai/services/prompts/common';
 import { LlmRouterService } from '../../../ai/services/llm-router.service';
+import { computeExpiresAt } from '../../../pending-actions/expires-at.util';
+
+/** Code-fallback TTL (дни) intake, когда TypedConfigService недоступен (@Optional). */
+const INTAKE_TTL_DAYS_FALLBACK = 30;
 
 /**
  * Wave 3 / Tracker Phase 4 РФ (2026-05-24) — TelegramTaskParserService.
@@ -461,6 +465,13 @@ export class TelegramTaskParserService {
           suggestedDueDate,
           suggestedLabels: [],
           confidence: new Prisma.Decimal(confidence),
+          // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
+          // pending-intake после TTL (cfg.pendingActions.intakeTtlDays).
+          // config @Optional → fallback 30 дней. TODO: крутилка в AdminSetting.
+          expiresAt: computeExpiresAt(
+            this.config?.pendingActions.intakeTtlDays ??
+              INTAKE_TTL_DAYS_FALLBACK,
+          ),
         },
         select: { id: true },
       });

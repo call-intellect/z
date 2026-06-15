@@ -1,0 +1,47 @@
+    </div><!-- /page -->
+  </main>
+</div>
+
+<!-- переключатель роли (для демонстрации) -->
+<div class="role-switch">
+  <button class="active" data-role="owner">Владелец</button>
+  <button data-role="coo">COO</button>
+  <button data-role="member">Сотрудник</button>
+</div>
+
+<script>
+  const TITLES = {
+    today:    ['Сегодня', 'Понедельник, 13 июня · ООО «Луа»'],
+    week:     ['Неделя', '9–15 июня · понедельничный разбор'],
+    month:    ['Итоги месяца', 'Май 2026 · витрина для совета'],
+    requires: ['Требует вас', 'Очередь решений · 6 ждут вас'],
+    meetings: ['Встречи', '13 встреч · поиск по транскриптам'],
+    tasks:    ['Задачи', 'Проекты · спринты · календарь'],
+    memory:   ['Память', 'Спросить · лента · реестры'],
+    team:     ['Команда', '4 сотрудника · 4 отдела'],
+    me:       ['Я', 'Личный кабинет'],
+    settings: ['Настройки', 'Интеграции · справочник · админка'],
+  };
+  function go(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + id));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.goto === id));
+    const t = TITLES[id]; if (t) { document.getElementById('page-title').textContent = t[0]; document.getElementById('page-sub').textContent = t[1]; }
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('[data-goto]').forEach(el => el.addEventListener('click', () => go(el.dataset.goto)));
+
+  function applyRole(role) {
+    document.body.dataset.role = role;
+    document.querySelectorAll('.role-switch button').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+    document.querySelectorAll('[data-role-show]').forEach(el => {
+      const roles = el.dataset.roleShow.split(',');
+      el.style.display = roles.includes(role) ? '' : 'none';
+    });
+    // member приземляется на «Я» (= его Сегодня)
+    if (role === 'member') go('me'); else go('today');
+  }
+  document.querySelectorAll('.role-switch button').forEach(b => b.addEventListener('click', () => applyRole(b.dataset.role)));
+  applyRole('owner');
+</script>
+</body>
+</html>

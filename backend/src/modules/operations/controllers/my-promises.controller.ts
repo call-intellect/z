@@ -25,6 +25,7 @@ import {
   type ListMyPromisesQuery,
   MarkPromiseBodySchema,
   type MarkPromiseBody,
+  type MyPromisesListDto,
   ReschedulePromiseBodySchema,
   type ReschedulePromiseBody,
 } from '../dto/commitments.dto';
@@ -51,17 +52,20 @@ export class MyPromisesController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Список моих обещаний (фильтр по статусу)' })
+  @ApiOperation({
+    summary:
+      'Список моих обещаний (полные обещания + «открытые вопросы», фильтр по статусу)',
+  })
   async list(
     @CurrentOrg() tenantId: string | undefined,
     @Req() req: Request,
     @Query(new ZodValidationPipe(ListMyPromisesQuerySchema))
     q: ListMyPromisesQuery,
-  ): Promise<{ items: CommitmentDto[] }> {
+  ): Promise<MyPromisesListDto> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
     // Ф9 (no_person): отсутствие Person ≠ запрет на просмотр кабинета —
-    // отдаём пустой список (200) вместо hard-403. `mark()` оставляем строгим
+    // отдаём пустые списки (200) вместо hard-403. `mark()` оставляем строгим
     // (для записи нужен реальный subject).
     let person: { id: string };
     try {
@@ -74,7 +78,7 @@ export class MyPromisesController {
         err instanceof ForbiddenException &&
         this.isNoPersonError(err)
       ) {
-        return { items: [] };
+        return { items: [], openQuestions: [] };
       }
       throw err;
     }

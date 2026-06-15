@@ -3905,6 +3905,12 @@ model ConflictItem {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass (max от участников
   /// конфликта; evolving + admin-resolve → sensitive по §4 floors).
   dataClassAudit   Json?
+  /// Редизайн Ф4 (2026-06-13) — авто-протухание открытого конфликта: после
+  /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит open →
+  /// dismissed («авто-закрыт по сроку»), чтобы очередь решений не копилась
+  /// вечно. TTL вычисляется при создании (createdAt + cfg TTL). null —
+  /// бессрочный (легаси-записи до миграции).
+  expiresAt        DateTime?
   createdAt        DateTime            @default(now())
 
   org        Org   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -3914,6 +3920,7 @@ model ConflictItem {
   @@index([tenantId, resourceType, status])
   @@index([resourceType, existingId])
   @@index([resourceType, newId])
+  @@index([tenantId, status, expiresAt])
 }
 
 /// CardVersion — общая таблица версий для всех типов карточек специалистов
@@ -9608,11 +9615,19 @@ model IntakeIssue {
   // Если принят — создаётся Issue
   createdIssueId String?
 
+  /// Редизайн Ф4 (2026-06-13) — авто-протухание pending-intake: после
+  /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит pending →
+  /// rejected («авто-закрыт по сроку»), чтобы входящие не висели вечно. TTL
+  /// вычисляется при создании (createdAt + cfg TTL). null — бессрочный
+  /// (легаси-записи до миграции).
+  expiresAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, status])
   @@index([source, createdAt])
+  @@index([tenantId, status, expiresAt])
 }
 
 /// Исходящий webhook для внешних интеграций. `secretKey` хранится с префиксом
@@ -9804,6 +9819,31 @@ model ActivityFeedSubscription {
   updatedAt  DateTime @updatedAt
 
   @@unique([userId, feedType])
+}
+
+/// Редизайн Ф8.6 «Лента Коры» (2026-06-13) — per-user курсор «непрочитанного».
+///
+/// ActivityFeedItem.seenAt — единый timestamp на запись (НЕ per-user), поэтому
+/// он не годится для метки «прочитано конкретным пользователем» в гибридной
+/// ленте, которая виртуально читает ещё и source-таблицы (IdeaBlock / Insight /
+/// Decision / ConflictItem / BlockerSynthesis) без собственного seenAt-поля.
+///
+/// `lastSeenAt` — момент, когда пользователь последний раз «дочитал» ленту до
+/// верха (POST /feed/cora/seen). Запись из ленты считается непрочитанной
+/// (`unread=true`), если её `createdAt > lastSeenAt`. Если курсора нет —
+/// вся лента непрочитана.
+/// (без relation на Org — как и ActivityFeedItem / ActivityFeedSubscription:
+/// эти модели намеренно не заводят back-relation на Org, чтобы не раздувать
+/// модель Org. tenant-scope обеспечивается WHERE-фильтром в сервисе.)
+model FeedReadCursor {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  lastSeenAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@map("feed_read_cursor")
 }
 
 // ──────────────────────────── Wave 2: Specialist 3.8 Helpfulness (2026-05-24) ────────────────────────────

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Users } from 'lucide-react';
 
 import { ApiError } from '@/api/api-error';
 import { weeklyPerPersonApi } from '@/api/weekly-per-person.api';
@@ -9,7 +9,10 @@ import {
   pluralRu,
   reliabilityDisplay,
   weeklyPerPersonFromApi,
+  weeklyPersonItemFromApi,
   type WeeklyPerPersonUi,
+  type WeeklyPersonItemTone,
+  type WeeklyPersonItemUi,
   type WeeklyPersonRowUi,
 } from '@/domain/weekly-per-person';
 import {
@@ -20,6 +23,9 @@ import {
 
 /**
  * ТЗ-D Фаза 5 (2026-06-05) — виджет недельного план-факта по людям.
+ * ТЗ редизайн Ф8.5 (2026-06-13) — раскрытие строки человека → вложенная
+ * drill-down таблица плана-факта за неделю (Что · Тип · План · Факт · Что
+ * мешало) с ленивой загрузкой; «N не сделано» в своде.
  *
  * Встроен в «Недельную сводку», но грузит данные САМ и независимо от дайджеста
  * (`GET /api/v1/dashboard/operations/weekly-per-person`). Показывает две
@@ -108,8 +114,8 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
       ) : (
         <>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <ReliableColumn rows={data.topReliable} />
-            <RiskColumn rows={data.topRisk} />
+            <ReliableColumn rows={data.topReliable} weekStart={weekStart} />
+            <RiskColumn rows={data.topRisk} weekStart={weekStart} />
           </div>
 
           <div className="mt-4 border-t border-border-subtle pt-3">
@@ -137,7 +143,7 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
               </p>
             ) : null}
             {expanded && !allError ? (
-              <AllRowsTable rows={allRows ?? []} />
+              <AllRowsTable rows={allRows ?? []} weekStart={weekStart} />
             ) : null}
           </div>
         </>
@@ -147,7 +153,13 @@ export function WeeklyPerPersonWidget({ weekStart }: { weekStart: string }) {
 }
 
 /* ── Колонка «Держат слово» (тон success) ─────────────────────────────── */
-function ReliableColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
+function ReliableColumn({
+  rows,
+  weekStart,
+}: {
+  rows: WeeklyPersonRowUi[];
+  weekStart: string;
+}) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -166,7 +178,12 @@ function ReliableColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
-            <PersonRow key={r.personId} row={r} tone="success" />
+            <PersonRow
+              key={r.personId}
+              row={r}
+              tone="success"
+              weekStart={weekStart}
+            />
           ))}
         </ul>
       )}
@@ -175,7 +192,13 @@ function ReliableColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
 }
 
 /* ── Колонка «Зоны риска» (тон danger/warning) ────────────────────────── */
-function RiskColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
+function RiskColumn({
+  rows,
+  weekStart,
+}: {
+  rows: WeeklyPersonRowUi[];
+  weekStart: string;
+}) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -194,7 +217,12 @@ function RiskColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
-            <PersonRow key={r.personId} row={r} tone="danger" />
+            <PersonRow
+              key={r.personId}
+              row={r}
+              tone="danger"
+              weekStart={weekStart}
+            />
           ))}
         </ul>
       )}
@@ -202,14 +230,17 @@ function RiskColumn({ rows }: { rows: WeeklyPersonRowUi[] }) {
   );
 }
 
-/* ── Карточка одного человека ─────────────────────────────────────────── */
+/* ── Карточка одного человека (раскрывается в drill-down план-факта) ───── */
 function PersonRow({
   row,
   tone,
+  weekStart,
 }: {
   row: WeeklyPersonRowUi;
   tone: 'success' | 'danger';
+  weekStart: string;
 }) {
+  const drill = usePersonItems(weekStart, row.personId);
   const toneChip =
     tone === 'success'
       ? 'bg-chip-success-bg text-chip-success-fg'
@@ -229,58 +260,214 @@ function PersonRow({
       ? 'Слишком мало обещаний за неделю, чтобы считать надёжность.'
       : 'Надёжность: доля сдержанных обещаний за неделю';
   return (
-    <li className="rounded-md bg-bg-card p-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-fg-primary">{row.personName}</span>
-        {row.departmentName ? (
-          <span className="text-xs text-fg-tertiary">
-            · {row.departmentName}
-          </span>
-        ) : null}
-        <span
-          className={`ml-auto rounded px-2 py-0.5 text-[11px] tabular-nums ${reliabilityChip}`}
-          title={reliabilityTitle}
-        >
-          {reliability.label}
+    <li className="rounded-md bg-bg-card">
+      <button
+        type="button"
+        onClick={drill.toggle}
+        aria-expanded={drill.open}
+        className="flex w-full items-start gap-1.5 rounded-md p-2 text-left hover:bg-bg-subtle"
+      >
+        <span aria-hidden className="mt-0.5 shrink-0 text-fg-tertiary">
+          {drill.open ? (
+            <ChevronDown size={14} />
+          ) : (
+            <ChevronRight size={14} />
+          )}
         </span>
-      </div>
-      <p className="mt-1 text-xs text-fg-secondary">
-        {tone === 'success' ? (
-          <>
-            Сдержал {row.promisesKept} из {row.promisesGiven}{' '}
-            {pluralRu(row.promisesGiven, [
-              'обещания',
-              'обещаний',
-              'обещаний',
-            ])}
-            .
-          </>
-        ) : broken > 0 ? (
-          <>
-            {row.promisesOverdue > 0
-              ? `Просрочил ${row.promisesOverdue}`
-              : `Сорвал ${row.promisesBroken}`}{' '}
-            из {row.promisesGiven}{' '}
-            {pluralRu(row.promisesGiven, [
-              'обещания',
-              'обещаний',
-              'обещаний',
-            ])}
-            .
-          </>
-        ) : (
-          <>Дал {row.promisesGiven}, но ещё не закрыл.</>
-        )}
-      </p>
-      <p className="mt-0.5 text-[11px] text-fg-tertiary">
-        Задачи: {row.tasksDone} · Чек-ины: {row.checkInsCompleted}
-      </p>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-fg-primary">
+              {row.personName}
+            </span>
+            {row.departmentName ? (
+              <span className="text-xs text-fg-tertiary">
+                · {row.departmentName}
+              </span>
+            ) : null}
+            <span
+              className={`ml-auto rounded px-2 py-0.5 text-[11px] tabular-nums ${reliabilityChip}`}
+              title={reliabilityTitle}
+            >
+              {reliability.label}
+            </span>
+          </span>
+          <span className="mt-1 block text-xs text-fg-secondary">
+            {tone === 'success' ? (
+              <>
+                Сдержал {row.promisesKept} из {row.promisesGiven}{' '}
+                {pluralRu(row.promisesGiven, [
+                  'обещания',
+                  'обещаний',
+                  'обещаний',
+                ])}
+                .
+              </>
+            ) : broken > 0 ? (
+              <>
+                {row.promisesOverdue > 0
+                  ? `Просрочил ${row.promisesOverdue}`
+                  : `Сорвал ${row.promisesBroken}`}{' '}
+                из {row.promisesGiven}{' '}
+                {pluralRu(row.promisesGiven, [
+                  'обещания',
+                  'обещаний',
+                  'обещаний',
+                ])}
+                .
+              </>
+            ) : (
+              <>Дал {row.promisesGiven}, но ещё не закрыл.</>
+            )}
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-fg-tertiary">
+            <span>
+              Задачи: {row.tasksDone}
+              {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ''}
+            </span>
+            {row.tasksNotDone > 0 ? (
+              <span className="rounded bg-chip-warning-bg px-1.5 py-0.5 text-chip-warning-fg">
+                {row.tasksNotDone} не сделано
+              </span>
+            ) : null}
+            <span>· Чек-ины: {row.checkInsCompleted}</span>
+          </span>
+        </span>
+      </button>
+      {drill.open ? <PersonItemsDrill drill={drill} /> : null}
     </li>
   );
 }
 
-/* ── Полный список (drill-down) ───────────────────────────────────────── */
-function AllRowsTable({ rows }: { rows: WeeklyPersonRowUi[] }) {
+/* ── Ленивая загрузка построчного план-факта одного человека ──────────── */
+interface PersonItemsState {
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+  items: WeeklyPersonItemUi[] | null;
+  toggle: () => void;
+}
+
+/**
+ * Управляет раскрытием и ленивой загрузкой items одного человека. Несколько
+ * строк раскрываются независимо (у каждой свой инстанс хука). При смене недели
+ * (`weekStart`) кэш сбрасывается — данные устарели.
+ */
+function usePersonItems(weekStart: string, personId: string): PersonItemsState {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<WeeklyPersonItemUi[] | null>(null);
+
+  // Неделя сменилась — закрыть и забыть загруженное.
+  useEffect(() => {
+    setOpen(false);
+    setItems(null);
+    setError(null);
+    setLoading(false);
+  }, [weekStart, personId]);
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    // Грузим только при первом раскрытии (или после ошибки).
+    if (items !== null || loading) return;
+    setLoading(true);
+    setError(null);
+    weeklyPerPersonApi
+      .items(weekStart, personId)
+      .then((res) => {
+        setItems(res.items.map(weeklyPersonItemFromApi));
+      })
+      .catch((err: unknown) => {
+        setError(toMessage(err, 'Не удалось загрузить план-факт человека'));
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  return { open, loading, error, items, toggle };
+}
+
+const TONE_CHIP: Record<WeeklyPersonItemTone, string> = {
+  ok: 'bg-chip-success-bg text-chip-success-fg',
+  risk: 'bg-chip-danger-bg text-chip-danger-fg',
+  warn: 'bg-chip-warning-bg text-chip-warning-fg',
+  neutral: 'bg-chip-info-bg text-chip-info-fg',
+};
+
+/* ── Вложенная drill-down таблица план-факта человека ─────────────────── */
+function PersonItemsDrill({ drill }: { drill: PersonItemsState }) {
+  return (
+    <div className="border-t border-border-subtle px-2 pb-2 pt-2">
+      {drill.loading ? (
+        <p className="rounded bg-bg-subtle p-2 text-xs text-fg-secondary">
+          Загрузка…
+        </p>
+      ) : drill.error ? (
+        <p className="rounded border border-chip-warning-bg bg-chip-warning-bg p-2 text-xs text-chip-warning-fg">
+          {drill.error}
+        </p>
+      ) : !drill.items || drill.items.length === 0 ? (
+        <p className="rounded bg-bg-subtle p-2 text-xs text-fg-tertiary">
+          За неделю пунктов нет.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] text-xs">
+            <thead>
+              <tr className="border-b border-border-subtle text-left text-fg-tertiary">
+                <th className="py-1.5 pr-3 font-medium">Что</th>
+                <th className="py-1.5 pr-3 font-medium">Тип</th>
+                <th className="py-1.5 pr-3 font-medium">План (срок)</th>
+                <th className="py-1.5 pr-3 font-medium">Факт</th>
+                <th className="py-1.5 font-medium">Что мешало</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drill.items.map((it, i) => (
+                <tr
+                  key={`${it.kind}-${i}`}
+                  className="border-b border-border-subtle/50 last:border-0"
+                >
+                  <td className="py-1.5 pr-3 text-fg-primary">{it.title}</td>
+                  <td className="py-1.5 pr-3 text-fg-secondary">
+                    {it.kindLabel}
+                  </td>
+                  <td className="py-1.5 pr-3 tabular-nums text-fg-secondary">
+                    {it.plannedDueLabel}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[11px] ${TONE_CHIP[it.tone]}`}
+                    >
+                      {it.factLabel}
+                    </span>
+                  </td>
+                  <td className="py-1.5 text-fg-secondary">
+                    {it.blockedBy ?? '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Полный список (drill-down «показать всех») ──────────────────────── */
+function AllRowsTable({
+  rows,
+  weekStart,
+}: {
+  rows: WeeklyPersonRowUi[];
+  weekStart: string;
+}) {
   if (rows.length === 0) {
     return (
       <p className="mt-3 rounded border bg-bg-subtle p-4 text-sm text-fg-secondary">
@@ -289,84 +476,79 @@ function AllRowsTable({ rows }: { rows: WeeklyPersonRowUi[] }) {
     );
   }
   return (
-    <div className="mt-3 overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-border-subtle text-left text-xs text-fg-tertiary">
-            <th className="py-2 pr-3 font-medium">Человек</th>
-            <th className="py-2 pr-3 font-medium">Отдел</th>
-            <th className="py-2 pr-3 text-right font-medium">Дал</th>
-            <th className="py-2 pr-3 text-right font-medium">Сдержал</th>
-            <th className="py-2 pr-3 text-right font-medium">Просрочил</th>
-            <th className="py-2 pr-3 text-right font-medium">Задачи</th>
-            <th className="py-2 pr-3 text-right font-medium">Чек-ины</th>
-            <th className="py-2 pr-3 text-right font-medium">Надёжность</th>
-            <th
-              className="py-2 text-right font-medium"
-              title="Обещания со статусом „спросили“, на которые ещё нет ответа"
-            >
-              Без ответа
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const reliability = reliabilityDisplay(r);
-            return (
-              <tr
-                key={r.personId}
-                className="border-b border-border-subtle/50 hover:bg-bg-subtle"
-              >
-                <td className="py-2 pr-3 font-medium text-fg-primary">
-                  {r.personName}
-                </td>
-                <td className="py-2 pr-3 text-fg-secondary">
-                  {r.departmentName ?? '—'}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                  {r.promisesGiven}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                  {r.promisesKept}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                  {r.promisesOverdue}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                  {r.tasksDone}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums text-fg-secondary">
-                  {r.checkInsCompleted}
-                </td>
-                <td className="py-2 pr-3 text-right tabular-nums">
-                  {reliability.kind === 'low_data' ? (
-                    <span
-                      className="rounded bg-chip-warning-bg px-2 py-0.5 text-[11px] text-chip-warning-fg"
-                      title="Слишком мало обещаний за неделю, чтобы считать надёжность."
-                    >
-                      {reliability.label}
-                    </span>
-                  ) : (
-                    <span
-                      className={
-                        reliability.kind === 'none'
-                          ? 'text-fg-tertiary'
-                          : 'text-fg-primary'
-                      }
-                    >
-                      {reliability.label}
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 text-right tabular-nums text-fg-secondary">
-                  {r.promisesNoAnswer}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <ul className="mt-3 space-y-2">
+      {rows.map((r) => (
+        <AllRowItem key={r.personId} row={r} weekStart={weekStart} />
+      ))}
+    </ul>
+  );
+}
+
+/* ── Строка полного списка — тоже раскрывается в drill-down ───────────── */
+function AllRowItem({
+  row,
+  weekStart,
+}: {
+  row: WeeklyPersonRowUi;
+  weekStart: string;
+}) {
+  const drill = usePersonItems(weekStart, row.personId);
+  const reliability = reliabilityDisplay(row);
+  return (
+    <li className="rounded-md border border-border-subtle bg-bg-card">
+      <button
+        type="button"
+        onClick={drill.toggle}
+        aria-expanded={drill.open}
+        className="flex w-full items-center gap-2 rounded-md p-2 text-left text-sm hover:bg-bg-subtle"
+      >
+        <span aria-hidden className="shrink-0 text-fg-tertiary">
+          {drill.open ? (
+            <ChevronDown size={14} />
+          ) : (
+            <ChevronRight size={14} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-medium text-fg-primary">
+          {row.personName}
+        </span>
+        <span className="shrink-0 text-xs text-fg-tertiary">
+          {row.departmentName ?? '—'}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
+          Сдержал {row.promisesKept}/{row.promisesGiven}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
+          Задачи {row.tasksDone}
+          {row.tasksPlanned > 0 ? `/${row.tasksPlanned}` : ''}
+        </span>
+        {row.tasksNotDone > 0 ? (
+          <span className="shrink-0 rounded bg-chip-warning-bg px-1.5 py-0.5 text-[11px] text-chip-warning-fg">
+            {row.tasksNotDone} не сделано
+          </span>
+        ) : null}
+        <span className="shrink-0 text-xs tabular-nums text-fg-secondary">
+          Чек-ины {row.checkInsCompleted}
+        </span>
+        <span
+          className={`shrink-0 rounded px-2 py-0.5 text-[11px] tabular-nums ${
+            reliability.kind === 'low_data'
+              ? 'bg-chip-warning-bg text-chip-warning-fg'
+              : reliability.kind === 'none'
+              ? 'bg-bg-subtle text-fg-tertiary'
+              : 'bg-chip-info-bg text-chip-info-fg'
+          }`}
+          title={
+            reliability.kind === 'low_data'
+              ? 'Слишком мало обещаний за неделю, чтобы считать надёжность.'
+              : 'Надёжность: доля сдержанных обещаний за неделю'
+          }
+        >
+          {reliability.label}
+        </span>
+      </button>
+      {drill.open ? <PersonItemsDrill drill={drill} /> : null}
+    </li>
   );
 }
 

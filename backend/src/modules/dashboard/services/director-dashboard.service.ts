@@ -126,6 +126,35 @@ export class DirectorDashboardService {
 
     const since = this.calcSince(args.period);
 
+    // Б-1 устойчивость: главная директора — витрина продукта, не должна
+    // «умирать» целиком из-за падения одного виджета. Каждый запрос ниже
+    // оборачиваем в safe(): при ошибке БД виджет деградирует до нейтрального
+    // fallback'а, а в логах остаётся ИМЯ упавшего виджета (раньше глобальный
+    // фильтр отдавал общий db_error без детализации). Тот же best-effort уже
+    // применён к requiresAction и narrativeSummary в этом же сервисе.
+    // NoInfer<T> на fallback гарантирует, что T выводится строго из fn (возврат
+    // сервисного метода), а object-literal fallback контекстно типизируется
+    // под него (иначе trend:'flat' расширилось бы до string и сломало вывод).
+    const failures: string[] = [];
+    const safe = async <T>(
+      label: string,
+      fn: () => Promise<T>,
+      fallback: NoInfer<T>,
+    ): Promise<T> => {
+      try {
+        return await fn();
+      } catch (err) {
+        failures.push(label);
+        this.logger.error(
+          `director widget «${label}» fail (tenantId=${args.tenantId}, period=${args.period}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          err instanceof Error ? err.stack : undefined,
+        );
+        return fallback;
+      }
+    };
+
     const [
       newThemes,
       newSignals,
@@ -142,27 +171,95 @@ export class DirectorDashboardService {
       valueStrip,
       mainReworkEnabled,
     ] = await Promise.all([
-      this.fetchNewThemes(args.tenantId, since),
-      this.fetchNewSignals(args.tenantId, since),
-      this.fetchSignalCounters(args.tenantId, since),
-      this.fetchActiveThemes(args.tenantId),
-      this.fetchHotEntities(args.tenantId, since),
-      this.fetchOpenQuestions(args.tenantId),
-      this.fetchStrategicAlignment(args.tenantId),
-      this.fetchGoalsTree(args.tenantId),
-      this.fetchGoalsPulse(args.tenantId),
-      this.sentimentSvc.getIndex({ tenantId: args.tenantId }),
-      this.commitSvc.getReliability({
-        tenantId: args.tenantId,
-        scope: 'company',
-      }),
-      this.hangingSvc.count({ tenantId: args.tenantId }),
+      safe('newThemes', () => this.fetchNewThemes(args.tenantId, since), []),
+      safe('newSignals', () => this.fetchNewSignals(args.tenantId, since), []),
+      safe(
+        'signalCounters',
+        () => this.fetchSignalCounters(args.tenantId, since),
+        {
+          pain: 0,
+          feature_request: 0,
+          churn_risk: 0,
+          objection: 0,
+          risk: 0,
+          decision: 0,
+          commitment: 0,
+          other: 0,
+        },
+      ),
+      safe('activeThemes', () => this.fetchActiveThemes(args.tenantId), []),
+      safe('hotEntities', () => this.fetchHotEntities(args.tenantId, since), []),
+      safe('openQuestions', () => this.fetchOpenQuestions(args.tenantId), []),
+      safe(
+        'strategicAlignment',
+        () => this.fetchStrategicAlignment(args.tenantId),
+        { average: null, goalsCount: 0, alertGoals: [] },
+      ),
+      safe('goalsTree', () => this.fetchGoalsTree(args.tenantId), []),
+      safe(
+        'goalsPulse',
+        () => this.fetchGoalsPulse(args.tenantId),
+        {
+          onTrackCount: 0,
+          atRiskCount: 0,
+          stalledCount: 0,
+          achievedCount: 0,
+          droppedCount: 0,
+          total: 0,
+        },
+      ),
+      safe(
+        'sentiment',
+        () => this.sentimentSvc.getIndex({ tenantId: args.tenantId }),
+        { value: 0, trend: 'flat', sparkline12w: [], totalCheckIns: 0, days: 7 },
+      ),
+      safe(
+        'commitment',
+        () =>
+          this.commitSvc.getReliability({
+            tenantId: args.tenantId,
+            scope: 'company',
+          }),
+        {
+          scope: 'company',
+          scopeId: null,
+          windowDays: 14,
+          kept: 0,
+          broken: 0,
+          overdue: 0,
+          pendingActive: 0,
+          reliabilityPercent: 0,
+          reliabilityLowData: true,
+          delta14d: null,
+          sparkline12w: [],
+        },
+      ),
+      safe(
+        'hangingDecisions',
+        () => this.hangingSvc.count({ tenantId: args.tenantId }),
+        { count: 0, minAgeDays: 7, minRaisedCount: 2, sparkline12w: [] },
+      ),
       // ТЗ-2 Ф1 — «Полоса пользы» (всегда считается, в т.ч. для пустого tenant'а).
-      this.fetchValueStrip(args.tenantId, args.period),
+      safe(
+        'valueStrip',
+        () => this.fetchValueStrip(args.tenantId, args.period),
+        {
+          meetingsProtocoled: 0,
+          tasksExtracted: 0,
+          decisionsExtracted: 0,
+          questionsAnsweredByMemory: 0,
+          commitmentsKept: 0,
+        },
+      ),
       // ТЗ-2 Ф1 — kill-switch новой компоновки главной (default ON).
-      this.config.getDynamic<boolean>(
-        'dashboard.main_rework.enabled',
-        undefined,
+      safe(
+        'mainReworkEnabled',
+        () =>
+          this.config.getDynamic<boolean>(
+            'dashboard.main_rework.enabled',
+            undefined,
+            true,
+          ),
         true,
       ),
     ]);
@@ -208,7 +305,11 @@ export class DirectorDashboardService {
       signalCounters.commitment +
       signalCounters.other;
     const totalThemes = newThemes.length + activeThemes.length;
-    const isEmpty = totalSignals === 0 && totalThemes === 0;
+    // Если виджеты упали и деградировали до пустых fallback'ов — это НЕ «пустой
+    // tenant». Не подменять реальные (частичные) данные синтетическим «образцом»:
+    // показываем что есть + degraded=true.
+    const isEmpty =
+      failures.length === 0 && totalSignals === 0 && totalThemes === 0;
 
     if (isEmpty) {
       const sampleResult: DirectorDashboardDto = {
@@ -248,6 +349,7 @@ export class DirectorDashboardService {
         // у пустого tenant'а они закономерно нулевые / минимальные).
         valueStrip,
         mainReworkEnabled,
+        degraded: failures.length > 0,
       };
       this.cache.setWithTtl(cacheKey, sampleResult, DASHBOARD_TTL_MS);
       return sampleResult;
@@ -285,6 +387,7 @@ export class DirectorDashboardService {
       // ТЗ-2 Ф1 — «Полоса пользы» + флаг новой компоновки.
       valueStrip,
       mainReworkEnabled,
+      degraded: failures.length > 0,
     };
 
     this.cache.setWithTtl(cacheKey, result, DASHBOARD_TTL_MS);

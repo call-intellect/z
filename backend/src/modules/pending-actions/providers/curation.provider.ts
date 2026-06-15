@@ -3,11 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
 import { resourceTypeRu } from '../resource-type-ru';
 
 import {
   ageDaysFrom,
+  type CurationPendingDetail,
   isPrivileged,
   type PendingActionItem,
   type PendingActionsProvider,
@@ -70,6 +70,7 @@ export class CurationPendingProvider implements PendingActionsProvider {
         resourceType: true,
         resourceId: true,
         level: true,
+        proposedPayload: true,
         expiresAt: true,
         createdAt: true,
       },
@@ -83,6 +84,23 @@ export class CurationPendingProvider implements PendingActionsProvider {
       const expiringSoon =
         i.expiresAt != null &&
         i.expiresAt.getTime() < now.getTime() + leadWindowMs;
+      // proposedPayload — что специалист предлагает зафиксировать (поля
+      // зависят от типа карточки: name / title / statement / text).
+      const payload = asObject(i.proposedPayload);
+      const cardTitle =
+        strOrUndef(payload.name) ??
+        strOrUndef(payload.title) ??
+        strOrUndef(payload.statement) ??
+        strOrUndef(payload.text) ??
+        resourceTypeRu(i.resourceType);
+      const preview =
+        strOrUndef(payload.statement) ?? strOrUndef(payload.text);
+      const detail: CurationPendingDetail = {
+        kind: 'curation',
+        cardTitle,
+        // preview не дублируем, если он совпадает с заголовком.
+        preview: preview && preview !== cardTitle ? preview : undefined,
+      };
       // resourceId = CurationItem.id — стабильный ключ для snooze/confirm.
       // Ведём прямо на detail-карточку /curation/[id]; light-карточки
       // по-прежнему подтверждаются one-tap прямо на /actions без перехода.
@@ -90,7 +108,8 @@ export class CurationPendingProvider implements PendingActionsProvider {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        title: `Требует проверки: ${resourceTypeRu(i.resourceType)}`,
+        // Реальная суть: название карточки + тип ресурса.
+        title: `Требует проверки: ${cardTitle}`,
         severity:
           expiringSoon || ageDays >= this.cfg.pendingActions.urgentAgeDays
             ? 'urgent'
@@ -98,7 +117,21 @@ export class CurationPendingProvider implements PendingActionsProvider {
         ageDays,
         actionUrl: `/curation/${i.id}`,
         canQuickConfirm: i.level === 'light',
+        detail,
       } satisfies PendingActionItem;
     });
   }
+}
+
+/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
+function asObject(v: unknown): Record<string, unknown> {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  return {};
+}
+
+/** Непустая строка или undefined (тримит). */
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }

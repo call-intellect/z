@@ -269,6 +269,12 @@ export class BusinessMetricsService implements OnModuleInit {
   private decisionStalledTotal!: Counter<string>;
   private decisionThroughputPercent!: Gauge<'tenant_top'>;
   private promiseCascadeAlertTotal!: Counter<string>;
+  // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
+  // theme_silence — surface риска «тема молчит N недель» (severity ∈
+  // medium|high|critical); decision_auto_implemented — детерминированный
+  // авто-переход approved→implemented (есть outcomes ИЛИ все задачи закрыты).
+  private themeSilenceSurfacedTotal!: Counter<'severity'>;
+  private decisionAutoImplementedTotal!: Counter<string>;
 
   // ── TZ-1 Фаза 4 (daily-value-engine) — улучшения и знания ──
   private ideasTopServedTotal!: Counter<string>;
@@ -1796,6 +1802,17 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'decision_throughput_percent',
       help: 'TZ-1 Ф3.B — доля решений, доведённых до actualOutcomes, % (несущая метрика витрины Ф5).',
       labelNames: ['tenant_top'] as const,
+    });
+    // ── Редизайн кабинета Ф8.1/Ф8.2 — риск-алерты + петля решений ──
+    this.themeSilenceSurfacedTotal = this.getOrCreateCounter({
+      name: 'theme_silence_surfaced_total',
+      help: 'Редизайн Ф8.2 — surface риска «тема молчит N недель» (severity ∈ medium|high|critical), на создание Insight.',
+      labelNames: ['severity'] as const,
+    });
+    this.decisionAutoImplementedTotal = this.getOrCreateCounter({
+      name: 'decision_auto_implemented_total',
+      help: 'Редизайн Ф8.1 — детерминированный авто-переход решения approved→implemented (есть outcomes ИЛИ все связанные задачи закрыты).',
+      labelNames: [] as const,
     });
     this.promiseCascadeAlertTotal = this.getOrCreateCounter({
       name: 'promise_cascade_alert_total',
@@ -4885,6 +4902,16 @@ export class BusinessMetricsService implements OnModuleInit {
       { tenant_top: args.tenantTop },
       Math.min(100, Math.max(0, args.value)),
     );
+  }
+
+  /** Counter `theme_silence_surfaced_total{severity}` (редизайн Ф8.2). */
+  incThemeSilenceSurfaced(args: { severity: string }): void {
+    this.themeSilenceSurfacedTotal.inc({ severity: args.severity });
+  }
+
+  /** Counter `decision_auto_implemented_total` (редизайн Ф8.1). */
+  incDecisionAutoImplemented(): void {
+    this.decisionAutoImplementedTotal.inc();
   }
 
   /** Counter `promise_cascade_alert_total`. */

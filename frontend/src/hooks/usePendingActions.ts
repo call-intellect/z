@@ -19,6 +19,7 @@ import useSWR from 'swr';
 
 import {
   pendingActionsApi,
+  type ConfirmPendingActionRequest,
   type PendingActionsListApi,
   type SnoozePendingActionRequest,
 } from '@/api/pending-actions.api';
@@ -39,11 +40,19 @@ export function usePendingActions(
   mutate: () => Promise<unknown>;
   snooze: (input: SnoozePendingActionRequest) => Promise<void>;
   /**
-   * B4 — быстрое подтверждение item'а (one-tap approve). Оптимистично убирает
-   * item из списка, затем ревалидирует список (и счётчик через caller'а).
+   * Сквозной inline-резолв item'а (Ф4) — он же быстрое подтверждение (B4).
+   * Оптимистично убирает item из списка, затем ревалидирует список (и счётчик
+   * через caller'а). Второй аргумент `resolve` несёт тело резолва по источнику
+   * (resolution / answerText / targetProjectId); без него — light approve.
    * Бросает наружу при ошибке (caller показывает тост и откатывает мутацию).
    */
-  confirm: (action: PendingAction) => Promise<void>;
+  confirm: (
+    action: PendingAction,
+    resolve?: Pick<
+      ConfirmPendingActionRequest,
+      'resolution' | 'answerText' | 'targetProjectId'
+    >,
+  ) => Promise<void>;
 } {
   const key =
     orgId && enabled
@@ -74,7 +83,13 @@ export function usePendingActions(
   );
 
   const confirm = useCallback(
-    async (action: PendingAction) => {
+    async (
+      action: PendingAction,
+      resolve?: Pick<
+        ConfirmPendingActionRequest,
+        'resolution' | 'answerText' | 'targetProjectId'
+      >,
+    ) => {
       if (!orgId) throw new Error('orgId required');
       // Оптимистично убираем item из кэша (по source+resourceId).
       const removeFromCache = (
@@ -87,6 +102,13 @@ export function usePendingActions(
           await pendingActionsApi.confirm(orgId, {
             source: action.source,
             resourceId: action.resourceId,
+            ...(resolve?.resolution ? { resolution: resolve.resolution } : {}),
+            ...(resolve?.answerText != null
+              ? { answerText: resolve.answerText }
+              : {}),
+            ...(resolve?.targetProjectId
+              ? { targetProjectId: resolve.targetProjectId }
+              : {}),
           });
           return removeFromCache(cur);
         },

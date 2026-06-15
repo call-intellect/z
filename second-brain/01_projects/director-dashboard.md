@@ -26,7 +26,7 @@ Owner Org логинится → попадает на `/dashboard` → види
 - Контроллер: `DirectorDashboardController` ([backend/src/modules/dashboard/director-dashboard.controller.ts](backend/src/modules/dashboard/director-dashboard.controller.ts)).
 - Endpoint: `GET /api/v1/dashboard/director?period=week|month`.
 - Auth: `CookieAuthGuard + TenantGuard` + `RbacService.canViewDirectorDashboard(userId, tenantId)` (`role IN ('owner','admin')` или `isSuperAdmin`).
-- Сервис: `DirectorDashboardService.getDirectorView({tenantId, period})` — 7 параллельных Prisma-запросов через `Promise.all` + `narrativeSummary` (опционально).
+- Сервис: `DirectorDashboardService.getDirectorView({tenantId, period})` — 14 параллельных запросов через `Promise.all` + `narrativeSummary` (опционально). **Б-1 устойчивость (2026-06-12):** каждый из 14 обёрнут в `safe(label, fn, fallback)` — ошибка отдельного виджета деградирует только его до нейтрального fallback'а и пишет `logger.error` с ИМЕНЕМ виджета, а дашборд отдаёт 200 с `degraded=true` (раньше reject любой ветки ронял весь метод в 500 `db_error`, маскируя источник). `isEmpty`-guard (`failures.length===0 && …`) не подменяет частичные данные синтетическим «образцом» при сбое. Тот же best-effort давно у `narrativeSummary` и `requiresAction`. Источник: [plans/tz/2026-06-12-urgent-dashboard-500-and-decisions-404-fix.md](../../plans/tz/2026-06-12-urgent-dashboard-500-and-decisions-404-fix.md) (Фаза 1).
 - Кэш: `AdminCacheService` (Phase 7), TTL 60s. Ключ `dashboard:director:${tenantId}:${period}`.
 
 ## `narrativeSummary` (опциональный)
@@ -89,3 +89,17 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Daily/Weekly дайджесты:** hero-`AreaTrend`/`BarTrend` строятся из реальной истории persisted-снимков (`digest.trend`, поле в DTO дайджеста, Ф1b) — не выдуманные ряды.
 
 Тема только тёмная (светлая — за владельцем), новых флагов нет (Ship-On), удалён мёртвый `DashboardClient.tsx`.
+
+## Редизайн кабинета — ритмы + очередь решений (Ф0–Ф10, 2026-06-13)
+
+Источник — `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10, ветка `feature/cabinet-redesign-rhythms`, 23 коммита, реализован целиком). Рефлексия — [[../05_история/2026-06-13-cabinet-redesign-implementation]]. Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-13 — Редизайн кабинета»).
+
+Кабинет перестроен от «свалки меню + противоречивых дашбордов» к модели **ритмов** (Сегодня / Неделя / Месяц) + сквозной **очереди решений** «Требует вас». Ключевое:
+- **Навигация:** единый источник `frontend/src/ui/components/app-shell/nav-config.ts` (десктоп+мобилка), меню 3 ритма + Работа + Я + Система (роль-зависимо), CTA «+ Создать»; redirects старых дашбордов в `next.config.mjs`.
+- **Сегодня:** новый экран (VerdictBar + лента дня + чек-ин-плашка, ≤7 величин); новый эндпоинт `GET /dashboard/operations/checkin-discipline` (дисциплина чек-инов).
+- **Очередь решений (Ф4):** суть+detail в pending-actions, сквозной `POST /pending-actions/confirm`, TTL (`expiresAt` на `ConflictItem`/`IntakeIssue`, миграция `add_expiresat_conflict_intake` + sweep-крон); 4 группы inline-резолва.
+- **Неделя / Месяц:** /week табы (weekly+operations+portfolio + CheckinDisciplineWidget); /month — решения месяца + PPTX-экспорт (зависимость `pptxgenjs`), drill-down план-факта `GET /dashboard/operations/weekly-per-person/:personId/items` (+self).
+- **Лента Коры (Ф8.6):** `GET /feed/cora`, `POST /feed/cora/seen` (миграция `feed_read_cursor`), `GET /probe/control` («ответил/молчит»), open_question-детектор.
+- **Silence-детектор тем (Ф8.2/8.1):** `@Cron('theme-silence-detector')` → Insight за kill-switch `dashboard.theme_silence.enabled` (ON) + крутилка `dashboard.theme_silence_weeks` (3); decision auto-implement детерминированный.
+- **Прочее:** taskType `meeting-title` (авто-название встреч, DEFAULT-цепочка), поиск по памяти `/memory`, мастер дедупа отделов (`POST /departments/:id/merge`), гейт полноты обещаний (`/me/promises` split items/openQuestions), EventForm rrule/reminders.
+- **Светлая тема (Ф10):** тема-зависимые поверхности в `tokens.css`/`modern.css`/`tokens.ts` (корень контраста — был хардкод тёмного в `modern/tokens.ts`); визуальная доводка оттенков дата-виз на белом — за владельцем/qa (в `04_не-сделано`).

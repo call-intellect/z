@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
+import { Pencil, Plus, Sparkles, Trash2, UserCog } from 'lucide-react';
 import useSWR from 'swr';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
@@ -35,9 +35,61 @@ type DialogState =
   | { kind: 'create' }
   | { kind: 'rename'; dept: DepartmentApi }
   | { kind: 'setHead'; dept: DepartmentApi }
-  | { kind: 'remove'; dept: DepartmentApi };
+  | { kind: 'remove'; dept: DepartmentApi }
+  | { kind: 'tidy' };
 
 const swrKey = (orgId: string) => ['departments', orgId];
+
+/* ── Мастер «Наведём порядок в отделах» (ТЗ редизайн Ф7а) ───────────────── */
+
+/** Группа отделов с одинаковым нормализованным именем (≥2 элемента = дубли). */
+type DuplicateGroup = {
+  /** Нормализованное имя (для key). */
+  normalized: string;
+  /** Все отделы группы (в порядке списка). */
+  members: DepartmentApi[];
+};
+
+/** Нормализация имени отдела для поиска дублей: trim + lowercase + схлоп пробелов. */
+function normalizeDeptName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Пуст ли отдел (нет ни должностей, ни сотрудников). */
+function isEmptyDept(d: DepartmentApi): boolean {
+  return (d.rolesCount ?? 0) === 0 && (d.personsCount ?? 0) === 0;
+}
+
+/** Группы дублей (по нормализованному имени) — только где ≥2 отдела. */
+function findDuplicateGroups(items: DepartmentApi[]): DuplicateGroup[] {
+  const byName = new Map<string, DepartmentApi[]>();
+  for (const d of items) {
+    const key = normalizeDeptName(d.name);
+    if (!key) continue;
+    const arr = byName.get(key);
+    if (arr) arr.push(d);
+    else byName.set(key, [d]);
+  }
+  const groups: DuplicateGroup[] = [];
+  for (const [normalized, members] of byName) {
+    if (members.length >= 2) groups.push({ normalized, members });
+  }
+  return groups;
+}
+
+/**
+ * Пустые отделы НЕ из групп дублей (дубли чистятся слиянием, а одиночные
+ * пустые — удалением). Если пустой отдел входит в группу дублей, он попадёт
+ * под слияние и здесь не учитывается, чтобы не дублировать действие.
+ */
+function findEmptyDepts(
+  items: DepartmentApi[],
+  dupGroups: DuplicateGroup[],
+): DepartmentApi[] {
+  const inDup = new Set<string>();
+  for (const g of dupGroups) for (const m of g.members) inDup.add(m.id);
+  return items.filter((d) => isEmptyDept(d) && !inDup.has(d.id));
+}
 
 export function DepartmentsTab({
   orgId,
@@ -80,9 +132,20 @@ export function DepartmentsTab({
     );
   }
   const items = data?.items ?? [];
+  const dupGroups = findDuplicateGroups(items);
+  const emptyDepts = findEmptyDepts(items, dupGroups);
+  const showTidyWizard = canEdit && (dupGroups.length > 0 || emptyDepts.length > 0);
 
   return (
     <div>
+      {showTidyWizard && (
+        <TidyWizardCard
+          dupGroups={dupGroups}
+          emptyDepts={emptyDepts}
+          onOpen={() => setDialog({ kind: 'tidy' })}
+        />
+      )}
+
       <div className="mb-4 flex items-center justify-between">
         <div className="text-sm text-fg-tertiary">
           Всего отделов: {items.length}
@@ -182,7 +245,291 @@ export function DepartmentsTab({
           }}
         />
       )}
+      {dialog.kind === 'tidy' && (
+        <TidyWizardDialog
+          orgId={orgId}
+          dupGroups={dupGroups}
+          emptyDepts={emptyDepts}
+          onClose={() => setDialog({ kind: 'none' })}
+          onDone={(summary) => {
+            setDialog({ kind: 'none' });
+            void mutate();
+            toast.success(summary);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * ТЗ редизайн Ф7а — карточка-предложение Коры «Наведём порядок в отделах».
+ * Показывается только когда есть что прибрать (дубли или пустые). Кнопка
+ * «Объединить и убрать» открывает мастер-диалог.
+ */
+function TidyWizardCard({
+  dupGroups,
+  emptyDepts,
+  onOpen,
+}: {
+  dupGroups: DuplicateGroup[];
+  emptyDepts: DepartmentApi[];
+  onOpen: () => void;
+}) {
+  const dupCount = dupGroups.length;
+  const emptyCount = emptyDepts.length;
+  // Сколько отделов исчезнет: в каждой группе дублей остаётся один (target),
+  // остальные сливаются; плюс все одиночные пустые удаляются.
+  const merged = dupGroups.reduce((acc, g) => acc + (g.members.length - 1), 0);
+
+  return (
+    <div className="mb-6 rounded-2xl border border-accent/30 bg-gradient-to-b from-accent/10 to-accent/5 p-5">
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent/20 text-accent">
+          <Sparkles size={16} />
+        </span>
+        <h3 className="text-[15px] font-semibold text-fg-primary">
+          Наведём порядок в отделах
+        </h3>
+        <span className="ml-auto rounded-full bg-chip-info-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-info-fg">
+          предложение Коры
+        </span>
+      </div>
+
+      <p className="mt-3 text-sm leading-relaxed text-fg-secondary">
+        {dupCount > 0 && (
+          <>
+            Нашёл{' '}
+            <b className="text-fg-primary">
+              {dupCount}{' '}
+              {pluralRu(dupCount, 'похожий отдел', 'похожих отдела', 'похожих отделов')}
+            </b>
+            {emptyCount > 0 ? ' и ' : '. '}
+          </>
+        )}
+        {emptyCount > 0 && (
+          <>
+            <b className="text-fg-primary">
+              {emptyCount}{' '}
+              {pluralRu(
+                emptyCount,
+                'пустое подразделение',
+                'пустых подразделения',
+                'пустых подразделений',
+              )}
+            </b>{' '}
+            без единого сотрудника.{' '}
+          </>
+        )}
+        Похоже на следы первичной настройки. Объединить дубли и убрать пустые?
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {dupCount > 0 && (
+          <span className="inline-flex items-center rounded-full bg-chip-warning-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-warning-fg">
+            {merged}{' '}
+            {pluralRu(merged, 'дубль', 'дубля', 'дублей')} → объединить
+          </span>
+        )}
+        {emptyCount > 0 && (
+          <span className="inline-flex items-center rounded-full bg-chip-info-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-info-fg">
+            {emptyCount} пустых на удаление
+          </span>
+        )}
+        <span className="inline-flex items-center rounded-full bg-chip-success-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-success-fg">
+          люди не пострадают
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button size="sm" onClick={onOpen}>
+          Показать предложение
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Русская плюрализация (1 / 2-4 / 5+). */
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/**
+ * ТЗ редизайн Ф7а — мастер слияния/чистки отделов.
+ *
+ * Для каждой группы дублей пользователь выбирает, какой отдел оставить
+ * (target). По кнопке «Объединить и убрать»:
+ *   1. для каждой группы — `merge(other.id, target.id)` по всем кроме target;
+ *   2. для каждого одиночного пустого отдела — `remove(id)`.
+ *
+ * Операции выполняются последовательно (порядок предсказуем; ошибки
+ * собираются и показываются, успешная часть не откатывается — backend
+ * каждой операции атомарен).
+ */
+function TidyWizardDialog({
+  orgId,
+  dupGroups,
+  emptyDepts,
+  onClose,
+  onDone,
+}: {
+  orgId: string;
+  dupGroups: DuplicateGroup[];
+  emptyDepts: DepartmentApi[];
+  onClose: () => void;
+  onDone: (summary: string) => void;
+}) {
+  // Выбранный target для каждой группы (по умолчанию — первый член группы).
+  const [targets, setTargets] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const g of dupGroups) init[g.normalized] = g.members[0]?.id ?? '';
+    return init;
+  });
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    let mergedCount = 0;
+    let removedCount = 0;
+    const errors: string[] = [];
+
+    // 1) Слияние дублей.
+    for (const g of dupGroups) {
+      const targetId = targets[g.normalized] ?? g.members[0]?.id;
+      if (!targetId) continue;
+      for (const m of g.members) {
+        if (m.id === targetId) continue;
+        try {
+          await departmentsApi.merge(orgId, m.id, targetId);
+          mergedCount += 1;
+        } catch (e) {
+          errors.push(humanizeApiError(e, `Не удалось объединить «${m.name}».`));
+        }
+      }
+    }
+
+    // 2) Удаление одиночных пустых.
+    for (const d of emptyDepts) {
+      try {
+        await departmentsApi.remove(orgId, d.id);
+        removedCount += 1;
+      } catch (e) {
+        errors.push(humanizeApiError(e, `Не удалось удалить «${d.name}».`));
+      }
+    }
+
+    setBusy(false);
+
+    if (errors.length > 0) {
+      // Показываем первую ошибку; успешная часть уже применена — dialog
+      // закрываем и обновляем список (см. onDone в родителе).
+      toast.error(errors[0]);
+    }
+
+    const parts: string[] = [];
+    if (mergedCount > 0)
+      parts.push(
+        `объединено ${mergedCount} ${pluralRu(mergedCount, 'отдел', 'отдела', 'отделов')}`,
+      );
+    if (removedCount > 0)
+      parts.push(
+        `убрано ${removedCount} пустых`,
+      );
+    const summary = parts.length > 0
+      ? `Порядок наведён: ${parts.join(', ')}.`
+      : 'Изменений не внесено.';
+    onDone(summary);
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Навести порядок в отделах</DialogTitle>
+          <DialogDescription>
+            Сотрудники и должности из объединяемых отделов перейдут в выбранный —
+            люди не пострадают. Действие применяется сразу.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[50vh] space-y-4 overflow-y-auto">
+          {dupGroups.length > 0 && (
+            <div className="space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-fg-tertiary">
+                Похожие отделы — какой оставить
+              </div>
+              {dupGroups.map((g) => (
+                <div
+                  key={g.normalized}
+                  className="rounded-lg border border-border-subtle bg-bg-card p-3"
+                >
+                  <div className="space-y-1.5">
+                    {g.members.map((m) => (
+                      <label
+                        key={m.id}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="radio"
+                          name={`tidy-${g.normalized}`}
+                          checked={
+                            (targets[g.normalized] ?? g.members[0]?.id) === m.id
+                          }
+                          onChange={() =>
+                            setTargets((prev) => ({
+                              ...prev,
+                              [g.normalized]: m.id,
+                            }))
+                          }
+                          disabled={busy}
+                          className="accent-accent"
+                        />
+                        <span className="font-medium text-fg-primary">
+                          {m.name}
+                        </span>
+                        <span className="text-xs text-fg-tertiary">
+                          {m.rolesCount ?? 0} долж. · {m.personsCount ?? 0} чел.
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {emptyDepts.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-fg-tertiary">
+                Пустые подразделения — будут удалены
+              </div>
+              <ul className="space-y-1 rounded-lg border border-border-subtle bg-bg-card p-3 text-sm text-fg-secondary">
+                {emptyDepts.map((d) => (
+                  <li key={d.id} className="flex items-center gap-2">
+                    <Trash2 size={13} className="text-fg-tertiary" />
+                    {d.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Отмена
+          </Button>
+          <Button disabled={busy} onClick={() => void run()}>
+            Объединить и убрать
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

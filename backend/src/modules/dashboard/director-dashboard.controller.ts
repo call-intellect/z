@@ -271,6 +271,10 @@ export class DirectorDashboardController {
         },
       });
     }
-    return this.peopleAtRiskSvc.getAtRisk({ tenantId, limit: q.limit });
+    return this.peopleAtRiskSvc.getAtRisk({
+      tenantId,
+      limit: q.limit,
+      viewerUserId: userId,
+    });
   }
 }

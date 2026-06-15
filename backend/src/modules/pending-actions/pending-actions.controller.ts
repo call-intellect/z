@@ -102,7 +102,7 @@ export class PendingActionsController {
   @Post('confirm')
   @ApiOperation({
     summary:
-      'Быстрое подтверждение item\'а (B4): one-tap approve для light-curation',
+      'Сквозной резолв item\'а очереди решений (Ф4): curation/conflict/intake/probe',
   })
   async confirm(
     @Body(new ZodValidationPipe(ConfirmPendingActionBodySchema))
@@ -111,13 +111,15 @@ export class PendingActionsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true }> {
     const t = this.requireTenant(tenantId);
-    await this.svc.confirm({
+    return this.svc.confirm({
       tenantId: t,
       userId: user.id,
       source: body.source,
       resourceId: body.resourceId,
+      resolution: body.resolution,
+      answerText: body.answerText,
+      targetProjectId: body.targetProjectId,
     });
-    return { ok: true };
   }
 
   private requireTenant(tenantId: string | undefined): string {

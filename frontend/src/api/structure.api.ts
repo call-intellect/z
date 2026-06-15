@@ -210,10 +210,17 @@ export interface RoleProfileBuildStatusApi {
 
 // ─── /me/profile ────────────────────────────────────────────────────────────
 
+// Контракт выровнен по факту ответа `GET /api/v1/me/profile`
+// (backend `MeProfileDto`, me.service.ts): поля `primaryRole`/`primaryDepartment`
+// и `person.{id,name,email}` — раньше тип лгал (`role`/`department`/`person.fullName`),
+// из-за чего раздел «Я» всегда показывал «Должность не назначена» (QA B3 2026-06-15).
+// NB: backend для `roleProfile` отдаёт лишь `{id,status,buildVersion,lastBuildAt}`
+// (без `summaryCache`) — карта должности на /me поэтому показывает заглушку;
+// это отдельный дефект того же контракта (см. plans/tz/2026-06-15-me-role-map-card-contract.md).
 export interface MyProfileApi {
-  person: PersonDomainApi | null;
-  role: RoleDomainApi | null;
-  department: DepartmentApi | null;
+  person: { id: string; name: string; email: string } | null;
+  primaryRole: { id: string; name: string } | null;
+  primaryDepartment: { id: string; name: string } | null;
   roleProfile: RoleProfileApi | null;
 }
 

@@ -74,7 +74,7 @@ export function MyPositionCard({
       <PositionEditor
         orgId={orgId}
         personId={profile.person.id}
-        currentRole={profile.role}
+        currentRole={profile.primaryRole}
       />
     </PositionCardShell>
   );
@@ -100,7 +100,7 @@ function PositionEditor({
 }: {
   orgId: string;
   personId: string;
-  currentRole: MyProfileApi['role'];
+  currentRole: MyProfileApi['primaryRole'];
 }) {
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);

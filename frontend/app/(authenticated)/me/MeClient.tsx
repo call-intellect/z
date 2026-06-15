@@ -112,7 +112,7 @@ function Content({
   const profile = profileSwr.data;
 
   const tgLinked = channelsSwr.data?.status === 'linked';
-  const needPosition = !profileSwr.isLoading && profile?.role == null;
+  const needPosition = !profileSwr.isLoading && profile?.primaryRole == null;
   const needTelegram = !channelsSwr.isLoading && !channelsSwr.error && !tgLinked;
   const showNudge = needPosition || needTelegram;
 
@@ -121,10 +121,10 @@ function Content({
   // После загрузки — имя пользователя в title, «должность · отдел» в subtitle.
   const shellTitle = profileSwr.isLoading
     ? 'Мой кабинет'
-    : (profile?.person?.fullName ?? userName ?? 'Мой кабинет');
+    : (profile?.person?.name ?? userName ?? 'Мой кабинет');
   const shellSubtitle = profileSwr.isLoading
     ? undefined
-    : ([profile?.role?.name, profile?.department?.name]
+    : ([profile?.primaryRole?.name, profile?.primaryDepartment?.name]
         .filter(Boolean)
         .join(' · ') || undefined);
 
@@ -261,8 +261,8 @@ function ProfileHeader({
       </header>
     );
   }
-  const role = profile?.role;
-  const department = profile?.department;
+  const role = profile?.primaryRole;
+  const department = profile?.primaryDepartment;
   return (
     <header className="mb-6">
       <div

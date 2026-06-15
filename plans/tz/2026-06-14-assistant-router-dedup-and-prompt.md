@@ -80,13 +80,14 @@ related:
     утверждение будет ОТВЕЧЕНО, а не СОХРАНЕНО». (б) Не понимает, к чему отнести
     сообщение, или сомневается → ОБЯЗАН задать один уточняющий вопрос.
     **Принцип владельца 2026-06-15: лучше переспросить, чем ошибиться.** Порог
-    уточнения — НАСТРАИВАЕМЫЙ (крутилка `CONCIERGE_CLARIFY_MIN_CONFIDENCE` в
-    AdminSetting, дефолт консервативный — спрашивает чаще). Реализация порога — НЕ
-    слепой LLM-confidence (он не калиброван, методология §4 / CLAMBER), а связка:
-    (1) промпт-крен «сомневаешься — спроси»; (2) ЖЁСТКОЕ правило в коде: изменяющее
-    действие (поставить/создать/отменить) с отсутствующим обязательным полем
-    (исполнитель / время / кого) → всегда уточнять; (3) крутилка регулирует крен
-    и тюнится по проду. **Проверено
+    уточнения — НАСТРАИВАЕМАЯ крутилка `CONCIERGE_CLARIFY_MIN_CONFIDENCE` (0–100) в
+    AdminSetting, **дефолт 80** — высокий, с креном в сторону вопроса. Механика:
+    помощник вместе с решением отдаёт самооценку понимания запроса (0–100); ниже
+    порога → уточняющий вопрос вместо действия. Так как LLM-самооценка НЕ калибрована
+    (методология §4 / CLAMBER), порог держим высоким И подкрепляем ЖЁСТКИМ правилом
+    в коде: изменяющее действие (поставить/создать/отменить) с отсутствующим
+    обязательным полем (исполнитель/время/кого) → всегда уточнять, независимо от
+    самооценки. Крутилку тюним по проду. **Проверено
     полевым тестом** `backend/scripts/eval/smoke-concierge-routing-battery.ts`
     (новый промпт, deepseek-v4-pro, 21 кейс): 5/5 утверждений → `ingest_note`;
     вопросы → `ask_chat_v2`; двусмысленное/неполное действие → уточняющий вопрос;
@@ -154,7 +155,7 @@ related:
 | `concierge/services/service-map-generator.service.ts` | Удалить `search_knowledge`; добавить `create_task` (+опц.), **`search_tasks`** (поиск задач, возвращает `id`) **и `ingest_note`** (занести утверждение/идею/заметку в граф знаний — `IngestService.ingestFreeNote`); вычистить `description` всех инструментов. `search_tables` НЕ добавляем (растворён в chat_v2, ТЗ 2026-06-15 §7). |
 | `concierge/services/tool-router.service.ts` | Маршрут `create_task` → REST трекера; passthrough-семантика `ask_chat_v2` (вернуть цитаты наверх). |
 | `dialog-layer/prompts/classify.prompt.ts` + `query-classifier.service.ts` + Telegram task-handler (`telegram-bot.adapter`) | Убрать намерения `task`/`show_tasks` (enum 9→7, JSON-схема, текст промпта; снять перехват task-handler). **ОДНИМ релизом с Ф5 каналов** (Telegram→помощник), иначе постановка задач из Telegram отвалится. |
-| `common/config` + AdminSetting | `CONCIERGE_HISTORY_PAIRS` (дефолт 4) **и `CONCIERGE_CLARIFY_MIN_CONFIDENCE`** (порог уточнения, дефолт консервативный — спрашивает чаще; super_admin крутит). |
+| `common/config` + AdminSetting | `CONCIERGE_HISTORY_PAIRS` (дефолт 4) **и `CONCIERGE_CLARIFY_MIN_CONFIDENCE`** (порог уточнения 0–100, дефолт **80** — с креном в вопрос; super_admin крутит). |
 | метрики | снять метрики dialog-layer/предпоиска помощника. |
 
 ## 6. Промпт — см. Приложение A.
@@ -188,7 +189,7 @@ related:
   + курс на меньше подтверждений.
 
 ## 9. Prod-операции (при выкате)
-- AdminSetting `CONCIERGE_HISTORY_PAIRS=4` и `CONCIERGE_CLARIFY_MIN_CONFIDENCE` (Шаг 7).
+- AdminSetting `CONCIERGE_HISTORY_PAIRS=4` и `CONCIERGE_CLARIFY_MIN_CONFIDENCE=80` (Шаг 7).
 - Новый инструмент `create_task` — без миграций (REST трекера уже есть).
 - Промпт — code-fallback/registry. Прочее — `docker compose up -d --build backend`.
 

@@ -10,6 +10,8 @@ relates_to:
   - backend/src/modules/ai/services/prompts/tasks-unified.ts
   - backend/src/modules/tracker/services/meeting-extract-actions.service.ts
   - backend/src/modules/tracker/services/intake.service.ts
+  - plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md  # M1: dialog-classify уже снимает Telegram-срез B7
+  - second-brain/02_architecture/agent-modules.md  # это ТЗ = модуль M4 (intake/extract), НЕ M1 (помощник)
 ---
 
 # ТЗ. Вопросы/команды сотрудников ≠ обещания (калибровка интента)
@@ -33,6 +35,33 @@ relates_to:
 > рекомендации исходного ТЗ, а не дословной инструкции. Здесь зафиксировано
 > честно: вынос отдельно обоснован природой задачи (калибровка, не строчный баг).
 
+## Связь с переработкой помощника (M1) — что уже сделано (добавлено 2026-06-15)
+
+> После переработки модуля **M1 «Помощник и общение»** (ТЗ
+> [dialog-layer](2026-06-14-dialog-layer-unified-query-understanding.md) ·
+> [помощник](2026-06-14-assistant-router-dedup-and-prompt.md) ·
+> [chat-v2](2026-06-15-chat-v2-unified-answer-prompt.md)) проверено, как это ТЗ с
+> ним соотносится. **Это ДРУГОЙ классификатор и другой модуль:** извлечение
+> обещаний `tasks-unified` + intake-путь — это модуль **M4** (Встречи→задачи /
+> трекер-intake), см. [agent-modules.md](../../second-brain/02_architecture/agent-modules.md),
+> а НЕ канальный `dialog-classify` из M1. По коду они не пересекаются. Но один срез
+> B7 наш M1 уже закрыл:
+
+- **Telegram-срез УЖЕ закрыт `dialog-classify`.** Пример «какие у меня задачи?»
+  канальный классификатор относит к `show_tasks`, а `show_tasks` НЕ создаёт
+  `IntakeIssue` (это читалка, не постановка). Проверено полевым тестом
+  `backend/scripts/eval/smoke-dialog-classify-battery.ts` (26/26, 0 утечек:
+  «какие у меня задачи?» → show_tasks; «что я сегодня сделал?» → вопрос). Значит
+  НОВЫХ ложных кандидатов из Telegram по этому паттерну больше не появляется.
+- **Поэтому остаток B7 — про другой источник.** «Ооо луа» — ChatBox-орг (svmazur),
+  так что ложные кандидаты вероятнее из анализа переписки ChatBox / извлечения из
+  встреч (`tasks-unified`), которого `dialog-classify` НЕ касается. Это и есть
+  работа этого ТЗ; шаг 1 «Решения» (diag источника) подтвердит/опровергнет.
+- **Метод теста переносится 1-в-1.** Калибровку (п. 2–3) проверять той же батареей
+  реальных примеров на живой модели — сделать `smoke-tasks-unified-battery.ts` по
+  образцу `smoke-dialog-classify-battery.ts` (вопросы/команды → 0 кандидатов;
+  настоящие обещания → кандидат).
+
 ## Контекст (B7, воспроизведено в проде)
 
 В очереди Org «Ооо луа» блок «Кандидаты в задачи» содержал реальные запросы
@@ -49,6 +78,9 @@ relates_to:
 - Не-meeting каналы (concierge/chat/telegram → IntakeIssue): путь создания
   IntakeIssue (`intake.service.ts`, source in_app/telegram/concierge) — проверить,
   какой классификатор решает «это обещание/задача».
+  **NB (2026-06-15):** Telegram-ветка уже гейтится `dialog-classify` (вопрос
+  «какие у меня задачи?» → show_tasks, IntakeIssue не создаётся) — см. раздел
+  «Связь с M1» выше. Остаётся проверить ChatBox- и concierge-источники.
 - Авто-триаж: `intake-auto-triage.worker.ts` (порог confidence) — вопрос с
   высоким confidence может авто-приняться.
 

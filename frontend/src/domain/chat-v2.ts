@@ -8,6 +8,10 @@ import type {
   ChatV2ModeApi,
   ChatV2ScopeApi,
 } from '@/api/chat-v2.api';
+import type {
+  AskCloneResponseApi,
+  CloneCitationApi,
+} from '@/api/clones.api';
 
 /**
  * Domain-модели SBA α-5 — Layer 5 Chat-v2 Omnichannel.
@@ -187,4 +191,70 @@ export function formatTimestamp(ms: number): string {
   const s = total % 60;
   const pad = (n: number): string => (n < 10 ? `0${n}` : String(n));
   return `${pad(m)}:${pad(s)}`;
+}
+
+// ─────────── ТЗ#5 2026-06-15 — адресат AI-чата кабинета (помощник / клон) ───────────
+
+/**
+ * Адресат вопроса в окне `/chat`. Дефолт — общий помощник Коры
+ * (`{kind:'assistant'}`), путь которого не меняется. Опционально пользователь
+ * выбирает ролевой клон (по должности) — вопрос уходит ему через
+ * `clonesApi.askRole`. См. ТЗ `2026-06-15-cabinet-assistant-clone-selector.md`.
+ */
+export type AssistantTarget =
+  | { kind: 'assistant' }
+  | { kind: 'clone'; roleId: string; roleName: string };
+
+/**
+ * Маппер ответа клона (`AskCloneResponseApi`) в `ChatV2Message`-shape, чтобы
+ * встроить ответ клона в общую видимую нить `/chat`.
+ *
+ * Особенности:
+ *   - `refused:true` — это НОРМАЛЬНЫЙ ответ (анти-deepfake), `text` рендерим
+ *     как обычное сообщение клона, не как ошибку.
+ *   - `CloneCitationApi` несёт `blockId` (а не `meetingId` обязательно) и
+ *     опц. `meetingId/meetingTitle/startMs/endMs/snippet`. Маппим доступные
+ *     поля: цитаты без meetingId/meetingTitle (только blockId) опускаем, т.к.
+ *     `ChatV2Citation` рассчитан на источник-встречу/документ и без них
+ *     рендерить нечего.
+ *   - `mode` ставим `clone_style` (как и приходит в ответе).
+ *   - `createdAt` — момент маппинга (ответ клона синхронный, без серверной даты
+ *     в ChatV2-форме).
+ */
+export function cloneAnswerToChatV2Message(
+  api: AskCloneResponseApi,
+): ChatV2Message {
+  return {
+    id: api.messageId,
+    conversationId: api.conversationId,
+    role: 'assistant',
+    mode: 'clone_style',
+    text: api.text,
+    citations: (api.citations ?? [])
+      .map(cloneCitationToChatV2Citation)
+      .filter((c): c is ChatV2Citation => c !== null),
+    retrievalMeta: null,
+    llmMeta: {
+      refused: api.refused ?? false,
+      refusalReason: api.refusalReason ?? null,
+    },
+    createdAt: new Date(),
+  };
+}
+
+/**
+ * Маппер цитаты клона → `ChatV2Citation`. Возвращает `null`, если в цитате нет
+ * данных встречи (только `blockId`) — такую нечего показать в нити `/chat`.
+ */
+export function cloneCitationToChatV2Citation(
+  api: CloneCitationApi,
+): ChatV2Citation | null {
+  if (!api.meetingId && !api.meetingTitle) return null;
+  return {
+    meetingId: api.meetingId ?? '',
+    meetingTitle: api.meetingTitle ?? 'Источник',
+    startMs: api.startMs ?? 0,
+    endMs: api.endMs ?? 0,
+    snippet: api.snippet ?? '',
+  };
 }

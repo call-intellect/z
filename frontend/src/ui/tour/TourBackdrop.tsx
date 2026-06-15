@@ -9,21 +9,18 @@
  * target», но для MVP достаточно цельной подложки + подсветить целевой
  * элемент через ring/scale на самом target (см. TourTooltip — outline).
  *
- * pointer-events: stroke (через `pointer-events-none` мы НЕ выставляем —
- * подложка ловит клики, чтобы пользователь не мог взаимодействовать с UI
- * во время тура; tooltip имеет `pointer-events: auto`).
+ * pointer-events: backdrop — НЕблокирующий (`pointer-events-none`). Тур
+ * задуман неблокирующим: затемнение/blur остаются визуально, но клики
+ * проходят сквозь подложку к странице (пункты меню, кнопки «В задачи»,
+ * «Выбрать должность»). Tooltip и подсвеченный target кликабельны как
+ * элементы с бо́льшим z-index и собственным `pointer-events: auto`.
  */
 
-interface Props {
-  onClick?: () => void;
-}
-
-export function TourBackdrop({ onClick }: Props) {
+export function TourBackdrop() {
   return (
     <div
       aria-hidden
-      onClick={onClick}
-      className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px]"
+      className="pointer-events-none fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px]"
     />
   );
 }

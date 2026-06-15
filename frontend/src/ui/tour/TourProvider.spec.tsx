@@ -203,15 +203,12 @@ describe('TourProvider', () => {
       expect(screen.getByTestId('active')).toHaveTextContent('welcome:0'),
     );
 
-    // 2026-05-29 onboarding-v2 Block B: welcome — 6 action-шагов; на каждом
-    // шаге secondary='Пропустить' (kind=next) двигает дальше; на последнем
-    // (i=5) secondary='Закончить' (kind=complete) → закрытие + PATCH.
-    // Жмём «Пропустить» в TooltipContext (внутри tooltip'а есть две кнопки
-    // «Пропустить»: tooltip secondary и наша TestControls — берём первую).
+    // 2026-06-15 fix B4/B5: welcome — 6 action-шагов; secondary='Пропустить'
+    // теперь kind='skip' (закрывает тур + персист skipped), поэтому шаги
+    // двигаем напрямую через tour.next() (кнопка «next» в TestControls).
+    // На последнем (i=5) secondary='Закончить' (kind=complete) → закрытие + PATCH.
     for (let i = 1; i <= 5; i++) {
-      const buttons = screen.getAllByRole('button', { name: 'Пропустить' });
-      // Первая «Пропустить» — внутри tooltip'а (TooltipContext secondaryAction).
-      await user.click(buttons[0]!);
+      await user.click(screen.getByRole('button', { name: 'next' }));
       await waitFor(() =>
         expect(screen.getByTestId('active')).toHaveTextContent(`welcome:${i}`),
       );
@@ -251,10 +248,10 @@ describe('TourProvider', () => {
       expect(screen.getByTestId('active')).toHaveTextContent('welcome:0'),
     );
 
-    // 2026-05-29 onboarding-v2 Block B: на новом welcome-туре «Пропустить» в
-    // tooltip'е — это secondaryAction kind='next' (двигает шаг), а skip()
-    // вызывается через ESC или явный API. В тесте — через TestControls
-    // (кнопка «skip» дёргает tour.skip() напрямую).
+    // 2026-06-15 fix B4/B5: на welcome-туре «Пропустить» в tooltip'е теперь
+    // secondaryAction kind='skip' (закрывает тур + персист skipped:true).
+    // skip() также вызывается через ESC. В тесте дёргаем tour.skip() напрямую
+    // через TestControls (кнопка «skip»).
     await user.click(screen.getByRole('button', { name: 'skip' }));
     await waitFor(() =>
       expect(screen.getByTestId('active')).toHaveTextContent('none'),

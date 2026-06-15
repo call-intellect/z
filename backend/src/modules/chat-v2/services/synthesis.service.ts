@@ -13,19 +13,20 @@ import {
   type ChatV2Scope as KnowledgeChatV2Scope,
   type ChatV2Stage,
 } from '../../knowledge-core/services/chat-v2.service';
-import { CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT } from '../prompts/clone-style.prompt';
-import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../prompts/factual.prompt';
-import { CHAT_V2_SYNTHETIC_SYSTEM_PROMPT } from '../prompts/synthetic.prompt';
 
 /**
  * SBA α-5 — SynthesisService.
  *
  * Обёртка над `ChatV2Service` из knowledge-core. Назначение:
- *   1) Пробросить mode (factual/synthetic/clone_style) — на α-5 mode влияет
- *      только на postprocessing (uncertaintyNote), полная реализация
- *      mode-prompts в γ-1.
- *   2) Передать history (последние N сообщений) — knowledge-core
- *      ChatV2Service сам подмешает в systemPrompt.
+ *   1) ТЗ 2026-06-15 — `mode` БОЛЬШЕ НЕ выбирает текст системного промпта:
+ *      графовый ответ всегда идёт на единый промпт-ответчик
+ *      (BASE_SYSTEM_PROMPT в knowledge-core). Override используется только
+ *      для brand-voice (clone_style + scope=org). Отдельные движки
+ *      (ClonesService.askPerson, brand-voice) остаются как ранний возврат /
+ *      override и не зависят от текста режима. На postprocessing `mode` ещё
+ *      влияет (uncertaintyNote для synthetic).
+ *   2) Передать history + summary — knowledge-core ChatV2Service кладёт их
+ *      в конец USER (cache-friendly).
  *   3) Собрать retrievalMeta / llmMeta для записи в ChatV2Message.
  *   4) Для mode='synthetic' — если в Org есть открытые ConflictItem,
  *      релевантные к найденным блокам, добавить uncertaintyNote.
@@ -168,7 +169,8 @@ export class SynthesisService {
     //    и как ключ RetrievalCache.
     //  - queries[] (если есть) → multi-query expansion в retrieval.
     //  - validAt → temporal-фильтр.
-    //  - mode → системный промпт для knowledge-core (factual/synthetic/clone_style).
+    //  - mode → текст системного промпта НЕ выбирает (ТЗ 2026-06-15): единый
+    //    промпт-ответчик; override только для brand-voice (clone_style+org).
     //  - RetrievalCache lookup ДО fetchCandidates: hit → передаём
     //    `precomputedBlockIds` в knowledge-core и пропускаем retrieval.
     const effectiveQuery = input.standaloneQuestion ?? input.question;
@@ -181,13 +183,18 @@ export class SynthesisService {
       validAt: validAtIso,
     } as const;
     const cachedRetrieval = await this.retrievalCache.get(cacheKeyArgs);
-    let systemPromptOverride = this.modePrompt(input.mode);
+    // ТЗ 2026-06-15 — `mode` БОЛЬШЕ НЕ выбирает текст системного промпта:
+    // графовый ответ идёт на единый промпт (override=null → knowledge-core
+    // ChatV2Service подставит BASE_SYSTEM_PROMPT). Override остаётся только
+    // для brand-voice (clone_style + scope=org) — это отдельный движок «голос
+    // компании», а не «режим письма».
+    let systemPromptOverride: string | null = null;
 
     // SBA β-7 — clone_style scope='org' (без scopeRefId) → company-level
     // brand voice. Подмешиваем BrandVoiceProfile в системный промпт, чтобы
     // LLM генерировал ответ в фирменном tone/values/taboos. Если профиль
     // пустой (corpus ниже порога) или сервис не подключён — оставляем
-    // дефолтный clone_style fallback.
+    // единый промпт (override=null).
     if (
       input.mode === 'clone_style' &&
       input.scope === 'org' &&
@@ -260,19 +267,9 @@ export class SynthesisService {
       }
     }
 
-    if (input.mode === 'clone_style') {
-      // γ-1 — если попали сюда, значит scope/scopeRefId не подошли для ClonesService.askPerson
-      // (например scope='org' без scopeRefId). Дегрейдим до synthetic с пометкой.
-      return {
-        text: `${result.message}\n\n_(режим «в стиле сотрудника» требует выбора конкретного сотрудника — показал synthetic-ответ)_`,
-        citations: result.citations,
-        retrievalMeta,
-        llmMeta,
-        uncertaintyNote,
-        dataClass: result.dataClass,
-      };
-    }
-
+    // ТЗ 2026-06-15 — clone_style без подходящего движка (не card+personId для
+    // askPerson и не org+brand-voice) сведён к обычному графовому ответу на
+    // едином промпте: «режима письма» больше нет, добавочной пометки нет.
     return {
       text: result.message,
       citations: result.citations,
@@ -297,22 +294,6 @@ export class SynthesisService {
     if (scope === 'issue') return 'card';
     return scope;
   }
-
-  /**
-   * SBA α-5 dialog-layer — mode-specific system prompt.
-   * Подменяет BASE_SYSTEM_PROMPT в knowledge-core ChatV2Service.
-   */
-  private modePrompt(mode: ChatV2Mode): string {
-    switch (mode) {
-      case 'factual':
-        return CHAT_V2_FACTUAL_SYSTEM_PROMPT;
-      case 'clone_style':
-        return CHAT_V2_CLONE_STYLE_SYSTEM_PROMPT;
-      case 'synthetic':
-      default:
-        return CHAT_V2_SYNTHETIC_SYSTEM_PROMPT;
-    }
-  }
 }
 
 // ─────────────────────────── SBA β-7 helpers ──────────────────────────
@@ -335,14 +316,14 @@ interface BrandVoiceProfileForPrompt {
 /**
  * SBA β-7 — собирает системный промпт для chat-v2 в режиме «голос компании»
  * (mode='clone_style', scope='org'). При пустом профиле / корпус ниже
- * порога — возвращает null (caller использует дефолтный CHAT_V2_CLONE_STYLE
- * fallback).
+ * порога — возвращает null (caller оставляет override=null → единый
+ * промпт-ответчик, ТЗ 2026-06-15).
  */
 function buildClonedCompanyPrompt(
   profile: BrandVoiceProfileForPrompt,
 ): string | null {
   // Если профиль пустой (корпус ниже порога ИЛИ extract ещё не отработал) —
-  // дегрейдим до обычного clone_style.
+  // дегрейдим до единого промпта-ответчика (override=null у caller).
   if (
     profile.belowCorpusThreshold ||
     (profile.tone === null && profile.values === null && profile.taboos === null)

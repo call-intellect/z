@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { DataClass } from '@prisma/client';
+import type { DataClass, SignalType } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -94,9 +94,12 @@ export interface ChatV2Input {
    */
   intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
   /**
-   * SBA α-5 dialog-layer — override BASE_SYSTEM_PROMPT для mode-specific
-   * ответа. Mode-prompts заданы в `chat-v2/prompts/{factual|synthetic|clone-style}.prompt.ts`.
-   * Если не задан — используется BASE_SYSTEM_PROMPT (default).
+   * Override системного промпта. ТЗ 2026-06-15 — режимы factual/synthetic/
+   * clone_style как «текст промпта» удалены: графовый ответ идёт на единый
+   * BASE_SYSTEM_PROMPT. Override теперь подаётся только для brand-voice
+   * («голос компании», clone_style+scope=org) из SynthesisService. Если не
+   * задан — BASE_SYSTEM_PROMPT (единый промпт-ответчик; он же обслуживает
+   * старый `chat`-модуль).
    */
   systemPromptOverride?: string | null;
   /**
@@ -199,6 +202,100 @@ const SIGNAL_TYPE_RU: Record<string, string> = {
 };
 
 /**
+ * Chat-v2 единый промпт (ТЗ 2026-06-15 §6) — ПОЛНАЯ карта `SignalType` →
+ * человекочитаемый русский ярлык ДЛЯ КОНТЕКСТА синтезатора. В отличие от
+ * схлопывающего `SIGNAL_TYPE_RU` (он для фильтр-сообщения «по этим условиям
+ * не нашёл») здесь точные ярлыки на КАЖДЫЙ тип — рамка смысла для модели
+ * («это решение» vs «это жалоба клиента»).
+ *
+ * Тип строго `Record<SignalType, string>` — это compile-guard: новый тип в
+ * enum без русского ярлыка ⇒ сборка падает (чиним весь КЛАСС утечки, не один
+ * случай). НЕ заменяет `SIGNAL_TYPE_RU` (тот остаётся для describeStructuralFilters).
+ */
+const SIGNAL_TYPE_CONTEXT_RU: Record<SignalType, string> = {
+  fact: 'факт',
+  pain: 'боль (проблема)',
+  feature_request: 'пожелание (запрос доработки)',
+  objection: 'возражение',
+  churn_risk: 'риск оттока',
+  idea: 'идея',
+  risk: 'риск',
+  commitment: 'обязательство',
+  decision: 'решение',
+  mood: 'настроение',
+  drift: 'отклонение',
+  competitor_move: 'действие конкурента',
+  metric_change: 'изменение метрики',
+  knowledge_gap: 'пробел в знаниях',
+  reasoning: 'рассуждение',
+  rationale: 'обоснование',
+  decision_basis: 'основание решения',
+  regulation: 'регламент',
+  process_step: 'шаг процесса',
+  expertise: 'экспертиза',
+  experience: 'опыт',
+  competence: 'компетенция',
+  methodology_step: 'шаг методологии',
+  hypothesis: 'гипотеза',
+  result: 'результат',
+  lesson: 'извлечённый урок',
+  brand_principle: 'принцип бренда',
+  content_artifact: 'материал',
+  commitment_status: 'статус обязательства',
+  plan_item: 'пункт плана',
+  done_item: 'сделанное',
+  blocker: 'блокер',
+  team_friction: 'трение в команде',
+  process_friction: 'трение в процессе',
+  resource_gap: 'нехватка ресурса',
+  suggestion: 'предложение',
+  client_request: 'запрос клиента',
+  question: 'вопрос',
+  task_created: 'задача',
+  task_status_changed: 'изменение статуса задачи',
+  task_blocked: 'задача заблокирована',
+  task_completed: 'выполненная задача',
+  task_overdue: 'просроченная задача',
+  task_reassigned: 'переназначенная задача',
+  task_comment: 'комментарий к задаче',
+  task_mention: 'упоминание в задаче',
+  help_provided: 'оказана помощь',
+  proactive_hint: 'проактивная подсказка',
+  mentoring: 'наставничество',
+  emotional_support: 'эмоциональная поддержка',
+  constructive_feedback: 'конструктивная обратная связь',
+  question_unanswered: 'вопрос без ответа',
+  question_acknowledged_no_action: 'вопрос принят без действий',
+  helped_by: 'получил помощь',
+  helped_to: 'помог коллеге',
+  thanks_explicit: 'благодарность',
+};
+
+/**
+ * Возвращает русский ярлык типа блока для контекста синтезатора. Через словарь
+ * `SIGNAL_TYPE_CONTEXT_RU`; для неизвестного (не из enum, напр. legacy-строка) —
+ * сам код как мягкий fallback.
+ */
+function signalTypeContextRu(signalType: string): string {
+  return (
+    SIGNAL_TYPE_CONTEXT_RU[signalType as SignalType] ?? signalType
+  );
+}
+
+/**
+ * Chat-v2 единый промпт (ТЗ 2026-06-15 §6.1) — ИМЕНОВАННЫЕ КОНСТАНТЫ русских
+ * тегов контекста. Единый источник для билдера (buildUserMessage) и чистилки
+ * (stripBlockMarkers): и текст, что видит модель, и regex для вырезания
+ * ссылаются на одни и те же строки. Английские теги остаются в strip для
+ * обратной совместимости со старыми ответами.
+ */
+export const REASONING_CHAIN_TAG_PREFIX = '[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ';
+export const CONTRADICTING_FACT_TAG = '[ПРОТИВОРЕЧАЩИЙ ФАКТ]';
+export const CONTRADICTIONS_HEADER = 'Противоречащие факты:';
+/** Префикс блока «Данные из таблиц» (наполняет ЧАСТЬ B; константа и strip — здесь). */
+export const TABLE_TAG_PREFIX = '[ТАБЛИЦА:';
+
+/**
  * Query Understanding Ф4 (R10) — карта ветки темы → человекочитаемый русский
  * термин.
  */
@@ -272,7 +369,12 @@ const BLOCK_REF_REGEX = /\[BLOCK:([a-z0-9]+)\]/gi;
  *   - [CONTRADICTING BLOCK ...]      — counter-evidence тег (W3.3)
  *   - [REASONING CHAIN FOR BLOCK ...]— тег цепочки обоснований (W3.2)
  *   - [BLOCK:<id>]                   — ссылка на блок (id = lowercase alnum cuid)
+ *   - [ПРОТИВОРЕЧАЩИЙ ФАКТ ...]       — русский тег counter-evidence (ТЗ 06-15)
+ *   - [ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ ...]— русский тег цепочки обоснований
+ *   - [ТАБЛИЦА: ...]                  — русский тег строк умных таблиц (ЧАСТЬ B)
  * Обычный markdown ответа (списки, **жирный**, ссылки `[текст](url)`) не трогаем.
+ * Английские теги (CONTRADICTING/REASONING) оставлены для обратной совместимости
+ * со старыми сохранёнными ответами.
  *
  * ВАЖНО: чистая функция без сайд-эффектов (свежие regex-литералы, без общего
  * lastIndex) — применять ТОЛЬКО к возвращаемому `message`, после того как
@@ -282,6 +384,11 @@ export function stripBlockMarkers(text: string): string {
   return text
     .replace(/\[CONTRADICTING BLOCK[^\]]*\]/gi, '')
     .replace(/\[REASONING CHAIN FOR BLOCK[^\]]*\]/gi, '')
+    // Русские теги контекста (ТЗ 2026-06-15) — единый источник имён в константах
+    // REASONING_CHAIN_TAG_PREFIX / CONTRADICTING_FACT_TAG / TABLE_TAG_PREFIX.
+    .replace(/\[ПРОТИВОРЕЧАЩИЙ ФАКТ[^\]]*\]/g, '')
+    .replace(/\[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ[^\]]*\]/g, '')
+    .replace(/\[ТАБЛИЦА:[^\]]*\]/g, '')
     .replace(/\[BLOCK:[a-z0-9]+\]/gi, '')
     .replace(/[ \t]{2,}/g, ' ') // схлопнуть двойные пробелы от вырезанных маркеров
     .replace(/ +([.,;:!?])/g, '$1') // убрать пробел перед пунктуацией
@@ -326,16 +433,107 @@ interface RenderedContradictingBlock {
   contradictsBlockId: string;
 }
 
-const BASE_SYSTEM_PROMPT = `Ты — AI-аналитик компании, работаешь на знании из её встреч и переписок.
+/**
+ * Chat-v2 единый промпт-ответчик (ТЗ 2026-06-15, Приложение A, SYSTEM часть 1).
+ *
+ * Один промпт на ВСЕ ответы из графа — режимов «факт/синтез/в стиле сотрудника»
+ * больше нет (их тексты удалены). Стабильная часть (кэшируется для всех
+ * компаний): роль, границы, правила, few-shot, self-check, запреты + правила
+ * чтения особых пометок контекста (цепочка рассуждения / противоречащий факт /
+ * данные из таблиц). Хвост «## О компании» подмешивается отдельно per-tenant
+ * (buildSystemPrompt companyAbout), сюда НЕ входит. Также обслуживает старый
+ * `chat`-модуль (buildSystemPrompt fallback) — имя экспорта сохранено.
+ */
+export const BASE_SYSTEM_PROMPT = `## Роль
+Ты — Кора, ИИ-помощник по памяти компании. Отвечаешь сотрудникам компании
+на их вопросы, опираясь ТОЛЬКО на то, что компания уже зафиксировала: встречи,
+переписки, решения, документы. Ты не универсальный чат-бот — ты память
+и аналитик одной конкретной компании (она описана в разделе «О компании» ниже).
 
-Правила:
-- Отвечай на русском, кратко и по делу (2-6 предложений; для сложных вопросов — до 12).
-- Опирайся ТОЛЬКО на блоки из раздела «Контекст» ниже. Если данных нет — честно скажи "Недостаточно данных" и НЕ выдумывай.
-- Когда ссылаешься на конкретный блок — обязательно ставь маркер вида [BLOCK:<id>] прямо в тексте, рядом с фактом. Можно несколько маркеров на одно утверждение.
-- Если блоки противоречат друг другу — упомяни это и сошлись на оба ([BLOCK:<id1>] vs [BLOCK:<id2>]).
-- Не выдумывай blockId, которых нет в контексте.
-- KC-Temporal W3.2 — если в контексте есть блок с тегом [REASONING CHAIN FOR BLOCK <id>] — это цепочка обоснований (decision ← rationale ← факты) вокруг исходного блока. Используй её, чтобы дать развёрнутый ответ «почему», но цитируй маркером [BLOCK:<id>] только сам исходный блок, не каждый узел цепочки.
-- KC-Temporal W3.3 — если в контексте есть блоки с тегом [CONTRADICTING BLOCK] — это блоки, противоречащие основным. Обязательно скажи про конфликт мнений или фактов, не игнорируй; предложи пользователю уточнить, какое утверждение актуально. Не выбирай «правильное» сам.`;
+## Кому ты отвечаешь и что будет с ответом
+- Спрашивает сотрудник компании — из кабинета или из мессенджера. Он может быть
+  не из технического отдела: пиши на нормальном человеческом языке.
+- Твой ответ — финальный. Его покажут человеку как есть, никто не будет его
+  переписывать после тебя. Значит, он должен быть сразу понятным, аккуратным
+  и честным.
+- Человек спрашивает, чтобы быстро узнать, что компания уже знает или решала
+  по теме, не поднимая вручную встречи и переписки. Сэкономь ему это время.
+
+## Границы — только дела компании
+Ты отвечаешь ТОЛЬКО на вопросы про эту компанию и её работу — то, что есть
+или может быть в её памяти (см. «О компании» ниже).
+- На посторонние темы (общие знания, новости, погода, развлечения, личные
+  советы, «расскажи что-нибудь») — не отвечаешь.
+- Код не пишешь и задачи, не связанные с компанией, не решаешь.
+- На такую просьбу вежливо откажись: коротко скажи, что ты помощник по памяти
+  компании и можешь помочь только с вопросами про неё. Не придумывай ответ
+  ради «полезности».
+
+## Как ты отвечаешь
+1. Только из контекста. Опирайся строго на раздел «Контекст» в сообщении ниже.
+   Не добавляй знаний «из общего опыта», которых в контексте нет.
+2. Глубину выбираешь по вопросу — без жёсткого лимита. На простой фактический
+   вопрос отвечай коротко и по сути. Но если какой-то момент важно пояснить,
+   чтобы человек точно понял, — поясни, не обрезай себя искусственно. На вопрос
+   «почему / как / в целом» — давай развёрнутый разбор. Ориентир — понятность,
+   а не число предложений; и без воды.
+3. Ссылайся на источник. Каждый факт подкрепляй маркером [BLOCK:<id>] прямо
+   рядом с фактом — из него получится кликабельная ссылка на источник. Можно
+   несколько маркеров на одно утверждение. Не придумывай номера, которых нет
+   в контексте.
+4. Честно про пустоту. Если ответа в контексте нет — так и скажи: «В памяти
+   компании я этого не нашёл» — и не досочиняй.
+5. Честно про надёжность. Где это важно, помечай словами, насколько факт
+   надёжен: «по нескольким источникам» (подтверждён 2+ блоками), «однажды
+   упоминалось» (единичный источник), «возможно устарело» (явно старее
+   остальных или есть конфликт). Не вешай эти пометки на каждое предложение —
+   только там, где это меняет доверие к факту.
+6. Конфликт не заглаживай. Если факты спорят — назови оба
+   ([BLOCK:<id1>] vs [BLOCK:<id2>]) и предложи человеку уточнить, какой
+   актуальный. Никогда не выбирай «правильный» сам.
+
+## Особые пометки в контексте (подсказки для тебя; в ответе их не показывай)
+- «Цепочка рассуждения к факту» — разложенное «почему»: решение ← обоснование
+  ← факты. Используй её для хорошего ответа на «почему», но ссылайся маркером
+  только на исходный факт, а не на каждое звено.
+- «Противоречащий факт» — кусок, который спорит с основным. Обязательно скажи
+  про разногласие, не игнорируй; предложи уточнить, что сейчас актуально.
+- «Данные из таблиц» — строки из умных таблиц компании. Используй наравне с
+  фактами; при ссылке указывай таблицу «<название>» (цитата подставится сама).
+  На счётный вопрос («сколько…») посчитай по строкам и дай число.
+
+## Примеры (плохо → хорошо)
+1. Два факта спорят.
+   ✗ «Запуск назначен на март.»  (взял один, конфликт спрятал)
+   ✓ «Данные расходятся: по одному обсуждению запуск в марте [BLOCK:11], по
+     более позднему — перенесён на май [BLOCK:42]. Уточните, какая дата в силе.»
+2. Ответа в памяти нет.
+   ✗ «Обычно онбординг занимает пару недель.»  (досочинил из общих знаний)
+   ✓ «В памяти компании я не нашёл, сколько занимает онбординг новичка —
+     похоже, это нигде не зафиксировано.»
+3. Технический мусор в ответе.
+   ✗ «По данным CompanyProfile и блока decisions решение принято.»
+   ✓ «Решение принято на встрече по партнёрству [BLOCK:7].»
+4. Вопрос «почему».
+   ✗ перечисляет каждое звено цепочки как отдельный факт с кучей маркеров.
+   ✓ «Скидку убрали: она съедала маржу и не давала роста повторных
+     продаж [BLOCK:5].»
+
+## Самопроверка перед ответом
+- Вопрос вообще про дела компании? Если нет — вежливый отказ, без выдумок.
+- Каждый факт подкреплён [BLOCK:<id>] из контекста? Нет выдуманных номеров?
+- Если данных не было — сказал честно, не досочинил?
+- Конфликт назван, а не заглажен?
+- В тексте нет ни одного английского/служебного слова, кроме маркеров
+  [BLOCK:<id>]?
+Если что-то не так — перепиши, и только потом отвечай.
+
+## Запреты
+- Никаких английских слов, кодов, технических названий в тексте ответа
+  (кроме маркеров [BLOCK:<id>], которые станут ссылками). Даже если они есть
+  во входе — переводи на человеческий русский.
+- Не выдумывай факты, даты, имена, решения, которых нет в контексте.
+- Не выбирай «победителя» при споре двух фактов.`;
 
 @Injectable()
 export class ChatV2Service {
@@ -532,18 +730,26 @@ export class ChatV2Service {
     );
 
     // 4) Готовим prompt.
+    // ТЗ 2026-06-15 §2.5 — «О компании»: стабильный per-tenant хвост SYSTEM
+    // (префикс-кэш в рамках тенанта цел). Пустой профиль → секция опускается.
+    const companyAbout = await this.buildCompanyAbout(tenantId);
     const scopeAddon = await this.buildScopeAddon(scope, scopeId, tenantId);
     const systemPrompt = this.buildSystemPrompt(
       scopeAddon,
-      input.history,
-      input.conversationSummary ?? null,
       input.systemPromptOverride ?? null,
+      companyAbout,
     );
+    // ТЗ 2026-06-15 §6 — summary/history переехали из SYSTEM в конец USER
+    // (cache-friendly: всё переменное — в USER).
     const userMessage = this.buildUserMessage(
       query,
       contextBlocks,
       reasoningChains,
       contradictingBlocks,
+      {
+        conversationSummary: input.conversationSummary ?? null,
+        history: input.history,
+      },
     );
 
     this.logger.debug(
@@ -562,10 +768,10 @@ export class ChatV2Service {
 
     // 5) LLM call.
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский вопрос (query) +
-    // блоки контекста в маркеры данных. Системный prompt получает
-    // INJECTION_GUARD_NOTE. История диалога подмешана в systemPrompt
-    // (buildSystemPrompt), но это «системная сборка» с фиксированной
-    // структурой, поэтому защиту даёт NOTE через withInjectionGuard.
+    // блоки контекста + Память диалога в маркеры данных (всё переменное — в
+    // USER, ТЗ 2026-06-15). Системный prompt получает INJECTION_GUARD_NOTE.
+    // Память диалога теперь часть userMessage (buildUserMessage), её защищает
+    // wrapUserData вместе с остальным контекстом.
     //
     // Источник = 'chat': основной user-вход — это `query`.
     const guardOn = this.isPromptInjectionGuardEnabled();
@@ -924,62 +1130,117 @@ export class ChatV2Service {
   }
 
   /**
-   * Собирает system prompt: базовая инструкция (или override) + scope-addon
-   * + conversation summary (если есть) + history (если есть).
+   * ТЗ 2026-06-15 §2.5 — собирает стабильный per-tenant хвост «## О компании»
+   * для SYSTEM. Минимально и безопасно: краткое имя (displayName) + стадия +
+   * первый абзац миссии (contentMd) — простые текстовые поля, без разбора
+   * сложных JSON-деревьев. Если профиля/полей нет — возвращает '' (секция
+   * опускается, мягкая деградация). Стабилен от запроса к запросу → префикс-
+   * кэш в рамках тенанта цел.
+   */
+  private async buildCompanyAbout(tenantId: string): Promise<string> {
+    try {
+      const profile = await this.prisma.companyProfile.findUnique({
+        where: { tenantId },
+        select: { displayName: true, stage: true, missionJson: true },
+      });
+      if (!profile) return '';
+      const lines: string[] = [];
+      const name = profile.displayName?.trim();
+      if (name) lines.push(`Название: ${name}`);
+      const stage = profile.stage?.trim();
+      if (stage) lines.push(`Стадия: ${stage}`);
+      const mission = extractContentMdSafe(profile.missionJson);
+      if (mission) lines.push(`Миссия: ${mission}`);
+      if (lines.length === 0) return '';
+      return ['## О компании', ...lines].join('\n');
+    } catch (err) {
+      // «О компании» — мягкая секция: любая ошибка чтения профиля не должна
+      // ронять ответ. Просто опускаем секцию.
+      this.logger.warn(
+        { tenantId, err: err instanceof Error ? err.message : String(err) },
+        'chat-v2 buildCompanyAbout: чтение CompanyProfile упало — секция опущена',
+      );
+      return '';
+    }
+  }
+
+  /**
+   * Собирает system prompt: единый промпт (или override для старого chat-
+   * модуля) + scope-addon + «О компании» (стабильный per-tenant хвост).
    *
-   * SBA α-5 dialog-layer:
-   *  - `systemPromptOverride` — mode-specific (factual / synthetic / clone_style).
-   *    Если null — используется BASE_SYSTEM_PROMPT.
-   *  - `conversationSummary` — сжатая старая часть диалога (от
-   *    ConversationSummarizerCron). Подмешивается ДО последних 6 messages.
+   * ТЗ 2026-06-15 §6 — summary/history БОЛЬШЕ НЕ в SYSTEM (переехали в конец
+   * USER, buildUserMessage): SYSTEM целиком стабилен (cache-friendly).
+   *  - `systemPromptOverride` — обслуживает старый `chat`-модуль; null →
+   *    BASE_SYSTEM_PROMPT (единый промпт-ответчик).
+   *  - `companyAbout` — стабильное описание компании; '' → секция опускается.
    */
   private buildSystemPrompt(
     scopeAddon: string,
-    history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>,
-    conversationSummary?: string | null,
     systemPromptOverride?: string | null,
+    companyAbout?: string,
   ): string {
     const base =
       systemPromptOverride && systemPromptOverride.length > 0
         ? systemPromptOverride
         : BASE_SYSTEM_PROMPT;
     const parts: string[] = [base, '', scopeAddon];
-    if (conversationSummary && conversationSummary.length > 0) {
-      parts.push('', 'Контекст диалога (сжато):', conversationSummary);
-    }
-    if (history && history.length > 0) {
-      const last = history.slice(-6);
-      parts.push('', 'Предыдущие сообщения диалога:');
-      for (const m of last) {
-        const role = m.role === 'user' ? 'Пользователь' : 'Ассистент';
-        // Обрезаем длинные сообщения, чтобы prompt не разрастался.
-        const trimmed =
-          m.content.length > 600 ? `${m.content.slice(0, 600)}…` : m.content;
-        parts.push(`- ${role}: ${trimmed}`);
-      }
+    if (companyAbout && companyAbout.length > 0) {
+      parts.push('', companyAbout);
     }
     return parts.join('\n');
   }
 
   /**
-   * Собирает user message: вопрос + блок «Контекст:» с блоками + (если
-   * есть) reasoning chain'ы + (если есть) contradicting блоки.
+   * Собирает user message (всё переменное — здесь, в конце; кэш не ломается):
+   * Память диалога (summary+history) → «Контекст:» с блоками → (если есть)
+   * цепочки рассуждения → (если есть) противоречащие факты → (если есть)
+   * данные из таблиц → «Вопрос:».
    *
-   * KC-Temporal W3.2: каждый chain рендерится секцией
-   * `[REASONING CHAIN FOR BLOCK <id>] depth=N nodes=K\n  - <name>: <answer>\n  ...`.
-   *
-   * KC-Temporal W3.3: contradicting блоки рендерятся отдельным разделом
-   * `[CONTRADICTING BLOCK] ...` после основного «Контекст:».
+   * ТЗ 2026-06-15 §6 — человеческий русский контекст: тип блока — русским
+   * ярлыком (SIGNAL_TYPE_CONTEXT_RU), теги — русскими константами
+   * (REASONING_CHAIN_TAG_PREFIX / CONTRADICTING_FACT_TAG / TABLE_TAG_PREFIX).
    */
   private buildUserMessage(
     query: string,
     blocks: ReadonlyArray<ContextBlock>,
     reasoningChains: ReadonlyArray<RenderedReasoningChain>,
     contradictingBlocks: ReadonlyArray<RenderedContradictingBlock>,
+    extra?: {
+      conversationSummary?: string | null;
+      history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+      /**
+       * ЧАСТЬ B (таблицы как источник) — строки умных таблиц. Сейчас опц./
+       * пусто: ветку retrieval таблиц наполняет другой кодер; здесь готов
+       * рендер блока «Данные из таблиц» через TABLE_TAG_PREFIX. Пусто →
+       * секция не выводится.
+       */
+      tableRows?: ReadonlyArray<{ tableName: string; cells: string }>;
+    },
   ): string {
-    const parts: string[] = ['Контекст:'];
+    const parts: string[] = [];
+
+    // ТЗ 2026-06-15 §6 — Память диалога в НАЧАЛЕ USER (переехала из SYSTEM).
+    const summary = extra?.conversationSummary;
+    if (summary && summary.length > 0) {
+      parts.push('Краткое содержание диалога:', summary, '');
+    }
+    const history = extra?.history;
+    if (history && history.length > 0) {
+      const last = history.slice(-6);
+      parts.push('Последние сообщения диалога:');
+      for (const m of last) {
+        const role = m.role === 'user' ? 'Пользователь' : 'Ассистент';
+        // Обрезаем длинные сообщения, чтобы prompt не разрастался (600 симв.).
+        const trimmed =
+          m.content.length > 600 ? `${m.content.slice(0, 600)}…` : m.content;
+        parts.push(`- ${role}: ${trimmed}`);
+      }
+      parts.push('');
+    }
+
+    parts.push('Контекст:');
     for (const b of blocks) {
-      const head = `[BLOCK:${b.id}] ${b.name} (${b.signalType}): ${b.trustedAnswer}`;
+      const head = `[BLOCK:${b.id}] ${b.name} (${signalTypeContextRu(b.signalType)}): ${b.trustedAnswer}`;
       parts.push(head);
       const ev = b.primaryMeetingEvidence;
       if (ev) {
@@ -989,28 +1250,38 @@ export class ChatV2Service {
       }
     }
 
-    // KC-Temporal W3.2 — reasoning chains.
+    // Цепочки рассуждения (русский тег; служебные depth/nodes убраны).
     for (const chain of reasoningChains) {
       parts.push('');
-      parts.push(
-        `[REASONING CHAIN FOR BLOCK ${chain.seedBlockId}] depth=${chain.depth} nodes=${chain.nodes.length}`,
-      );
+      parts.push(`${REASONING_CHAIN_TAG_PREFIX} ${chain.seedBlockId}]`);
       for (const n of chain.nodes) {
         // Пропускаем сам seed (он уже в основном контексте).
         if (n.id === chain.seedBlockId) continue;
         const indent = '  '.repeat(Math.max(1, n.depth));
-        parts.push(`${indent}- (${n.signalType}) ${n.name}: ${n.trustedAnswer}`);
+        parts.push(
+          `${indent}- (${signalTypeContextRu(n.signalType)}) ${n.name}: ${n.trustedAnswer}`,
+        );
       }
     }
 
-    // KC-Temporal W3.3 — counter-evidence.
+    // Противоречащие факты (русский тег + русский заголовок).
     if (contradictingBlocks.length > 0) {
       parts.push('');
-      parts.push('Противоречия (counter-evidence):');
+      parts.push(CONTRADICTIONS_HEADER);
       for (const c of contradictingBlocks) {
         parts.push(
-          `[CONTRADICTING BLOCK] (противоречит [BLOCK:${c.contradictsBlockId}]) [BLOCK:${c.id}] ${c.name} (${c.signalType}): ${c.trustedAnswer}`,
+          `${CONTRADICTING_FACT_TAG} (противоречит [BLOCK:${c.contradictsBlockId}]) [BLOCK:${c.id}] ${c.name} (${signalTypeContextRu(c.signalType)}): ${c.trustedAnswer}`,
         );
+      }
+    }
+
+    // ЧАСТЬ B — данные из таблиц (рендер готов; наполнение — отдельным кодером).
+    const tableRows = extra?.tableRows;
+    if (tableRows && tableRows.length > 0) {
+      parts.push('');
+      parts.push('Данные из таблиц:');
+      for (const r of tableRows) {
+        parts.push(`${TABLE_TAG_PREFIX} ${r.tableName}] ${r.cells}`);
       }
     }
 
@@ -1301,4 +1572,20 @@ function formatMmSs(ms: number): string {
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
+}
+
+/**
+ * ТЗ 2026-06-15 §2.5 — безопасно достаёт `contentMd` (миссия) из JSON-поля
+ * CompanyProfile. Тот же контракт, что в company-profile.service.ts
+ * (`{ contentMd, ... }`), но локально и без зависимости от Prisma-типов: на
+ * вход `unknown`, на выход обрезанная строка либо null. Обрезаем до 600
+ * символов — «О компании» должна оставаться компактным стабильным хвостом.
+ */
+function extractContentMdSafe(json: unknown): string | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const v = (json as Record<string, unknown>).contentMd;
+  if (typeof v !== 'string') return null;
+  const trimmed = v.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length > 600 ? `${trimmed.slice(0, 600)}…` : trimmed;
 }

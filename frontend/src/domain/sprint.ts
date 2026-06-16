@@ -239,21 +239,6 @@ export function getSprintHintSeverityLabel(
   return HINT_SEVERITY_LABELS[severity] ?? severity;
 }
 
-export function getSprintScopeLabel(args: {
-  customerCardId: string | null;
-  vendorId: string | null;
-  subjectPersonId: string | null;
-  departmentId: string | null;
-  projectName?: string | null;
-}): string {
-  if (args.customerCardId) return "Клиент";
-  if (args.vendorId) return "Поставщик";
-  if (args.subjectPersonId) return "Сотрудник";
-  if (args.departmentId) return "Отдел";
-  if (args.projectName) return `Проект: ${args.projectName}`;
-  return "Спринт компании";
-}
-
 export function formatSprintDateRange(
   startDate: Date | string,
   endDate: Date | string,

@@ -3,8 +3,6 @@ import type {
   KnowledgeAtRiskListApi,
 } from "@/api/operations-dashboard.api";
 
-export type KnowledgeRiskSeverity = "critical" | "warning" | "ok";
-
 export const KNOWLEDGE_RISK_SEVERITY_LABEL: Record<string, string> = {
   critical: "критично",
   warning: "внимание",

@@ -5,5 +5,3 @@ export function isThinkingModel(model: string | undefined | null): boolean {
   if (lower.includes('thinking')) return true;
   return false;
 }
-
-export type LlmThinkingGuardKind = 'strict-stripped' | 'schema-to-tool' | 'tool-choice-relaxed';

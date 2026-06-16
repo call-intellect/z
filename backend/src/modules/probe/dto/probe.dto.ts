@@ -69,7 +69,6 @@ export interface MyProbeHistoryResponse {
 export const ProbeControlWindowSchema = z
   .union([z.literal('all'), z.coerce.number().int().min(1).max(3650)])
   .default(30);
-export type ProbeControlWindowDto = z.infer<typeof ProbeControlWindowSchema>;
 
 export const ProbeControlQuerySchema = z
   .object({

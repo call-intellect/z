@@ -72,10 +72,6 @@ export function completenessCardTypeLabel(
   return CARD_TYPE_LABEL[t] ?? t;
 }
 
-export function completenessSlotKindLabel(k: CompletenessSlotKind): string {
-  return SLOT_KIND_LABEL[k] ?? k;
-}
-
 export function completenessSlotStatusLabel(s: CompletenessSlotStatus): string {
   return SLOT_STATUS_LABEL[s] ?? s;
 }

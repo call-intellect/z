@@ -79,7 +79,6 @@ export type ReactBody = z.infer<typeof ReactBodySchema>;
 export const RespondBodySchema = z.object({
   note: z.string().max(2_000).optional(),
 });
-export type RespondBody = z.infer<typeof RespondBodySchema>;
 
 export const SubscriptionFiltersSchema = z.object({
   teamIds: z.array(z.string().min(1).max(60)).max(100).optional(),
@@ -191,7 +190,6 @@ export type CoraSeverityDto = z.infer<typeof CoraSeveritySchema>;
 export const CoraWindowSchema = z
   .union([z.literal('all'), z.coerce.number().int().min(1).max(3650)])
   .default(30);
-export type CoraWindowDto = z.infer<typeof CoraWindowSchema>;
 
 export const CoraFeedQuerySchema = z.object({
   type: CoraFeedTypeSchema.default('all'),

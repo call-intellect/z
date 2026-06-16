@@ -9,7 +9,6 @@ export const IntakeSourceSchema = z.enum([
   'api',
   'concierge',
 ]);
-export type IntakeSourceDto = z.infer<typeof IntakeSourceSchema>;
 
 export const CreateIntakeSchema = z
   .object({

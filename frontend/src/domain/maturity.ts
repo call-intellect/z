@@ -4,12 +4,6 @@ import type {
   MaturityScopeDetailApi,
 } from "@/api/maturity.api";
 
-export const MATURITY_SCOPE_LABEL: Record<MaturityScopeApi, string> = {
-  role: "Должность",
-  department: "Отдел",
-  company: "Компания",
-};
-
 export interface MaturityOverviewDomain {
   companyScore: number | null;
   companyPercent: number | null;
@@ -57,24 +51,5 @@ export function toMaturityOverviewDomain(
     domainsTotal: api.domainsTotal,
     domainsScored: api.domainsScored,
     distribution: api.distribution,
-  };
-}
-
-export function toMaturityScopeDetailDomain(
-  api: MaturityScopeDetailApi,
-): MaturityScopeDetailDomain {
-  return {
-    scope: api.scope,
-    id: api.id,
-    name: api.name,
-    maturityScore: api.maturityScore,
-    maturityPercent: toPercent(api.maturityScore),
-    completeness: api.completeness,
-    contributingFactors: api.contributingFactors ?? [],
-    children: (api.children ?? []).map((c) => ({
-      id: c.id,
-      name: c.name,
-      maturityPercent: toPercent(c.maturityScore),
-    })),
   };
 }

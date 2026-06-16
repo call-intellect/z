@@ -16,7 +16,6 @@ export const FeedbackTopicSummarySchema = z.object({
   createdAt: z.string().datetime(),
 });
 export type FeedbackTopicSummary = z.infer<typeof FeedbackTopicSummarySchema>;
-export class FeedbackTopicSummaryDto extends createZodDto(FeedbackTopicSummarySchema) {}
 
 export const FeedbackTopicsListResponseSchema = z.object({
   items: z.array(FeedbackTopicSummarySchema),

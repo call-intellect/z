@@ -1,7 +1,5 @@
 export const DEFAULT_CHAT_FEEDBACK_MIN_RATED = 10;
 
-export const DEFAULT_CHAT_RETRY_DEDUP_SECONDS = 30;
-
 export interface ChatUsageRawCounts {
   asked: number;
   answered: number;

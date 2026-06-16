@@ -5,8 +5,6 @@ export const TABLES_QUEUE_NAMES = {
   ENRICH: 'tables.enrich',
 } as const;
 
-export type TablesQueueName = (typeof TABLES_QUEUE_NAMES)[keyof typeof TABLES_QUEUE_NAMES];
-
 export type TableSyncEventType = 'created' | 'updated' | 'archived';
 
 export interface TableSyncEntityJobData {

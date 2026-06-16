@@ -146,22 +146,6 @@ export function linkedCardFromApi(api: LinkedCardApi): LinkedCard {
   };
 }
 
-export function extractPlainTextFromTiptapJson(content: unknown): string {
-  if (content === null || content === undefined) return "";
-  const parts: string[] = [];
-  const visit = (node: unknown): void => {
-    if (!node || typeof node !== "object") return;
-    const obj = node as Record<string, unknown>;
-    if (typeof obj.text === "string") parts.push(obj.text);
-    const children = obj.content;
-    if (Array.isArray(children)) {
-      for (const c of children) visit(c);
-    }
-  };
-  visit(content);
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-
 export function linkedCardKindLabel(kind: string): string {
   switch (kind) {
     case "client":

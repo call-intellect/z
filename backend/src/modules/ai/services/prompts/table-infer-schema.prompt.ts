@@ -102,5 +102,3 @@ export function buildTableInferSchemaPrompt(args: BuildTableInferSchemaPromptArg
   ].join('\n');
   return { system, user };
 }
-
-export const TABLE_INFER_SCHEMA_DEFAULT_COLUMN_CATALOG = COLUMN_TYPE_CATALOG;

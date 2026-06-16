@@ -173,8 +173,6 @@ export interface UpdateTableViewBodyApi {
   visibility?: TableViewVisibilityApi;
 }
 
-export type PendingPatchReasonApi = "low_confidence" | "overwrite";
-
 export interface CellProvenanceApi {
   id: string;
   propertyId: string;
@@ -204,8 +202,4 @@ export interface PendingPatchApi {
   sourceLink: string | null;
   reason: string | null;
   createdAt: string;
-}
-
-export interface DecidePendingPatchBodyApi {
-  decision: "approve" | "reject";
 }

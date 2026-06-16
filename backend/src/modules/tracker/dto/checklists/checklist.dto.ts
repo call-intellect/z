@@ -80,9 +80,3 @@ export interface ChecklistResponseDto {
   totalCount: number;
   doneCount: number;
 }
-
-export interface IssueChecklistProgressDto {
-  issueId: string;
-  total: number;
-  done: number;
-}

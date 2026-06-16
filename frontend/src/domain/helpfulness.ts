@@ -78,16 +78,6 @@ export const SPOTLIGHT_STATUS_LABEL: Record<SpotlightStatus, string> = {
   hidden: "Скрыто",
 };
 
-export const SPOTLIGHT_STATUS_TONE: Record<
-  SpotlightStatus,
-  "neutral" | "info" | "success" | "warning"
-> = {
-  pending: "warning",
-  approved: "info",
-  published: "success",
-  hidden: "neutral",
-};
-
 export interface HelpfulnessTrait {
   id: string;
   traitType: string;

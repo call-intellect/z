@@ -13,19 +13,14 @@ export const MEETING_TYPES = [
   'review',
   'retrospective',
 ] as const;
-export type MeetingTypeValue = (typeof MEETING_TYPES)[number];
 
 export const TASK_TYPES = ['summary', 'tasks', 'chapters', 'follow-up', 'card-rollup'] as const;
-export type TaskTypeValue = (typeof TASK_TYPES)[number];
 
 export const SCOPES = ['system', 'org'] as const;
-export type ScopeValue = (typeof SCOPES)[number];
 
 export const STATUSES = ['draft', 'active', 'archived'] as const;
-export type StatusValue = (typeof STATUSES)[number];
 
 export const OUTPUT_TYPES = ['text', 'bullet_list', 'table', 'json_object'] as const;
-export type OutputType = (typeof OUTPUT_TYPES)[number];
 
 export const DEMO_MEETING_KEYS = ['demo-sales', 'demo-standup', 'demo-interview'] as const;
 export type DemoMeetingKey = (typeof DEMO_MEETING_KEYS)[number];

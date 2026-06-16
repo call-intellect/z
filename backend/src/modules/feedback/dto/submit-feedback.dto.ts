@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 export const SubmitFeedbackSchema = z.object({
@@ -6,4 +5,3 @@ export const SubmitFeedbackSchema = z.object({
 });
 
 export type SubmitFeedbackBody = z.infer<typeof SubmitFeedbackSchema>;
-export class SubmitFeedbackDto extends createZodDto(SubmitFeedbackSchema) {}

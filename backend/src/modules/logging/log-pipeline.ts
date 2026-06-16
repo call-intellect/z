@@ -9,21 +9,6 @@ export { SystemLogPipeline } from './log.constants';
 export function traceForMeeting(meetingId: string): string {
   return `mtg_${meetingId}`;
 }
-export function traceForOrg(orgId: string): string {
-  return `org_${orgId}`;
-}
-export function traceForUser(userId: string): string {
-  return `user_${userId}`;
-}
-export function traceForDoc(documentId: string): string {
-  return `doc_${documentId}`;
-}
-export function traceForEntity(prefix: string, id: string): string {
-  return `${prefix}_${id}`;
-}
-export function traceForCron(name: string, bucket?: string): string {
-  return bucket ? `cron_${name}_${bucket}` : `cron_${name}`;
-}
 
 const TRACE_FIELDS: Array<[string, string]> = [
   ['meetingId', 'mtg'],

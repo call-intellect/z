@@ -34,10 +34,3 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     return null;
   }
 }
-
-export async function unregisterServiceWorker(): Promise<boolean> {
-  if (!isPwaSupported()) return false;
-  const registration = await navigator.serviceWorker.getRegistration();
-  if (!registration) return false;
-  return registration.unregister();
-}

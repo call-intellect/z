@@ -20,15 +20,6 @@ export interface PersonPulseHrSuggestion {
   confidence: number;
 }
 
-export type PersonPulseRiskFlagType =
-  | "sentiment_dip"
-  | "reply_latency_rise"
-  | "missed_checkins"
-  | "broken_promises"
-  | "workload_overload"
-  | "meeting_noshows"
-  | "conflict_mentions";
-
 export type PersonPulseRiskFlagSeverity = "low" | "medium" | "high";
 
 export interface PersonPulseRiskFlag {

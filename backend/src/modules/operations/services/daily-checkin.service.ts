@@ -4,7 +4,6 @@ import {
   Inject,
   Injectable,
   Logger,
-  NotFoundException,
   Optional,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -374,14 +373,4 @@ export class DailyCheckInService {
         : null,
     };
   }
-}
-
-export function assertCheckIn<T>(value: T | null, code: string, message: string): T {
-  if (value == null) {
-    throw new NotFoundException({
-      ok: false,
-      error: { code, message },
-    });
-  }
-  return value;
 }

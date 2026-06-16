@@ -52,14 +52,6 @@ export type ParticipantDomain = {
   leftAt: Date | null;
 };
 
-export type RecordingDomain = {
-  hasRecording: boolean;
-  status: string;
-  durationSeconds: number | null;
-  bytesTotal: string | null;
-  expiresAt: Date | null;
-};
-
 export type AccessRole = "host" | "guest" | "none";
 
 export type AccessDomain = {

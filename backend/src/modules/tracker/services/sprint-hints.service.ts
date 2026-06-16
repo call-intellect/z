@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import type { Prisma, SprintHint, SprintHintStatus } from '@prisma/client';
+import type { Prisma, SprintHint } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -165,8 +165,4 @@ export class SprintHintsService {
       updatedAt: h.updatedAt.toISOString(),
     };
   }
-}
-
-export function sprintHintStatusFromPrisma(v: SprintHintStatus): SprintHintStatusDto {
-  return v as SprintHintStatusDto;
 }

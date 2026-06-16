@@ -79,7 +79,6 @@ export const MeetingReportFastSchema = z
 export type MeetingReportFastOutput = z.infer<typeof MeetingReportFastSchema>;
 export type MeetingReportFastChapter = z.infer<typeof MeetingReportFastChapterSchema>;
 export type MeetingReportFastTask = z.infer<typeof MeetingReportFastTaskSchema>;
-export type MeetingReportFastQualityScore = z.infer<typeof MeetingReportFastQualityScoreSchema>;
 
 export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
   type: 'object',

@@ -52,12 +52,6 @@ export interface ExperimentDetail extends ExperimentDetailApi {}
 
 export interface ExperimentLesson extends ExperimentLessonApi {}
 
-export function mapExperimentListItem(
-  dto: ExperimentListItemApi,
-): ExperimentListItem {
-  return { ...dto };
-}
-
 export function mapExperimentDetail(
   dto: ExperimentDetailApi,
 ): ExperimentDetail {

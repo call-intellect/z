@@ -2,7 +2,6 @@ import { ApiKeyScope } from '@prisma/client';
 import { z } from 'zod';
 
 export const ApiKeyKindSchema = z.enum(['api', 'ingest']);
-export type ApiKeyKind = z.infer<typeof ApiKeyKindSchema>;
 
 export const CreateApiKeySchema = z.object({
   name: z.string().trim().min(1).max(100),

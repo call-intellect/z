@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 const ParticipantMetricsSchema = z.object({
@@ -37,8 +36,6 @@ export const BehaviorMetricsResponseSchema = z.object({
 
 export type BehaviorMetricsResponse = z.infer<typeof BehaviorMetricsResponseSchema>;
 
-export class BehaviorMetricsResponseDto extends createZodDto(BehaviorMetricsResponseSchema) {}
-
 export const OrgAggregateQuerySchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
@@ -63,5 +60,3 @@ export const OrgAggregateResponseSchema = z.object({
 });
 
 export type OrgAggregateResponse = z.infer<typeof OrgAggregateResponseSchema>;
-
-export class OrgAggregateResponseDto extends createZodDto(OrgAggregateResponseSchema) {}

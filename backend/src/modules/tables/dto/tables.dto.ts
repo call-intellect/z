@@ -29,7 +29,6 @@ export const EntityTypeSchema = z.enum([
   'org_unit',
   'custom',
 ]);
-export type EntityTypeValue = z.infer<typeof EntityTypeSchema>;
 
 export const TableEntitySyncSchema = z.object({
   type: z.enum(['org', 'person', 'meeting', 'document']),
@@ -37,7 +36,6 @@ export const TableEntitySyncSchema = z.object({
   primaryProperty: z.string().min(1).max(100).optional(),
   entityTypes: z.array(EntityTypeSchema).optional(),
 });
-export type TableEntitySync = z.infer<typeof TableEntitySyncSchema>;
 
 export const CreateTableBodySchema = z.object({
   name: z.string().trim().min(1).max(255),

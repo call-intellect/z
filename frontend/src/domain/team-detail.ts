@@ -40,7 +40,6 @@ export type TeamDetailApi = {
 };
 
 export type TeamDetailMemberDomain = TeamDetailMemberApi;
-export type TeamDetailGoalDomain = TeamDetailGoalApi;
 export type TeamDetailThemeDomain = TeamDetailThemeApi;
 export type TeamDetailDomain = TeamDetailApi;
 

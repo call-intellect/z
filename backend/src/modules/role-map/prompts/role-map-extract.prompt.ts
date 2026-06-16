@@ -175,38 +175,3 @@ export function buildRoleMapExtractUserMessage(ctx: RoleMapExtractContext): stri
     .filter(Boolean)
     .join('\n');
 }
-
-export const ROLE_COMPLETENESS_RATIONALE_TASK_TYPE = 'role-completeness-rationale';
-
-export const ROLE_COMPLETENESS_RATIONALE_SYSTEM_PROMPT = `Ты — эксперт по орг-структуре. Кратко объясни (1-3 предложения), почему у должности именно такая полнота карты и какие 1-2 слота приоритетно заполнить.
-
-Тон — спокойный, без воды. Только конкретика. На русском.`;
-
-export function buildCompletenessRationaleUserMessage(args: {
-  roleName: string;
-  completeness: number;
-  perCategory: {
-    responsibilities: number;
-    authority: number;
-    knowledge: number;
-    decisions: number;
-    interactions: number;
-    metrics: number;
-  };
-  hasMission: boolean;
-}): string {
-  return [
-    `Должность: ${args.roleName}`,
-    `Completeness: ${(args.completeness * 100).toFixed(0)}%`,
-    `Миссия должности задана: ${args.hasMission ? 'да' : 'нет'}`,
-    `Заполненность по категориям:`,
-    `- Обязанности: ${args.perCategory.responsibilities}`,
-    `- Границы полномочий: ${args.perCategory.authority}`,
-    `- Требуемые знания: ${args.perCategory.knowledge}`,
-    `- Политики решений: ${args.perCategory.decisions}`,
-    `- Взаимодействия: ${args.perCategory.interactions}`,
-    `- KPI / метрики: ${args.perCategory.metrics}`,
-    '',
-    'Дай объяснение в 1-3 предложения. Без markdown.',
-  ].join('\n');
-}

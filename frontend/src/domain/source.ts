@@ -111,34 +111,6 @@ export function mapSourceDtoToDomain(dto: SourceApi): SourceDomain {
   };
 }
 
-export interface TelegramConfigDomain {
-  subtype: "telegram";
-  botToken: string;
-  botUsername: string;
-  webhookSecret: string;
-  allowedChatIds: number[];
-  includeForwarded: boolean;
-}
-
-export interface MangoConfigDomain {
-  subtype: "mango";
-  apiKey: string;
-  apiSalt: string;
-  extensions: string[];
-}
-
-export interface ImapConfigDomain {
-  subtype: "imap";
-  host: string;
-  port: number;
-  secure: boolean;
-  user: string;
-  passwordEnc: string;
-  folder: string;
-  sinceDate?: string;
-  sensitiveFolders: string[];
-}
-
 export function relativeTime(date: Date | null): string {
   if (!date) return "—";
   const ms = date.getTime();

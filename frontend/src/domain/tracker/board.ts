@@ -58,7 +58,3 @@ export function boardFromApi(api: BoardApi): Board {
     issuesCount: api.issuesCount ?? null,
   };
 }
-
-export function isBoardArchived(b: Board): boolean {
-  return b.archivedAt !== null;
-}

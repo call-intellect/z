@@ -143,7 +143,6 @@ export interface ProvisionalAuditStatsResponse {
 export const ListCuratorAssignmentsQuerySchema = z.object({
   resourceType: z.string().trim().min(1).max(80).optional(),
 });
-export type ListCuratorAssignmentsQuery = z.infer<typeof ListCuratorAssignmentsQuerySchema>;
 
 export const CreateCuratorAssignmentBodySchema = z
   .object({
@@ -153,11 +152,9 @@ export const CreateCuratorAssignmentBodySchema = z
     criteria: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
-export type CreateCuratorAssignmentBody = z.infer<typeof CreateCuratorAssignmentBodySchema>;
 
 export const UpdateCuratorAssignmentBodySchema =
   CreateCuratorAssignmentBodySchema.partial().strict();
-export type UpdateCuratorAssignmentBody = z.infer<typeof UpdateCuratorAssignmentBodySchema>;
 
 export interface CurationItemDto {
   id: string;
@@ -233,10 +230,6 @@ export interface CuratorAssignmentDto {
   criteria: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface ListCuratorAssignmentsResponse {
-  items: CuratorAssignmentDto[];
 }
 
 export const CompletenessParentCardTypeSchema = z.enum([

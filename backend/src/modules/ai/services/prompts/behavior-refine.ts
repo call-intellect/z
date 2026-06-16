@@ -1,4 +1,3 @@
-export const BEHAVIOR_REFINE_TASK_TYPE = 'behavior-refine';
 export const BEHAVIOR_REFINE_TOOL_NAME = 'submit_behavior_refine';
 
 export interface BehaviorRefineQuestionCandidate {

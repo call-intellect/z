@@ -1,5 +1,3 @@
-export const CUSTOMER_RISK_DIGEST_PROMPT_VERSION = 'prompt-v1';
-
 export const CUSTOMER_RISK_DIGEST_TASK_TYPE = 'customer-risk-digest';
 
 export const CUSTOMER_RISK_DIGEST_SYSTEM_PROMPT = [

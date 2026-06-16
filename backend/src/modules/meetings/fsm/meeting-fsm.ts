@@ -23,7 +23,3 @@ export function assertTransition(from: MeetingStatus, to: MeetingStatus): void {
     throw new InvalidFsmTransitionError(from, to);
   }
 }
-
-export function isTransitionAllowed(from: MeetingStatus, to: MeetingStatus): boolean {
-  return ALLOWED_TRANSITIONS[from].includes(to);
-}

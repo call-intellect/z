@@ -43,10 +43,6 @@ export const PORTFOLIO_PROGRESS_LABELS: Record<
   dropped: "снято",
 };
 
-export function progressStatusLabel(raw: string): string {
-  return (PORTFOLIO_PROGRESS_LABELS as Record<string, string>)[raw] ?? raw;
-}
-
 export function progressStatusPillTone(raw: string): "ok" | "warning" | "risk" {
   switch (raw) {
     case "achieved":

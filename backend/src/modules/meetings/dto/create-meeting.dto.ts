@@ -21,8 +21,6 @@ export const InviteeSchema = z.object({
   sendVia: z.array(z.enum(['email', 'telegram'])).default([]),
 });
 
-export type InviteeDto = z.infer<typeof InviteeSchema>;
-
 export const CreateMeetingForUserSchema = z.object({
   type: z.nativeEnum(MeetingType),
   title: z.string().min(1).max(200),

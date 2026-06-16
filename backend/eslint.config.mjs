@@ -25,6 +25,7 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -82,17 +83,14 @@ export default tseslint.config(
           // Шаблонные строки с прямым обращением к AGE: `SELECT ... cypher(...)`.
           // esquery не поддерживает inline-флаги `(?i)`, поэтому ловим
           // case-sensitive `cypher(` — это покрывает все реальные случаи.
-          selector:
-            "TemplateLiteral[quasis.0.value.cooked=/\\bcypher\\s*\\(/]",
+          selector: 'TemplateLiteral[quasis.0.value.cooked=/\\bcypher\\s*\\(/]',
           message:
             'Прямой Cypher запрещён вне common/graph/. Используй GraphService (см. second-brain/02_architecture/code-pitfalls.md «Cypher только через GraphService»).',
         },
         {
           // Обычные строковые литералы 'cypher(' / "cypher(".
-          selector:
-            "Literal[value=/\\bcypher\\s*\\(/]",
-          message:
-            'Прямой Cypher запрещён вне common/graph/. Используй GraphService.',
+          selector: 'Literal[value=/\\bcypher\\s*\\(/]',
+          message: 'Прямой Cypher запрещён вне common/graph/. Используй GraphService.',
         },
         {
           // Запрет `@UsePipes(new ZodValidationPipe(...))` на уровне метода/класса.

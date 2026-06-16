@@ -119,16 +119,3 @@ export function useMyCloneAccess(orgId: string | null) {
     mutate: swr.mutate,
   };
 }
-
-export function useInvalidateClones() {
-  const { mutate } = useSWRConfig();
-  return () =>
-    void mutate(
-      (key) =>
-        Array.isArray(key) &&
-        typeof key[0] === "string" &&
-        (key[0] as string).startsWith("clones:"),
-      undefined,
-      { revalidate: true },
-    );
-}

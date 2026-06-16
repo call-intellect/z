@@ -8,15 +8,6 @@ import type {
 
 export type KnowledgeProfileConfidence = KnowledgeProfileConfidenceApi;
 
-export const KNOWLEDGE_PROFILE_CONFIDENCE_LABEL: Record<
-  KnowledgeProfileConfidence,
-  string
-> = {
-  low: "Низкая уверенность",
-  medium: "Средняя уверенность",
-  high: "Высокая уверенность",
-};
-
 export const KNOWLEDGE_PROFILE_CONFIDENCE_SHORT: Record<
   KnowledgeProfileConfidence,
   string

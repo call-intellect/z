@@ -54,9 +54,6 @@ export type SkillTraitConceptsListResponse = z.infer<
 export type SkillTraitConceptDetail = z.infer<
   typeof SkillTraitConceptDetailSchema
 >;
-export type SkillTraitConceptRecentTrait = z.infer<
-  typeof SkillTraitConceptRecentTraitSchema
->;
 
 export const MergeSkillTraitConceptSchema = z.object({
   targetId: z.string().min(1),

@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 export const RenameTopicSchema = z.object({
@@ -6,4 +5,3 @@ export const RenameTopicSchema = z.object({
   description: z.string().trim().min(1).max(500),
 });
 export type RenameTopicBody = z.infer<typeof RenameTopicSchema>;
-export class RenameTopicDto extends createZodDto(RenameTopicSchema) {}

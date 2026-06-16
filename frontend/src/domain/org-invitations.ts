@@ -65,15 +65,3 @@ export function mapOrgInvitationCreateResultDtoToDomain(
     qrCodeDataUrl: dto.qrCodeDataUrl,
   };
 }
-
-export function describeInvitationStatus(
-  status: OrgInvitationStatus,
-  expiresAt: Date,
-): { label: string; tone: "pending" | "success" | "warning" | "muted" } {
-  if (status === "accepted") return { label: "Принято", tone: "success" };
-  if (status === "revoked") return { label: "Отозвано", tone: "muted" };
-  if (status === "expired") return { label: "Истекло", tone: "warning" };
-  const hoursLeft = (expiresAt.getTime() - Date.now()) / 3_600_000;
-  if (hoursLeft <= 0) return { label: "Истекло", tone: "warning" };
-  return { label: "Ожидает", tone: "pending" };
-}

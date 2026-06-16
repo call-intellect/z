@@ -5,7 +5,6 @@ import type { AiParticipantContext } from './participant-context';
 import { buildTasksPromptUnified, buildTasksSchemaUnified } from './tasks-unified';
 
 export const TASKS_STRUCTURED_TASK_TYPE = 'tasks';
-export const TASKS_STRUCTURED_PROMPT_NAME = 'tasks_structured_v1';
 
 export const TaskExtractedSchema = z
   .object({

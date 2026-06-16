@@ -82,10 +82,6 @@ export interface InsightDetail extends InsightDetailApi {
   causeCategory: InsightCauseCategory | null;
 }
 
-export function mapInsightListItem(dto: InsightListItemApi): InsightListItem {
-  return { ...dto, causeCategory: dto.causeCategory ?? null };
-}
-
 export function mapInsightDetail(dto: InsightDetailApi): InsightDetail {
   return { ...dto, causeCategory: dto.causeCategory ?? null };
 }

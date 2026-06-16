@@ -11,13 +11,6 @@ export const COMPANY_STAGE_LABEL: Record<CompanyStageApi, string> = {
   enterprise: "Зрелая компания",
 };
 
-export const STRATEGY_HORIZON_LABEL: Record<StrategyHorizonApi, string> = {
-  operational: "Операционный",
-  tactical: "Тактический",
-  strategic: "Стратегический",
-  long_term: "Долгосрочный",
-};
-
 export interface CompanyProfileDomain {
   id: string;
   tenantId: string;

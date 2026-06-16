@@ -13,8 +13,6 @@ import {
 
 import { RoleProfileContextBuilder } from './context-builder.service';
 
-export const ROLE_PROFILE_TASK_TYPE = 'role-profile-build';
-
 @Injectable()
 export class RoleProfileService {
   private readonly logger = new Logger(RoleProfileService.name);

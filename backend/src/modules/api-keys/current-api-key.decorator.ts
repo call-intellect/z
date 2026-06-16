@@ -7,13 +7,6 @@ export interface RequestWithApiKey extends Request {
   apiUserId?: string;
 }
 
-export const CurrentApiKey = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): ApiKey | undefined => {
-    const req = ctx.switchToHttp().getRequest<RequestWithApiKey>();
-    return req.apiKey;
-  },
-);
-
 export const CurrentApiUserId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string | undefined => {
     const req = ctx.switchToHttp().getRequest<RequestWithApiKey>();

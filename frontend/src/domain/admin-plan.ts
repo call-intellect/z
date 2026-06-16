@@ -57,11 +57,6 @@ export function planSnapshotFromApi(api: PlanSnapshotApi): PlanSnapshotDomain {
   };
 }
 
-export function formatPlanPrice(rub: number | null): string {
-  if (rub === null || rub === undefined) return "бесплатно";
-  return `${rub.toLocaleString("ru-RU")} ₽/мес`;
-}
-
 export function calculatePlanPrice(
   snapshot: PlanSnapshotDomain,
   seatsExtra: number,

@@ -104,13 +104,3 @@ export function formatCostRub(usd: number): string {
   if (rub < 1) return `${(rub * 100).toFixed(2)} коп`;
   return `${rub.toFixed(2)} ₽`;
 }
-
-export function mapMetrics(api: TaskTypeMetricsApi): TaskTypeMetricsApi {
-  return api;
-}
-
-export function mapRouteChange(api: RouteChangeApi): RouteChangeApi & {
-  changeTypeLabel: string;
-} {
-  return { ...api, changeTypeLabel: changeTypeLabel(api.changeType) };
-}

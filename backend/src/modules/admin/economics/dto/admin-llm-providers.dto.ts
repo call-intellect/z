@@ -7,7 +7,6 @@ export const ProtocolKindSchema = z.enum([
   'ollama-native',
   'custom-http',
 ]);
-export type ProtocolKindDto = z.infer<typeof ProtocolKindSchema>;
 
 export const CreateLlmProviderSchema = z.object({
   name: z.string().min(1).max(60),

@@ -152,10 +152,6 @@ export interface AdminFunctionUsageRow {
   totalCostUsd: number;
 }
 
-export interface AdminUsageScopeAccessError extends Error {
-  code: 'admin_scope_invalid';
-}
-
 @Injectable()
 export class AdminUsageService {
   private readonly logger = new Logger(AdminUsageService.name);

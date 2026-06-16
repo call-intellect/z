@@ -141,12 +141,6 @@ export function mapDecisionVersionItem(
   };
 }
 
-export function mapDecisionHistory(
-  dto: DecisionHistoryResponseApi,
-): DecisionVersionItem[] {
-  return dto.items.map(mapDecisionVersionItem);
-}
-
 export function mapDecisionSupersedeChain(
   dto: DecisionSupersedeChainResponseApi,
 ): DecisionSupersedeChain {

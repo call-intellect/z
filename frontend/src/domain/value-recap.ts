@@ -68,11 +68,6 @@ export function shiftPeriodYm(periodYm: string, deltaMonths: number): string {
   return `${String(ny).padStart(4, "0")}-${String(nm).padStart(2, "0")}`;
 }
 
-export function prevMonthYm(now: Date = new Date()): string {
-  const cur = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return shiftPeriodYm(cur, -1);
-}
-
 export function deltaLabel(delta: number | null | undefined): string | null {
   if (delta === null || delta === undefined) return null;
   if (delta === 0) return "без изменений";

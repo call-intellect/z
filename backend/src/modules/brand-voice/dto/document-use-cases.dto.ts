@@ -7,8 +7,6 @@ export const DOCUMENT_USE_CASE_VALUES = [
   'brand_corpus',
 ] as const;
 
-export type DocumentUseCase = (typeof DOCUMENT_USE_CASE_VALUES)[number];
-
 export const PatchDocumentUseCasesSchema = z
   .object({
     useCases: z.array(z.enum(DOCUMENT_USE_CASE_VALUES)).max(8),

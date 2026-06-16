@@ -7,7 +7,6 @@ import type {
 } from './prompt-resolver.types';
 import { FOLLOW_UP_SCHEMA, FOLLOW_UP_TOOL, FOLLOW_UP_TOOL_NAME } from './prompts/follow-up';
 import { getPromptForType } from './prompts/index';
-import { SUMMARY_TOOL_NAME } from './prompts/system-summary';
 import { TASKS_TOOL, TASKS_TOOL_NAME } from './prompts/tasks';
 
 function castSchema(input: unknown): ResolvedPrompt['outputSchema'] {
@@ -69,37 +68,6 @@ function codeFallbackSummary(type: MeetingType): ResolvedPrompt {
     toolDescription: descriptor.tool.description,
     sections: sectionsFromSchema(schema),
     outputSchema: schema,
-  };
-}
-
-function codeFallbackPlainSummary(): ResolvedPrompt {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { buildSummaryPrompt } = require('./prompts/system-summary');
-  const dummy = (buildSummaryPrompt as (input: unknown) => { system: string; user: string })({
-    meeting: { id: '__cf__', title: '__cf__', type: 'team' },
-    dialog: [],
-  });
-  return {
-    source: 'code_fallback',
-    versionId: null,
-    systemPrompt: dummy.system,
-    toolName: SUMMARY_TOOL_NAME,
-    sections: [
-      {
-        key: 'summary',
-        title: 'Саммари',
-        instruction:
-          'Сделай связный текст из 2-3 предложений: о чём была встреча, ключевые договорённости.',
-        outputType: 'text',
-        required: true,
-      },
-    ],
-    outputSchema: {
-      type: 'object',
-      properties: { summary: { type: 'string' } },
-      required: ['summary'],
-      additionalProperties: false,
-    },
   };
 }
 
@@ -193,8 +161,4 @@ export function codeFallbackForMeeting(
           `Используйте свой адаптер из соответствующей фазы (meeting-report-fast / B / D / E).`,
       );
   }
-}
-
-export function codeFallbackPlainSummaryPublic(): ResolvedPrompt {
-  return codeFallbackPlainSummary();
 }

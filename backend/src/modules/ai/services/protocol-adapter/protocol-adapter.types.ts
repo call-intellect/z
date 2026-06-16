@@ -23,5 +23,3 @@ export interface LlmProtocolAdapter {
     input: LlmCompleteInput;
   }): Promise<LlmCompleteOutput>;
 }
-
-export const PROTOCOL_ADAPTER_TOKEN = Symbol.for('LlmProtocolAdapter');

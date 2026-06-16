@@ -146,12 +146,3 @@ export function mondayOf(d: Date): Date {
   x.setDate(x.getDate() - dow);
   return x;
 }
-
-export function hashFloat(seed: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return ((h >>> 0) % 100_000) / 100_000;
-}

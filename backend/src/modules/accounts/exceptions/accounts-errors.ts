@@ -9,30 +9,12 @@ export class LoginInvalidError extends DomainError {
   }
 }
 
-export class SessionRevokedError extends DomainError {
-  readonly code = 'session_revoked';
-  readonly httpStatus = 401;
-
-  constructor() {
-    super('Сессия больше недействительна');
-  }
-}
-
 export class DisposableEmailError extends DomainError {
   readonly code = 'email_disposable';
   readonly httpStatus = 400;
 
   constructor() {
     super('Этот почтовый сервис не поддерживается. Используйте основной email.');
-  }
-}
-
-export class WeakPasswordError extends DomainError {
-  readonly code = 'password_too_weak';
-  readonly httpStatus = 400;
-
-  constructor() {
-    super('Пароль должен содержать минимум 8 символов, букву и цифру');
   }
 }
 

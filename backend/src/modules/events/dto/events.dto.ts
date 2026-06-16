@@ -62,7 +62,6 @@ export const EventParticipantInputSchema = z
   .refine((p) => Boolean(p.userId) || Boolean(p.personId), {
     message: 'Участник должен иметь userId или personId',
   });
-export type EventParticipantInput = z.infer<typeof EventParticipantInputSchema>;
 
 export const EventReminderInputSchema = z.object({
   offsetMin: z.coerce
@@ -73,7 +72,6 @@ export const EventReminderInputSchema = z.object({
   channel: ReminderChannelSchema,
   userId: z.string().min(1).max(80).nullable().optional(),
 });
-export type EventReminderInput = z.infer<typeof EventReminderInputSchema>;
 
 export const CreateEventSchema = z
   .object({

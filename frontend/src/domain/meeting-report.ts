@@ -57,14 +57,6 @@ export function reportListItemFromApi(
   };
 }
 
-export function reportDetailFromApi(api: ReportDetailApi): ReportDetailDomain {
-  return {
-    ...reportListItemFromApi(api),
-    output: api.output,
-    promptTemplateVersionId: api.promptTemplateVersionId,
-  };
-}
-
 export function availableTemplateFromApi(
   api: AvailableTemplateApi,
 ): AvailableTemplateDomain {

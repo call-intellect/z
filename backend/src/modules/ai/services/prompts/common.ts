@@ -217,14 +217,6 @@ export const CONFIDENCE_ENUM_TO_FLOAT = {
 
 export type ConfidenceEnum = 'low' | 'medium' | 'high';
 
-export function confidenceEnumToFloat(v: ConfidenceEnum): number {
-  return CONFIDENCE_ENUM_TO_FLOAT[v];
-}
-
-export function confidenceFloatToEnum(v: number): ConfidenceEnum {
-  return v < 0.45 ? 'low' : v < 0.75 ? 'medium' : 'high';
-}
-
 export const EDGE_CASE_POLICY = `Особые случаи:
 - Пустой/мусорный диалог (одни filler-слова) → верни пустой результат
   (массивы [], все nullable=null). В первой рекомендации/заметке отметь
@@ -260,7 +252,6 @@ export const TaskItemSchema = z
     sourceQuote: z.string().optional(),
   })
   .strict();
-export type TaskItem = z.infer<typeof TaskItemSchema>;
 
 export const TasksSchema = z
   .object({

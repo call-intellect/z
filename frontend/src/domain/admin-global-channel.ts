@@ -1,11 +1,3 @@
-export type GlobalChannelKind =
-  | "telegram_bot"
-  | "max_bot"
-  | "email_smtp"
-  | "email_imap"
-  | "in_app"
-  | (string & {});
-
 export const GLOBAL_CHANNEL_KIND_LABELS: Record<string, string> = {
   telegram_bot: "Telegram бот",
   max_bot: "Max бот",
@@ -13,12 +5,6 @@ export const GLOBAL_CHANNEL_KIND_LABELS: Record<string, string> = {
   email_imap: "Email IMAP",
   in_app: "В приложении",
 };
-
-export type GlobalChannelStatus =
-  | "active"
-  | "broken"
-  | "disabled"
-  | (string & {});
 
 export const GLOBAL_CHANNEL_STATUS_LABELS: Record<string, string> = {
   active: "Активен",

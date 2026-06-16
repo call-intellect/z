@@ -13,8 +13,6 @@ export interface ResolvedPeriod {
   dateTo: Date | null;
 }
 
-export const DEFAULT_ORG_TIMEZONE = 'Europe/Moscow';
-
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function offsetMinutes(orgTimezone?: string | null): number {

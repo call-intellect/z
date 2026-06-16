@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 export const TriageDecisionSchema = z.enum(['accept', 'reject', 'snooze', 'duplicate']);
-export type TriageDecisionDto = z.infer<typeof TriageDecisionSchema>;
 
 export const TriageIntakeSchema = z
   .object({

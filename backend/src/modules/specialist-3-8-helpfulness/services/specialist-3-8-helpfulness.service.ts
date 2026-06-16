@@ -30,8 +30,6 @@ export const ALLOWED_TRAIT_TYPES = [
 
 export type HelpfulnessTraitType = (typeof ALLOWED_TRAIT_TYPES)[number];
 
-export const HELPFULNESS_RESOURCE_TYPE = 'helpfulness_trait';
-
 export const PRIVATE_TRAIT_TYPES = new Set<HelpfulnessTraitType>([
   'question_unanswered',
   'question_acknowledged_no_action',

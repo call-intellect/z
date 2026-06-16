@@ -1,13 +1,5 @@
 import { apiClient } from "./api-client";
 
-export type KnowledgeGroupKindApi =
-  | "department"
-  | "leadership"
-  | "council"
-  | "personal";
-
-export type ClosedGroupKindApi = "leadership" | "council" | "personal" | null;
-
 export interface KnowledgeGroupApi {
   id: string;
   kind: string;

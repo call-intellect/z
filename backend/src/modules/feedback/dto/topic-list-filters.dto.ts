@@ -1,11 +1,9 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 export const FeedbackTopicWindowSchema = z.enum(['30', '90', 'all']);
 export type FeedbackTopicWindow = z.infer<typeof FeedbackTopicWindowSchema>;
 
 export const FeedbackTopicSortSchema = z.enum(['percent', 'users', 'recent']);
-export type FeedbackTopicSort = z.infer<typeof FeedbackTopicSortSchema>;
 
 export const TopicListFiltersSchema = z.object({
   window: FeedbackTopicWindowSchema.default('30'),
@@ -19,10 +17,8 @@ export const TopicListFiltersSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type TopicListFilters = z.infer<typeof TopicListFiltersSchema>;
-export class TopicListFiltersDto extends createZodDto(TopicListFiltersSchema) {}
 
 export const TopicDetailsQuerySchema = z.object({
   window: FeedbackTopicWindowSchema.default('30'),
 });
 export type TopicDetailsQuery = z.infer<typeof TopicDetailsQuerySchema>;
-export class TopicDetailsQueryDto extends createZodDto(TopicDetailsQuerySchema) {}

@@ -74,19 +74,6 @@ export type LlmRoutesListApiResponse = z.infer<
   typeof LlmRoutesListResponseSchema
 >;
 
-export type LlmRouteApi = {
-  taskType: string;
-  providers: LlmRouteProvider[];
-  isActive: boolean;
-  updatedAt?: string;
-  tier?: "primary" | "secondary" | "tertiary" | null;
-  providerName?: string | null;
-  model?: string | null;
-  editedByAdmin?: boolean;
-  requiredDataClass?: string | null;
-  pinnedVersionNote?: string | null;
-};
-
 export const PutLlmRouteSchema = z.object({
   providers: z
     .array(

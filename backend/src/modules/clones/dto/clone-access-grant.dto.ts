@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 export const CloneTypeSchema = z.enum(['person', 'role']);
-export type CloneTypeDto = z.infer<typeof CloneTypeSchema>;
 
 export const AccessGrantListQuerySchema = z
   .object({

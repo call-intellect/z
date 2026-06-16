@@ -24,7 +24,6 @@ export const ProcessStepDefinitionSchema = z.object({
   outputArtifact: z.string().trim().max(300).optional(),
   slaMinutes: z.number().int().positive().optional(),
 });
-export type ProcessStepDefinitionDto = z.infer<typeof ProcessStepDefinitionSchema>;
 
 export const ProcessTemplateDefinitionSchema = z.object({
   steps: z.array(ProcessStepDefinitionSchema).max(50).default([]),

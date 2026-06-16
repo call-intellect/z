@@ -28,14 +28,12 @@ export const InnLookupBodySchema = z.object({
 });
 
 export type InnLookupBody = z.infer<typeof InnLookupBodySchema>;
-export class InnLookupBodyDto extends createZodDto(InnLookupBodySchema) {}
 
 export const InnInvalidateBodySchema = z.object({
   inn: InnSchema,
 });
 
 export type InnInvalidateBody = z.infer<typeof InnInvalidateBodySchema>;
-export class InnInvalidateBodyDto extends createZodDto(InnInvalidateBodySchema) {}
 
 export const InnInvalidateResultSchema = z.object({
   deleted: z.number().int().nonnegative(),

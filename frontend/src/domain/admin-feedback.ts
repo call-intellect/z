@@ -224,12 +224,6 @@ export const FEEDBACK_WINDOW_LABEL: Record<FeedbackWindow, string> = {
 
 export type FeedbackSort = "percent" | "users" | "recent";
 
-export const FEEDBACK_SORT_LABEL: Record<FeedbackSort, string> = {
-  percent: "По доле",
-  users: "По числу юзеров",
-  recent: "По свежести",
-};
-
 export function formatAuthor(user: FeedbackItemAuthor): string {
   if (user.name && user.name.trim().length > 0) {
     return `${user.name} · ${user.email}`;

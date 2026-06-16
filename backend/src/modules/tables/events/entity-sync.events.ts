@@ -15,8 +15,6 @@ export interface EntitySyncEventPayload {
 
 export const MEETING_AI_READY = 'meeting.ai_ready' as const;
 
-export type MeetingAiReadyEventName = typeof MEETING_AI_READY;
-
 export interface MeetingAiReadyEventPayload {
   meetingId: string;
   tenantId: string;

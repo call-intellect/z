@@ -206,4 +206,3 @@ export interface KnowsWhoExpert {
 }
 
 export type { KnowsWhoRow };
-export const _DEFAULT_MIN_CONFIDENCE = DEFAULT_KNOWS_WHO_MIN_CONFIDENCE;

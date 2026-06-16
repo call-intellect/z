@@ -37,8 +37,6 @@ export interface ReferralStatsExtendedApi {
   conversionSignupToPaidPercent: number;
 }
 
-export type ReferralStatsApi = ReferralStatsExtendedApi;
-
 export interface CreateReferralBody {
   contractAccepted: true;
   inn?: string;

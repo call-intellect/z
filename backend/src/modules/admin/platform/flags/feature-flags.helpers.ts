@@ -18,20 +18,6 @@ export interface ResolvableFlag {
   rolloutPercent: number | null;
 }
 
-export function resolveFlag(flag: ResolvableFlag, tenantId: string): boolean {
-  if (Object.prototype.hasOwnProperty.call(flag.orgOverrides, tenantId)) {
-    return flag.orgOverrides[tenantId] === true;
-  }
-  if (flag.rolloutPercent !== null && flag.rolloutPercent !== undefined) {
-    const pct = Math.max(0, Math.min(100, flag.rolloutPercent));
-    if (pct === 0) return false;
-    if (pct === 100) return true;
-    const hash = computeRolloutHash(flag.key, tenantId);
-    return hash % 100 < pct;
-  }
-  return flag.defaultValue;
-}
-
 export function normalizeOrgOverrides(raw: unknown): Record<string, boolean> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: Record<string, boolean> = {};

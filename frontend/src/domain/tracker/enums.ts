@@ -97,13 +97,6 @@ export const INTAKE_STATUS_LABELS: Record<IntakeStatus, string> = {
 
 export type TriageDecision = "accept" | "reject" | "snooze" | "duplicate";
 
-export const TRIAGE_DECISION_LABELS: Record<TriageDecision, string> = {
-  accept: "Принять",
-  reject: "Отклонить",
-  snooze: "Отложить",
-  duplicate: "Дубликат",
-};
-
 export type IssueRelationType =
   | "blocks"
   | "blocked_by"
@@ -145,20 +138,6 @@ export const WEBHOOK_EVENT_VALUES: readonly WebhookEvent[] = [
   "intake.created",
   "intake.triaged",
 ] as const;
-
-export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, string> = {
-  "issue.created": "Создана задача",
-  "issue.updated": "Изменена задача",
-  "issue.deleted": "Удалена задача",
-  "comment.created": "Создан комментарий",
-  "comment.updated": "Изменён комментарий",
-  "cycle.created": "Создан цикл",
-  "cycle.completed": "Завершён цикл",
-  "project.created": "Создан проект",
-  "project.archived": "Архивирован проект",
-  "intake.created": "Создана входящая",
-  "intake.triaged": "Триаж входящей",
-};
 
 export type ProjectMemberRole = 5 | 15 | 20;
 

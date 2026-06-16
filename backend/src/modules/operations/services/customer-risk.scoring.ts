@@ -5,8 +5,6 @@ export const CUSTOMER_RISK_SIGNAL_TYPES = [
   'feature_request',
 ] as const;
 
-export type CustomerRiskSignalType = (typeof CUSTOMER_RISK_SIGNAL_TYPES)[number];
-
 export type CustomerRiskLevel = 'critical' | 'warning' | 'ok';
 
 export interface CustomerRiskSignalCounts {

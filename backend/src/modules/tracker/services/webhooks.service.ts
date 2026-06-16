@@ -44,14 +44,6 @@ export interface WebhookLogsResponse {
   limit: number;
 }
 
-export interface WebhookTestResult {
-  ok: boolean;
-  status: number | null;
-  durationMs: number;
-  errorMessage: string | null;
-  bodySnippet: string | null;
-}
-
 export interface WebhookTestEnqueueResult {
   ok: boolean;
   jobId: string | null;

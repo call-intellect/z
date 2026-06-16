@@ -126,27 +126,3 @@ export function RebuildCloneButton({
     </Button>
   );
 }
-
-export function formatLastBuildHint(lastBuildAt: string | null): string {
-  if (!lastBuildAt) {
-    return "Последнее обновление: клон ещё не собирался. Если ваш стиль работы недавно изменился — нажмите.";
-  }
-  const built = new Date(lastBuildAt);
-  if (Number.isNaN(built.getTime())) {
-    return "Последнее обновление: неизвестно. Если ваш стиль работы недавно изменился — нажмите.";
-  }
-  const diffMs = built.getTime() - Date.now();
-  const diffMin = Math.round(diffMs / 60_000);
-  const diffHour = Math.round(diffMs / 3_600_000);
-  const diffDay = Math.round(diffMs / (3_600_000 * 24));
-  const rtf = new Intl.RelativeTimeFormat("ru-RU", { numeric: "auto" });
-  let relative: string;
-  if (Math.abs(diffMin) < 60) {
-    relative = rtf.format(diffMin, "minute");
-  } else if (Math.abs(diffHour) < 24) {
-    relative = rtf.format(diffHour, "hour");
-  } else {
-    relative = rtf.format(diffDay, "day");
-  }
-  return `Последнее обновление: ${relative}. Если ваш стиль работы недавно изменился — нажмите.`;
-}

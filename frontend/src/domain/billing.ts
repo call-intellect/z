@@ -99,10 +99,6 @@ export function invoiceFromApi(api: InvoiceViewApi): InvoiceDomain {
   };
 }
 
-export function quoteFromApi(api: QuoteApi): QuoteDomain {
-  return { ...api };
-}
-
 export function meetingsBalanceFromApi(
   api: MeetingsBalanceApi,
 ): MeetingsBalanceDomain {
@@ -179,11 +175,6 @@ export function invoiceStatusLabel(s: InvoiceStatus): string {
     void: "Отменён",
   };
   return map[s];
-}
-
-export function paymentModeLabel(m: PaymentMode | null): string {
-  if (!m) return "—";
-  return m === "paid" ? "Оплачено" : "Бонус";
 }
 
 export type SubscriptionEventType =

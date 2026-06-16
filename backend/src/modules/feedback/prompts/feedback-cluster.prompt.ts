@@ -108,9 +108,6 @@ export const FeedbackClusterOutputSchema = z.object({
 });
 
 export type FeedbackClusterOutput = z.infer<typeof FeedbackClusterOutputSchema>;
-export type FeedbackClusterNewTopic = z.infer<typeof NewTopicSchema>;
-export type FeedbackClusterAssignment = z.infer<typeof AssignmentSchema>;
-export type FeedbackClusterAssignmentItem = z.infer<typeof AssignmentItemSchema>;
 
 export const FEEDBACK_CLUSTER_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

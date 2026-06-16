@@ -34,7 +34,6 @@ export type ListRegulationsQuery = z.infer<typeof ListRegulationsQuerySchema>;
 export const GetRegulationParamsSchema = z.object({
   kind: RegulationKindSchema,
 });
-export type GetRegulationParamsQuery = z.infer<typeof GetRegulationParamsSchema>;
 
 export const SupersedeRegulationBodySchema = z.object({
   kind: RegulationKindSchema,

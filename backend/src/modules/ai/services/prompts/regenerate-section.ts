@@ -1,5 +1,4 @@
 export const REGENERATE_SECTION_TASK_TYPE = 'regenerate-section';
-export const REGENERATE_SECTION_PROMPT_NAME = 'regenerate_section_v1';
 
 export const REGENERATE_SECTION_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

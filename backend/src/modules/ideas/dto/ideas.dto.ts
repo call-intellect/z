@@ -11,8 +11,6 @@ export const IdeaStatusSchema = z.enum([
   'rejected',
   'archived',
 ]);
-export type IdeaKindDto = z.infer<typeof IdeaKindSchema>;
-export type IdeaStatusDto = z.infer<typeof IdeaStatusSchema>;
 
 export const ListIdeasQuerySchema = z
   .object({

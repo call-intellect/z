@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import type { IdeaBlock, SignalType } from '@prisma/client';
+import type { IdeaBlock } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -492,8 +492,6 @@ export class RouterService {
     return RouterService.PRIORITY[specialist] ?? 99;
   }
 }
-
-export type RouterSignalType = SignalType;
 
 function parseCachedSpecialists(raw: string): string[] {
   try {

@@ -12,10 +12,8 @@ export const ChatV2ScopeEnum = z.enum([
 export type ChatV2ScopeDto = z.infer<typeof ChatV2ScopeEnum>;
 
 export const ChatV2ModeEnum = z.enum(['factual', 'synthetic', 'clone_style']);
-export type ChatV2ModeDto = z.infer<typeof ChatV2ModeEnum>;
 
 export const ChatV2ConversationStatusEnum = z.enum(['active', 'archived']);
-export type ChatV2ConversationStatusDto = z.infer<typeof ChatV2ConversationStatusEnum>;
 
 export const PostChatV2MessageBodySchema = z
   .object({

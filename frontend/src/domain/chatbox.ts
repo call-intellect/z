@@ -35,15 +35,6 @@ export function chatboxSyncModeLabel(mode: ChatboxSyncMode): string {
   return SYNC_MODE_LABELS[mode] ?? mode;
 }
 
-export const CHATBOX_SYNC_MODES: ReadonlyArray<{
-  value: ChatboxSyncMode;
-  label: string;
-}> = [
-  { value: "hourly", label: SYNC_MODE_LABELS.hourly },
-  { value: "daily", label: SYNC_MODE_LABELS.daily },
-  { value: "realtime", label: SYNC_MODE_LABELS.realtime },
-];
-
 export type ChatboxIntegrationView = {
   id: string;
   workspaceId: string;

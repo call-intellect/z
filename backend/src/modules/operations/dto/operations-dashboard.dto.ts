@@ -10,16 +10,6 @@ export interface OperationsDashboardBlockerDto {
   sourceCheckInId: string | null;
 }
 
-export interface OperationsDashboardGoalDto {
-  id: string;
-  name: string;
-  status: string;
-  parentGoalId: string | null;
-  cascadeMissed: boolean;
-  cascadeMissedFromGoalId: string | null;
-  targetDate: string | null;
-}
-
 export interface OperationsDashboardTeamFrictionDto {
   id: string;
   fromPersonId: string;

@@ -1,5 +1,3 @@
-export const BLOCKER_SYNTHESIS_SUMMARY_PROMPT_VERSION = 'prompt-v1';
-
 export const BLOCKER_SYNTHESIS_SUMMARY_TASK_TYPE = 'blocker-synthesis-summary';
 
 export const BLOCKER_SYNTHESIS_SUMMARY_SYSTEM_PROMPT = [

@@ -14,7 +14,6 @@ export const PublicAttributionBodySchema = z.object({
   referer: z.string().trim().max(2000).optional(),
 });
 export type PublicAttributionBody = z.infer<typeof PublicAttributionBodySchema>;
-export class PublicAttributionBodyDto extends createZodDto(PublicAttributionBodySchema) {}
 
 export const CreateReferralBodySchema = z.object({
   contractAccepted: z.literal(true),
@@ -23,7 +22,6 @@ export const CreateReferralBodySchema = z.object({
   payoutDetails: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateReferralBody = z.infer<typeof CreateReferralBodySchema>;
-export class CreateReferralBodyDto extends createZodDto(CreateReferralBodySchema) {}
 
 export const UpdateReferralBodySchema = z.object({
   inn: InnSchema.optional(),
@@ -31,7 +29,6 @@ export const UpdateReferralBodySchema = z.object({
   payoutDetails: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdateReferralBody = z.infer<typeof UpdateReferralBodySchema>;
-export class UpdateReferralBodyDto extends createZodDto(UpdateReferralBodySchema) {}
 
 export const ReferralViewSchema = z.object({
   id: z.string(),
@@ -111,29 +108,24 @@ export const FunnelQuerySchema = z.object({
   period: FunnelPeriodSchema.default('30d'),
 });
 export type FunnelQuery = z.infer<typeof FunnelQuerySchema>;
-export class FunnelQueryDto extends createZodDto(FunnelQuerySchema) {}
 
 export const PromoEventBodySchema = z.object({
   type: z.enum(['impression', 'click', 'dismissed']),
   role: z.enum(['owner', 'member']),
 });
 export type PromoEventBody = z.infer<typeof PromoEventBodySchema>;
-export class PromoEventBodyDto extends createZodDto(PromoEventBodySchema) {}
 
 export const AdminMarkPayoutPaidBodySchema = z.object({
   payoutDocumentUrl: z.string().url().optional(),
 });
 export type AdminMarkPayoutPaidBody = z.infer<typeof AdminMarkPayoutPaidBodySchema>;
-export class AdminMarkPayoutPaidBodyDto extends createZodDto(AdminMarkPayoutPaidBodySchema) {}
 
 export const AdminVoidPayoutBodySchema = z.object({
   voidReason: z.string().trim().min(3),
 });
 export type AdminVoidPayoutBody = z.infer<typeof AdminVoidPayoutBodySchema>;
-export class AdminVoidPayoutBodyDto extends createZodDto(AdminVoidPayoutBodySchema) {}
 
 export const AdminClosePeriodBodySchema = z.object({
   periodMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'periodMonth должен быть YYYY-MM'),
 });
 export type AdminClosePeriodBody = z.infer<typeof AdminClosePeriodBodySchema>;
-export class AdminClosePeriodBodyDto extends createZodDto(AdminClosePeriodBodySchema) {}

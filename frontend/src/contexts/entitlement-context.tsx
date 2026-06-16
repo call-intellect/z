@@ -106,7 +106,3 @@ export function useEntitlementContext(): EntitlementContextValue {
   }
   return ctx;
 }
-
-export function isAuthApiError(e: unknown): boolean {
-  return e instanceof ApiError && e.code === "unauthorized";
-}

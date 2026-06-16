@@ -395,9 +395,6 @@ export class ConciergeService {
           content: `Результат tool ${toolName}: ok=${execResult.ok} status=${execResult.status}. ${preview}`,
         },
       ];
-
-      if (!execResult.ok) {
-      }
     }
 
     let citations: unknown[] = [];

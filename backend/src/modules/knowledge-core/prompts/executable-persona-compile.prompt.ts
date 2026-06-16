@@ -47,8 +47,6 @@ export const EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-export const EXECUTABLE_PERSONA_COMPILE_PROMPT_NAME = 'executable_persona_compile_v1';
-
 export type PersonaCompileTraitInput = {
   category: string;
   statement: string;

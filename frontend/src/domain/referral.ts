@@ -296,8 +296,6 @@ export function funnelPeriodLabel(p: FunnelPeriod): string {
   return map[p];
 }
 
-export const REFERRAL_REWARD_PER_CLIENT_KOPECKS = 20_000_00;
-
 export type ReferralBannerVariant =
   | "leaderNoProfile"
   | "leaderInProgress"

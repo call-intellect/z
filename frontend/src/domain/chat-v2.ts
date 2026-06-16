@@ -80,10 +80,6 @@ export function chatV2ScopeLabel(scope: ChatV2Scope): string {
   return SCOPE_LABEL[scope] ?? scope;
 }
 
-export function chatV2ModeLabel(mode: ChatV2Mode): string {
-  return MODE_LABEL[mode] ?? mode;
-}
-
 export function chatV2ConversationStatusLabel(
   status: ChatV2ConversationStatus,
 ): string {

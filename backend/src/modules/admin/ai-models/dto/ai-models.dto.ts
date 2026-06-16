@@ -18,12 +18,6 @@ export type TierValue = (typeof TIER_VALUES)[number];
 
 export const TASK_TYPES_TUPLE = ALL_LLM_TASK_TYPES;
 
-export const ZTaskTypeParam = z.object({
-  taskType: z.string().refine((v) => (TASK_TYPES_TUPLE as readonly string[]).includes(v), {
-    message: 'Unknown taskType',
-  }),
-});
-
 export const ListAiModelsQuerySchema = z.object({
   group: z.enum(['ai-pipeline', 'knowledge-core', 'competitor-parity']).optional(),
   search: z.string().min(1).max(60).optional(),

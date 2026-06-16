@@ -85,19 +85,3 @@ export function webhookFromApi(api: WebhookApi): Webhook {
     createdAt: new Date(api.createdAt),
   };
 }
-
-export function webhookLogFromApi(api: WebhookLogApi): WebhookLog {
-  return {
-    id: api.id,
-    webhookId: api.webhookId,
-    eventType: api.eventType,
-    requestMethod: api.requestMethod,
-    requestUrl: api.requestUrl,
-    responseStatus: api.responseStatus,
-    responseTime: api.responseTime,
-    retryCount: api.retryCount,
-    success: api.success,
-    errorMessage: api.errorMessage,
-    createdAt: new Date(api.createdAt),
-  };
-}

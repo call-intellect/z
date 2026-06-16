@@ -22,17 +22,6 @@ export const CAUSE_CATEGORY_BG_CLASS: Record<InsightCauseCategory, string> = {
   unknown: "bg-neutral-500/20 dark:text-neutral-300 text-neutral-700",
 };
 
-export const CAUSE_CATEGORY_BAR_CLASS: Record<InsightCauseCategory, string> = {
-  process_gap: "bg-rose-500",
-  tooling: "bg-sky-500",
-  role_skill: "bg-violet-500",
-  communication: "bg-amber-500",
-  priority: "bg-pink-500",
-  resource_constraint: "bg-stone-500",
-  external: "bg-zinc-500",
-  unknown: "bg-neutral-500",
-};
-
 export const CAUSE_CATEGORY_ORDER: InsightCauseCategory[] = [
   "process_gap",
   "communication",

@@ -347,9 +347,6 @@ export class CurationService {
         });
       }
     }
-
-    if (input.decisionType === 'reject' && (input.payload ?? null) !== null) {
-    }
     if (this.requiresReasoning(input.decisionType, item.level) && !input.reasoning) {
       throw new BadRequestException({
         ok: false,

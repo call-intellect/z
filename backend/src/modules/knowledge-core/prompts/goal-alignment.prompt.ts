@@ -66,7 +66,6 @@ export const GoalAlignmentResponseSchema = z.object({
     contra: z.array(z.string()).max(10),
   }),
 });
-export type GoalAlignmentResponse = z.infer<typeof GoalAlignmentResponseSchema>;
 
 export interface GoalAlignmentBlockInput {
   signalType: string;

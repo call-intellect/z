@@ -104,7 +104,6 @@ export const KnowledgeCategoryDraftSchema = z
     sourceBlockIds: z.array(z.string()).optional(),
   })
   .strict();
-export type KnowledgeCategoryDraft = z.infer<typeof KnowledgeCategoryDraftSchema>;
 
 export const SkillTraitDraftSchema = z
   .object({
@@ -115,7 +114,6 @@ export const SkillTraitDraftSchema = z
     sourceBlockIds: z.array(z.string()).optional(),
   })
   .strict();
-export type SkillTraitDraft = z.infer<typeof SkillTraitDraftSchema>;
 
 export const HelpfulnessTraitDraftSchema = z
   .object({
@@ -135,7 +133,6 @@ export const HelpfulnessTraitDraftSchema = z
     confidence: Confidence01,
   })
   .strict();
-export type HelpfulnessTraitDraft = z.infer<typeof HelpfulnessTraitDraftSchema>;
 
 export const SpecialistsCombinedOutputSchema = z
   .object({

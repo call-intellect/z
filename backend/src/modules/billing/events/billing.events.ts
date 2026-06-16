@@ -9,7 +9,6 @@ export const BillingEvent = {
   SUBSCRIPTION_PAST_DUE: 'billing.subscription.past_due',
   SUBSCRIPTION_SEATS_CHANGED: 'billing.subscription.seats_changed',
 } as const;
-export type BillingEventName = (typeof BillingEvent)[keyof typeof BillingEvent];
 
 export interface InvoicePaidPayload {
   invoiceId: string;

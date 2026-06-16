@@ -15,7 +15,6 @@ export const FeedbackMessagesListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type FeedbackMessagesListQuery = z.infer<typeof FeedbackMessagesListQuerySchema>;
-export class FeedbackMessagesListQueryDto extends createZodDto(FeedbackMessagesListQuerySchema) {}
 
 export const FeedbackMessagesListResponseSchema = z.object({
   items: z.array(FeedbackMessageSchema),
@@ -45,16 +44,12 @@ export const FeedbackFailedMessageSchema = z.object({
   failedRuns: z.number().int().nonnegative(),
 });
 export type FeedbackFailedMessage = z.infer<typeof FeedbackFailedMessageSchema>;
-export class FeedbackFailedMessageDto extends createZodDto(FeedbackFailedMessageSchema) {}
 
 export const FeedbackFailedMessagesListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type FeedbackFailedMessagesListQuery = z.infer<typeof FeedbackFailedMessagesListQuerySchema>;
-export class FeedbackFailedMessagesListQueryDto extends createZodDto(
-  FeedbackFailedMessagesListQuerySchema,
-) {}
 
 export const FeedbackFailedMessagesListResponseSchema = z.object({
   items: z.array(FeedbackFailedMessageSchema),

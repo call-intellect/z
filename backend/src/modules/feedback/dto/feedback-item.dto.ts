@@ -25,7 +25,6 @@ export const FeedbackItemSchema = z.object({
   discardReason: z.string().nullable(),
 });
 export type FeedbackItem = z.infer<typeof FeedbackItemSchema>;
-export class FeedbackItemDto extends createZodDto(FeedbackItemSchema) {}
 
 export const FeedbackItemsListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -36,7 +35,6 @@ export const FeedbackItemsListQuerySchema = z.object({
     .transform((v) => v === 'true'),
 });
 export type FeedbackItemsListQuery = z.infer<typeof FeedbackItemsListQuerySchema>;
-export class FeedbackItemsListQueryDto extends createZodDto(FeedbackItemsListQuerySchema) {}
 
 export const FeedbackItemsListResponseSchema = z.object({
   items: z.array(FeedbackItemSchema),

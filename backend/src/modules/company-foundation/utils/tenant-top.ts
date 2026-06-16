@@ -32,7 +32,3 @@ async function refresh(prisma: PrismaService): Promise<TopCache> {
     return { validUntil: Date.now() + TTL_MS, set: new Set() };
   }
 }
-
-export function resetTenantTopCache(): void {
-  cache = null;
-}

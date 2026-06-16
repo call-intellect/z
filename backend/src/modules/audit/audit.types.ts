@@ -65,8 +65,6 @@ export const AUDIT = {
   ENTITLEMENT_OVERRIDE_SET: 'entitlement.override_set',
 } as const;
 
-export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];
-
 export interface AuditLogInput {
   userId?: string | null;
   action: string;

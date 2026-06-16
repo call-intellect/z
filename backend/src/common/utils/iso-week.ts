@@ -24,10 +24,3 @@ export function lastWeekBoundsMsk(now: Date): {
   const mid = new Date((weekStart.getTime() + weekEnd.getTime()) / 2);
   return { weekStart, weekEnd, isoWeek: isoWeekLabel(mid) };
 }
-
-export function isoDateUtc(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}

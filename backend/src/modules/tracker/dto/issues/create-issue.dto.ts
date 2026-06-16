@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 export const IssuePrioritySchema = z.enum(['urgent', 'high', 'medium', 'low', 'none']);
-export type IssuePriorityDto = z.infer<typeof IssuePrioritySchema>;
 
 export const CreateIssueSchema = z
   .object({

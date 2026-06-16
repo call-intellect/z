@@ -265,10 +265,6 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['support.ticket_reply', SupportTicketEventPayloadSchema],
 ]);
 
-export function registerEventPayloadSchema(eventType: string, schema: z.ZodTypeAny): void {
-  registry.set(eventType, schema);
-}
-
 export function validateEventPayload(eventType: string, payload: unknown): Record<string, unknown> {
   const schema = registry.get(eventType) ?? LiberalPayloadSchema;
   const parsed = schema.parse(payload);

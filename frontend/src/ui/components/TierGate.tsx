@@ -76,32 +76,3 @@ export function DefaultTierFallback({
     </div>
   );
 }
-
-export function InlineTierFallback({
-  feature,
-  currentTier,
-}: {
-  feature: FeatureKey;
-  currentTier: ReturnType<typeof useEntitlement>["tier"];
-}) {
-  const requiredTier = FEATURE_MIN_TIER[feature] ?? "tier_pro";
-  return (
-    <Card className="flex items-center gap-4 px-4 py-4">
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-accent-muted text-accent">
-        <Lock size={16} strokeWidth={1.75} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">
-          Доступно на тарифе {tierLabel(requiredTier)}
-        </div>
-        <div className="text-xs text-fg-tertiary">
-          «{featureLabel(feature)}» — на тарифе {tierLabel(currentTier)}{" "}
-          закрыта.
-        </div>
-      </div>
-      <Button asChild size="sm" variant="outline">
-        <Link href="/settings/billing">Подробнее</Link>
-      </Button>
-    </Card>
-  );
-}

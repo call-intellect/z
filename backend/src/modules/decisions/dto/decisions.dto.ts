@@ -13,7 +13,6 @@ export const DecisionStatusSchema = z.enum([
 export type DecisionStatusDto = z.infer<typeof DecisionStatusSchema>;
 
 export const DeadlineFilterSchema = z.enum(['overdue', 'upcoming', 'all']);
-export type DeadlineFilterDto = z.infer<typeof DeadlineFilterSchema>;
 
 export const TrustTierSchema = z.enum(['auto', 'provisional', 'human']);
 export type TrustTierDto = z.infer<typeof TrustTierSchema>;

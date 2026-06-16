@@ -4,7 +4,6 @@ export const UserMappingsSchema = z.record(
   z.string().email().max(254),
   z.string().min(1).max(64).nullable(),
 );
-export type UserMappingsDto = z.infer<typeof UserMappingsSchema>;
 
 export const StartTrelloImportSchema = z
   .object({

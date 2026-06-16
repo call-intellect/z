@@ -146,12 +146,6 @@ export function mapProcessStep(api: ProcessStepApi): ProcessStepDomain {
   };
 }
 
-export function mapVersionsFromHistory(
-  api: RegulationHistoryResponseApi,
-): RegulationVersion[] {
-  return api.items.map(mapVersionItem);
-}
-
 export interface RegulationSource {
   blockId: string;
   quote: string;

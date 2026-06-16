@@ -22,8 +22,6 @@ export const TaskDedupeResponseSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-export type TaskDedupeResponse = z.infer<typeof TaskDedupeResponseSchema>;
-
 export const TASK_DEDUPE_SYSTEM_PROMPT = withAsrNote(
   `Ты определяешь, описывают ли две задачи встречи ОДНО И ТО ЖЕ действие (action item), даже при разной формулировке.
 

@@ -469,10 +469,6 @@ export const COMPUTED_TYPES: ReadonlySet<TablePropType> = new Set([
   "createdBy",
 ]);
 
-export function isSupportedInPhase1(type: TablePropType): boolean {
-  return FAZA1_SUPPORTED_TYPES.has(type);
-}
-
 export function isComputed(type: TablePropType): boolean {
   return COMPUTED_TYPES.has(type);
 }

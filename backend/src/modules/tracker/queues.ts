@@ -7,8 +7,6 @@ export const TRACKER_QUEUE_NAMES = {
   IMPORT_TRACKER: 'core.imports',
 } as const;
 
-export type TrackerQueueName = (typeof TRACKER_QUEUE_NAMES)[keyof typeof TRACKER_QUEUE_NAMES];
-
 export const WEBHOOK_DELIVERY_JOB_OPTIONS: JobsOptions = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 60_000 },

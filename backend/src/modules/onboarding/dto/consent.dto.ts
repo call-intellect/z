@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 import { CONSENT_DATA_TYPES } from '../services/consent.service';
@@ -9,5 +8,4 @@ export const ConsentUpsertSchema = z.object({
   policyVersion: z.string().min(1).max(10).optional(),
 });
 
-export class ConsentUpsertDto extends createZodDto(ConsentUpsertSchema) {}
 export type ConsentUpsertBody = z.infer<typeof ConsentUpsertSchema>;

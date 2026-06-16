@@ -43,7 +43,6 @@ export const RegenerateQualityScoreResponseSchema = z.object({
   status: z.literal('queued'),
   meetingId: z.string(),
 });
-export type RegenerateQualityScoreResponse = z.infer<typeof RegenerateQualityScoreResponseSchema>;
 export class RegenerateQualityScoreResponseDto extends createZodDto(
   RegenerateQualityScoreResponseSchema,
 ) {}

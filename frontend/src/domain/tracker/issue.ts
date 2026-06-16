@@ -389,23 +389,6 @@ export function issueRelationFromApi(api: IssueRelationApi): IssueRelation {
   };
 }
 
-export function issueAttachmentFromApi(
-  api: IssueAttachmentApi,
-): IssueAttachment {
-  return {
-    id: api.id,
-    issueId: api.issueId,
-    commentId: api.commentId,
-    uploaderId: api.uploaderId,
-    fileName: api.fileName,
-    fileUrl: api.fileUrl,
-    fileSize: api.fileSize,
-    mimeType: api.mimeType,
-    thumbnailUrl: api.thumbnailUrl,
-    createdAt: new Date(api.createdAt),
-  };
-}
-
 export function similarIssueFromApi(api: SimilarIssueApi): SimilarIssue {
   return {
     id: api.id,
@@ -416,10 +399,6 @@ export function similarIssueFromApi(api: SimilarIssueApi): SimilarIssue {
     completedAt: parseDate(api.completedAt),
     similarity: api.similarity,
   };
-}
-
-export function formatIdentifier(issue: Pick<Issue, "identifier">): string {
-  return issue.identifier;
 }
 
 export function similarityLabel(similarity: number): string {

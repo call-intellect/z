@@ -28,7 +28,6 @@ export const CompileOrgDocumentOutputSchema = z
     signals: z.array(z.string()),
   })
   .strict();
-export type CompileOrgDocumentOutput = z.infer<typeof CompileOrgDocumentOutputSchema>;
 
 export const COMPILE_ORG_DOCUMENT_TOOL: LlmTool = {
   name: COMPILE_ORG_DOCUMENT_TOOL_NAME,
@@ -257,14 +256,4 @@ export function buildCompileOrgDocumentUserMessage(input: CompileOrgDocumentInpu
   );
 
   return parts.join('\n');
-}
-
-export function buildCompileOrgDocumentPrompt(input: CompileOrgDocumentInput): {
-  system: string;
-  user: string;
-} {
-  return {
-    system: buildCompileOrgDocumentSystemPrompt(),
-    user: buildCompileOrgDocumentUserMessage(input),
-  };
 }

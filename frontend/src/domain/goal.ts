@@ -63,10 +63,6 @@ export const GOAL_PROMOTION_STATE_LABELS: Record<GoalPromotionState, string> = {
   dismissed: "Отклонена",
 };
 
-export function goalPromotionLabel(state: GoalPromotionState): string {
-  return GOAL_PROMOTION_STATE_LABELS[state];
-}
-
 export type GoalProgressStatus =
   | "on_track"
   | "at_risk"

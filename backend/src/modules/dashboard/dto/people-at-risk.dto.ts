@@ -1,10 +1,8 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 export const PeopleAtRiskQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(3),
 });
-export class PeopleAtRiskQueryDto extends createZodDto(PeopleAtRiskQuerySchema) {}
 export type PeopleAtRiskQuery = z.infer<typeof PeopleAtRiskQuerySchema>;
 
 export const PeopleAtRiskItemSchema = z.object({

@@ -149,8 +149,6 @@ export const ReasoningChainQuerySchema = z.object({
   depth: z.coerce.number().int().min(1).max(3).default(2),
 });
 
-export type ReasoningChainQuery = z.infer<typeof ReasoningChainQuerySchema>;
-
 export interface ReasoningChainNodeDto {
   id: string;
   name: string;

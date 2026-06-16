@@ -45,4 +45,3 @@ export const ListSprintHintsQuerySchema = z
     status: z.enum(SprintHintStatusValues).optional(),
   })
   .strict();
-export type ListSprintHintsQueryDto = z.infer<typeof ListSprintHintsQuerySchema>;

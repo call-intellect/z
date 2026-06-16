@@ -424,12 +424,6 @@ export const ADMIN_NAV_FLAT: Array<AdminNavItem & { sectionLabel: string }> =
       .map((it) => ({ ...it, sectionLabel: section.label })),
   );
 
-export const ADMIN_NAV_FLAT_ALL: Array<
-  AdminNavItem & { sectionLabel: string }
-> = ADMIN_NAV_SECTIONS.flatMap((section) =>
-  section.items.map((it) => ({ ...it, sectionLabel: section.label })),
-);
-
 export function findActiveSectionKey(pathname: string): string | null {
   for (const section of ADMIN_NAV_SECTIONS) {
     for (const item of section.items) {
@@ -454,7 +448,3 @@ export function isAdminNavItemActive(
   const prefix = item.matchPrefix ?? item.href;
   return pathname === item.href || pathname.startsWith(`${prefix}/`);
 }
-
-export const ADMIN_NAV_REAL_HREFS: string[] = ADMIN_NAV_FLAT.map(
-  (it) => it.href,
-);

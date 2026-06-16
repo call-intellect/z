@@ -1,5 +1,3 @@
-export const PERSONAL_BRIEF_HINT_PROMPT_VERSION = 'prompt-v1';
-
 export const PERSONAL_BRIEF_HINT_TASK_TYPE = 'personal-brief-hint';
 
 export const PERSONAL_BRIEF_HINT_SYSTEM_PROMPT = [

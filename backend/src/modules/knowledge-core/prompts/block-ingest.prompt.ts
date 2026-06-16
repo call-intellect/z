@@ -87,7 +87,6 @@ export const TYPED_ENTITY_TYPES = [
   'metric',
   'tool',
 ] as const;
-export type TypedEntityType = (typeof TYPED_ENTITY_TYPES)[number];
 
 export const REGULATION_CATEGORY_VALUES = ['regulation', 'standard'] as const;
 export const POLICY_SEVERITY_VALUES = ['advisory', 'mandatory', 'blocking'] as const;

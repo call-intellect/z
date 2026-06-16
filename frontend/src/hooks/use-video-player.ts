@@ -28,5 +28,3 @@ export function useVideoPlayer() {
 
   return { playerRef, seekTo, play, pause, togglePlay };
 }
-
-export type VideoPlayerControls = ReturnType<typeof useVideoPlayer>;

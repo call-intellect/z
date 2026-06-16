@@ -90,7 +90,3 @@ export function togglePinned(item: Omit<PaletteRecentItem, "lastUsedAt">): {
     return { pinned: false };
   }
 }
-
-export function isPinned(id: string): boolean {
-  return loadPinned().some((it) => it.id === id);
-}

@@ -29,13 +29,6 @@ export const EVENT_VISIBILITY_LABELS: Record<EventVisibilityApi, string> = {
   personal: "Личное",
 };
 
-export const RSVP_LABELS: Record<RsvpStatusApi, string> = {
-  pending: "Ждёт ответа",
-  accepted: "Подтвердил",
-  declined: "Отказался",
-  tentative: "Возможно",
-};
-
 export interface EventKindStyle {
   bg: string;
   border: string;

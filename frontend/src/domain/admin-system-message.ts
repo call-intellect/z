@@ -10,12 +10,6 @@ export type SystemMessageSeverity =
   | "critical"
   | (string & {});
 
-export const SYSTEM_MESSAGE_TYPE_LABELS: Record<string, string> = {
-  banner: "Баннер",
-  maintenance: "Maintenance",
-  alert: "Алёрт",
-};
-
 export const SYSTEM_MESSAGE_SEVERITY_LABELS: Record<string, string> = {
   info: "Инфо",
   warning: "Предупреждение",

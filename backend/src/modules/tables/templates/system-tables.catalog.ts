@@ -2,12 +2,6 @@ import type { TablePropType } from '@prisma/client';
 
 export type SystemTableOptionColor = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
-export interface SystemTableOption {
-  id: string;
-  name: string;
-  color: SystemTableOptionColor;
-}
-
 export interface SystemTablePropertyTemplate {
   name: string;
   type: TablePropType;

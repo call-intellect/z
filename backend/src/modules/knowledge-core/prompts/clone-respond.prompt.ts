@@ -188,5 +188,3 @@ export const CLONE_RESPOND_USER_TEMPLATE = (args: {
   );
   return parts.join('\n');
 };
-
-export const CLONE_RESPOND_PROMPT_NAME = 'clone_respond_v2';

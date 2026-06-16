@@ -1,5 +1,3 @@
-export const VALUE_RECAP_NARRATIVE_PROMPT_VERSION = 'prompt-v1';
-
 export const VALUE_RECAP_NARRATIVE_TASK_TYPE = 'value-recap-narrative';
 
 export const VALUE_RECAP_NARRATIVE_SYSTEM_PROMPT = [

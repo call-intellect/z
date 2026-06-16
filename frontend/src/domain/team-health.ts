@@ -18,6 +18,20 @@ export type TeamHealthAttrApi = {
   delta?: number | null;
 };
 
+export type TeamHealthFactorLevelApi = 'low' | 'medium' | 'high';
+
+export type TeamHealthSummaryApi = {
+  factors: {
+    manager_support: TeamHealthFactorLevelApi;
+    workload_fairness: TeamHealthFactorLevelApi;
+    communication: TeamHealthFactorLevelApi;
+    time_pressure: TeamHealthFactorLevelApi;
+    role_clarity: TeamHealthFactorLevelApi;
+  };
+  summary: string;
+  generatedAt: string;
+};
+
 export type TeamHealthRowApi = {
   departmentId: string;
   departmentName: string;
@@ -27,6 +41,7 @@ export type TeamHealthRowApi = {
   promises: TeamHealthAttrApi;
   conflicts: TeamHealthAttrApi;
   decisions: TeamHealthAttrApi;
+  healthSummary?: TeamHealthSummaryApi | null;
 };
 
 export type TeamHealthApi = {

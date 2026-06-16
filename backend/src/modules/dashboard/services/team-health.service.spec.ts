@@ -28,6 +28,7 @@ interface DepartmentRow {
   id: string;
   name: string;
   persons: Array<{ id: string; entityId: string | null }>;
+  healthSummaryJson?: unknown;
 }
 
 interface ConflictRow {
@@ -175,6 +176,7 @@ describe('TeamHealthService', () => {
     expect(row.promises).toEqual({ value: 0, tone: 'neutral' });
     expect(row.conflicts).toEqual({ value: 0, tone: 'neutral' });
     expect(row.decisions).toEqual({ value: 0, tone: 'neutral' });
+    expect(row.healthSummary).toBeNull();
     // CommitmentReliabilityService не вызывался для below-cohort отделов.
     expect(commitsGet).not.toHaveBeenCalled();
   });
@@ -401,6 +403,60 @@ describe('TeamHealthService', () => {
       const res = await service.getHealth({ tenantId: 't-1' });
       expect(res.teams[0]!.decisions.value).toBe(3);
       expect(res.teams[0]!.decisions.tone).toBe('danger');
+    });
+  });
+
+  describe('healthSummary (факторы вовлечённости, ТЗ coo-orphan Ф6)', () => {
+    const persons3 = [
+      { id: 'p-1', entityId: null },
+      { id: 'p-2', entityId: null },
+      { id: 'p-3', entityId: null },
+    ];
+
+    it('отдел 3+ с валидным healthSummaryJson → row.healthSummary распарсен', async () => {
+      const { service } = buildService({
+        departments: [
+          {
+            id: 'd-1',
+            name: 'Отдел',
+            persons: persons3,
+            healthSummaryJson: {
+              factors: {
+                manager_support: 'high',
+                workload_fairness: 'medium',
+                communication: 'high',
+                time_pressure: 'low',
+                role_clarity: 'high',
+              },
+              summary: 'всё ок',
+              generatedAt: '2026-06-15T05:00:00.000Z',
+            },
+          },
+        ],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      const row = res.teams[0]!;
+      expect(row.healthSummary?.factors.manager_support).toBe('high');
+      expect(row.healthSummary?.factors.time_pressure).toBe('low');
+      expect(row.healthSummary?.summary).toBe('всё ок');
+      expect(row.healthSummary?.generatedAt).toBe('2026-06-15T05:00:00.000Z');
+    });
+
+    it('битый healthSummaryJson (нет factors) → healthSummary=null', async () => {
+      const { service } = buildService({
+        departments: [
+          {
+            id: 'd-1',
+            name: 'Отдел',
+            persons: persons3,
+            healthSummaryJson: { summary: 'x' },
+          },
+        ],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      expect(res.teams[0]!.healthSummary).toBeNull();
     });
   });
 

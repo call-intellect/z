@@ -27,6 +27,22 @@ export interface TeamHealthAttrDto {
   delta?: number | null;
 }
 
+/** ТЗ coo-orphan-agents Ф6 — факторы вовлечённости (LLM, ежедневно). */
+export type TeamHealthFactorLevel = 'low' | 'medium' | 'high';
+
+export interface TeamHealthSummaryDto {
+  factors: {
+    manager_support: TeamHealthFactorLevel;
+    workload_fairness: TeamHealthFactorLevel;
+    communication: TeamHealthFactorLevel;
+    time_pressure: TeamHealthFactorLevel;
+    role_clarity: TeamHealthFactorLevel;
+  };
+  summary: string;
+  /** ISO-строка момента расчёта (показываем, чтобы не путать с live-метриками). */
+  generatedAt: string;
+}
+
 /** Строка таблицы здоровья команды — один отдел. */
 export interface TeamHealthRowDto {
   departmentId: string;
@@ -42,6 +58,8 @@ export interface TeamHealthRowDto {
   conflicts: TeamHealthAttrDto;
   /** Число висящих решений, атрибутированных отделу (ТЗ Ф2). */
   decisions: TeamHealthAttrDto;
+  /** Факторы вовлечённости из ежедневного LLM-расчёта. null — ещё не посчитан. */
+  healthSummary?: TeamHealthSummaryDto | null;
 }
 
 export interface TeamHealthDto {
@@ -105,6 +123,7 @@ export class TeamHealthService {
       select: {
         id: true,
         name: true,
+        healthSummaryJson: true,
         persons: {
           where: { deletedAt: null },
           select: { id: true, entityId: true },
@@ -230,6 +249,7 @@ export class TeamHealthService {
         promises,
         conflicts,
         decisions,
+        healthSummary: this.parseHealthSummary(dept.healthSummaryJson),
       });
     }
 
@@ -310,6 +330,33 @@ export class TeamHealthService {
     return 'flat';
   }
 
+  /** Защитный парс healthSummaryJson (Json нетипизирован). null при любом несоответствии. */
+  private parseHealthSummary(json: unknown): TeamHealthSummaryDto | null {
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+    const obj = json as Record<string, unknown>;
+    const factors = obj.factors;
+    const summary = obj.summary;
+    if (!factors || typeof factors !== 'object' || Array.isArray(factors)) return null;
+    if (typeof summary !== 'string') return null;
+    const f = factors as Record<string, unknown>;
+    const keys = [
+      'manager_support', 'workload_fairness', 'communication',
+      'time_pressure', 'role_clarity',
+    ] as const;
+    const isLevel = (v: unknown): v is TeamHealthFactorLevel =>
+      v === 'low' || v === 'medium' || v === 'high';
+    const parsed = {} as TeamHealthSummaryDto['factors'];
+    for (const k of keys) {
+      if (!isLevel(f[k])) return null;
+      parsed[k] = f[k];
+    }
+    return {
+      factors: parsed,
+      summary,
+      generatedAt: typeof obj.generatedAt === 'string' ? obj.generatedAt : '',
+    };
+  }
+
   private belowCohortRow(
     id: string,
     name: string,
@@ -325,6 +372,7 @@ export class TeamHealthService {
       promises: neutral,
       conflicts: neutral,
       decisions: neutral,
+      healthSummary: null,
     };
   }
 }
